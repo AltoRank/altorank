@@ -14,8 +14,16 @@ describe("planFunnelEvent", () => {
     expect(e).toEqual({
       source: FUNNEL_EVENT_SOURCE, level: "info", workspaceId: WS, accountId: ACC,
       message: "Topic funnel: 10 found: 6 buyer fit, 2 not editorial -> 2 qualified -> 1 planned",
-      context: { runId: "run-1", found: 10, qualified: 2, planned: 1, judged: 4, removed: { buyer_fit: 6, not_editorial: 2 } },
+      context: { runId: "run-1", found: 10, qualified: 2, planned: 1, notPlanned: null, judged: 4, removed: { buyer_fit: 6, not_editorial: 2 } },
     });
+  });
+
+  it("says where the qualified topics left off the plan went, and the sanitiser keeps every planner stage", () => {
+    const notPlanned = { refused: 1, excluded: 1, on_calendar: 1, not_writable: 1, same_as_calendar: 1, same_search: 1, no_room: 1 };
+    const e = planFunnelEvent({ runId: "r", workspaceId: WS, funnel: { found: 12, removed: { buyer_fit: 4 }, qualified: 8, planned: 1, notPlanned } });
+    expect(e.level).toBe("info");
+    expect(e.message).toContain("-> 8 qualified -> 1 planned (not planned: 1 refused, 1 excluded, 1 on calendar, 1 not writable, 1 same as calendar, 1 same search, 1 no room)");
+    expect((buildEventRow(e).context as { notPlanned: unknown }).notPlanned).toEqual(notPlanned);
   });
 
   it("warns when nothing was planned, which is the run someone has to explain", () => {

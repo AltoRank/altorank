@@ -6,7 +6,8 @@
 // site two days later, and neither run said where its candidates went: the
 // planning line reads "No keyword clear enough to plan yet" for every empty
 // plan. Every run now leaves one `onboarding.funnel` event in system_events
-// (shown on /admin/events): found, removed at each stage, qualified, planned.
+// (shown on /admin/events): found, removed at each stage, qualified, planned,
+// and why each qualified topic the planner left out was left out.
 // Counts only - no terms - so the row says nothing about the customer's
 // market that the keywords table does not already hold.
 //
@@ -55,6 +56,7 @@ export function planFunnelEvent(input: PlanFunnelEventInput): SystemEvent {
       found: f.found,
       qualified: f.qualified,
       planned: f.planned ?? null,
+      notPlanned: f.notPlanned ?? null,
       judged: f.judged ?? null,
       removed: f.removed,
     },

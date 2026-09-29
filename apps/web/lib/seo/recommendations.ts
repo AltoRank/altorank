@@ -5,9 +5,8 @@ import { articleStage, leadersFrom, type IntentLeader, type KeywordRow, type OnC
 import { ensureBusinessProfile } from "@/lib/keyword-research/business-context";
 import { causeLabel } from "@/lib/keyword-research/opportunity";
 import { funnelOf, type FitVerdict, type Funnel } from "@/lib/keyword-research/buyer-fit";
-import { isJudgeable, isParked, isParkedForGood, isRequalifiable, parkKeywords, queueTarget, refillQualifiedQueue, type QueueRow } from "@/lib/keyword-research/queue";
+import { isJudgeable, isParked, isParkedForGood, isRequalifiable, parkKeywords, queueTarget, refillQualifiedQueue, RefillRefusedError, type QueueRow } from "@/lib/keyword-research/queue";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
-import { SpendRefusedError } from "@/lib/billing/spend-gate";
 import { stageOfVerdict, tallyFunnel, type FunnelOutcome, type FunnelStage, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 // ---------------------------------------------------------------------------
 // What to write next
@@ -400,10 +399,13 @@ export async function recommendKeywords(
     qualifyBatches?: number;
     /**
      * Handed where every keyword read went, once this pass has decided
-     * (lib/keyword-research/topic-funnel.ts). Also called, with the eligible
-     * rows counted as `spend_refused`, just before a spend refusal is thrown.
+     * (lib/keyword-research/topic-funnel.ts), with the ids of the rows it
+     * counted as qualified so a planner can say where each one went. Also
+     * called just before a spend refusal is thrown: the verdicts gathered
+     * until the refusal are counted as they are, the rows still waiting for
+     * one as `spend_refused`.
      */
-    onFunnel?: (funnel: TopicFunnel) => void;
+    onFunnel?: (funnel: TopicFunnel, qualifiedIds: ReadonlySet<string>) => void;
   },
 ): Promise<KeywordRecommendation[]> {
   const limit = options?.limit ?? 25;
@@ -1036,7 +1038,9 @@ export async function recommendKeywords(
   };
   const reportFunnel = (verdicts: ReadonlyMap<string, Opportunity>, refused: boolean, judged?: number) => {
     if (!options?.onFunnel) return;
-    options.onFunnel(tallyFunnel(recommendations.map((rec) => funnelOutcome(rec, verdicts, refused)), judged === undefined ? {} : { judged }));
+    const outcomes = recommendations.map((rec) => ({ id: rec.keywordId, outcome: funnelOutcome(rec, verdicts, refused) }));
+    const qualifiedIds = new Set(outcomes.filter((o) => o.outcome === "qualified").map((o) => o.id));
+    options.onFunnel(tallyFunnel(outcomes.map((o) => o.outcome), judged === undefined ? {} : { judged }), qualifiedIds);
   };
 
   let evidence: Map<string, Opportunity>;
@@ -1067,10 +1071,10 @@ export async function recommendKeywords(
     } catch (err) {
       // The refusal still ends the pass, as it always has; the funnel says
       // where the rows stood when it came, so an empty plan is not read as
-      // "nothing qualified" (#256's spend gate, 2026-09-27).
-      if (err instanceof SpendRefusedError) {
-        reportFunnel(new Map(candidateRows.flatMap((row) => { const o = readOpportunity(row.opportunity, fingerprint); return o ? [[row.id, o] as const] : []; })), true);
-      }
+      // "nothing qualified" (#256's spend gate, 2026-09-27). Counted from the
+      // refill's own verdicts: batches bought before the refusal are saved,
+      // and the rows as read at the start of this pass do not have them.
+      if (err instanceof RefillRefusedError) reportFunnel(err.verdicts, true, err.judged);
       throw err;
     }
   }

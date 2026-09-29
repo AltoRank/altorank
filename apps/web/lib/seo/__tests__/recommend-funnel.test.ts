@@ -71,9 +71,9 @@ const ROWS: Row[] = [
   row("unjudged", "wheel truing stand", { volume: 120 }),
 ];
 
-function client(): SupabaseClient {
+function client(keywords: Row[] = ROWS): SupabaseClient {
   const tables: Record<string, unknown[]> = {
-    keywords: ROWS,
+    keywords,
     site_pages: [{ url: "https://acme-cycles.example/brakes", keyword: "brake bleeding service" }],
   };
   const chain = (value: { data: unknown[]; error: null; count?: number }): Record<string, unknown> => {
@@ -146,7 +146,7 @@ describe("recommendKeywords: the funnel", () => {
     const refusal = new SpendRefusedError({ allowed: false, reason: "trial-required", quota: {} as never, message: "Start the trial." });
     qualify.mockReset().mockRejectedValue(refusal);
     const seen: TopicFunnel[] = [];
-    await expect(recommendKeywords(client(), "ws", { qualify: true, limit: 1000, onFunnel: (f) => seen.push(f) })).rejects.toBe(refusal);
+    await expect(recommendKeywords(client(), "ws", { qualify: true, limit: 1000, onFunnel: (f) => seen.push(f) })).rejects.toBeInstanceOf(SpendRefusedError);
     expect(seen).toHaveLength(1);
     const f = seen[0];
     expect(funnelDiscrepancy(f)).toBeNull();
@@ -154,6 +154,38 @@ describe("recommendKeywords: the funnel", () => {
     // Every row the free gates let through: nothing was judged.
     expect(f.removed.spend_refused).toBe(8);
     expect(f.qualified).toBe(0);
+  });
+
+  it("counts what the batches before a refusal bought as bought, not as refused", async () => {
+    // Enough candidates for two batches of QUALIFICATION_LIMIT (15): the
+    // first is answered and saved, the second is refused by the spend gate.
+    const extra = ["chains", "cassettes", "spokes", "pedals", "saddles", "cables", "levers", "rotors", "tyres", "hubs", "rims", "tubes"]
+      .map((part, i) => row(`x${i}`, `gravel bike ${part} maintenance`, { volume: 20 }));
+    const rows = [...ROWS, ...extra];
+    const refusal = new SpendRefusedError({ allowed: false, reason: "trial-required", quota: {} as never, message: "Start the trial." });
+    const asked: string[][] = [];
+    qualify.mockReset().mockImplementation(async (_s: unknown, _w: unknown, batch: Array<{ id: string }>) => {
+      asked.push(batch.map((c) => c.id));
+      if (asked.length > 1) throw refusal;
+      return new Map(batch.map((c) => [c.id, VERDICTS[c.id] ?? verdict("rejected", "not_editorial")] as const));
+    });
+    const seen: Array<{ f: TopicFunnel; ids: ReadonlySet<string> }> = [];
+    await expect(recommendKeywords(client(rows), "ws", { qualify: true, limit: 1000, onFunnel: (f, ids) => seen.push({ f, ids }) }))
+      .rejects.toBeInstanceOf(SpendRefusedError);
+    expect(asked).toHaveLength(2);
+    const [first, second] = asked;
+    expect(first).toHaveLength(15);
+    // Precondition: both approvals were in the batch that was answered.
+    expect(first).toEqual(expect.arrayContaining(["q1", "q2"]));
+    expect(seen).toHaveLength(1);
+    const { f, ids } = seen[0];
+    expect(funnelDiscrepancy(f)).toBeNull();
+    expect(f.found).toBe(rows.length);
+    expect(f.qualified).toBe(2);
+    expect([...ids].sort()).toEqual(["q1", "q2"]);
+    expect(f.judged).toBe(first.length);
+    // Only the rows the refused batch asked about, and any after it, wait.
+    expect(f.removed.spend_refused).toBe(second.length);
   });
 
   it("is not called without a listener, and changes no decision when there is one", async () => {

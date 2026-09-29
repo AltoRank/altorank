@@ -10,6 +10,9 @@ import {
   tallyFunnel,
   totalRemoved,
   withPlanned,
+  PLANNER_STAGES,
+  PLANNER_STAGE_LABELS,
+  PLANNER_STAGE_SHORT,
   type FunnelOutcome,
 } from "../topic-funnel";
 import type { OpportunityCause } from "../opportunity";
@@ -59,6 +62,14 @@ describe("funnelDiscrepancy", () => {
   it("names more planned than qualified", () => {
     expect(funnelDiscrepancy(withPlanned({ found: 3, removed: { no_demand: 2 }, qualified: 1 }, 2))).toBe("2 planned from 1 qualified");
   });
+  it("holds the planner's stages to the qualified count", () => {
+    const f = { found: 9, removed: { buyer_fit: 4 }, qualified: 5 };
+    expect(funnelDiscrepancy(withPlanned(f, 3, { same_search: 1, no_room: 1 }))).toBeNull();
+    expect(funnelDiscrepancy(withPlanned(f, 3, { no_room: 1 }))).toBe("5 qualified, but 3 planned + 1 not planned = 4");
+    expect(funnelDiscrepancy(withPlanned(f, 3, { vibes: 2 } as never))).toBe("unknown planner stage vibes");
+    // Without a breakdown only `planned <= qualified` can be checked.
+    expect(funnelDiscrepancy(withPlanned(f, 3))).toBeNull();
+  });
   it("names a stage it does not know", () => {
     expect(funnelDiscrepancy({ found: 1, removed: { vibes: 1 } as never, qualified: 0 })).toBe("unknown stage vibes");
   });
@@ -68,6 +79,17 @@ describe("describing a funnel", () => {
   it("gives one line in pipeline order, leaving empty stages out", () => {
     const f = withPlanned({ found: 216, removed: { not_editorial: 9, buyer_fit: 160, no_demand: 24, needs_page: 8, existing_page: 4, out_of_reach: 7 }, qualified: 4 }, 3);
     expect(describeFunnel(f)).toBe("216 found: 160 buyer fit, 24 no demand, 7 out of reach, 4 existing page, 8 needs page, 9 not editorial -> 4 qualified -> 3 planned");
+  });
+
+  it("says where the qualified topics the planner left off went", () => {
+    const f = withPlanned({ found: 9, removed: { buyer_fit: 4 }, qualified: 5 }, 3, { no_room: 1, same_as_calendar: 1 });
+    expect(describeFunnel(f)).toBe("9 found: 4 buyer fit -> 5 qualified -> 3 planned (not planned: 1 same as calendar, 1 no room)");
+    expect(funnelTable([{ label: "run", funnel: f }]).split("\n").slice(4)).toEqual([
+      "| **qualified** | 5 |",
+      "| − same as calendar | 1 |",
+      "| − no room | 1 |",
+      "| planned | 3 |",
+    ]);
   });
 
   it("tabulates several runs side by side, with found, each used stage and qualified", () => {
@@ -89,6 +111,10 @@ describe("describing a funnel", () => {
     for (const s of FUNNEL_STAGES) {
       expect(FUNNEL_STAGE_LABELS[s]).toBeTruthy();
       expect(FUNNEL_STAGE_SHORT[s]).toBeTruthy();
+    }
+    for (const s of PLANNER_STAGES) {
+      expect(PLANNER_STAGE_LABELS[s]).toBeTruthy();
+      expect(PLANNER_STAGE_SHORT[s]).toBeTruthy();
     }
   });
 });

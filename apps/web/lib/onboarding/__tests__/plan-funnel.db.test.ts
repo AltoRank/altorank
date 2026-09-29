@@ -30,8 +30,8 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { connectLocalStack } from "@/lib/__tests__/support/local-db";
 import { schedulePlan } from "../plan";
 import { recordPlanFunnel, FUNNEL_EVENT_SOURCE } from "../funnel-event";
-import { funnelDiscrepancy, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
-import type { Opportunity } from "@/lib/keyword-research/opportunity";
+import { funnelDiscrepancy, totalNotPlanned, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
+import { contextKey, OPPORTUNITY_VERSION, type Opportunity, type OpportunityContext } from "@/lib/keyword-research/opportunity";
 
 const STACK = await connectLocalStack();
 const RUN = `funnel-test-${randomUUID().slice(0, 8)}`;
@@ -72,13 +72,25 @@ describe.skipIf(!STACK)("the planner's funnel on the local database", () => {
     if (ke) throw new Error(ke.message);
     for (const r of rows ?? []) idOf.set(r.term as string, r.id as string);
     const verdictOf = new Map(TERMS.map((t) => [t.term, t.verdict]));
-    qualify.mockImplementation(async (_s: unknown, _w: unknown, asked: Array<{ id: string; term: string }>) => new Map(asked.flatMap((c) => {
-      const v = verdictOf.get(c.term);
-      if (!v) return [];
-      const o: Opportunity = { version: 2, context: "db-test", checkedAt: new Date().toISOString(), reason: "stub", ...v,
-        ...(v.status === "qualified" ? { organicUrls: [`https://a.example/${c.id}`, `https://b.example/${c.id}`, `https://c.example/${c.id}`], angle: c.term, format: "article" } : {}) };
-      return [[c.id, o] as const];
-    })));
+    // Saved under the pass's own context, as the real judge saves them, so a
+    // second pass reads them back as current verdicts.
+    qualify.mockImplementation(async (s: typeof db, w: string, asked: Array<{ id: string; term: string }>, context: OpportunityContext) => {
+      const out = new Map<string, Opportunity>();
+      for (const c of asked) {
+        const v = verdictOf.get(c.term);
+        if (!v) continue;
+        const o: Opportunity = { version: OPPORTUNITY_VERSION, context: contextKey(context), checkedAt: new Date().toISOString(), reason: "stub", ...v,
+          ...(v.status === "qualified" ? {
+            organicUrls: [`https://a.example/${c.id}`, `https://b.example/${c.id}`, `https://c.example/${c.id}`],
+            evidenceUrls: [`https://a.example/${c.id}`, `https://b.example/${c.id}`],
+            audience: "commuter cyclists", buyingJob: "choosing a workshop", offering: "bike repair", angle: c.term, format: "article",
+          } : {}) };
+        const { error } = await s.from("keywords").update({ opportunity: o }).eq("id", c.id).eq("workspace_id", w);
+        if (error) throw new Error(error.message);
+        out.set(c.id, o);
+      }
+      return out;
+    });
   });
 
   afterAll(async () => {
@@ -102,11 +114,13 @@ describe.skipIf(!STACK)("the planner's funnel on the local database", () => {
     expect(f.qualified).toBe(2);
     expect(f.removed).toMatchObject({ not_editorial: 1, needs_page: 1, buyer_fit: 1, no_demand: 1, out_of_reach: 1 });
 
-    // `planned` is what the calendar holds, whatever the trial hold allowed.
+    // `planned` is what the calendar holds, whatever the trial hold allowed,
+    // and every approval left off is counted at a planner stage.
     const { data: entries } = await db.from("calendar_entries").select("keyword_id").eq("workspace_id", workspaceId);
     expect(f.planned).toBe(plan.length);
     expect(entries ?? []).toHaveLength(plan.length);
     expect(plan.length).toBeGreaterThan(0);
+    expect(f.notPlanned).toEqual(plan.length === 2 ? {} : { no_room: 2 - plan.length });
 
     // Every refusal the judge gave is parked with its cause, and nothing else is.
     const { data: parked } = await db.from("keywords").select("term, opportunity").eq("workspace_id", workspaceId).not("plan_excluded_at", "is", null);
@@ -119,5 +133,22 @@ describe.skipIf(!STACK)("the planner's funnel on the local database", () => {
     expect(events).toHaveLength(1);
     expect(events![0]).toMatchObject({ source: FUNNEL_EVENT_SOURCE, level: "info", context: { runId: RUN, found: TERMS.length, qualified: 2, planned: plan.length } });
     expect(events![0].message).toContain(`${TERMS.length} found`);
+  });
+
+  it("on a second pass, says the approvals already planned are on the calendar, not lost", async () => {
+    const { count: before } = await db.from("calendar_entries").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId);
+    const seen: TopicFunnel[] = [];
+    await schedulePlan(db, workspaceId, 7, { mode: "top-up", maxEntries: 5, qualifyBatches: 4, onFunnel: (f) => seen.push(f) });
+    const { count: after } = await db.from("calendar_entries").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId);
+    expect(seen).toHaveLength(1);
+    const f = seen[0];
+    expect(funnelDiscrepancy(f)).toBeNull();
+    // Both approvals still count as qualified - their verdicts are current -
+    // and both are accounted for as already planned, with nothing new added.
+    expect(f.qualified).toBe(2);
+    expect(f.planned).toBe(0);
+    expect(after).toBe(before);
+    expect(f.notPlanned).toEqual({ on_calendar: 2 });
+    expect((f.planned ?? 0) + totalNotPlanned(f)).toBe(f.qualified);
   });
 });

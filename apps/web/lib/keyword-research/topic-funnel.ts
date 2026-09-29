@@ -95,6 +95,44 @@ export const FUNNEL_STAGE_SHORT: Record<FunnelStage, string> = {
   not_editorial: "not editorial",
 };
 
+/**
+ * Why a qualified topic was not put on the calendar, in the order the planner
+ * checks (lib/onboarding/plan.ts). A run that read "5 qualified -> 3 planned"
+ * did not say where the other two went; these do, and a qualified topic is
+ * either planned or counted at exactly one of them.
+ */
+export const PLANNER_STAGES = [
+  "refused",
+  "excluded",
+  "on_calendar",
+  "not_writable",
+  "same_as_calendar",
+  "same_search",
+  "no_room",
+] as const;
+
+export type PlannerStage = (typeof PLANNER_STAGES)[number];
+
+export const PLANNER_STAGE_LABELS: Record<PlannerStage, string> = {
+  refused: "the pass ended on a spend refusal before planning",
+  excluded: "taken off the plan by a person",
+  on_calendar: "already on the calendar",
+  not_writable: "not offered to the planner as writable",
+  same_as_calendar: "same search as a calendar entry",
+  same_search: "same search as a topic planned ahead of it",
+  no_room: "no room: calendar full, pace or the run's entry cap",
+};
+
+export const PLANNER_STAGE_SHORT: Record<PlannerStage, string> = {
+  refused: "refused",
+  excluded: "excluded",
+  on_calendar: "on calendar",
+  not_writable: "not writable",
+  same_as_calendar: "same as calendar",
+  same_search: "same search",
+  no_room: "no room",
+};
+
 export interface TopicFunnel {
   /** Every candidate read. Always the sum of `removed` and `qualified`. */
   found: number;
@@ -104,6 +142,11 @@ export interface TopicFunnel {
   qualified: number;
   /** Of the qualified, how many the planner put on the calendar. Absent until a planner has run. */
   planned?: number;
+  /**
+   * Where the qualified topics the planner did not take went, one stage each;
+   * with `planned`, sums to `qualified`. Absent until a planner has run.
+   */
+  notPlanned?: Partial<Record<PlannerStage, number>>;
   /** Verdicts bought this pass (results judge plus buyer test), when known. */
   judged?: number;
 }
@@ -161,22 +204,37 @@ export function funnelDiscrepancy(funnel: TopicFunnel): string | null {
   if (Object.values(funnel.removed).some((n) => !Number.isInteger(n) || (n as number) < 0)) return "a stage count is not a non-negative integer";
   if (removed + funnel.qualified !== funnel.found) return `${funnel.found} found, but ${removed} removed + ${funnel.qualified} qualified = ${removed + funnel.qualified}`;
   if (funnel.planned !== undefined && funnel.planned > funnel.qualified) return `${funnel.planned} planned from ${funnel.qualified} qualified`;
+  if (funnel.notPlanned) {
+    const unknownPlanner = Object.keys(funnel.notPlanned).filter((k) => !(PLANNER_STAGES as readonly string[]).includes(k));
+    if (unknownPlanner.length) return `unknown planner stage ${unknownPlanner.join(", ")}`;
+    if (Object.values(funnel.notPlanned).some((n) => !Number.isInteger(n) || (n as number) < 0)) return "a planner stage count is not a non-negative integer";
+    const left = totalNotPlanned(funnel);
+    const planned = funnel.planned ?? 0;
+    if (planned + left !== funnel.qualified) return `${funnel.qualified} qualified, but ${planned} planned + ${left} not planned = ${planned + left}`;
+  }
   return null;
 }
 
-/** The funnel with the planner's count on it. */
-export function withPlanned(funnel: TopicFunnel, planned: number): TopicFunnel {
-  return { ...funnel, planned };
+/** Sum of every qualified topic the planner did not take. */
+export function totalNotPlanned(funnel: TopicFunnel): number {
+  return PLANNER_STAGES.reduce((sum, stage) => sum + (funnel.notPlanned?.[stage] ?? 0), 0);
+}
+
+/** The funnel with the planner's count on it, and where the rest went when known. */
+export function withPlanned(funnel: TopicFunnel, planned: number, notPlanned?: Partial<Record<PlannerStage, number>>): TopicFunnel {
+  return { ...funnel, planned, ...(notPlanned ? { notPlanned } : {}) };
 }
 
 /**
- * One line: "216 found: 160 buyer fit, 24 no demand, 9 not editorial -> 4
- * qualified -> 4 planned". Stages in pipeline order, the empty ones left out.
+ * One line: "216 found: 160 buyer fit, 24 no demand, 9 not editorial -> 5
+ * qualified -> 4 planned (not planned: 1 same search)". Stages in pipeline
+ * order, the empty ones left out.
  */
 export function describeFunnel(funnel: TopicFunnel): string {
   const parts = FUNNEL_STAGES.filter((s) => (funnel.removed[s] ?? 0) > 0).map((s) => `${funnel.removed[s]} ${FUNNEL_STAGE_SHORT[s]}`);
   const head = `${funnel.found} found${parts.length ? `: ${parts.join(", ")}` : ""}`;
-  const planned = funnel.planned !== undefined ? ` -> ${funnel.planned} planned` : "";
+  const rest = PLANNER_STAGES.filter((s) => (funnel.notPlanned?.[s] ?? 0) > 0).map((s) => `${funnel.notPlanned![s]} ${PLANNER_STAGE_SHORT[s]}`);
+  const planned = funnel.planned !== undefined ? ` -> ${funnel.planned} planned${rest.length ? ` (not planned: ${rest.join(", ")})` : ""}` : "";
   return `${head} -> ${funnel.qualified} qualified${planned}`;
 }
 
@@ -194,6 +252,8 @@ export function funnelTable(columns: ReadonlyArray<{ label: string; funnel: Topi
     ...used.map((s) => `| − ${FUNNEL_STAGE_SHORT[s]} | ${cells((f) => f.removed[s] ?? 0).join(" | ")} |`),
     `| **qualified** | ${cells((f) => f.qualified).join(" | ")} |`,
   ];
+  const plannerUsed = PLANNER_STAGES.filter((s) => columns.some((c) => (c.funnel.notPlanned?.[s] ?? 0) > 0));
+  lines.push(...plannerUsed.map((s) => `| − ${PLANNER_STAGE_SHORT[s]} | ${cells((f) => (f.notPlanned ? f.notPlanned[s] ?? 0 : undefined)).join(" | ")} |`));
   if (columns.some((c) => c.funnel.planned !== undefined)) lines.push(`| planned | ${cells((f) => f.planned).join(" | ")} |`);
   return lines.join("\n");
 }
