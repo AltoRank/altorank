@@ -10,7 +10,7 @@
     "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "lint": "eslint",
-    "lint:guarded": "eslint --max-warnings 0 lib/onboarding lib/keyword-research lib/billing lib/gsc lib/queries/onboarding.ts 'app/actions/onboard*.ts' 'app/(setup)/onboarding' app/api/onboard app/api/cron app/api/webhooks",
+    "lint:guarded": "eslint --max-warnings 0 lib/onboarding lib/keyword-research lib/billing lib/gsc lib/queries/onboarding.ts 'app/actions/onboard*.ts' 'app/(setup)/onboarding' app/api/onboard app/api/cron app/api/webhooks lib/evals scripts/evals.ts",
     "test": "vitest run --project unit",
     "test:db": "vitest run --project db",
     "e2e": "playwright test",
@@ -25,7 +25,8 @@
     "test:article": "tsx --env-file=.env.local scripts/generate-test-article.ts",
     "crawl:site": "tsx --env-file=.env.local scripts/crawl-site.ts",
     "analyse": "tsx --env-file=.env.local scripts/analyse-domain.ts",
-    "validate:picks": "tsx --env-file=.env.local scripts/validate-picks.ts"
+    "validate:picks": "tsx --env-file=.env.local scripts/validate-picks.ts",
+    "evals": "tsx scripts/evals.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

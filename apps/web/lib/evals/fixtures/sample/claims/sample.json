@@ -1,0 +1,31 @@
+{
+  "id": "sample-claims",
+  "language": "en",
+  "sensitive": false,
+  "html": "<p>According to the Example Marketing Survey 2026, 42% of marketers review every AI draft before it goes live (<a href=\"https://vendor-blog.example/ai-drafts\">source</a>).</p>\n<p>The <a href=\"https://survey.example/2026\">Example Marketing Survey 2026</a> puts the share of teams using AI drafts at 61%.</p>\n<p>The same survey found teams publish 3,400 articles a year on average (<a href=\"https://survey.example/2026-volume\">survey data</a>).</p>",
+  "pages": {
+    "https://vendor-blog.example/ai-drafts": "pages/vendor-blog.html",
+    "https://survey.example/2026": "pages/survey.html",
+    "https://survey.example/2026-volume": "pages/survey-volume.html"
+  },
+  "expect": [
+    {
+      "id": "42-percent-via-vendor-blog",
+      "match": "42%",
+      "label": "misattributed",
+      "note": "Credited to the survey, linked to a vendor's blog post that quotes it."
+    },
+    {
+      "id": "61-percent-from-survey",
+      "match": "61%",
+      "label": "supported",
+      "note": "The survey's own page carries 61%."
+    },
+    {
+      "id": "3400-articles",
+      "match": "3,400",
+      "label": "unsupported",
+      "note": "The survey page says 1,200, not 3,400."
+    }
+  ]
+}
