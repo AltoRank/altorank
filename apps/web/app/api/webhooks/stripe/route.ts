@@ -274,11 +274,15 @@ async function accountForInvoice(
   if (customerId) lookups.push(["stripe_customer_id", customerId]);
 
   for (const [col, val] of lookups) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("accounts")
       .select(AGENCY_BILLING_COLUMNS)
       .eq(col, val)
       .maybeSingle();
+    // A failed read is not "no account owns this invoice": answering that
+    // returned 200 and Stripe never delivered the failure or the payment
+    // again. Thrown, so the event answers 500 and is retried.
+    if (error) throw new Error(`invoice: could not read the account by ${col} (${error.message})`);
     if (data) return data as AccountBillingRow;
   }
   return null;
@@ -301,7 +305,11 @@ async function markPaymentFailed(
   // one because its very first charge bounced.
   if (account.plan_status === "active" || account.plan_status === "trialing") updates.plan_status = "past_due";
   if (Object.keys(updates).length === 0) return;
-  await supabase.from("accounts").update(updates).eq("id", account.id);
+  const { error } = await supabase.from("accounts").update(updates).eq("id", account.id);
+  // Checked before the email that follows it: the grace window the email
+  // quotes is counted from this timestamp, and a write that did not land
+  // answered 200, so Stripe never retried it.
+  if (error) throw new Error(`invoice.payment_failed: could not record the failed payment (${error.message})`);
 }
 
 /**
@@ -405,17 +413,24 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
          * site deliberately paused at 0, or set to anything that is not the
          * free-tier pace, is left alone.
          */
-        const { data: sites } = await supabase
+        // Both checked, like the account write: a failed read left the
+        // sites at the free pace and the trial email saying the week was not
+        // handed off, and a failed write left one site at the free pace, each
+        // under a 200. Stripe retries the event; `paceOnActivation` only
+        // raises from the free pace, so a redelivery repeats nothing.
+        const { data: sites, error: sitesError } = await supabase
           .from("workspaces")
           .select("id, auto_generate_weekly_limit, auto_generate, status")
           .eq("account_id", accountId);
+        if (sitesError) throw new Error(`checkout.session.completed: could not read the account's sites (${sitesError.message})`);
         for (const site of sites ?? []) {
           const next = paceOnActivation(site.auto_generate_weekly_limit as number | null, plan);
           if (next === null) continue;
-          await supabase
+          const { error: paceError } = await supabase
             .from("workspaces")
             .update({ auto_generate_weekly_limit: next })
             .eq("id", site.id);
+          if (paceError) throw new Error(`checkout.session.completed: could not raise a site to the plan's pace (${paceError.message})`);
         }
 
         /**
@@ -481,7 +496,16 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
     case "customer.subscription.deleted": {
       const sub = event.data.object as Stripe.Subscription;
       const plan = planForSubscription(sub);
-      const periodEnd = (sub as unknown as { current_period_end?: number }).current_period_end;
+      // Since API 2025-03-31.basil the period end lives on each item, not on
+      // the subscription; the SDK here is pinned to a dahlia version, so the
+      // top-level field is absent from every payload it describes. Read both:
+      // the top level for an endpoint still on an older version, the first
+      // item otherwise. Reading only the top level left the column null, and
+      // the Billing page said "the end of the current billing period" where it
+      // should have given a date.
+      const periodEnd =
+        (sub as unknown as { current_period_end?: number }).current_period_end ??
+        (sub.items?.data?.[0] as unknown as { current_period_end?: number } | undefined)?.current_period_end;
 
       const status =
         event.type === "customer.subscription.deleted" ? "canceled" : mapStatus(sub.status);
@@ -497,13 +521,18 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         ...(status === "active" || status === "trialing" || status === "canceled"
           ? { payment_failed_at: null }
           : {}),
-        // Cancel-at-period-end set from the Billing page or from the portal
-        // both land here; the page reads this column to say when the plan
-        // ends. Cleared when the cancellation is undone.
+        // Any scheduled end, however it was set: cancel-at-period-end from the
+        // Billing page or the portal, or a dated `cancel_at` from the Stripe
+        // dashboard or the API (including the `min_period_end` /
+        // `max_period_end` shorthands), which Stripe reports with
+        // `cancel_at_period_end` false. Only the first used to be recorded, so
+        // a trial ended by date kept drafting to its last day
+        // (lib/billing/trial-hold.ts reads this column) and the Billing page
+        // showed no end date. Cleared when the cancellation is undone.
         cancels_at:
           event.type === "customer.subscription.deleted"
             ? null
-            : sub.cancel_at_period_end && sub.cancel_at
+            : sub.cancel_at
               ? new Date(sub.cancel_at * 1000).toISOString()
               : null,
       };
@@ -533,18 +562,69 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
       // Read the row before writing it. Every notice below is about a
       // *change* - the tier moved, a cancellation was scheduled - and a change
       // cannot be seen once the new value is already in the column.
-      const { data: beforeRow } = await supabase
+      const { data: beforeRow, error: beforeError } = await supabase
         .from("accounts")
         .select(AGENCY_BILLING_COLUMNS)
         .eq(accountId ? "id" : "stripe_subscription_id", accountId ?? sub.id)
         .maybeSingle();
+      if (beforeError) throw new Error(`${event.type}: could not read the account (${beforeError.message})`);
       const before = (beforeRow as AccountBillingRow | null) ?? null;
 
-      if (accountId) {
-        await supabase.from("accounts").update(updates).eq("id", accountId);
-      } else {
-        // Fall back to matching by the stored subscription id.
-        await supabase.from("accounts").update(updates).eq("stripe_subscription_id", sub.id);
+      // Checked, and thrown before anything below, as checkout's own write
+      // is. This write carries the status, the tier, the trial end and
+      // `cancels_at`, which the drafting doors read to stop a cancelled
+      // trial (lib/billing/trial-hold.ts); a write that failed answered 200,
+      // Stripe never delivered the event again, and the account kept the
+      // state it had before - drafting on after a cancel, or a paid tier
+      // after a downgrade - with the emails below already sent as if it
+      // had changed.
+      const { error: writeError } = accountId
+        ? await supabase.from("accounts").update(updates).eq("id", accountId)
+        : // Fall back to matching by the stored subscription id.
+          await supabase.from("accounts").update(updates).eq("stripe_subscription_id", sub.id);
+      if (writeError) throw new Error(`${event.type}: could not record the subscription on the account (${writeError.message})`);
+
+      // Every remaining write and read comes before any email. A failure
+      // below throws and Stripe delivers the event again; if the change
+      // emails had already gone out, the retry would read the row this
+      // delivery wrote, see nothing changed, and an email that failed the
+      // first time would never be tried again.
+      const previous = event.data.previous_attributes as Partial<Stripe.Subscription> | undefined;
+      const failedAt = new Date(event.created * 1000);
+      const pastDue = event.type === "customer.subscription.updated" && status === "past_due";
+      if (event.type === "customer.subscription.updated") {
+        // Going past due without an `invoice.payment_failed` (the events are
+        // not ordered) still starts the grace window, from now.
+        if (pastDue && before && !before.payment_failed_at) {
+          const { error: failedError } = await supabase
+            .from("accounts")
+            .update({ payment_failed_at: failedAt.toISOString() })
+            .eq("id", before.id);
+          if (failedError) throw new Error(`${event.type}: could not start the grace window (${failedError.message})`);
+        }
+
+        // The account pause ending on Stripe's side. `resumes_at` lifts
+        // `pause_collection` on the date and Stripe reports it here with the
+        // old value in `previous_attributes`; the workspaces the pause set
+        // are resumed to match, so nothing is billed for a month in which
+        // nothing was drafted. Only a change is acted on - an ordinary update
+        // to an unpaused subscription also carries `pause_collection: null`
+        // and must not touch a pause that was written a moment ago.
+        const pauseLifted =
+          sub.pause_collection == null && previous != null && "pause_collection" in previous;
+        if (pauseLifted) {
+          let target: string | null = accountId ?? null;
+          if (!target) {
+            const { data: row, error: targetError } = await supabase
+              .from("accounts")
+              .select("id")
+              .eq("stripe_subscription_id", sub.id)
+              .maybeSingle();
+            if (targetError) throw new Error(`${event.type}: could not find the account whose pause ended (${targetError.message})`);
+            target = (row?.id as string | undefined) ?? null;
+          }
+          if (target) await resumePausedWorkspaces(supabase, target);
+        }
       }
 
       /**
@@ -583,8 +663,8 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
        * Sent from here rather than from `cancelPlan` because the Billing page
        * links straight into the Stripe portal's cancel flow, which never calls
        * our action - so an email wired to the action would miss whichever half
-       * of the customers used the other button. `cancels_at` moving from null
-       * to a date is the fact, and it arrives the same way from both.
+       * of the customers used the other button. Stripe's event is the fact,
+       * and it arrives the same way from both.
        *
        * `customer.subscription.deleted` deliberately sends nothing. It is the
        * period end finally arriving on a cancellation this already announced,
@@ -594,7 +674,23 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
        * to say why.
        */
       const cancelsAt = updates.cancels_at as string | null;
-      if (before && event.type === "customer.subscription.updated" && cancelsAt && isoKey(before.cancels_at) !== cancelsAt) {
+      // Two ways to see that this event scheduled the end. The row moving
+      // from null to a date covers the portal, which never calls our server.
+      // The event's own `previous_attributes` covers the Billing page's
+      // button: `cancelPlan` writes `cancels_at` itself the moment Stripe
+      // answers, and Stripe delivers this event after that, so the row
+      // already held the date and the in-app cancel sent no email at all.
+      // `sendOnce` is keyed by the subscription, so the two cannot both send.
+      const cancelScheduledNow =
+        previous != null &&
+        (("cancel_at" in previous && previous.cancel_at == null) ||
+          ("cancel_at_period_end" in previous && previous.cancel_at_period_end === false));
+      if (
+        before &&
+        event.type === "customer.subscription.updated" &&
+        cancelsAt &&
+        (isoKey(before.cancels_at) !== cancelsAt || cancelScheduledNow)
+      ) {
         try {
           await notifySubscriptionCancelled(
             supabase,
@@ -603,6 +699,9 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
               accountName: before.name ?? null,
               planLabel: PLAN_LABELS[(before.plan ?? "starter") as PlanTier] ?? "your",
               endsAt: cancelsAt,
+              // A trial ending before its first charge: drafting stops now,
+              // not at the date, and the email must not say otherwise.
+              trial: trialEnd !== null && Date.parse(cancelsAt) <= Date.parse(trialEnd),
             },
             sub.id,
           );
@@ -611,46 +710,10 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         }
       }
 
-      if (event.type === "customer.subscription.updated") {
-        // Going past due without an `invoice.payment_failed` (the events are
-        // not ordered) still starts the grace window, from now.
-        if (status === "past_due") {
-          const failedAt = new Date(event.created * 1000);
-          if (before && !before.payment_failed_at) {
-            await supabase
-              .from("accounts")
-              .update({ payment_failed_at: failedAt.toISOString() })
-              .eq("id", before.id);
-          }
-          // Whether the window started here or on an earlier invoice event,
-          // the people who can fix it are told once (keyed by the window's
-          // own start, so the two routes cannot both send).
-          if (before) await emailPaymentFailed(supabase, before, failedAt);
-        }
-
-        // The account pause ending on Stripe's side. `resumes_at` lifts
-        // `pause_collection` on the date and Stripe reports it here with the
-        // old value in `previous_attributes`; the workspaces the pause set
-        // are resumed to match, so nothing is billed for a month in which
-        // nothing was drafted. Only a change is acted on - an ordinary update
-        // to an unpaused subscription also carries `pause_collection: null`
-        // and must not touch a pause that was written a moment ago.
-        const previous = event.data.previous_attributes as Partial<Stripe.Subscription> | undefined;
-        const pauseLifted =
-          sub.pause_collection == null && previous != null && "pause_collection" in previous;
-        if (pauseLifted) {
-          let target: string | null = accountId ?? null;
-          if (!target) {
-            const { data: row } = await supabase
-              .from("accounts")
-              .select("id")
-              .eq("stripe_subscription_id", sub.id)
-              .maybeSingle();
-            target = (row?.id as string | undefined) ?? null;
-          }
-          if (target) await resumePausedWorkspaces(supabase, target);
-        }
-      }
+      // Whether the window started here or on an earlier invoice event, the
+      // people who can fix it are told once (keyed by the window's own
+      // start, so the two routes cannot both send).
+      if (pastDue && before) await emailPaymentFailed(supabase, before, failedAt);
       break;
     }
 
@@ -666,13 +729,19 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
       const sub = event.data.object as Stripe.Subscription;
       // Pre-085 subscriptions carry `agency_id`; see `accountForInvoice`.
       const accountId = sub.metadata?.account_id ?? sub.metadata?.agency_id;
-      const { data: row } = await supabase
+      const { data: row, error: rowError } = await supabase
         .from("accounts")
         .select(AGENCY_BILLING_COLUMNS)
         .eq(accountId ? "id" : "stripe_subscription_id", accountId ?? sub.id)
         .maybeSingle();
+      if (rowError) throw new Error(`${event.type}: could not read the account (${rowError.message})`);
       const account = (row as AccountBillingRow | null) ?? null;
-      if (!account || sub.status !== "trialing" || sub.cancel_at_period_end) break;
+      // A trial set to end - at its period end, or by a date on or before the
+      // trial's end - is not about to be charged, and "your card will be
+      // charged in three days" would be false.
+      const endsBeforeCharge =
+        sub.cancel_at_period_end || (sub.cancel_at != null && sub.trial_end != null && sub.cancel_at <= sub.trial_end);
+      if (!account || sub.status !== "trialing" || endsBeforeCharge) break;
       const plan = planForSubscription(sub) ?? (account.plan as PlanTier | null) ?? "starter";
       try {
         await notifyTrialEnding(
@@ -709,7 +778,10 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
       // The retry that went through reinstates the plan. An `inactive` row
       // is a first purchase and `checkout.session.completed` owns that.
       if (account.plan_status === "past_due" || account.plan_status === "unpaid") updates.plan_status = "active";
-      await supabase.from("accounts").update(updates).eq("id", account.id);
+      const { error } = await supabase.from("accounts").update(updates).eq("id", account.id);
+      // A reinstatement that did not land left a paid account past due, and
+      // lapsing, under a 200. Thrown so Stripe delivers the payment again.
+      if (error) throw new Error(`invoice.paid: could not reinstate the plan (${error.message})`);
       break;
     }
   }

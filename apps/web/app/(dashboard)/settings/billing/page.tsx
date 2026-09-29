@@ -217,7 +217,14 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
             <RetentionCard
               pausedUntil={pausedUntil}
               cancelsAt={account?.cancels_at ?? null}
-              periodEnd={account?.current_period_end ?? null}
+              // During a trial the period that ends is the trial, and its end
+              // is the date the cancel copy has to give. `trial_ends_at` is
+              // stamped from `sub.trial_end` on every subscription event;
+              // `current_period_end` depends on where the API version puts
+              // the period end, and a card that read it could say "the end of
+              // the current billing period" with no date on a trial cancel.
+              periodEnd={quota.trial?.endsAt ?? account?.current_period_end ?? null}
+              trialing={Boolean(quota.trial)}
             />
           )}
 

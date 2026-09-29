@@ -24,8 +24,17 @@ vi.mock("@/lib/onboarding/plan", () => ({
   PLAN_MAX_ENTRIES: 60,
 }));
 
+// The quota is read only when the site's account is (`db.workspace`), which
+// the cases above leave unset; the trial cases below set it.
+const getQuota = vi.fn();
+vi.mock("@/lib/billing/quota", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/billing/quota")>()),
+  getQuota: (...args: unknown[]) => getQuota(...args),
+}));
+vi.mock("@/lib/plan/frozen", () => ({ readFrozenEntries: async () => ({ ids: new Set(), reason: null }) }));
+
 /** What the tables hold for this test. */
-const db: { entry: Record<string, unknown> | null; drafting: Record<string, unknown> | null } = { entry: null, drafting: null };
+const db: { entry: Record<string, unknown> | null; drafting: Record<string, unknown> | null; workspace: Record<string, unknown> | null } = { entry: null, drafting: null, workspace: null };
 const updates: Array<{ table: string; patch: unknown }> = [];
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -38,7 +47,7 @@ vi.mock("@/lib/supabase/server", () => ({
         select: chain, eq: chain, is: chain, in: chain, order: chain, limit: chain, ilike: chain,
         update: (patch: unknown) => { updates.push({ table, patch }); return q; },
         maybeSingle: async () => ({
-          data: table === "calendar_entries" ? db.entry : table === "articles" ? db.drafting : null,
+          data: table === "calendar_entries" ? db.entry : table === "articles" ? db.drafting : table === "workspaces" ? db.workspace : null,
           error: null,
         }),
         then: (r: (v: { data: unknown; error: null }) => unknown) => r({ data: [], error: null }),
@@ -54,6 +63,30 @@ beforeEach(() => {
   updates.length = 0;
   db.entry = { id: "e1", keyword_id: "k1", keyword: "seo content", article_id: null };
   db.drafting = null;
+  db.workspace = null;
+  getQuota.mockReset();
+});
+
+describe("writeNow after a trial is cancelled before its first charge", () => {
+  const TRIAL_END = "2026-10-06T12:00:00.000Z";
+  beforeEach(() => {
+    db.workspace = { account_id: "acc1" };
+  });
+
+  it("refuses before the writer is called, in the cancelled trial's words, and leaves the entry unlinked", async () => {
+    getQuota.mockResolvedValue({ limit: 100, used: 5, remaining: 95, reason: "plan", plan: "starter", trial: { endsAt: TRIAL_END, daysLeft: 5, cancelsAt: TRIAL_END } });
+    const { writeNow } = await import("@/app/actions/plan");
+    await expect(writeNow("e1")).rejects.toThrow(/^Your trial is cancelled, so nothing new is drafted\./);
+    expect(generateArticle).not.toHaveBeenCalled();
+    expect(fulfil).not.toHaveBeenCalled();
+  });
+
+  it("writes for a paid plan set to cancel at period end", async () => {
+    getQuota.mockResolvedValue({ limit: 100, used: 40, remaining: 60, reason: "plan", plan: "starter", trial: null });
+    generateArticle.mockResolvedValue({ articleId: "a1", jobId: "j1", title: "T", wordCount: 900 });
+    const { writeNow } = await import("@/app/actions/plan");
+    await expect(writeNow("e1")).resolves.toEqual({ articleId: "a1" });
+  });
 });
 
 describe("writeNow", () => {

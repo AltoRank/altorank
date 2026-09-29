@@ -20,6 +20,7 @@ import {
   SETUP_ALREADY_LIVE_LINE,
   SETUP_UNFINISHED_LINE,
   SETUP_FINISHED_ELSEWHERE_LINE,
+  GATED_NOTHING_WRITTEN_LINE,
 } from "../schedule-events";
 
 type Row = Record<string, unknown>;
@@ -255,6 +256,16 @@ describe("announceNothingWritten", () => {
     const line = await announceNothingWritten(client(), scope, "no-keywords");
     expect(line).toBe(SETUP_UNFINISHED_LINE);
     expect(sends()).toHaveLength(0);
+  });
+
+  it("sends nothing to an account that has not started its trial: it cannot open the page that fixes it", async () => {
+    gate = "gated";
+    try {
+      expect(await announceNothingWritten(client(), scope, "no-keywords")).toBe(GATED_NOTHING_WRITTEN_LINE);
+      expect(sends()).toHaveLength(0);
+    } finally {
+      gate = "open";
+    }
   });
 
   it("treats a skipped wizard as finished", async () => {

@@ -25,7 +25,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateArticle } from "@/lib/content/generate";
 import { fulfilPlannedEntry } from "@/lib/onboarding/plan";
 import { getQuota } from "@/lib/billing/quota";
-import { trialHoldReason } from "@/lib/billing/trial-hold";
+import { draftHoldReason } from "@/lib/billing/trial-hold";
 import { readFrozenEntries } from "@/lib/plan/frozen";
 import { sweepStaleDrafts } from "@/lib/content/stale-drafts";
 
@@ -69,7 +69,8 @@ export async function writePlannedEntryNow(
     // Before the trial starts only the first article is written
     // (lib/billing/trial-hold.ts); said here, in the hold's own words, rather
     // than as the frozen or quota sentence that would otherwise come first.
-    const held = trialHoldReason(quota);
+    // Nor after a trial cancelled before its first charge.
+    const held = draftHoldReason(quota);
     if (held) throw new Error(held);
     const frozen = await readFrozenEntries(supabase, workspaceId, quota);
     if (frozen.ids.has(entry.id as string)) throw new Error(frozen.reason ?? "This keyword is inactive under the current plan.");

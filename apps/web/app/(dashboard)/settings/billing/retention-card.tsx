@@ -7,7 +7,7 @@ import { Button, Card, Dialog } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { pauseAccount, resumeAccount, cancelPlan, keepPlan } from "@/app/actions/retention";
 import { PAUSE_MONTHS, PAUSE_COPY, formatPauseDate, pauseIsOver, type PauseMonths } from "@/lib/billing/pause";
-import { CANCEL_REASONS, cancellationSummary, validateCancellation } from "@/lib/billing/cancellation";
+import { CANCEL_REASONS, cancelButtonLabel, cancellationSummary, validateCancellation } from "@/lib/billing/cancellation";
 import { inputClass } from "@/components/settings/fields";
 
 /**
@@ -22,12 +22,19 @@ export function RetentionCard({
   pausedUntil,
   cancelsAt,
   periodEnd,
+  trialing = false,
 }: {
   /** Set when the account pause is active on the workspaces; null otherwise. */
   pausedUntil: string | null;
   /** Set when the subscription is already ending; null when it renews. */
   cancelsAt: string | null;
   periodEnd: string | null;
+  /**
+   * The plan is a card trial not yet charged. Cancelling it stops drafting at
+   * once rather than at the period end (lib/billing/trial-hold.ts), and the
+   * card says so.
+   */
+  trialing?: boolean;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -97,9 +104,11 @@ export function RetentionCard({
         {cancelsAt ? (
           <>
             <p className="m-0 mb-4 text-[12.5px] leading-relaxed text-ink-2">
-              Your plan ends on{" "}
+              {trialing ? "Your trial is cancelled and ends on" : "Your plan ends on"}{" "}
               <b>{new Date(cancelsAt).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</b>.
-              Until then everything works as usual; afterwards your articles stay readable and exportable.
+              {trialing
+                ? " Nothing is charged and nothing new is drafted; the drafts already written stay readable until then."
+                : " Until then everything works as usual; afterwards your articles stay readable and exportable."}
             </p>
             <Button onClick={() => run("Your plan renews as before.", keepPlan)} disabled={pending}>
               {pending ? "Saving…" : "Keep my plan"}
@@ -108,7 +117,8 @@ export function RetentionCard({
         ) : (
           <>
             <p className="m-0 mb-4 text-[12.5px] leading-relaxed text-ink-2">
-              Ends the plan at the period end. {cancellationSummary(periodEnd)}
+              {trialing ? "Ends the trial before its first charge." : "Ends the plan at the period end."}{" "}
+              {cancellationSummary(periodEnd, { trial: trialing })}
             </p>
             <Button onClick={() => setCancelOpen(true)} disabled={pending}>
               Cancel plan
@@ -121,6 +131,7 @@ export function RetentionCard({
         open={cancelOpen}
         onOpenChange={setCancelOpen}
         periodEnd={periodEnd}
+        trialing={trialing}
         onDone={() => {
           setCancelOpen(false);
           router.refresh();
@@ -134,11 +145,13 @@ function CancelDialog({
   open,
   onOpenChange,
   periodEnd,
+  trialing,
   onDone,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   periodEnd: string | null;
+  trialing: boolean;
   onDone: () => void;
 }) {
   const [step, setStep] = useState<"why" | "confirm">("why");
@@ -151,9 +164,7 @@ function CancelDialog({
   // and the honest shorter version when it is not: the date comes from
   // Stripe and inventing one on the cancellation screen is the worst place
   // to guess.
-  const endLabel = periodEnd
-    ? `Cancel plan — writing stops ${new Date(periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" })}`
-    : "Cancel plan — writing stops at the period end";
+  const endLabel = cancelButtonLabel(periodEnd, { trial: trialing });
 
   function next() {
     const v = validateCancellation({ reason, detail });
@@ -176,7 +187,9 @@ function CancelDialog({
         return;
       }
       toast.success(
-        r.cancelsAt
+        trialing
+          ? "Trial cancelled. Nothing is charged, and drafting has stopped."
+          : r.cancelsAt
           ? `Cancelled. You keep access until ${new Date(r.cancelsAt).toLocaleDateString("en-US", { month: "long", day: "numeric" })}.`
           : "Cancelled at the end of the current period.",
       );
@@ -238,7 +251,7 @@ function CancelDialog({
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          <p className="m-0 text-[13px] leading-relaxed text-ink-2">{cancellationSummary(periodEnd)}</p>
+          <p className="m-0 text-[13px] leading-relaxed text-ink-2">{cancellationSummary(periodEnd, { trial: trialing })}</p>
           <p className="m-0 text-[12.5px] leading-relaxed text-ink-3">
             No further charges. Every draft, keyword and setting stays where it is, and you can come back to the
             same account.

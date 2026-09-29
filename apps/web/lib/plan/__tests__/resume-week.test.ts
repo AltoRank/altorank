@@ -21,6 +21,12 @@ vi.mock("@/lib/plan/frozen", () => ({ readFrozenEntries: async () => ({ ids: new
 vi.mock("@/lib/onboarding/plan", () => ({ schedulePlan: (...a: unknown[]) => topUp(...a) }));
 vi.mock("@/lib/observability/record", () => ({ recordEvent: async (e: Record<string, unknown>) => (events.push(e), true) }));
 vi.mock("@/lib/billing/spend-gate", () => ({ canSpend: async () => ({ allowed: true, reason: "plan", quota: { remaining: null }, message: null }) }));
+// Read only by the real spend gate, which the cancelled-trial cases pass in.
+const { getQuota } = vi.hoisted(() => ({ getQuota: vi.fn() }));
+vi.mock("@/lib/billing/quota", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/billing/quota")>()),
+  getQuota: (...a: unknown[]) => getQuota(...a),
+}));
 
 import {
   claimSiteResume,
@@ -266,6 +272,31 @@ describe("draftRestOfWeek", () => {
     expect(next.started).toBe(4);
     const sentDates = sent.map((b) => String(b.keyword).replace("topic ", ""));
     expect(sentDates.every((d) => d <= "2026-09-30")).toBe(true);
+    expect(sent).toHaveLength(6);
+  });
+});
+
+describe("draftRestOfWeek after the trial is cancelled before its first charge", () => {
+  // The burst asks the spend gate, and the gate is the real one here: a
+  // cancel that lands before the resume runs (or between two of its steps)
+  // stops what is left of the week, and a paid plan set to end does not.
+  const TRIAL_END = "2026-10-01T10:00:00.000Z";
+  const realGate = async () => (await vi.importActual<typeof import("@/lib/billing/spend-gate")>("@/lib/billing/spend-gate")).canSpend;
+
+  it("writes the cancelled trial's sentence on the week's entries and sends none of them", async () => {
+    getQuota.mockResolvedValue({ limit: 100, used: 1, remaining: 99, reason: "plan", plan: "starter", trial: { endsAt: TRIAL_END, daysLeft: 6, cancelsAt: TRIAL_END } });
+    const db = new FakeDb({ calendar_entries: calendar(), workspaces: [site] });
+    const out = await draftRestOfWeek(db.client, site, { by: "trial:sub_1", ...deps, canSpend: await realGate() });
+    expect(out.refused).toMatch(/^Your trial is cancelled, so nothing new is drafted\./);
+    expect(sent).toHaveLength(0);
+    expect(thisWeek(db).every((e) => String(e.draft_failure).startsWith("Your trial is cancelled") && e.draft_claimed_at === null)).toBe(true);
+  });
+
+  it("drafts the week for a paid plan set to cancel at period end", async () => {
+    getQuota.mockResolvedValue({ limit: 100, used: 1, remaining: 99, reason: "plan", plan: "starter", trial: null });
+    const db = new FakeDb({ calendar_entries: calendar(), workspaces: [site] });
+    const out = await draftRestOfWeek(db.client, site, { by: "trial:sub_1", ...deps, canSpend: await realGate() });
+    await out.settled;
     expect(sent).toHaveLength(6);
   });
 });

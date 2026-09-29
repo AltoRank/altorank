@@ -37,7 +37,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { generateArticle } from "@/lib/content/generate";
 import { fulfilPlannedEntry } from "@/lib/onboarding/plan";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
-import { trialHoldReason } from "@/lib/billing/trial-hold";
+import { trialCancelledReason, trialHoldReason } from "@/lib/billing/trial-hold";
 import { authorised } from "@/lib/content/fan-out";
 import { stampRun } from "@/lib/onboarding/run-store";
 import { announceDraftBatch } from "@/lib/email/draft-batch";
@@ -144,13 +144,17 @@ export async function POST(request: NextRequest) {
   // The same gates the cron and the onboarding pipeline use. The trial hold
   // first (lib/billing/trial-hold.ts): the onboarding's own first draft
   // passes it, anything after it waits for the trial, in the hold's words.
+  // Then the cancelled trial: the week's burst runs through here, and a
+  // person who cancels mid-burst has the rest of it refused at its next step.
   const quota = await getQuota(supabase, workspace.account_id as string);
-  const refusal = trialHoldReason(quota) ?? (quota.limit !== null && (quota.remaining ?? 0) <= 0 ? quotaExceededMessage(quota) : null);
+  const held = trialHoldReason(quota);
+  const cancelled = held ? null : trialCancelledReason(quota);
+  const refusal = held ?? cancelled ?? (quota.limit !== null && (quota.remaining ?? 0) <= 0 ? quotaExceededMessage(quota) : null);
   if (refusal) {
     await stamp({ phase: "drafting", status: "skipped", detail: refusal }, { finish: true });
     if (claimed) await recordEntryFailure(supabase, claimed.entryId, claimed.by, refusal);
     next();
-    return NextResponse.json({ status: "skipped", reason: trialHoldReason(quota) ? "trial-hold" : "quota" }, { status: 200 });
+    return NextResponse.json({ status: "skipped", reason: held ? "trial-hold" : cancelled ? "trial-cancelled" : "quota" }, { status: 200 });
   }
 
   try {

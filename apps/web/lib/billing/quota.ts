@@ -268,7 +268,7 @@ export async function getQuota(
   // rest of this function was written against.
   const { data: account, error: accountError } = await counting
     .from("accounts")
-    .select("plan, plan_status, payment_failed_at, free_drafts_used, stripe_subscription_id, trial_ends_at")
+    .select("plan, plan_status, payment_failed_at, free_drafts_used, stripe_subscription_id, trial_ends_at, cancels_at")
     .eq("id", accountId)
     .maybeSingle();
   if (accountError) throw new Error(`quota: could not read this account's plan (${accountError.message})`);

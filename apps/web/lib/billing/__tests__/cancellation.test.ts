@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateCancellation, cancellationSummary, CANCEL_REASONS } from "../cancellation";
+import { validateCancellation, cancellationSummary, cancelButtonLabel, CANCEL_REASONS } from "../cancellation";
 
 describe("cancellation survey", () => {
   it("lists the six reasons in the order shown", () => {
@@ -27,5 +27,14 @@ describe("cancellation survey", () => {
       "You keep access until October 1, 2026. Your articles stay readable and exportable afterwards.",
     );
     expect(cancellationSummary(null)).toContain("the end of the current billing period");
+  });
+  it("says a trial's cancel stops drafting now and nothing is charged; the button says it too", () => {
+    const s = cancellationSummary("2026-10-06T12:00:00Z", { trial: true });
+    expect(s).toContain("Nothing is charged, and nothing new is drafted from now on.");
+    expect(s).toContain("October 6, 2026");
+    expect(s).not.toContain("You keep access");
+    expect(cancelButtonLabel("2026-10-06T12:00:00Z", { trial: true })).toBe("Cancel trial — drafting stops now");
+    expect(cancelButtonLabel("2026-12-01T12:00:00Z")).toBe("Cancel plan — writing stops December 1");
+    expect(cancelButtonLabel(null)).toBe("Cancel plan — writing stops at the period end");
   });
 });

@@ -28,7 +28,7 @@ import { createdThisQuotaMonth, getQuota, pastIncludedVolume, quotaExceededMessa
 import { draftBodyLocked, trialGateApplies } from "@/lib/billing/trial";
 import { accountCountingClient } from "@/lib/billing/account-client";
 import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
-import { claimPreTrialDraft, isFirstPreTrialDraft, releasePreTrialDraft, TrialHoldError, trialHoldReason } from "@/lib/billing/trial-hold";
+import { claimPreTrialDraft, isFirstPreTrialDraft, releasePreTrialDraft, TrialHoldError, trialCancelledReason, trialHoldReason } from "@/lib/billing/trial-hold";
 import { recordOverageArticle } from "@/lib/billing/overage";
 import { recordFreeDraftWritten } from "@/lib/billing/free-drafts";
 import { accountPausedMessage } from "@/lib/billing/pause";
@@ -340,6 +340,13 @@ export async function generateArticle(
   // Set on the free tier below; called only once a draft exists.
   let recordFreeDraft: (() => Promise<void>) | null = null;
   const quota = await getQuota(supabase, billedAccountId, callerEmail);
+
+  // A trial cancelled before its first charge writes nothing more, whatever
+  // the door and whatever the draft would add: a regeneration or a page
+  // rewrite is bought as a new article is (lib/billing/trial-hold.ts). First,
+  // before anything is read or bought. The doors ask it too, earlier.
+  const cancelled = trialCancelledReason(quota);
+  if (cancelled) throw new TrialHoldError(cancelled);
 
   /**
    * The trial hold (lib/billing/trial-hold.ts), before anything is spent.

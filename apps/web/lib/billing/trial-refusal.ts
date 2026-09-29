@@ -25,6 +25,7 @@
 // so a door picks which question it is refusing and cannot word it its own way.
 
 import { TRIAL_DAYS } from "@/lib/stripe";
+import { formatTrialDate } from "@/lib/billing/trial";
 
 /**
  * The sentence every drafting door gives a held account, word for word.
@@ -69,4 +70,21 @@ export function trialRefusal(ask: TrialRefusalAsk): string {
   if (ask === "body") return BODY_LOCKED_MESSAGE;
   if (ask === "setup") return TRIAL_SETUP_MESSAGE;
   return TRIAL_SPEND_MESSAGE;
+}
+
+/**
+ * The sentence every drafting door gives an account whose trial was cancelled
+ * before its first charge (lib/billing/trial-hold.ts, trialCancelledReason).
+ *
+ * The cancellation keeps `plan_status = trialing` until the trial's last day,
+ * and every drafting door read that as a paid plan: a person who cancelled on
+ * day two was drafted the rest of the week, at the paid pace, for nothing
+ * (assessment 2026-09-29). What they already have stays readable until the
+ * trial ends; nothing new is written, and "Keep my plan" undoes it.
+ */
+export function trialCancelledMessage(endsAt: string): string {
+  return (
+    `Your trial is cancelled, so nothing new is drafted. The drafts already written stay readable until the trial ends on ${formatTrialDate(endsAt)}, and nothing is charged. ` +
+    `To keep writing, choose Keep my plan on the Billing page.`
+  );
 }
