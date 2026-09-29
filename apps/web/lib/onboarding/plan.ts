@@ -3,6 +3,7 @@ import { ARTICLE_SHAPES, qualifyOpportunities, type ArticleShape, type Opportuni
 import { clusterByIntent, intentKey, intentLanguage, sameIntent, storedSerp, type StagedTopic } from "@/lib/keyword-research/intent";
 import { approvedWhenJudged, readIntentLeaders } from "@/lib/keyword-research/intent-leaders";
 import { UNKNOWN_LANGUAGE } from "@/lib/i18n/locale";
+import { withPlanned, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 // ---------------------------------------------------------------------------
 // The first thirty days, scheduled
 // ---------------------------------------------------------------------------
@@ -302,6 +303,14 @@ export interface PlanOptions {
    */
   mode?: "replace" | "top-up";
   maxEntries?: number;
+  /**
+   * Handed where every candidate went, with how many were planned, once the
+   * plan is known (lib/keyword-research/topic-funnel.ts). Not called when the
+   * recommender never ran: a spent trial hold or a full calendar reads no
+   * candidates. Called with nothing planned when the recommender throws a
+   * spend refusal after counting.
+   */
+  onFunnel?: (funnel: TopicFunnel) => void;
 }
 
 /**
@@ -340,7 +349,22 @@ async function planFor(
   // ranking" rows and the one writable keyword scored below them was never
   // seen (buttondown.com, 2026-09-07: 99 skips, 2 hand-added terms, 1
   // planned). Ask for the whole set; the planner filters to writable itself.
-  const recommended = await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true, qualifyBatches: opts.qualifyBatches });
+  const seen: { funnel?: TopicFunnel } = {};
+  const report = (planned: number) => {
+    if (seen.funnel && opts.onFunnel) opts.onFunnel(withPlanned(seen.funnel, planned));
+  };
+  let recommended: KeywordRecommendation[];
+  try {
+    recommended = await recommendKeywords(supabase, workspaceId, {
+      limit: 1000,
+      qualify: true,
+      qualifyBatches: opts.qualifyBatches,
+      ...(opts.onFunnel ? { onFunnel: (f: TopicFunnel) => { seen.funnel = f; } } : {}),
+    });
+  } catch (err) {
+    report(0);
+    throw err;
+  }
 
   // Read after the recommender: it takes a planned phrasing nobody will write
   // off the calendar when another phrasing of its search leads
@@ -349,7 +373,7 @@ async function planFor(
   const all = await scheduledEntries(supabase, workspaceId);
   const existing = counted(all);
   const room = cap - existing.length;
-  if (room <= 0) return { plan: [], recs: [] };
+  if (room <= 0) { report(0); return { plan: [], recs: [] }; }
 
   const { data: excludedRows } = await supabase
     .from("keywords")
@@ -394,7 +418,7 @@ async function planFor(
   if (mode === "top-up") {
     const unwritten = existing.filter((e) => !e.article_id).length;
     maxEntries = Math.min(room, Math.max(0, monthlyTarget(weeklyLimit) - unwritten));
-    if (maxEntries === 0) return { plan: [], recs };
+    if (maxEntries === 0) { report(0); return { plan: [], recs }; }
     const last = existing.map((e) => e.scheduled_date).sort().at(-1);
     if (last) {
       const next = new Date(new Date(`${last}T00:00:00Z`).getTime() + DAY_MS);
@@ -410,6 +434,7 @@ async function planFor(
     daysOfWeek: opts.daysOfWeek,
     occupied: existing.map((e) => e.scheduled_date).filter(Boolean) as string[],
   });
+  report(plan.length);
   return { plan, recs };
 }
 
