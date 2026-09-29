@@ -37,7 +37,7 @@ vi.mock("@/lib/content/site-facts", async (importOriginal) => ({
 
 import { generateArticle } from "../generate";
 import { TrialHoldError } from "@/lib/billing/trial-hold";
-import { BODY_LOCKED_MESSAGE, TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
+import { BODY_LOCKED_MESSAGE, TRIAL_HOLD_MESSAGE, trialCancelledMessage } from "@/lib/billing/trial-refusal";
 
 /** The account's articles, shared by every client in a test: id -> status. */
 const rows = new Map<string, string>();
@@ -419,5 +419,47 @@ describe("generateArticle and the trial hold", () => {
     expect(outs.filter((o) => o === "reached the model")).toHaveLength(1);
     expect(jobsOpened).toBe(1);
     expect(claimed).toBe(1);
+  });
+});
+
+describe("generateArticle after a trial is cancelled before its first charge", () => {
+  // Cancelling keeps the subscription `trialing` to its last day, and this
+  // choke point read that as a paid plan: a person who cancelled on day two
+  // was drafted the rest of the week (assessment 2026-09-29).
+  const TRIAL_END = "2026-10-06T12:00:00.000Z";
+  const trialing = (cancelsAt: string | null) => ({
+    limit: 100,
+    used: 5,
+    remaining: 95,
+    reason: "plan",
+    plan: "starter",
+    trial: { endsAt: TRIAL_END, daysLeft: 5, cancelsAt },
+  });
+
+  it("refuses a new article before any row, claim or model call, in the cancelled trial's words", async () => {
+    getQuota.mockResolvedValue(trialing(TRIAL_END));
+    const out = await draft();
+    expect(out).toBeInstanceOf(TrialHoldError);
+    expect((out as Error).message).toBe(trialCancelledMessage(TRIAL_END));
+    expect(inserted).toBe(0);
+    expect(jobsOpened).toBe(0);
+    expect(claimed).toBe(0);
+  });
+
+  it("refuses a regeneration and a page rewrite too: each is bought as a new article is", async () => {
+    getQuota.mockResolvedValue(trialing(TRIAL_END));
+    rows.set("first", "review");
+    target = { id: "first", status: "review", text: true };
+    expect(await draft(0, { articleId: "first" })).toBeInstanceOf(TrialHoldError);
+    expect(await draft(1, { refreshOf: { url: "https://acme-agency.example/a", existingHtml: "<p>x</p>", brief: null } })).toBeInstanceOf(TrialHoldError);
+    expect(jobsOpened).toBe(0);
+  });
+
+  it("writes on for a trial that converts, and for a paid plan set to cancel at period end", async () => {
+    getQuota.mockResolvedValue(trialing(null));
+    expect(await draft(0)).toBe("reached the model");
+    getQuota.mockResolvedValue({ limit: 100, used: 40, remaining: 60, reason: "plan", plan: "starter", trial: null });
+    expect(await draft(1)).toBe("reached the model");
+    expect(jobsOpened).toBe(2);
   });
 });

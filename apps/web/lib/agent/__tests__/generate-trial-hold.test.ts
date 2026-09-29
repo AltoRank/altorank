@@ -113,3 +113,33 @@ describe("POST /articles/generate and the trial hold", () => {
     expect(drafts()).toHaveLength(2);
   });
 });
+
+describe("POST /articles/generate after the trial is cancelled before its first charge", () => {
+  const TRIAL_END = "2026-10-06T12:00:00.000Z";
+  const trialing = (cancelsAt: string | null) => ({
+    limit: 100, used: 1, remaining: 99, reason: "plan", plan: "starter",
+    trial: { endsAt: TRIAL_END, daysLeft: 5, cancelsAt },
+  });
+
+  it("refuses a new draft and a regeneration before any row, with guidance to relay, and releases the key", async () => {
+    quota.mockResolvedValue(trialing(TRIAL_END));
+    const { POST } = await import("@/app/api/agent/v1/articles/generate/route");
+    for (const json of [{ idempotency_key: "k-cancelled" }, { article_id: FIRST }]) {
+      const body = await (await POST(generate(json))).json();
+      expect(body.ok).toBe(false);
+      expect(body.error.code).toBe("not_available");
+      expect(body.error.message).toMatch(/^Your trial is cancelled, so nothing new is drafted\./);
+      expect(body.agent_guidance).toMatch(/Keep my plan/);
+    }
+    expect(drafts()).toHaveLength(1);
+    expect(afterCalls).toHaveLength(0);
+    expect(db.tables.agent_idempotency_keys).toHaveLength(0);
+  });
+
+  it("writes for a paid plan set to cancel at period end", async () => {
+    quota.mockResolvedValue({ limit: 100, used: 1, remaining: 99, reason: "plan", plan: "starter", trial: null });
+    const { POST } = await import("@/app/api/agent/v1/articles/generate/route");
+    expect((await POST(generate())).status).toBe(202);
+    expect(drafts()).toHaveLength(2);
+  });
+});

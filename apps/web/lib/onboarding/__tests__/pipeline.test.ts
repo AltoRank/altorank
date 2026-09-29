@@ -516,4 +516,15 @@ describe("the trial gate and the first plan", () => {
     await collect();
     expect(generate).toHaveBeenCalledTimes(1);
   });
+  it("writes nothing for a site added after the trial was cancelled, and buys no research for it", async () => {
+    const TRIAL_END = "2026-10-06T12:00:00.000Z";
+    quota.mockResolvedValue({ limit: 100, used: 5, remaining: 95, reason: "plan", plan: "starter", trial: { endsAt: TRIAL_END, daysLeft: 5, cancelsAt: TRIAL_END } });
+    plan.mockResolvedValue([]);
+    const events = await collect();
+    const drafting = events.filter((e) => e.phase === "drafting").at(-1) as { status: string; detail?: string };
+    expect(drafting.status).toBe("skipped");
+    expect(drafting.detail).toMatch(/^Your trial is cancelled, so nothing new is drafted\./);
+    expect(recommend).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
 });

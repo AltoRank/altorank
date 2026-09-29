@@ -181,6 +181,15 @@ describe("subscription cancelled", () => {
     expect(e.html).toContain("stays readable and exportable");
   });
 
+  it("tells a trial cancelled before its first charge that drafting stopped now, not at the date", () => {
+    const e = renderSubscriptionCancelled({ accountName: "Acme", planLabel: "Managed", endsAt: "2026-10-06T12:00:00Z", trial: true });
+    expect(e.subject).toBe("Your trial is cancelled; nothing will be charged");
+    expect(e.html).toContain("Nothing new is drafted from now on");
+    expect(e.html).toContain("stay readable until October 6, 2026");
+    expect(e.html).toContain("Keep the plan instead");
+    expect(e.html).not.toContain("Until then everything works");
+  });
+
   it("stays honest when Stripe gave no date", () => {
     const e = renderSubscriptionCancelled({ accountName: null, planLabel: "Managed", endsAt: null });
     expect(e.subject).toBe("Your plan is set to end");

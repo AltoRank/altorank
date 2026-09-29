@@ -147,6 +147,32 @@ describe("a resumed week's entry", () => {
   });
 });
 
+describe("a resumed week after the trial is cancelled before its first charge", () => {
+  // The week's burst runs through here, one entry at a time; a person who
+  // cancels mid-burst has the rest of it refused at its next step.
+  const TRIAL_END = "2026-10-06T12:00:00.000Z";
+  const trialing = (cancelsAt: string | null) => ({
+    limit: 100, used: 5, remaining: 95, reason: "plan", plan: "starter",
+    trial: { endsAt: TRIAL_END, daysLeft: 5, cancelsAt },
+  });
+
+  it("writes nothing, says why on the entry, and hands the week on so the chain reaches its end", async () => {
+    getQuota.mockResolvedValue(trialing(TRIAL_END));
+    const res = await post(resumed);
+    expect(await res.json()).toEqual({ status: "skipped", reason: "trial-cancelled" });
+    expect(generateArticle).not.toHaveBeenCalled();
+    expect(db.rows("calendar_entries")[0]).toMatchObject({ draft_failure: expect.stringMatching(/^Your trial is cancelled, so nothing new is drafted\./), article_id: null });
+    await runDeferred();
+    expect(continueFrom).toHaveBeenCalledTimes(1);
+  });
+
+  it("writes the entry for a paid plan set to cancel at period end", async () => {
+    getQuota.mockResolvedValue({ limit: 100, used: 40, remaining: 60, reason: "plan", plan: "starter", trial: null });
+    await post(resumed);
+    expect(generateArticle).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("the onboarding run's first draft", () => {
   const first = { workspaceId: "ws1", runId: "run-1", keyword: "crm for agencies", keywordId: null };
   const gated = (used: number) => ({ limit: 7, used, remaining: 7 - used, reason: "no-plan", plan: null, trialEligible: true });

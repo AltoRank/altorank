@@ -82,7 +82,7 @@ vi.mock("@/lib/email/schedule-events", () => ({
 
 import { GET } from "../generate/route";
 import { TrialHoldError } from "@/lib/billing/trial-hold";
-import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
+import { TRIAL_HOLD_MESSAGE, trialCancelledMessage } from "@/lib/billing/trial-refusal";
 
 const req = () => new Request("http://localhost/api/cron/generate", { headers: { "x-cron-secret": "s" } });
 const GOOD = { term: "crm for agencies", keywordId: "k1", action: "write", quality: "ok", reasons: ["fixture"], score: 1, difficulty: 10, volume: 100 };
@@ -132,6 +132,30 @@ describe("cron/generate and a trial-gated account", () => {
     expect(body.results[0]).toMatchObject({ status: "skipped", detail: TRIAL_HOLD_MESSAGE });
     expect(body.errors).toBe(0);
     expect(claim.recordEntryFailure).toHaveBeenCalledWith(expect.anything(), "e1", expect.stringMatching(/^cron:/), TRIAL_HOLD_MESSAGE);
+  });
+});
+
+describe("cron/generate and a trial cancelled before its first charge", () => {
+  // Still `trialing` to its last day, and the scheduled writer read that as a
+  // paid plan at the paid pace (assessment 2026-09-29).
+  const TRIAL_END = "2026-10-06T12:00:00.000Z";
+  const trialing = (cancelsAt: string | null) => ({
+    limit: 100, used: 5, remaining: 95, reason: "plan", plan: "starter",
+    trial: { endsAt: TRIAL_END, daysLeft: 5, cancelsAt },
+  });
+
+  it("writes nothing more, buys no research for it, and says why", async () => {
+    getQuota.mockResolvedValue(trialing(TRIAL_END));
+    const body = await (await GET(req())).json();
+    expect(body.results[0]).toMatchObject({ status: "skipped", detail: trialCancelledMessage(TRIAL_END) });
+    expect(recommendKeywords).not.toHaveBeenCalled();
+    expect(generateArticle).not.toHaveBeenCalled();
+  });
+
+  it("keeps writing for a paid plan set to cancel at period end", async () => {
+    getQuota.mockResolvedValue({ limit: 100, used: 40, remaining: 60, reason: "plan", plan: "starter", trial: null });
+    const body = await (await GET(req())).json();
+    expect(body.generated).toBe(1);
   });
 });
 
