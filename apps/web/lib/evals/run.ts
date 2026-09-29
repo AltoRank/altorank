@@ -18,6 +18,7 @@ import type { PageFetcher } from "@/lib/seo/citation-check";
 import { pipelineOf, runBuyerFit, runFactCheck, runQualification } from "./decisions";
 import { Budget, BudgetExceededError, Recorder, type ModelClient, type RecorderMode } from "./recorder";
 import { scoreDecision, type DecisionScore } from "./score";
+import { caseFunnels, type CaseFunnel } from "./funnel";
 import type { ClaimCase, DecisionCase, DecisionName, Scored } from "./types";
 
 function jsonFiles(dir: string): string[] {
@@ -56,6 +57,8 @@ export interface EvalResult {
   recorder: Recorder;
   /** Set when the run stopped at its spend cap; the scores cover what ran before it. */
   stoppedAt?: string;
+  /** Per case, the pipeline items as the planner's funnel: labels and product side by side. */
+  funnels: CaseFunnel[];
 }
 
 export async function runEvals(options: EvalOptions): Promise<EvalResult> {
@@ -96,7 +99,7 @@ export async function runEvals(options: EvalOptions): Promise<EvalResult> {
   add("qualification", qualification);
   add("pipeline", pipelineOf(fit, qualification, cases));
   add("fact-check", facts);
-  return { items, scores, recorder, stoppedAt };
+  return { items, scores, recorder, stoppedAt, funnels: caseFunnels(items) };
 }
 
 /** What a live run would buy, priced before anything is spent. */

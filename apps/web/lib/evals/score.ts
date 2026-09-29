@@ -3,6 +3,8 @@
 // ---------------------------------------------------------------------------
 
 import type { DecisionName, Scored } from "./types";
+import { funnelTable } from "@/lib/keyword-research/topic-funnel";
+import type { CaseFunnel } from "./funnel";
 
 export interface LabelScore {
   label: string;
@@ -80,6 +82,8 @@ export function renderMarkdown(input: {
   items: Scored[];
   meta: Record<string, string | number>;
   worst?: number;
+  /** The pipeline items as the planner's funnel, per case (./funnel.ts). */
+  funnels?: readonly CaseFunnel[];
 }): string {
   const lines: string[] = [`# ${input.title}`, ""];
   for (const [k, v] of Object.entries(input.meta)) lines.push(`- ${k}: ${v}`);
@@ -100,6 +104,10 @@ export function renderMarkdown(input: {
       for (const w of wrong) lines.push(`| ${cell(w.caseId)} | ${cell(w.item)} | ${w.expected} | ${w.predicted} | ${cell(w.reason)} | ${cell(w.note)} |`);
       lines.push("");
     }
+  }
+  if (input.funnels?.length) {
+    lines.push("## funnel", "", "The end-to-end items as the planner's funnel (lib/keyword-research/topic-funnel.ts): what the labels say, and what the product made of it. The recommender's free gates are not in a case, so they are not here.", "");
+    for (const f of input.funnels) lines.push(`### ${f.caseId}`, "", funnelTable([{ label: "labels", funnel: f.labels }, { label: "product", funnel: f.product }]), "");
   }
   return `${lines.join("\n")}\n`;
 }
