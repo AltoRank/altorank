@@ -9,7 +9,9 @@
 // spend gate, the crons' `draftBlocker` and `generateArticle` refuse - with no
 // article row written. Then "Keep my plan" (the same event with the
 // cancellation undone) opens drafting again, and a paid plan set to cancel at
-// period end drafts on. The trial gate is read the same way for the held
+// period end drafts on. An in-app cancel, whose own write lands before the
+// event, still sends the cancellation email once, and a trial ended by a
+// date alone stops drafting too. The trial gate is read the same way for the held
 // drafts digest, against an account that has not started its trial.
 //
 // Billing is switched on with a dummy secret key that never leaves the
@@ -18,13 +20,23 @@
 // Seeds one trialing account and one gated account with invented names and
 // deletes both at the end.
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import Stripe from "stripe";
 import { connectLocalStack } from "@/lib/__tests__/support/local-db";
 
 process.env.STRIPE_SECRET_KEY = "sk_test_dummy_never_sent";
 process.env.STRIPE_WEBHOOK_SECRET = "whsec_local_trial_cancel_test";
 delete process.env.TRIAL_GATE_DISABLED;
+
+// The cancellation email is spied, not sent: which events send it is the
+// question, and the real one would try to reach a mail provider.
+const { cancelledEmail } = vi.hoisted(() => ({
+  cancelledEmail: vi.fn(async (..._a: unknown[]) => ({ sent: 1, skipped: 0, failed: 0 })),
+}));
+vi.mock("@/lib/email/lifecycle", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  notifySubscriptionCancelled: (...a: unknown[]) => cancelledEmail(...a),
+}));
 
 const STACK = await connectLocalStack();
 
@@ -47,7 +59,7 @@ let gatedAccountId = "";
 let gatedWorkspaceId = "";
 
 /** A signed subscription event, delivered to the real route. */
-async function deliver(sub: Record<string, unknown>): Promise<Response> {
+async function deliver(sub: Record<string, unknown>, previousAttributes: Record<string, unknown> = {}): Promise<Response> {
   const payload = JSON.stringify({
     id: `evt_${RUN}_${Math.random().toString(36).slice(2)}`,
     object: "event",
@@ -66,7 +78,7 @@ async function deliver(sub: Record<string, unknown>): Promise<Response> {
         pause_collection: null,
         ...sub,
       },
-      previous_attributes: {},
+      previous_attributes: previousAttributes,
     },
   });
   const header = new Stripe("sk_test_dummy_never_sent").webhooks.generateTestHeaderString({
@@ -171,6 +183,48 @@ describe.skipIf(!STACK)("a trial cancel on the local database", () => {
     expect((await deliver({ cancel_at_period_end: false, cancel_at: null })).status).toBe(200);
     const { data: row } = await db.from("accounts").select("cancels_at").eq("id", accountId).single();
     expect(row?.cancels_at).toBeNull();
+    expect(await canSpend(db, accountId, { userEmail: null, workspaceId, action: "scheduled-work" })).toMatchObject({ allowed: true, reason: "plan" });
+  });
+
+  it("sends the cancellation email for an in-app cancel, whose own write lands before Stripe's event", async () => {
+    // `cancelPlan` writes `cancels_at` as soon as Stripe answers; the event
+    // arrives after. The webhook compared the row with the event, found the
+    // date already there and sent nothing, so the Billing page's own button
+    // never produced the email the portal's did.
+    cancelledEmail.mockClear();
+    const { error } = await db.from("accounts").update({ cancels_at: TRIAL_END }).eq("id", accountId);
+    if (error) throw new Error(error.message);
+    const res = await deliver(
+      { cancel_at_period_end: true, cancel_at: TRIAL_END_S },
+      { cancel_at_period_end: false, cancel_at: null },
+    );
+    expect(res.status).toBe(200);
+    expect(cancelledEmail).toHaveBeenCalledTimes(1);
+    expect(cancelledEmail.mock.calls[0][1]).toBe(accountId);
+    expect(cancelledEmail.mock.calls[0][2]).toMatchObject({ trial: true, endsAt: TRIAL_END });
+    expect(cancelledEmail.mock.calls[0][3]).toBe(SUB);
+
+    // A later update that does not touch the cancellation sends nothing more.
+    expect((await deliver({ cancel_at_period_end: true, cancel_at: TRIAL_END_S }, { metadata: {} })).status).toBe(200);
+    expect(cancelledEmail).toHaveBeenCalledTimes(1);
+
+    expect((await deliver({ cancel_at_period_end: false, cancel_at: null })).status).toBe(200);
+  });
+
+  it("stops drafting for a trial ended by a date alone, without cancel-at-period-end", async () => {
+    // A cancel set from the Stripe dashboard, or with `cancel_at` through the
+    // API, reports `cancel_at_period_end: false`. It was never recorded, so
+    // the trial drafted on to its last day.
+    const res = await deliver({ cancel_at_period_end: false, cancel_at: TRIAL_END_S });
+    expect(res.status).toBe(200);
+    const { data: row } = await db.from("accounts").select("cancels_at").eq("id", accountId).single();
+    expect(new Date(row?.cancels_at as string).toISOString()).toBe(TRIAL_END);
+    expect(await canSpend(db, accountId, { userEmail: null, workspaceId, action: "scheduled-work" })).toMatchObject({
+      allowed: false,
+      reason: "trial-cancelled",
+    });
+
+    expect((await deliver({ cancel_at_period_end: false, cancel_at: null })).status).toBe(200);
     expect(await canSpend(db, accountId, { userEmail: null, workspaceId, action: "scheduled-work" })).toMatchObject({ allowed: true, reason: "plan" });
   });
 

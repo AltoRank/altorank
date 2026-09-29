@@ -112,6 +112,13 @@ export type HoldQuota = Pick<Quota, "reason" | "used"> & { trialEligible?: boole
  * that will be charged first, and keeps drafting like any paid plan set to
  * end. A paid (`active`) subscription set to cancel has no `trial` and is
  * never this.
+ *
+ * Known edge, accepted: nothing records whether an invoice was ever paid, so
+ * a customer who paid before and is later given a trial period from the
+ * Stripe dashboard (a comp or an extension), then schedules a cancel inside
+ * it, is read as this too and stops drafting at once. Every trial this
+ * product starts is the first one (lib/billing/trial.ts, trialEligible), so
+ * only a hand-made trial can reach it.
  */
 export function trialCancelledBeforeCharge(quota: Pick<HoldQuota, "reason" | "trial"> | null | undefined): boolean {
   if (quota?.reason !== "plan") return false;
