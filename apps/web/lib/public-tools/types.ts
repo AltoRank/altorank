@@ -13,6 +13,14 @@ import type { SafeFetch } from "./safe-fetch";
  */
 export type ToolKind = "fetch" | "ai" | "data";
 
+/**
+ * The paid kinds, which need a signed-in account with a confirmed email and
+ * count against that account's daily runs (handler.ts, user-runs.ts).
+ */
+export function isPaidKind(kind: ToolKind): boolean {
+  return kind !== "fetch";
+}
+
 export interface ToolContext {
   /** The caller's address as our edge saw it. For logging, never for output. */
   ip: string;

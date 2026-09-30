@@ -40,7 +40,26 @@ function fallbackLine(url: string): string {
   return `<p style="margin:0 0 14px;font-size:12px;line-height:1.6;color:${EMAIL_INK_3};word-break:break-all;">If the button does not work, paste this into your browser:<br>${esc(url)}</p>`;
 }
 
-export function renderConfirmSignup(url: string, email: string) {
+/**
+ * `tools`: the account-only signup from a free tool on altorank.co. It has no
+ * workspace and no drafts behind it, so it must not say it does; the link
+ * goes back to the tool.
+ */
+export type SignupVariant = "product" | "tools";
+
+export function renderConfirmSignup(url: string, email: string, variant: SignupVariant = "product") {
+  if (variant === "tools") {
+    return {
+      footerNote: `Sent to ${email} because an account was created on AltoRank with this address. If that was not you, ignore this email.`,
+      subject: "Confirm your email to use the AltoRank tools",
+      html:
+        `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Confirm your email</h1>` +
+        emailParagraph("One click confirms your address and takes you back to the tool you were using, with what you typed still there.") +
+        emailButton(url, "Confirm and go back to the tool") +
+        emailParagraph("The link expires in 24 hours. The account is free and no card is asked for.") +
+        fallbackLine(url),
+    };
+  }
   return {
     footerNote: `Sent to ${email} because an account was created on AltoRank with this address. If that was not you, ignore this email.`,
     subject: "Confirm your AltoRank account",
@@ -109,22 +128,41 @@ async function tokenHashFor(type: "recovery", email: string): Promise<string | n
  * Create the user (unconfirmed) and email the confirmation link.
  * Returns the new user's id, or throws with a message safe to show.
  */
-export async function sendSignupConfirmation(opts: { email: string; password: string; name: string; next?: string }): Promise<string> {
+export async function sendSignupConfirmation(opts: {
+  email: string;
+  password: string;
+  /** Omitted by the tools signup, which asks for no name and no domain. */
+  name?: string;
+  next?: string;
+  variant?: SignupVariant;
+}): Promise<string> {
   const admin = createServiceClient();
+  const variant = opts.variant ?? "product";
+  // What signed up where, kept on the user so a later reader can tell an
+  // account made for the free tools from one made for the product.
+  const meta: Record<string, string> = {};
+  if (opts.name) meta.name = opts.name;
+  if (variant === "tools") meta.signup_source = "tools";
   // `signup` creates the user when it does not exist and returns the token
   // for the confirmation link; no email leaves Supabase.
   const { data, error } = await admin.auth.admin.generateLink({
     type: "signup",
     email: opts.email,
     password: opts.password,
-    options: { data: { name: opts.name } },
+    options: { data: meta },
   });
   if (error || !data.user) throw new Error(error?.message ?? "Could not create the account");
 
   const url = authLink("signup", data.properties.hashed_token, opts.next ?? "/dashboard");
-  const { subject, html, footerNote } = renderConfirmSignup(url, opts.email);
+  const { subject, html, footerNote } = renderConfirmSignup(url, opts.email, variant);
   try {
-    await sendTransactionalEmail(opts.email, subject, html, footerNote, "One click and your account is live.");
+    await sendTransactionalEmail(
+      opts.email,
+      subject,
+      html,
+      footerNote,
+      variant === "tools" ? "One click and you are back at the tool." : "One click and your account is live.",
+    );
   } catch (e) {
     // The user exists by now and the link that would confirm them never left.
     // Left alone, the next attempt is refused as "already registered" and

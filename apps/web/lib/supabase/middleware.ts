@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { afterSignIn } from "@/lib/auth/next-path";
 import { REQUEST_PATH_HEADER } from "@/lib/billing/gate-paths";
+import { toolReturnPath, toolSlugFromReturnUrl } from "@/lib/public-tools/return-url";
 
 // Everything is private unless it is on this list.
 //
@@ -135,8 +136,13 @@ export async function updateSession(request: NextRequest) {
   // `next` - somebody already signed in who opens a mailed link, or who was
   // sent here by the connector consent screen, should land on the page they
   // asked for rather than be told to go to the dashboard and find it.
+  //
+  // A tool page's "Sign in" / "Sign up" link carries `return_to` instead: the
+  // person is already signed in here, so straight back to the tool
+  // (lib/public-tools/return-url.ts).
   if (user && (path === "/signin" || path === "/signup")) {
-    const target = afterSignIn(request.nextUrl.searchParams.get("next"));
+    const toolSlug = toolSlugFromReturnUrl(request.nextUrl.searchParams.get("return_to"));
+    const target = toolSlug ? toolReturnPath(toolSlug) : afterSignIn(request.nextUrl.searchParams.get("next"));
     return NextResponse.redirect(new URL(target, request.nextUrl.origin));
   }
 

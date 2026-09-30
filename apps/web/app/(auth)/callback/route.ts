@@ -4,6 +4,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { notifyWelcome } from "@/lib/email/lifecycle";
 import { accountTrialGate } from "@/lib/billing/body-lock";
 import type { EmailOtpType } from "@supabase/supabase-js";
+import { slugFromToolReturnPath } from "@/lib/public-tools/return-url";
 
 const SAFE_NEXT = /^\/[a-zA-Z0-9/_-]*$/;
 
@@ -43,7 +44,12 @@ export async function GET(request: Request) {
       // already in their inbox, and a second email before they have clicked it
       // is two emails each saying to click the other one. `sendOnce` is keyed
       // by the user id, so re-opening the link does not send a second.
-      if (type === "signup" && verified.user) await sendWelcome(verified.user.id);
+      //
+      // Not for a signup from a free tool (next = /tool-return/<slug>): that
+      // person asked for a tool, not the product, and is on their way back to
+      // it. The welcome's "continue setup" would be a second email about
+      // something they did not start.
+      if (type === "signup" && verified.user && !slugFromToolReturnPath(next)) await sendWelcome(verified.user.id);
       return NextResponse.redirect(`${origin}${next}`);
     }
     return NextResponse.redirect(
