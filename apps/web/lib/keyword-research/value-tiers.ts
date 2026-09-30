@@ -88,6 +88,15 @@ export function capValue(graded: BusinessValue, named: unknown, services: readon
   return { value: graded, service, capped: false };
 }
 
+/**
+ * An approval the #263 floor wrote (until 2026-10): a not_editorial page
+ * promoted into a short plan. The page type never relaxes now, so it is not
+ * an approval the planner takes; it is judged again when its verdict ages out.
+ */
+export function retiredFloorApproval(o: Pick<Opportunity, "status" | "confidence" | "reason"> | null | undefined): boolean {
+  return o?.status === "qualified" && o.confidence === "lower" && typeof o.reason === "string" && o.reason.startsWith("Lower confidence: fewer articles hold this search");
+}
+
 /** A verdict's value for ordering. Ungraded (saved before grades existed) reads as 1: no service was named. */
 export function valueOf(o: Pick<Opportunity, "value"> | null | undefined): BusinessValue {
   return readValue(o?.value) ?? 1;
@@ -267,7 +276,7 @@ export interface FirstArticleChoice<T> {
 
 /** A verdict the first article may be written on: approved on an editorial page, value 2 or more. */
 export function firstArticleEligible(o: Opportunity | null | undefined): boolean {
-  return o?.status === "qualified" && (o.format === "article" || o.format === "mixed") && valueOf(o) >= 2;
+  return o?.status === "qualified" && (o.format === "article" || o.format === "mixed") && valueOf(o) >= 2 && !retiredFloorApproval(o);
 }
 
 const RISK_WORDS: Record<FactRisk["kind"], string> = {

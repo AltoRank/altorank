@@ -161,6 +161,14 @@ describe("no floor: the page type never relaxes", () => {
     expect(funnel).toMatchObject({ qualified: 0, removed: { buyer_fit: 1, needs_page: 1, no_value: 1, not_editorial: 1 } });
     expect(describeFunnel(funnel)).toContain("1 value 0");
   });
+  it("does not take an approval the retired floor wrote", async () => {
+    const fingerprint = contextKey(CONTEXT);
+    const floorPick: Opportunity = { ...approved("chain wear"), context: fingerprint, confidence: "lower", reason: "Lower confidence: fewer articles hold this search than the bar asks for, and it is planned because fewer than 3 topics cleared it." };
+    verdicts = {};
+    const { recs } = await recommend([row("old", "chain wear checker", { opportunity: floorPick })]);
+    expect(recs.find((r) => r.keywordId === "old")).toMatchObject({ action: "skip" });
+    expect(recs.find((r) => r.keywordId === "old")?.reasons[0]).toMatch(/^Planned by the retired floor/);
+  });
   it("does not unpark a not_editorial verdict an earlier run saved", async () => {
     const fingerprint = contextKey(CONTEXT);
     const parked = { ...thin("chain wear"), context: fingerprint };

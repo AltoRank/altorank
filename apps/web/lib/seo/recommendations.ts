@@ -9,7 +9,7 @@ import { funnelOf, type FitVerdict, type Funnel } from "@/lib/keyword-research/b
 import { isJudgeable, isParked, isParkedForGood, isRequalifiable, parkKeywords, queueTarget, refillQualifiedQueue, RefillRefusedError, type QueueRow } from "@/lib/keyword-research/queue";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 import { stageOfVerdict, tallyFunnel, type FunnelOutcome, type FunnelStage, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
-import { planOrder, rankOf, tierOf, type ValueTier } from "@/lib/keyword-research/value-tiers";
+import { planOrder, rankOf, retiredFloorApproval, tierOf, type ValueTier } from "@/lib/keyword-research/value-tiers";
 // ---------------------------------------------------------------------------
 // What to write next
 // ---------------------------------------------------------------------------
@@ -1120,8 +1120,12 @@ export async function recommendKeywords(
     // The label goes with the verdict wherever it is shown, however old.
     const o = found && rec.demand ? { ...found, demand: rec.demand } : found;
     rec.opportunity = o;
-    if (o?.status === "qualified") {
+    if (o?.status === "qualified" && !retiredFloorApproval(o)) {
       approvals.push(rec);
+    } else if (o?.status === "qualified") {
+      // The page type never relaxes (lib/keyword-research/value-tiers.ts).
+      rec.action = "skip";
+      rec.reasons.unshift("Planned by the retired floor on a results page short of articles: not an article topic. Judged again when its verdict ages out.");
     } else if (options?.qualify || o) {
       rec.action = o?.existingUrl ? "refresh" : "skip";
       rec.reasons.unshift(o?.reason ?? "Topic qualification pending: buyer fit and live search evidence are required before automatic writing.");

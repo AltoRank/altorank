@@ -520,7 +520,10 @@ function gridCount(weeklyLimit: number, horizon: number, cap: number): number {
 
 /** The verdict a planned topic carries onto the calendar: its tier, and "lower" when a rule was relaxed for it. */
 function labelled(o: Opportunity, tier: PlannedTier, relaxed: boolean): Opportunity {
-  const out: Opportunity = { ...o, tier };
+  // An earlier plan's label does not carry over: this plan says what it relaxed.
+  const { confidence: _earlier, ...rest } = o;
+  void _earlier;
+  const out: Opportunity = { ...rest, tier };
   if (relaxed) out.confidence = "lower";
   return out;
 }
