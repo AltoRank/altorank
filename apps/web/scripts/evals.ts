@@ -9,8 +9,9 @@
  *   npm run evals -- --fixtures=DIR --capture-serp  buy results pages for terms that have none (live)
  *   npm run evals -- --fixtures=DIR --capture-pages store copies of cited pages for claim cases
  *
- * Options: --only=buyer-fit,qualification,pipeline,fact-check  --case=ID[,ID]
+ * Options: --only=buyer-fit,qualification,pipeline,plan,fact-check  --case=ID[,ID]
  *          --out=DIR (writes report.md + report.json)  --worst=N  --require-complete
+ *          --require-invariants (exit 1 when a plan breaks one: lib/evals/plan.ts)
  * DIR may also come from ALTORANK_EVAL_FIXTURES. Live mode reads ANTHROPIC_API_KEY
  * (and DATAFORSEO_* for --capture-serp) from the environment and nothing else.
  */
@@ -94,18 +95,33 @@ async function main() {
     "spent this run": `$${result.recorder.budget.spentUsd.toFixed(4)}`,
   };
   if (result.stoppedAt) meta["stopped"] = result.stoppedAt;
-  const markdown = renderMarkdown({ title: "Decision evals", scores: result.scores, items: result.items, meta, worst: Number(arg("worst") ?? 25), funnels: result.funnels });
+  const markdown = renderMarkdown({ title: "Decision evals", scores: result.scores, items: result.items, meta, worst: Number(arg("worst") ?? 25), funnels: result.funnels, plans: result.plans, value: result.value });
   const out = arg("out");
   if (out) {
     const target = path.resolve(out);
     mkdirSync(target, { recursive: true });
     writeFileSync(path.join(target, "report.md"), markdown);
-    writeFileSync(path.join(target, "report.json"), `${JSON.stringify({ meta, scores: result.scores, funnels: result.funnels, items: result.items }, null, 2)}\n`);
+    writeFileSync(path.join(target, "report.json"), `${JSON.stringify({ meta, scores: result.scores, funnels: result.funnels, plans: result.plans, value: result.value, items: result.items }, null, 2)}\n`);
     log(`Wrote ${path.join(target, "report.md")}`);
   }
   console.log(markdown);
   if (arg("require-complete") && result.recorder.misses > 0) {
     console.error(`${result.recorder.misses} prompts have no stored answer: the prompts changed since the last live run. Re-record with --live.`);
+    process.exitCode = 1;
+  }
+  // The product's plans in one line, strict precision first: whether the
+  // invariants hold, and how many labelled slots are revenue topics.
+  const mine = result.plans.filter((p) => p.selector === result.plans[0]?.selector);
+  if (mine.length) {
+    const labelled = mine.reduce((n, p) => n + p.slots.labelled, 0);
+    const strict = mine.reduce((n, p) => n + p.slots.strict, 0);
+    const lenient = mine.reduce((n, p) => n + p.slots.correct, 0);
+    const breaks = mine.reduce((n, p) => n + p.violations.length, 0);
+    log(`Plans (${result.plans[0].selector}): slot precision ${strict}/${labelled} at value >= 2 (lenient ${lenient}/${labelled}); ${breaks} invariant break${breaks === 1 ? "" : "s"}.`);
+  }
+  const broken = result.plans.filter((p) => p.violations.length && p.selector === result.plans[0]?.selector);
+  if (arg("require-invariants") && broken.length) {
+    console.error(`${broken.length} plan(s) break an invariant: ${broken.map((p) => `${p.caseId}: ${p.violations.join("; ")}`).join(" | ")}`);
     process.exitCode = 1;
   }
   if (result.stoppedAt) process.exitCode = 2;

@@ -5,6 +5,7 @@
 import type { DecisionName, Scored } from "./types";
 import { funnelTable } from "@/lib/keyword-research/topic-funnel";
 import type { CaseFunnel } from "./funnel";
+import { renderPlanMarkdown, type CasePlanScore, type valueAgreement } from "./plan";
 
 export interface LabelScore {
   label: string;
@@ -84,6 +85,10 @@ export function renderMarkdown(input: {
   worst?: number;
   /** The pipeline items as the planner's funnel, per case (./funnel.ts). */
   funnels?: readonly CaseFunnel[];
+  /** The plans made from the reader's verdicts, per case and selector (./plan.ts). */
+  plans?: readonly CasePlanScore[];
+  /** The reader's value grades against the value labels. */
+  value?: ReturnType<typeof valueAgreement>;
 }): string {
   const lines: string[] = [`# ${input.title}`, ""];
   for (const [k, v] of Object.entries(input.meta)) lines.push(`- ${k}: ${v}`);
@@ -109,5 +114,6 @@ export function renderMarkdown(input: {
     lines.push("## funnel", "", "The end-to-end items as the planner's funnel (lib/keyword-research/topic-funnel.ts): what the labels say, and what the product made of it. The recommender's free gates are not in a case, so they are not here.", "");
     for (const f of input.funnels) lines.push(`### ${f.caseId}`, "", funnelTable([{ label: "labels", funnel: f.labels }, { label: "product", funnel: f.product }]), "");
   }
+  if (input.plans?.length) lines.push(renderPlanMarkdown(input.plans, input.value));
   return `${lines.join("\n")}\n`;
 }

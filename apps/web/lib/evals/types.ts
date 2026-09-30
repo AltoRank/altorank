@@ -39,8 +39,13 @@ export type ClaimLabel = "supported" | "unsupported" | "misattributed";
 
 export interface TermCase {
   term: string;
-  /** Searches a month, when measured. Only used to rank disagreements. */
+  /**
+   * Searches a month, when measured. Ranks disagreements, and orders the
+   * plan scorer's candidates (./plan.ts): absent or null is unmeasured.
+   */
   volume?: number | null;
+  /** The provider's keyword difficulty (0-100), when stored: the plan scorer's winnability. Absent is unknown. */
+  difficulty?: number | null;
   /** The page on the site the term came from, if any (existing-page check). */
   sourceUrl?: string | null;
   /**
@@ -61,6 +66,15 @@ export interface TermCase {
     shape?: ArticleShape;
     /** For a kept term: whose search it is. */
     funnel?: Funnel;
+    /**
+     * Business value, 0-3, as a person grades it: 3 the answer is one of the
+     * owner's services, 2 a problem a service solves asked by a likely
+     * customer, 1 general interest in the field, 0 no path to the business.
+     * Optional: the plan scorer reads it where it is written.
+     */
+    value?: 0 | 1 | 2 | 3;
+    /** The owner's service the topic leads to, as the case's offerings name it. */
+    service?: string;
     /** Why, in a sentence, from the evidence. Shown next to a disagreement. */
     note?: string;
   };
@@ -74,6 +88,8 @@ export interface DecisionCase {
   business: FitProfile;
   /** The date the prompts carry, pinned so a stored answer replays. */
   today: string;
+  /** The site's domain rating when the case was captured: the plan scorer's winnability. Absent is unknown. */
+  authority?: number | null;
   terms: TermCase[];
 }
 
@@ -89,7 +105,8 @@ export interface ClaimCase {
   expect: Array<{ id: string; match: string; label: ClaimLabel; note?: string }>;
 }
 
-export type DecisionName = "buyer-fit" | "qualification" | "pipeline" | "fact-check";
+/** `plan` is scored as plans (./plan.ts), not as agreement: it adds no `Scored` items. */
+export type DecisionName = "buyer-fit" | "qualification" | "pipeline" | "fact-check" | "plan";
 
 /** One scored item: what the label says, what the product said, and why. */
 export interface Scored {

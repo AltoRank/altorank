@@ -22,9 +22,14 @@ export interface TopicLabel {
  * the real number: the row's own volume, when it has one, wins.
  */
 export function topicLabels(verdict: unknown, current?: { volume?: number | null }): TopicLabel[] {
-  const o = verdict && typeof verdict === "object" ? (verdict as { confidence?: unknown; demand?: unknown; funnel?: unknown }) : null;
+  const o = verdict && typeof verdict === "object" ? (verdict as { confidence?: unknown; demand?: unknown; funnel?: unknown; tier?: unknown }) : null;
   const out: TopicLabel[] = [];
-  if (o?.funnel === "audience") {
+  if (o?.tier === "t3") {
+    out.push({
+      label: "Top of funnel",
+      explain: "General interest in your field rather than one of your services: an easier article that earns a reader's trust before they need you. At most one in five planned topics is one.",
+    });
+  } else if (o?.funnel === "audience") {
     out.push({
       label: "Top of funnel",
       explain: "The reader has the problem you solve and is learning about it, not shopping yet: an article that earns their trust before they compare providers.",
@@ -33,7 +38,7 @@ export function topicLabels(verdict: unknown, current?: { volume?: number | null
   if (o?.confidence === "lower") {
     out.push({
       label: "Lower confidence",
-      explain: "Planned because fewer than three topics cleared the bar: the searcher is one you serve, but fewer results for this search are articles than we ask for.",
+      explain: "Planned to reach three topics: fewer than three were both about a service you sell and within reach, so this one is weaker on business value or on reach than we aim for.",
     });
   }
   const measuredNow = typeof current?.volume === "number";

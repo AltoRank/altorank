@@ -116,6 +116,13 @@ export interface GenerateArticleOptions {
     score: number;
     difficulty: number | null;
     volume: number | null;
+    /**
+     * What the picker asks a person to do before publishing, said at the top
+     * of the draft's review notes: the first-article rule's request for the
+     * owner's input on a topic that needs facts only they have
+     * (lib/keyword-research/value-tiers.ts `chooseFirstArticle`).
+     */
+    reviewNotes?: string[];
   };
   /**
    * Generate *into* an article that already exists, rather than creating one.
@@ -1046,7 +1053,7 @@ export async function generateArticle(
     // What the reviewer has to know or do before publishing, said once at the
     // top of the research panel rather than left for them to infer from a
     // failing check. Saved with the research below.
-    const reviewNotes: string[] = [...(trust?.notes ?? [])];
+    const reviewNotes: string[] = [...(selection?.reviewNotes ?? []), ...(trust?.notes ?? [])];
     const figureNote = figureReviewNote(research.sourceFigures, processedHtml, workspace.language);
     if (figureNote) reviewNotes.push(figureNote);
     const linkNote = topicLinkNote(topicPages, processedHtml);

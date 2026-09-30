@@ -296,10 +296,11 @@ type PoolRefill = TopUpOutcome & { workspaceId: string; domain: string | null };
 /**
  * Refill the pool of any workspace that has run out of keywords worth writing.
  *
- * Exhaustion is asked the same way the generate cron asks it - run the
- * recommender, then `pickNextKeyword` - so this fires exactly when generation
- * would otherwise report "no keyword qualifies", and never on a workspace that
- * still has something to write.
+ * Exhaustion is asked the way the generate cron asks it - run the
+ * recommender, then `pickNextKeyword` - but without the inventory fallback:
+ * a workspace with nothing left in a value tier researches for better
+ * topics even while the autopilot still writes from inventory, and the
+ * top-up's own `countReady` counts ready the same way.
  *
  * Gated on spend, like every other paid path. An account that has used its free
  * allowance does not get its pool refilled: buying more keywords for a site
@@ -351,7 +352,11 @@ async function refillEmptyPools(
     let exhausted = false;
     try {
       const recs = await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true });
-      exhausted = pickNextKeyword(recs) === null;
+      // Nothing in a value tier left: inventory (approvals out of reach, or
+      // general interest and hard) is what the autopilot falls back to, not
+      // a reason to stop researching better topics. `countReady` in the
+      // top-up counts the same way, so this never buys a no-op refill.
+      exhausted = pickNextKeyword(recs, { inventory: false }) === null;
     } catch {
       // A recommender that cannot run is not evidence of an empty pool.
       continue;

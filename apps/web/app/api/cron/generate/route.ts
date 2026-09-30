@@ -3,6 +3,7 @@ import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { summarizeQualification } from "@/lib/keyword-research/opportunity";
+import { chooseFirstArticle, firstArticleEligible } from "@/lib/keyword-research/value-tiers";
 import { setSpendReporter } from "@/lib/seo/client";
 import { recordSpend } from "@/lib/billing/spend";
 import { closeCoveredEntries, duePlannedKeyword, fulfilPlannedEntry } from "@/lib/onboarding/plan";
@@ -147,7 +148,7 @@ async function run(request: Request) {
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
-    .select("id, domain, account_id, auto_generate_weekly_limit, refresh_enabled, refresh_days, auto_approve, auto_approve_hold_hours, onboarded_at, onboarding_skipped_at")
+    .select("id, domain, account_id, language, auto_generate_weekly_limit, refresh_enabled, refresh_days, auto_approve, auto_approve_hold_hours, onboarded_at, onboarding_skipped_at")
     .eq("auto_generate", true)
     .neq("status", "paused");
 
@@ -391,7 +392,34 @@ async function run(request: Request) {
       const plannedRec = due ? recommendations.find((r) => r.term === due.term) ?? null : null;
       const planned = plannedRec?.action === "write" ? plannedRec : null;
       const refusedPlan = due && plannedRec && !planned ? plannedRec : null;
-      const next = planned ?? pickNextKeyword(recommendations);
+      let next = planned ?? pickNextKeyword(recommendations);
+      // An account before its trial writes one article, and it is the first
+      // article: the rule onboarding chooses it by (lib/keyword-research/
+      // value-tiers.ts `chooseFirstArticle`) holds here too, or a general-
+      // interest or out-of-reach topic goes out as the first thing the
+      // customer reads (review, 2026-09-30). The planned entry, when the rule
+      // admits it; else the rule over the approvals in a value tier; else
+      // nothing, and a person picks. A topic that needs the owner's facts
+      // carries the rule's review note onto the draft.
+      let reviewNotes: string[] = [];
+      if (next && trialGateApplies(quota)) {
+        const language = (ws as { language?: string | null }).language ?? null;
+        const pool = planned && firstArticleEligible(planned.opportunity)
+          ? [planned]
+          : recommendations.filter((r) => r.action === "write" && r.quality === "ok" && r.tier !== "inventory");
+        const choice = chooseFirstArticle(pool, (r) => ({ term: r.term, brief: r.opportunity }), { language });
+        if (!choice.pick) {
+          results.push({
+            workspaceId,
+            domain,
+            status: "skipped",
+            detail: `the first article waits for a person: ${choice.why}`,
+          });
+          continue;
+        }
+        next = choice.pick;
+        reviewNotes = choice.notes;
+      }
 
       // Said out loud in the run log: a plan quietly overruled is the kind of
       // thing that is only ever noticed months later, from the calendar.
@@ -447,7 +475,7 @@ async function run(request: Request) {
         keyword: next.term,
         // The planned entry names its keyword row, and that row carries the
         // owner's brief: instructions, answers, shape, length.
-        keywordId: planned ? (due?.keywordId ?? next.keywordId) : next.keywordId,
+        keywordId: planned && next === planned ? (due?.keywordId ?? next.keywordId) : next.keywordId,
         autonomous: true,
         // Explicitly nobody, matching the getQuota call above. Without this the
         // gate inside generateArticle resolves its own answer and can reach a
@@ -462,6 +490,7 @@ async function run(request: Request) {
           score: next.score,
           difficulty: next.difficulty,
           volume: next.volume,
+          ...(reviewNotes.length ? { reviewNotes } : {}),
         },
       });
 
@@ -477,7 +506,7 @@ async function run(request: Request) {
           supabase,
           due.entryId,
           result.articleId,
-          planned ? undefined : { term: next.term, keywordId: next.keywordId },
+          planned && next === planned ? undefined : { term: next.term, keywordId: next.keywordId },
         );
       }
 

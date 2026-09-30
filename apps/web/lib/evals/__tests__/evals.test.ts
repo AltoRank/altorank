@@ -44,6 +44,7 @@ const scripted = vi.fn<ModelClient>(async ({ prompt }) => {
   const kindOf = (title: string) => /pricing|plans/i.test(title) ? "product" : /sign in/i.test(title) ? "portal" : /official site|try free/i.test(title) ? "service" : /github/i.test(title) ? "tool" : "article";
   return { ...usage, text: JSON.stringify({
     kinds: data.results.map((r) => kindOf(r.title)),
+    value: pricing ? 2 : 3, service: "SEO article drafting with an approval gate",
     stage: /login/.test(data.query) ? "navigation" : "comparing", reason: pricing ? "Vendor pricing pages" : editorial.length >= 2 ? "Editorial results" : "Navigation",
     audience: "founders", buyingJob: "choose a tool", offering: "drafting", angle: `A guide to ${data.query}`,
     format: pricing ? "product" : editorial.length >= 2 ? "article" : "navigation", shape, conversionPath: "https://altorank.co", evidenceUrls: editorial,
@@ -143,6 +144,26 @@ describe("a run over the public sample", () => {
     const md = renderMarkdown({ title: "t", scores: result.scores, items: result.items, meta: {}, funnels: result.funnels });
     expect(md).toContain("## funnel");
     expect(md).toContain("| **qualified** |");
+  });
+
+  it("replays the planner over the reader's verdicts and keeps the plan invariants on the public sample", async () => {
+    await runEvals({ dir, mode: "live", model, rate, maxUsd: 1, client: scripted });
+    const result = await runEvals({ dir, mode: "replay", model, rate, maxUsd: 0 });
+    expect(result.recorder.misses).toBe(0);
+    expect(result.plans.length).toBeGreaterThan(0);
+    for (const plan of result.plans) {
+      // Required on every pull request: at least three planned when three
+      // could be, no search for one business, and nothing but editorial
+      // approvals in the blog plan, by the verdict and by the label.
+      expect(plan.violations).toEqual([]);
+      expect(plan.pageTypeInPlan.labelled).toEqual([]);
+      expect(plan.planned.length).toBeGreaterThanOrEqual(Math.min(3, plan.eligible));
+    }
+    const sample = result.plans.find((p) => p.caseId === "sample-altorank")!;
+    expect(sample.planned.map((p) => p.term).sort()).toEqual(["best ai seo writing tools", "outrank alternatives", "seo content approval workflow"]);
+    expect(sample.first.term).not.toBeNull();
+    const md = renderMarkdown({ title: "t", scores: result.scores, items: result.items, meta: {}, plans: result.plans, value: result.value });
+    expect(md).toContain("## plan");
   });
 
   it("reads the existing page from the results without asking the model", async () => {

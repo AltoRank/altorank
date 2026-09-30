@@ -25,6 +25,8 @@ import { CLAIM_LEASE_MS } from "@/lib/plan/draft-claim";
 import { PRE_TRIAL_DRAFTS, planHold } from "@/lib/billing/trial-hold";
 import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
 import { recommendKeywords, type KeywordRecommendation } from "@/lib/seo/recommendations";
+import { chooseFirstArticle, plannableApproval, rankOf, selectPlan, type PlannedTier, type Unplanned } from "@/lib/keyword-research/value-tiers";
+import { winnability } from "@/lib/seo/difficulty";
 import type { FirstLook } from "@/lib/keyword-research/opportunity";
 import { classifyKeyword, type KeywordTaxonomy } from "@/lib/keywords/taxonomy";
 import { generateQualityQuestionsBatch, parseStoredQuestions, toQualityQuestions } from "@/lib/keywords/questions";
@@ -381,7 +383,9 @@ async function planFor(
       const stage = whyNot(id);
       notPlanned[stage] = (notPlanned[stage] ?? 0) + 1;
     }
-    opts.onFunnel(withPlanned(seen.funnel, planned.length, notPlanned, planned.filter((p) => p.brief?.confidence === "lower").length));
+    const tiers: Partial<Record<PlannedTier, number>> = {};
+    for (const p of planned) if (p.brief?.tier) tiers[p.brief.tier] = (tiers[p.brief.tier] ?? 0) + 1;
+    opts.onFunnel(withPlanned(seen.funnel, planned.length, notPlanned, planned.filter((p) => p.brief?.confidence === "lower").length, planned.length ? tiers : undefined));
   };
   let recommended: KeywordRecommendation[];
   try {
@@ -425,7 +429,8 @@ async function planFor(
       ? supabase.from("keywords").select("id, opportunity").eq("workspace_id", workspaceId).in("id", [...takenIds])
       : Promise.resolve({ data: [] as Array<{ id: string; opportunity: unknown }> }),
   ]);
-  const language = intentLanguage((ws as { language?: string | null } | null)?.language);
+  const rawLanguage = (ws as { language?: string | null } | null)?.language ?? null;
+  const language = intentLanguage(rawLanguage);
   const serpOf = new Map(((keptRows ?? []) as Array<{ id: string; opportunity: unknown }>).map((r) => [r.id, storedSerp(r.opportunity)]));
   const kept: Array<StagedTopic & { rec?: KeywordRecommendation }> = existing
     .filter((e) => e.keyword)
@@ -444,15 +449,18 @@ async function planFor(
   const sameAsCalendar = new Set([...onCalendar].filter(([, f]) => !f.leader.rec).map(([t]) => t.rec));
   const recs = ranked.filter((rec) => !sameAsCalendar.has(rec));
   const recById = new Map(recommended.map((rec) => [rec.keywordId, rec]));
-  // In the order the planner applies them; `buildPlan` takes only writable,
-  // non-suspect rows, and what it leaves after that is a repeat or no room.
-  const whyNot = (repeats: ReadonlySet<string>) => (id: string): PlannerStage => {
+  // In the order the planner applies them: writable approvals on an
+  // editorial page (the page type, in code), one per search, then the value
+  // tiers (`selectPlan`), then the pace grid.
+  const whyNot = (repeats: ReadonlySet<string>, unplanned: ReadonlyMap<string, Unplanned | "first_article"> = new Map()) => (id: string): PlannerStage => {
     if (excluded.has(id)) return "excluded";
     if (takenIds.has(id)) return "on_calendar";
     const rec = recById.get(id);
-    if (!rec || rec.action !== "write" || rec.quality !== "ok") return "not_writable";
+    if (!rec || !plannable(rec)) return "not_writable";
     if (sameAsCalendar.has(rec)) return "same_as_calendar";
     if (repeats.has(id)) return "same_search";
+    const left = unplanned.get(id);
+    if (left === "inventory" || left === "tier_full" || left === "first_article") return left;
     return "no_room";
   };
 
@@ -469,7 +477,36 @@ async function planFor(
     }
   }
 
-  const { entries: plan, repeats } = arrangePlan(recs, {
+  // One per search, in the recommender's order (value tier first), then the
+  // value tiers choose the plan: T1, at most one T2 and one T3 per five
+  // slots, and - on a first look only - T1's share filled from T2 and T3,
+  // labelled lower confidence (lib/keyword-research/value-tiers.ts). What
+  // the tiers leave stays in the queue, ordered again next run.
+  const topics = recs.filter(plannable).map((rec) => ({ rec, term: rec.term, organicUrls: rec.opportunity?.organicUrls ?? null, stage: "candidate" as const }));
+  const repeatOf = clusterByIntent(topics, language);
+  const distinct = topics.filter((t) => !repeatOf.has(t)).map((t) => t.rec);
+  // A calendar held at its first article (a trial-gated account) is not a
+  // plan of one: its one topic is the first article, so it is chosen the
+  // way the first article is. The tiers choose the plan an open account
+  // would get, and the first-article rule picks from it - value 2 or more,
+  // an editorial page, no fact risk, else the fact-risk fallback - or
+  // nothing, and a person picks (lib/onboarding/pipeline.ts says so).
+  // Choosing the one slot by tier order let a top-of-funnel topic be the
+  // whole plan, and the first article with it (review, 2026-09-30).
+  const heldFirst = hold === "held";
+  const slots = heldFirst
+    ? Math.min(opts.maxEntries ?? PLAN_MAX_ENTRIES, gridCount(weeklyLimit, PLAN_HORIZON_DAYS, PLAN_MAX_ENTRIES))
+    : Math.min(maxEntries, gridCount(weeklyLimit, PLAN_HORIZON_DAYS, room));
+  const selection = selectPlan(distinct, rankOf, { slots, relax: Boolean(opts.firstLook) });
+  const labelledPicks = selection.picks.map((p) => ({ ...p.item, opportunity: labelled(p.item.opportunity!, p.tier, p.relaxed) }));
+  const unplanned = new Map<string, Unplanned | "first_article">(selection.left.map((l) => [l.item.keywordId, l.why]));
+  let picked = labelledPicks;
+  if (heldFirst) {
+    const first = chooseFirstArticle(labelledPicks, (r) => ({ term: r.term, brief: r.opportunity }), { language: rawLanguage });
+    picked = first.pick ? [first.pick] : [];
+    if (!first.pick) for (const r of labelledPicks) unplanned.set(r.keywordId, "first_article");
+  }
+  const { entries: plan } = arrangePlan(picked, {
     weeklyLimit,
     from: start,
     maxEntries,
@@ -477,8 +514,37 @@ async function planFor(
     daysOfWeek: opts.daysOfWeek,
     occupied: existing.map((e) => e.scheduled_date).filter(Boolean) as string[],
   });
-  report(plan, whyNot(repeats));
+  const repeats = new Set([...repeatOf.keys()].map((t) => t.rec.keywordId));
+  report(plan, whyNot(repeats, unplanned));
   return { plan, recs };
+}
+
+/**
+ * A writable approval on a page an article can win. The page type is
+ * enforced here as well as by the reader: needs_page and not_editorial
+ * verdicts are refusals, and nothing but an article or mixed page reaches
+ * the blog plan, whatever a caller hands in.
+ */
+function plannable(rec: Pick<KeywordRecommendation, "action" | "quality" | "keywordId" | "tier" | "opportunity">): boolean {
+  const o = rec.opportunity;
+  return rec.action === "write" && rec.quality === "ok" && Boolean(rec.keywordId) && rec.tier !== undefined &&
+    o?.status === "qualified" && (o.format === "article" || o.format === "mixed");
+}
+
+/** How many entries the pace grid can hold over the horizon, as `arrangePlan` counts them. */
+function gridCount(weeklyLimit: number, horizon: number, cap: number): number {
+  const weekly = Math.max(0, Math.min(MAX_PACE, Math.floor(weeklyLimit)));
+  return Math.max(0, Math.min(cap, PLAN_MAX_ENTRIES, Math.ceil((weekly * horizon) / 7)));
+}
+
+/** The verdict a planned topic carries onto the calendar: its tier, and "lower" when a rule was relaxed for it. */
+function labelled(o: Opportunity, tier: PlannedTier, relaxed: boolean): Opportunity {
+  // An earlier plan's label does not carry over: this plan says what it relaxed.
+  const { confidence: _earlier, ...rest } = o;
+  void _earlier;
+  const out: Opportunity = { ...rest, tier };
+  if (relaxed) out.confidence = "lower";
+  return out;
 }
 
 /**
@@ -540,6 +606,16 @@ export async function schedulePlan(
     .eq("workspace_id", workspaceId)
     .eq("status", "new")
     .in("id", plan.map((p) => p.keywordId));
+
+  // The tier and any lower-confidence label go with the verdict onto the
+  // row, which the calendar and the first-article card read
+  // (lib/keyword-research/topic-labels.ts). Best-effort: a label is not
+  // worth a plan.
+  for (const p of plan) {
+    if (!p.brief?.tier) continue;
+    const { error: labelError } = await supabase.from("keywords").update({ opportunity: p.brief }).eq("workspace_id", workspaceId).eq("id", p.keywordId);
+    if (labelError) console.warn("[plan] could not save a planned topic's label:", labelError.message);
+  }
 
   // Best-effort: a plan is written even if the shape or the questions fail.
   try {
@@ -611,7 +687,9 @@ export interface HeldTopics {
  * screen of a real signup (2026-09-22) promised an article for a search that
  * was already drafted and another queued for the next day, under a third
  * spelling. A held row that is the same search as something live, drafted or
- * scheduled, or as another held row, is not another article.
+ * scheduled, or as another held row, is not another article. Nor is one the
+ * value tiers keep in inventory (lib/keyword-research/value-tiers.ts): the
+ * planner will not take it while it stays one.
  */
 export async function heldTopics(
   supabase: SupabaseClient,
@@ -623,18 +701,23 @@ export async function heldTopics(
   const [{ data: rows, error }, leaders, { data: ws }] = await Promise.all([
     supabase
       .from("keywords")
-      .select("id, term, opportunity")
+      .select("id, term, opportunity, volume, difficulty")
       .eq("workspace_id", workspaceId)
       .eq("status", "new")
       .eq("opportunity->>status", "qualified")
       .is("plan_excluded_at", null),
     // Read the way the held rows are: by the verdict as stored.
     readIntentLeaders(supabase, workspaceId, approvedWhenJudged),
-    supabase.from("workspaces").select("language").eq("id", workspaceId).maybeSingle(),
+    supabase.from("workspaces").select("language, dr").eq("id", workspaceId).maybeSingle(),
   ]);
   if (error) throw new Error(`Could not read held topics: ${error.message}`);
   const language = intentLanguage((ws as { language?: string | null } | null)?.language);
-  const held = ((rows ?? []) as Array<{ id: string; term: string; opportunity: unknown }>).map((r) => ({
+  const authority = (ws as { dr?: number | null } | null)?.dr ?? null;
+  type HeldRow = { id: string; term: string; opportunity: unknown; volume?: number | null; difficulty?: number | null };
+  // The planner's own test (value-tiers.ts `plannableApproval`): not
+  // inventory, and not an approval the retired #263 floor saved.
+  const plannable = (r: HeldRow) => plannableApproval(r.opportunity as Opportunity | null, winnability(r.difficulty ?? null, r.volume ?? 0, authority));
+  const held = ((rows ?? []) as HeldRow[]).filter(plannable).map((r) => ({
     term: r.term, organicUrls: storedSerp(r.opportunity), stage: "candidate" as const,
   }));
   const repeats = clusterByIntent([...leaders, ...held], language);

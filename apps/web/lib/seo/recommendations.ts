@@ -9,6 +9,7 @@ import { funnelOf, type FitVerdict, type Funnel } from "@/lib/keyword-research/b
 import { isJudgeable, isParked, isParkedForGood, isRequalifiable, parkKeywords, queueTarget, refillQualifiedQueue, RefillRefusedError, type QueueRow } from "@/lib/keyword-research/queue";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 import { stageOfVerdict, tallyFunnel, type FunnelOutcome, type FunnelStage, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
+import { planOrder, rankOf, retiredFloorApproval, tierOf, type ValueTier } from "@/lib/keyword-research/value-tiers";
 // ---------------------------------------------------------------------------
 // What to write next
 // ---------------------------------------------------------------------------
@@ -39,7 +40,7 @@ import type { KeywordIntent } from "@/lib/types";
 import { readGsc } from "@/lib/gsc/read";
 import { scoreRelevance, subjectVocabulary, type TopicalProfile } from "./topical-profile";
 import { commercialFit } from "./commercial-fit";
-import { relativeDifficulty, isOutOfReach } from "./difficulty";
+import { relativeDifficulty, isOutOfReach, volumeScore, winnability } from "./difficulty";
 
 export type RecommendedAction = "write" | "refresh" | "skip";
 
@@ -97,7 +98,21 @@ export interface KeywordRecommendation {
    * the reasons are what every caller acts on.
    */
   skippedBy?: FunnelStage;
+  /** How likely this site is to win the term, 0-1 (lib/seo/difficulty.ts `winnability`). */
+  winnability: number;
+  /**
+   * An approved topic's value tier (lib/keyword-research/value-tiers.ts):
+   * what orders it for the plan. Unset on a row with no approval.
+   */
+  tier?: ValueTier;
 }
+
+const TIER_WORDS: Record<ValueTier, string> = {
+  t1: "about a service you sell, and within reach",
+  t2: "one of your services, hard to win for now: a long-term bet",
+  t3: "top of funnel: general interest in your field, within reach",
+  inventory: "kept in the queue, not planned while better topics exist",
+};
 
 /**
  * Spot keyword-provider noise.
@@ -291,53 +306,6 @@ export const AUDIENCE_TOPIC_WEIGHT = 0.5;
 /** What an unmeasured volume scores: the same as ~30 searches a month. */
 const UNKNOWN_VOLUME_SCORE = 15;
 
-function volumeScore(volume: number): number {
-  if (volume <= 0) return 0;
-  return Math.log10(volume + 1) * 10;
-}
-
-/**
- * Difficulty as a 0-1 multiplier.
- *
- * Unknown difficulty resolves to 0.6 rather than 1.0. Treating "we do not know"
- * as "easy" would float every unmeasured keyword to the top, which is the same
- * failure as rendering a null difficulty as a green zero.
- */
-/**
- * What an out-of-reach keyword keeps, rather than zero.
- *
- * `relativeDifficulty` saturates: at authority 0 every KD from 45 to 100 maps
- * to relative 100, so `1 - relative/100` was exactly 0 and multiplied the
- * whole score away. Twelve of qasimcode.com's twenty keywords scored 0.0 and
- * were therefore in arbitrary order - insertion order, since the sort is
- * stable - so the plan picked among KD 56, KD 86 and KD 100 by whichever row
- * the provider had returned first. Order has to survive even when the answer
- * is "none of these".
- */
-const UNWINNABLE_FLOOR = 0.02;
-
-function winnability(difficulty: number | null, volume = 0, authority?: number | null): number {
-  if (difficulty === null) return 0.6;
-  // Judged against this site when we know its authority. KD is absolute - it
-  // describes the SERP, not the contender - so KD 40 is a rounding error at
-  // DR 80 and unreachable at DR 0.2, and ranking both the same way is how a
-  // new site gets a content plan it cannot execute. Both numbers are fetched
-  // in the same analyseDomain run and were never compared.
-  if (typeof authority === "number" && Number.isFinite(authority)) {
-    const { relative } = relativeDifficulty(difficulty, authority);
-    if (relative !== null) {
-      if (difficulty === 0 && volume >= 1000) return 0.6;
-      return Math.max(UNWINNABLE_FLOOR, 1 - relative / 100);
-    }
-  }
-  // Difficulty 0 on a term with real volume is the provider saying "not
-  // computed", not "free". Treated as easy it multiplies by 1.0 and floats a
-  // fragment like "no keywords" (27,100/mo, KD 0) to the top of the queue.
-  if (difficulty === 0 && volume >= 1000) return 0.6;
-  const d = Math.min(Math.max(difficulty, 0), 100);
-  return 1 - d / 100;
-}
-
 /**
  * Commercial and transactional terms are worth marginally more to an account's
  * client than informational ones, because they sit closer to a sale. Kept small
@@ -405,10 +373,9 @@ export async function recommendKeywords(
     qualify?: boolean;
     qualifyBatches?: number;
     /**
-     * A first look (lib/onboarding/pipeline.ts): approvals are asked twice,
-     * qualification stops before the run's spend ceiling, and the floor may
-     * fill the plan to PLAN_FLOOR. Nothing else passes it: the nightly passes
-     * and the planner's top-up plan only what cleared the bar.
+     * A first look (lib/onboarding/pipeline.ts): approvals are asked twice
+     * and qualification stops before the run's spend ceiling. Nothing else
+     * passes it.
      */
     firstLook?: FirstLook;
     /**
@@ -650,7 +617,8 @@ export async function recommendKeywords(
       reasons.push(`${impressions.toLocaleString()} impressions already earned`);
     }
 
-    score *= winnability(difficulty, volume ?? 0, authority);
+    const reach = winnability(difficulty, volume ?? 0, authority);
+    score *= reach;
     reasons.push(
       difficulty === null
         ? "difficulty unknown, scored conservatively"
@@ -899,6 +867,7 @@ export async function recommendKeywords(
       funnel,
       quality,
       qualityNote: note,
+      winnability: reach,
       ...(skippedBy ? { skippedBy } : {}),
       ...(unmeasured ? { demand: "unmeasured" as const } : {}),
     };
@@ -1062,7 +1031,7 @@ export async function recommendKeywords(
   }
   const candidateRows = eligible
     .filter((rec) => rec.action === "write")
-    .map((rec) => ({ ...rowOf.get(rec.keywordId)!, id: rec.keywordId, term: rec.term, ...(rec.demand ? { unmeasured: true } : {}) }));
+    .map((rec) => ({ ...rowOf.get(rec.keywordId)!, id: rec.keywordId, term: rec.term, winnability: rec.winnability, ...(rec.demand ? { unmeasured: true } : {}) }));
   // Where every row went, for the caller's funnel: the first stage, in the
   // order this pass applies them, that set it aside (see
   // lib/keyword-research/topic-funnel.ts). Read from this pass's own
@@ -1090,10 +1059,17 @@ export async function recommendKeywords(
       [...qualifiedIds].filter((id) => test(verdicts.get(id), recOf.get(id))).length;
     const lowerConfidence = labelled((o) => o?.confidence === "lower");
     const unmeasured = labelled((o, rec) => o?.demand === "unmeasured" || rec?.demand === "unmeasured");
+    // Grades code lowered, and grades with no service list to hold them to:
+    // a planning step whose every grade was capped says why its tiers are
+    // empty (lib/onboarding/pipeline.ts).
+    const valueCapped = labelled((o) => o?.valueCapped === true);
+    const valueUnlisted = labelled((o) => o?.valueUnlisted === true);
     options.onFunnel(tallyFunnel(outcomes.map((o) => o.outcome), {
       ...(judged === undefined ? {} : { judged }),
       ...(lowerConfidence ? { lowerConfidence } : {}),
       ...(unmeasured ? { unmeasured } : {}),
+      ...(valueCapped ? { valueCapped } : {}),
+      ...(valueUnlisted ? { valueUnlisted } : {}),
     }), qualifiedIds);
   };
 
@@ -1135,73 +1111,60 @@ export async function recommendKeywords(
   }
   // Fresh approvals, ranked against each other: the first of a search is
   // the one written, the rest wait behind it in memory and are parked once it
-  // is on the calendar (the pass above, next time round).
+  // is on the calendar (the pass above, next time round). Ranked by value
+  // tier (lib/keyword-research/value-tiers.ts), so of two phrasings of one
+  // search the one closer to a service leads, not the one searched more.
   const clusters: KeywordRecommendation[] = [];
   // Owners with no results page of their own (a crawled page, an article
   // with no keyword row) are only ever compared by words, and in a language
   // without a rule set that means the exact words. Said on every approval it
   // applies to, not assumed away.
   const unfolded = leaders.some((l) => !l.organicUrls?.length) ? unfoldedNote(language) : null;
+  const approvals: KeywordRecommendation[] = [];
   for (const rec of eligible) {
     if (rec.action !== "write") continue;
     const found = evidence.get(rec.keywordId);
     // The label goes with the verdict wherever it is shown, however old.
     const o = found && rec.demand ? { ...found, demand: rec.demand } : found;
     rec.opportunity = o;
-    if (o?.status === "qualified") {
-      const topic = { term: rec.term, organicUrls: o.organicUrls ?? null };
-      const duplicate = clusters.find((other) => sameIntent(topic, { term: other.term, organicUrls: other.opportunity?.organicUrls ?? null }, language).same);
-      if (duplicate) {
-        rec.action = "skip";
-        rec.skippedBy = "duplicate";
-        rec.reasons.push(`Same search as “${duplicate.term}”, which is ahead of it in the queue; one article per search.`);
-      } else {
-        clusters.push(rec);
-        rec.reasons.unshift(o.reason);
-        if (unfolded) rec.reasons.push(`Checked against your existing pages by exact words: ${unfolded}.`);
-      }
+    if (o?.status === "qualified" && !retiredFloorApproval(o)) {
+      approvals.push(rec);
+    } else if (o?.status === "qualified") {
+      // The page type never relaxes (lib/keyword-research/value-tiers.ts).
+      rec.action = "skip";
+      rec.reasons.unshift("Planned by the retired floor on a results page short of articles: not an article topic. Judged again when its verdict ages out.");
     } else if (options?.qualify || o) {
       rec.action = o?.existingUrl ? "refresh" : "skip";
       rec.reasons.unshift(o?.reason ?? "Topic qualification pending: buyer fit and live search evidence are required before automatic writing.");
     }
   }
-  // The floor. A first look (and only a first look: `firstLook` is passed by
-  // lib/onboarding/pipeline.ts and nothing else, so a nightly pass never
-  // plans a lower-confidence topic for the autopilot to write) that clears
-  // fewer than PLAN_FLOOR topics fills up
-  // to it from the best searches a served buyer makes that fell short of the
-  // bar only because too few results are articles (lib/keyword-research/
-  // opportunity.ts keeps their brief and the observed article, `floor`).
-  // Planned as "lower confidence", said on the row, the calendar, the first
-  // article's card and the run's funnel; measured before unmeasured, best
-  // score first; never a search already approved. Nothing refused for the
-  // searcher (brand, navigation, another city, a service not offered) and
-  // nothing the free gates removed can reach it: those carry other causes.
-  const floorPicks: KeywordRecommendation[] = [];
-  if (options?.qualify && options.firstLook && clusters.length < PLAN_FLOOR) {
-    const floorable = sorted.filter((rec) => {
-      if (rec.quality !== "ok" || rec.skippedBy || dropped.has(rec)) return false;
-      const o = evidence.get(rec.keywordId) ?? current(rec.keywordId);
-      return Boolean(o && isFloorable(o));
-    });
-    for (const rec of floorable) {
-      if (clusters.length + floorPicks.length >= PLAN_FLOOR) break;
-      const o = (evidence.get(rec.keywordId) ?? current(rec.keywordId))!;
-      const topic = { term: rec.term, organicUrls: o.organicUrls ?? null };
-      if ([...clusters, ...floorPicks].some((other) => sameIntent(topic, { term: other.term, organicUrls: other.opportunity?.organicUrls ?? null }, language).same)) continue;
-      const promoted = floorVerdict(o, rec.demand);
-      floorPicks.push(rec);
-      rec.action = "write";
-      rec.opportunity = promoted;
-      rec.reasons = [promoted.reason, ...rec.reasons.filter((r) => r !== o.reason && !r.startsWith("Parked:"))];
-      evidence.set(rec.keywordId, promoted);
-      const row = rowOf.get(rec.keywordId);
-      if (row) { row.opportunity = promoted; row.plan_excluded_at = null; row.status = row.status === "stored" ? "new" : row.status; }
+  for (const rec of approvals.sort((a, b) => planOrder(rankOf(a), rankOf(b)))) {
+    const o = rec.opportunity!;
+    const topic = { term: rec.term, organicUrls: o.organicUrls ?? null };
+    const duplicate = clusters.find((other) => sameIntent(topic, { term: other.term, organicUrls: other.opportunity?.organicUrls ?? null }, language).same);
+    if (duplicate) {
+      rec.action = "skip";
+      rec.skippedBy = "duplicate";
+      rec.reasons.push(`Same search as “${duplicate.term}”, which is ahead of it in the queue; one article per search.`);
+      continue;
     }
-    if (floorPicks.length) await saveFloorPicks(supabase, workspaceId, floorPicks);
+    clusters.push(rec);
+    const rank = rankOf(rec);
+    rec.tier = tierOf(rank.value, rank.winnability);
+    rec.reasons.unshift(o.reason, `Business value ${rank.value}${o.service ? ` (${o.service})` : o.valueCapped ? " (capped: no listed service answers it)" : ""}: ${TIER_WORDS[rec.tier]}`);
+    if (unfolded) rec.reasons.push(`Checked against your existing pages by exact words: ${unfolded}.`);
   }
-  // A lower-confidence topic is planned after every topic that cleared the bar.
-  if (floorPicks.length) sorted.sort((a, b) => Number(a.opportunity?.confidence === "lower") - Number(b.opportunity?.confidence === "lower"));
+  // The order every caller reads: approvals by value tier, then the rest as
+  // scored. The planner takes its plan from the top (lib/onboarding/plan.ts),
+  // the cron writes the first (`pickNextKeyword`).
+  const approved = (r: KeywordRecommendation) => r.action === "write" && r.tier !== undefined;
+  sorted.sort((a, b) => (approved(a) && approved(b) ? planOrder(rankOf(a), rankOf(b)) : Number(approved(b)) - Number(approved(a))));
+  // No floor. Until 2026-10 a first look short of three approvals promoted
+  // searches whose results held too few articles (not_editorial) into the
+  // plan as "lower confidence"; three of seven live runs then planned a
+  // page type no article wins. The page type never relaxes now: a short plan
+  // is relaxed by value tier instead (lib/keyword-research/value-tiers.ts),
+  // and a first look with nothing to plan says so (lib/onboarding/pipeline.ts).
 
   // A planned row that will not be written, behind a phrasing of its search
   // that may be, comes off the calendar: refused, with its own refusal, the
@@ -1234,49 +1197,6 @@ export async function recommendKeywords(
   return sorted.slice(0, limit);
 }
 
-/** Topics a first look plans before the floor steps in (see recommendKeywords). */
-export const PLAN_FLOOR = 3;
-
-/**
- * A verdict the floor may take: a not_editorial page whose searcher the
- * judge said the business serves, with the brief written and at least one
- * observed article. Anything else - a refusal of the searcher, a landing-page
- * search, an existing page, a duplicate - is not.
- */
-export function isFloorable(o: Opportunity): boolean {
-  return o.status === "rejected" && o.cause === "not_editorial" && o.floor === true &&
-    [o.audience, o.buyingJob, o.offering, o.angle].every((v) => typeof v === "string" && v.trim().length > 0) &&
-    Array.isArray(o.evidenceUrls) && o.evidenceUrls.length >= 1;
-}
-
-/** The floor's verdict: planned, and saying why it is lower confidence. */
-export function floorVerdict(o: Opportunity, demand?: "unmeasured"): Opportunity {
-  const { cause: _cause, floor: _floor, ...rest } = o;
-  void _cause; void _floor;
-  return {
-    ...rest,
-    status: "qualified",
-    confidence: "lower",
-    format: "article",
-    ...(demand ? { demand } : {}),
-    checkedAt: new Date().toISOString(),
-    reason: `Lower confidence: fewer articles hold this search than the bar asks for, and it is planned because fewer than ${PLAN_FLOOR} topics cleared it. ${o.reason}`.slice(0, 400),
-  };
-}
-
-/** Save the floor's picks and return them to the queue (unparked, status new). */
-async function saveFloorPicks(supabase: SupabaseClient, workspaceId: string, picks: readonly KeywordRecommendation[]): Promise<void> {
-  for (const rec of picks) {
-    const { error } = await supabase
-      .from("keywords")
-      .update({ opportunity: rec.opportunity, status: "new", plan_excluded_at: null })
-      .eq("id", rec.keywordId)
-      .eq("workspace_id", workspaceId)
-      .in("status", ["new", "stored"]);
-    if (error) throw new Error(`Could not save a lower-confidence topic: ${error.message}`);
-  }
-}
-
 /**
  * The order every ranking of recommendations uses: a measured topic before an
  * unmeasured one, whatever the scores, then the higher score.
@@ -1298,6 +1218,16 @@ export function demandFirst(a: Pick<KeywordRecommendation, "demand" | "score">, 
  */
 export function pickNextKeyword(
   recommendations: KeywordRecommendation[],
+  options: { inventory?: boolean } = {},
 ): KeywordRecommendation | null {
-  return recommendations.find((r) => r.action === "write" && r.quality === "ok") ?? null;
+  // A tier's topic first. Inventory (value 2 or 1 and hard to win, or an
+  // approval graded before grades existed and hard) is written only when
+  // nothing in a tier is left, and only when the caller allows it: an open
+  // account's autopilot keeps writing rather than stopping with qualified
+  // topics in the queue, while "is anything left to plan" (the pool refill)
+  // passes `inventory: false` and researches for better topics instead.
+  const writable = recommendations.filter((r) => r.action === "write" && r.quality === "ok");
+  return writable.find((r) => r.tier !== "inventory")
+    ?? (options.inventory === false ? null : writable.find((r) => r.tier === "inventory"))
+    ?? null;
 }

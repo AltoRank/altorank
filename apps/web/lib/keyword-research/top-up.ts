@@ -241,9 +241,9 @@ export async function topUpKeywords(
     locationCode: (ws.location_code as number | null) ?? options.locationCode ?? 2840,
   };
   const target = queueTarget(ws.auto_generate_weekly_limit as number | null | undefined);
-  const ready = await countReady(supabase, workspaceId, context);
+  const ready = await countReady(supabase, workspaceId, context, (ws.dr as number | null | undefined) ?? null);
   if (ready >= target) {
-    return { ...empty, reason: `the queue holds ${ready} qualified topic${ready === 1 ? "" : "s"}; nothing new is needed until it drops under ${target}` };
+    return { ...empty, reason: `the queue holds ${ready} topic${ready === 1 ? "" : "s"} ready to plan; nothing new is needed until it drops under ${target}` };
   }
 
   const { data: existing } = await supabase

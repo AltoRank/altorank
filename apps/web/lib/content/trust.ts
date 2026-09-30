@@ -182,12 +182,18 @@ const quoteList = (words: string[]) => words.slice(0, 4).map((w) => `"${w}"`).jo
  *     one of them not WEAK: one passing "legal pages" in an agency's
  *     description is not a law firm, and neither is "we diagnose problems
  *     and fix the symptoms".
+ *
+ * `topicOnly` asks about the topic and nothing else: the profile may still
+ * back a WEAK word in the topic, but never decides alone. The planner's
+ * fact-risk gate asks it that way (lib/keyword-research/fact-risk.ts): a
+ * clinic's article on booking online is not a clinical claim.
  */
 export function sensitiveTopicOf(input: {
   keyword: string;
   title?: string | null;
   profile?: unknown;
   language?: string | null;
+  topicOnly?: boolean;
 }): { topic: SensitiveTopic | null; basis: string } {
   const locale = resolveLocale(input.language);
   const codes = locale.supported ? [...new Set([locale.code, "en"])] : undefined;
@@ -219,6 +225,7 @@ export function sensitiveTopicOf(input: {
     const backed = w.strong.length ? "" : ` (with ${quoteList(inBusiness.get(kind)!.strong)} in the business profile)`;
     return { topic: { kind, evidence: `the topic names ${quoteList(w.all)}${backed}` }, basis };
   }
+  if (input.topicOnly) return { topic: null, basis };
   const fromBusiness = strongest(inBusiness, (_kind, w) => w.all.length >= 2 && w.strong.length > 0);
   if (fromBusiness) {
     return {
