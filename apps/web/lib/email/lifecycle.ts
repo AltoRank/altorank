@@ -40,6 +40,8 @@ import { TRIAL_DAYS } from "@/lib/stripe";
 import { formatTrialDate } from "@/lib/billing/trial";
 import { wizardStepPath } from "@/lib/onboarding/steps";
 import { sendOnce, type RenderedEmail, type SendOnceOutcome } from "./send-once";
+import { operatorRecipients } from "@/lib/auth/operators";
+import type { EmptyPool } from "@/lib/onboarding/events";
 import { beforeTrialLine, trialGateUrl } from "./article-emails";
 
 /** Every string below is user data: a domain, a title, a keyword, a name. */
@@ -915,6 +917,71 @@ export function renderSetupFailed(a: SetupFailedEmail): RenderedEmail {
   };
 }
 
+export type NothingPlannedOpsEmail = {
+  runId: string;
+  domain: string | null;
+  /** The account's own addresses, so the operator can write back. */
+  contacts: string[];
+  pool: EmptyPool | null;
+  /**
+   * Whether the account was before its trial, which is what decides what the
+   * customer saw: only that setup screen promises a reply within 24 hours.
+   * Null when the hold could not be read.
+   */
+  preTrial: boolean | null;
+};
+
+/** What the customer was told, in the operator's words. */
+function nothingPlannedPromise(preTrial: boolean | null): string {
+  if (preTrial === true)
+    return "The account is before its trial. The customer was not asked for a card and was told the team would write to them within 24 hours.";
+  if (preTrial === false)
+    return "The account is not waiting on a trial (it has a plan, is an operator's, or the gate is off). It was never asked for a card and was not promised a reply; its setup screen says only that nothing cleared the bar yet.";
+  return "Whether the account is before its trial could not be read, so it is not known whether the customer was promised a reply within 24 hours.";
+}
+
+/**
+ * To the operators, not the customer: a first look finished and nothing on
+ * the site cleared the bar for an article.
+ *
+ * The customer's screen says the team has been told and that they will hear
+ * back by email within 24 hours, so somebody has to actually be told. The
+ * daily digest (lib/observability/digest.ts) would carry the warning too, but
+ * a digest is a count, not a prompt to write to one person, and it can land
+ * most of a day late. This carries what the follow-up needs: whose site,
+ * whom to write to, and which stage emptied the pool.
+ */
+export function renderNothingPlannedOps(a: NothingPlannedOpsEmail): RenderedEmail {
+  const site = a.domain ?? "a site with no domain";
+  const pool = a.pool;
+  const counts = pool
+    ? [
+        `Stage that emptied the pool: ${pool.stage}${pool.cause ? ` (largest group: ${pool.cause})` : ""}.`,
+        `${pool.keywords} keyword rows, ${pool.qualified} qualified.`,
+      ]
+    : ["The run did not record which stage emptied the pool."];
+  return {
+    subject: a.preTrial === true ? `Follow up within 24 hours: nothing planned for ${site}` : `Nothing planned for ${site}`,
+    preheader: pool?.summary ?? "A first look finished with nothing to plan.",
+    footerNote: `Sent because this address is in ADMIN_EMAILS.`,
+    html:
+      eyebrow(site) +
+      heading("A first look planned nothing") +
+      emailParagraph(
+        `Setup finished for ${esc(site)} without failing, and nothing cleared the bar for a first article. ${esc(nothingPlannedPromise(a.preTrial))}`,
+      ) +
+      (pool ? quoted(pool.summary) : "") +
+      counts.map((c) => emailParagraph(esc(c))).join("") +
+      emailParagraph(
+        a.contacts.length
+          ? `Write to: ${a.contacts.map(esc).join(", ")}.`
+          : `No member address was found for this account.`,
+      ) +
+      emailParagraph(`Run id: ${esc(a.runId)}.`) +
+      emailButton(appLink("/admin/events"), "Open the event log"),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Senders
 // ---------------------------------------------------------------------------
@@ -1211,6 +1278,36 @@ export async function notifySetupUnfinished(
 /** UTC calendar day, so "one a day" means the same thing in every timezone we run in. */
 function utcDay(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Tell the operators a first look planned nothing, once per run. Sends
+ * nothing when ADMIN_EMAILS is unset (`operatorRecipients`, which has no
+ * default); the `system_events` warning the run store records alongside is
+ * then the only trace, and the daily digest reads it.
+ */
+export async function notifyOperatorsNothingPlanned(
+  supabase: SupabaseClient,
+  scope: { accountId: string; workspaceId: string },
+  data: Omit<NothingPlannedOpsEmail, "contacts">,
+): Promise<SendOnceOutcome> {
+  const to = operatorRecipients();
+  if (to.length === 0) return { sent: 0, skipped: 0, failed: 0 };
+  const contacts = await accountRecipients(supabase, scope.accountId, scope.workspaceId);
+  return sendOnce(
+    supabase,
+    to,
+    {
+      type: "ops_nothing_planned",
+      subjectId: data.runId,
+      // Required, as the digest is: the operator is the one address that
+      // must be told, and "account" carries no unsubscribe link.
+      category: "account",
+      accountId: scope.accountId,
+      workspaceId: scope.workspaceId,
+    },
+    () => renderNothingPlannedOps({ ...data, contacts }),
+  );
 }
 
 export async function notifySetupFailed(

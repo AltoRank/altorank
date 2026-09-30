@@ -65,12 +65,12 @@ import {
 } from "@/lib/onboarding/events";
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
 import { TopicBriefs } from "./topic-briefs";
-import { TrialOffer } from "@/components/billing/trial-offer";
 import { FirstLookReportView } from "@/components/onboarding/first-look-report";
 import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
 import { FirstArticleCardView, type PendingFirstArticle } from "@/components/onboarding/first-article-card";
 import type { FirstArticleCard } from "@/lib/onboarding/first-article";
-import { firstArticleFailed, OPEN_SETUP, offerSetupRetry, runStateOf, type PreTrialSetup } from "@/lib/onboarding/setup-retry";
+import { OPEN_SETUP, runStateOf, setupEnding, type PreTrialSetup, type SetupEnding } from "@/lib/onboarding/setup-retry";
+import { NOTHING_PLANNED_HEADING, nothingPlannedLede, SetupAsk } from "@/components/onboarding/setup-ask";
 import { signOut } from "@/app/actions/auth";
 import { TRIAL_DAYS } from "@/lib/stripe";
 import posthog from "posthog-js";
@@ -715,38 +715,43 @@ function TrialGateScreen({
   otherSites?: OtherSite[];
 }) {
   const runState = runStateOf(run);
-  const retry = offerSetupRetry(runState, { hasArticle: firstArticle !== null, writing, setupAllowed: setup.setupAllowed });
-  const failed = firstArticleFailed({ hasArticle: firstArticle !== null, writing, firstAttempted: setup.firstAttempted });
+  // One decision for the heading, the lede and whether the card is asked
+  // (lib/onboarding/setup-retry.ts); the run screen reads the same one.
+  const ending = setupEnding(runState, {
+    hasArticle: firstArticle !== null,
+    writing,
+    setupAllowed: setup.setupAllowed,
+    firstAttempted: setup.firstAttempted,
+  });
+  const retry = ending === "retry";
   // The run's own words for why it wrote nothing, when it said.
   const draftingDetail = runState?.steps.find((s) => s.phase === "drafting")?.detail ?? null;
   const fixable = report?.readiness?.findings.filter((f) => !f.passed && !f.inconclusive).length ?? 0;
   const pagesToFix = report?.existingPages?.withIssues ?? 0;
 
-  const heading = firstArticle
-    ? "Your first article is written"
-    : writing
-      ? "Your first article is being written"
-      : retry
-        ? "Setup did not finish"
-        : failed
-          ? FIRST_ARTICLE_FAILED_HEADING
-          : "No article was written in setup";
-  const lede = firstArticle
-    ? `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`
-    : writing
-      ? "It appears here when it is done, usually within a few minutes. The trial opens it, and the rest of the week."
-      : retry
-        ? `Nothing was written for ${domain || "your site"}. Running setup again reads the site, plans the month and writes the first article.`
-        : failed
-          ? FIRST_ARTICLE_FAILED_LEDE
-          : `${draftingDetail ? `Setup said: ${draftingDetail}` : "Setup finished without writing an article."} The trial opens the calendar, where articles can be written from the plan.`;
+  const heading: Record<SetupEnding, string> = {
+    article: "Your first article is written",
+    writing: "Your first article is being written",
+    retry: "Setup did not finish",
+    "first-failed": FIRST_ARTICLE_FAILED_HEADING,
+    "nothing-planned": NOTHING_PLANNED_HEADING,
+    "no-article": "No article was written in setup",
+  };
+  const lede: Record<SetupEnding, string> = {
+    article: `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`,
+    writing: "It appears here when it is done, usually within a few minutes. The trial opens it, and the rest of the week.",
+    retry: `Nothing was written for ${domain || "your site"}. Running setup again reads the site, plans the month and writes the first article.`,
+    "first-failed": FIRST_ARTICLE_FAILED_LEDE,
+    "nothing-planned": nothingPlannedLede(domain, runState?.emptyPool ?? null, setup.followUp),
+    "no-article": `${draftingDetail ? `Setup said: ${draftingDetail}` : "Setup finished without writing an article."} The trial opens the calendar, where articles can be written from the plan.`,
+  };
 
   return (
     <div className="min-h-screen bg-bg">
       <div className="mx-auto max-w-[860px] px-6 py-10">
         <div className="mb-6 text-center">
-          <h1 className="m-0 mb-1.5 text-[22px] font-semibold">{heading}</h1>
-          <p className="mx-auto m-0 max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">{lede}</p>
+          <h1 className="m-0 mb-1.5 text-[22px] font-semibold">{heading[ending]}</h1>
+          <p className="mx-auto m-0 max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">{lede[ending]}</p>
         </div>
 
         <div className="mx-auto mb-6 flex max-w-[640px] flex-col gap-4 rounded-[10px] border border-accent/40 bg-panel p-5">
@@ -761,8 +766,10 @@ function TrialGateScreen({
             </div>
           )}
           {/* The ask comes before the evidence: with a report below it, a
-              button placed after the card sat a screen down and went unseen. */}
-          <TrialOffer canBuy={canBuy} returnTo="/dashboard" />
+              button placed after the card sat a screen down and went unseen.
+              Not over a run that planned nothing: there is nothing behind
+              the card, and the note that replaces it says who writes next. */}
+          <SetupAsk ending={ending} canBuy={canBuy} followUp={setup.followUp} returnTo="/dashboard" />
           {askAttribution && <AttributionAsk />}
           {firstArticle && <FirstArticleCardView article={firstArticle} />}
         </div>
@@ -863,6 +870,8 @@ function TrialGateScreen({
  */
 function TrialStep({
   canBuy,
+  ending,
+  followUp,
   firstArticle,
   pending,
   retry,
@@ -872,6 +881,9 @@ function TrialStep({
   askAttribution = false,
 }: {
   canBuy: boolean;
+  ending: SetupEnding;
+  /** Whether the note may promise a reply (PreTrialSetup `followUp`). */
+  followUp: boolean;
   firstArticle: FirstArticleCard | null;
   /** The run's own record of the draft, until the page has read the card. */
   pending: PendingFirstArticle | null;
@@ -894,8 +906,9 @@ function TrialStep({
       )}
       {/* The ask comes first. Everything below it is the evidence for it, and
           an earlier arrangement put the evidence on top: on a site with a full
-          report the button sat a full screen down and was never seen. */}
-      <TrialOffer canBuy={canBuy} returnTo="/dashboard" />
+          report the button sat a full screen down and was never seen. A run
+          that planned nothing gets the note instead of the ask. */}
+      <SetupAsk ending={ending} canBuy={canBuy} followUp={followUp} returnTo="/dashboard" />
       {askAttribution && <AttributionAsk />}
 
       {hasArticle && <FirstArticleCardView article={firstArticle} pending={firstArticle ? null : pending} />}
@@ -990,9 +1003,21 @@ function RunScreen({
   // one it offers a retry only when the run fell short and nothing exists
   // for the site (lib/onboarding/setup-retry.ts).
   const trialStep = finished && trialEligible;
-  const retry =
-    trialStep && state !== null && offerSetupRetry(state, { hasArticle, writing: firstArticleWriting, setupAllowed: preTrialSetup.setupAllowed });
-  const failed = trialStep && firstArticleFailed({ hasArticle, writing: firstArticleWriting, firstAttempted: preTrialSetup.firstAttempted });
+  // The same decision the gate screen makes (lib/onboarding/setup-retry.ts):
+  // whether to ask for the card at all, and what to say instead when the run
+  // planned nothing.
+  const ending: SetupEnding | null =
+    trialStep && state !== null
+      ? setupEnding(state, {
+          hasArticle,
+          writing: firstArticleWriting,
+          setupAllowed: preTrialSetup.setupAllowed,
+          firstAttempted: preTrialSetup.firstAttempted,
+        })
+      : null;
+  const retry = ending === "retry";
+  const failed = ending === "first-failed";
+  const nothingPlanned = ending === "nothing-planned";
   // The run ended after this page was read: read it again. With a draft, so
   // the card has its outline and sources; without one, so the retry and the
   // copy answer from the spend gate and the claim as they are NOW - read
@@ -1019,7 +1044,9 @@ function RunScreen({
                 ? "Your first article is written"
                 : failed
                   ? FIRST_ARTICLE_FAILED_HEADING
-                  : "Start your trial to keep writing"
+                  : nothingPlanned
+                    ? NOTHING_PLANNED_HEADING
+                    : "Start your trial to keep writing"
               : finished
                 ? "Your content plan"
                 : "Creating your content plan"}
@@ -1033,6 +1060,8 @@ function RunScreen({
                 </>
               ) : failed ? (
                 <>{FIRST_ARTICLE_FAILED_LEDE}</>
+              ) : nothingPlanned ? (
+                <>{nothingPlannedLede(domain, state?.emptyPool ?? null, preTrialSetup.followUp)}</>
               ) : (
                 <>Setup did not write an article for {domain}. The trial opens the calendar and the plan behind it.</>
               )
@@ -1060,9 +1089,11 @@ function RunScreen({
           </p>
         </div>
 
-        {trialStep && (
+        {trialStep && ending && (
           <TrialStep
             canBuy={canBuy}
+            ending={ending}
+            followUp={preTrialSetup.followUp}
             firstArticle={firstArticle}
             pending={runDraft ? { title: runDraft.title, keyword: runDraft.keyword, wordCount: runDraft.wordCount, verdict: runDraft.verdict } : null}
             retry={retry}

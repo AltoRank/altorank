@@ -27,13 +27,15 @@ const { generateArticle, getQuota, recommendKeywords, duePlannedKeyword, claim, 
 }));
 
 let workspaces: Record<string, unknown>[] = [];
+/** The site's latest onboarding run, as firstLookPlannedNothing reads it. */
+let latestRun: { status: string } | null = null;
 function table(name: string) {
   const chain: Record<string, unknown> = {};
   const self = () => chain;
   Object.assign(chain, {
     select: self, eq: self, neq: self, gte: self, order: self, is: self, not: self, lt: self, in: self, limit: self,
     single: async () => ({ data: { topical_profile: { terms: { a: 1, b: 1, c: 1, d: 1 } } }, error: null }),
-    maybeSingle: async () => ({ data: null, error: null }),
+    maybeSingle: async () => ({ data: name === "onboarding_runs" ? latestRun : null, error: null }),
     then: (r: (v: unknown) => unknown) => r(name === "workspaces" ? { data: workspaces, error: null } : { data: [], error: null }),
   });
   return chain;
@@ -101,6 +103,7 @@ beforeEach(() => {
   sweep.mockReset().mockResolvedValue({ lines: [], settled: Promise.resolve(), started: 0 });
   order.length = 0;
   deferred.length = 0;
+  latestRun = null;
 });
 
 describe("cron/generate and a trial-gated account", () => {
@@ -154,6 +157,36 @@ describe("cron/generate and a trial cancelled before its first charge", () => {
 
   it("keeps writing for a paid plan set to cancel at period end", async () => {
     getQuota.mockResolvedValue({ limit: 100, used: 40, remaining: 60, reason: "plan", plan: "starter", trial: null });
+    const body = await (await GET(req())).json();
+    expect(body.generated).toBe(1);
+  });
+});
+
+// A first look that planned nothing tells an account before its trial that a
+// person will write to it. This job must not answer first with "run out of
+// keywords" and a link behind the trial, nor re-buy the same verdicts each
+// morning (review, 2026-09-29).
+describe("cron/generate and a first look that planned nothing", () => {
+  it("buys nothing and emails nothing for an account before its trial", async () => {
+    getQuota.mockResolvedValue({ limit: 7, used: 0, remaining: 7, reason: "no-plan", plan: null, trialEligible: true });
+    latestRun = { status: "nothing_planned" };
+    const body = await (await GET(req())).json();
+    expect(body.results[0]).toMatchObject({ status: "skipped", detail: expect.stringContaining("a person follows up") });
+    expect(body.results[0]).not.toHaveProperty("emailed");
+    expect(recommendKeywords).not.toHaveBeenCalled();
+    expect(generateArticle).not.toHaveBeenCalled();
+  });
+
+  it("still writes the first article for an account before its trial whose first look did plan", async () => {
+    getQuota.mockResolvedValue({ limit: 7, used: 0, remaining: 7, reason: "no-plan", plan: null, trialEligible: true });
+    latestRun = { status: "partial" };
+    const body = await (await GET(req())).json();
+    expect(body.generated).toBe(1);
+  });
+
+  it("keeps writing for a trialing account whatever its first look said", async () => {
+    getQuota.mockResolvedValue({ limit: 100, used: 1, remaining: 99, reason: "plan", plan: "starter" });
+    latestRun = { status: "nothing_planned" };
     const body = await (await GET(req())).json();
     expect(body.generated).toBe(1);
   });

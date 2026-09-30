@@ -50,11 +50,14 @@ export function setupFellShort(state: OnboardingState): boolean {
  *                   /api/onboard/start asks before it starts one)
  *   firstAttempted  the one pre-trial article has been claimed: attempted,
  *                   whether or not it was written (claimPreTrialDraft)
+ *   followUp        somebody will be told if the first look plans nothing
+ *                   (lib/auth/operators.ts `followUpPromised`), so the screen
+ *                   may promise the person a reply within 24 hours
  */
-export type PreTrialSetup = { setupAllowed: boolean; firstAttempted: boolean };
+export type PreTrialSetup = { setupAllowed: boolean; firstAttempted: boolean; followUp: boolean };
 
 /** Nothing about the trial stands in the way: self-host, a plan, an operator. */
-export const OPEN_SETUP: PreTrialSetup = { setupAllowed: true, firstAttempted: false };
+export const OPEN_SETUP: PreTrialSetup = { setupAllowed: true, firstAttempted: false, followUp: false };
 
 /**
  * Whether to offer running setup again.
@@ -85,4 +88,42 @@ export function offerSetupRetry(
  */
 export function firstArticleFailed(fact: { hasArticle: boolean; writing: boolean; firstAttempted: boolean }): boolean {
   return !fact.hasArticle && !fact.writing && fact.firstAttempted;
+}
+
+/**
+ * How setup ended, as the screen before the trial has to say it. One answer,
+ * read by the gate screen and the run screen alike, so neither can ask for a
+ * card the other would not.
+ *
+ *   article          the first article exists: show its shape, ask for the card
+ *   writing          it is being written right now
+ *   retry            the run fell short and setup may run again
+ *   first-failed     the one pre-trial article was attempted and failed on our
+ *                    side; the trial writes it
+ *   nothing-planned  the run finished without failing and nothing on the site
+ *                    cleared the bar (runStatusFrom). No card ask: there is
+ *                    nothing behind it, and a person follows up by email
+ *   no-article       anything else that ended without an article
+ *
+ * `nothing-planned` exists because both real signups ended there on
+ * 2026-09-28 and were shown "Setup finished without writing an article. The
+ * trial opens the calendar" beside a card form, over an empty calendar.
+ */
+export type SetupEnding = "article" | "writing" | "retry" | "first-failed" | "nothing-planned" | "no-article";
+
+export function setupEnding(
+  run: OnboardingState | null,
+  fact: { hasArticle: boolean; writing: boolean; setupAllowed: boolean; firstAttempted: boolean },
+): SetupEnding {
+  if (fact.hasArticle) return "article";
+  if (fact.writing) return "writing";
+  if (offerSetupRetry(run, fact)) return "retry";
+  if (firstArticleFailed(fact)) return "first-failed";
+  if (run && isTerminal(run) && onboardingOutcome(run).tone === "nothing_planned") return "nothing-planned";
+  return "no-article";
+}
+
+/** Whether the screen asks for a card. Never over a run that planned nothing. */
+export function asksForCard(ending: SetupEnding): boolean {
+  return ending !== "nothing-planned";
 }

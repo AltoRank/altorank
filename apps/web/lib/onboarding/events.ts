@@ -118,6 +118,35 @@ export interface OnboardingArticle {
 }
 
 /**
+ * Which stage of a first look left nothing to plan, and what the pool held.
+ *
+ * Written by the pipeline on the planning event when nothing was planned and
+ * nothing failed (lib/onboarding/empty-pool.ts), from data the run already
+ * had: the keyword count and the verdicts on the site's keyword rows. On
+ * 2026-09-28 both real signups ended here - 144 and 236 searches judged, none
+ * qualified - and the row said `partial`, so they were emailed that setup
+ * failed and asked for a card over an empty calendar. The operator reads this
+ * to follow up; the person is told only that nothing cleared the bar yet.
+ *
+ *   keywords        research found nothing to judge
+ *   qualification   every candidate was judged and none qualified; `cause`
+ *                   is the verdict that removed the most
+ *   planning        some qualified, and the planner still placed none
+ */
+export interface EmptyPool {
+  stage: "keywords" | "qualification" | "planning";
+  cause: string | null;
+  /** Keyword rows the site had to plan from. */
+  keywords: number;
+  qualified: number;
+  /** Verdict counts by cause. */
+  rejected: Record<string, number>;
+  pending: Record<string, number>;
+  /** One line for the operator's log and email. */
+  summary: string;
+}
+
+/**
  * One line off the wire.
  *
  * `phase` names which step it is about; the special `ready` and `error` phases
@@ -126,7 +155,7 @@ export interface OnboardingArticle {
  * one - keywords its count, drafting its article.
  */
 export type OnboardingEvent =
-  | { phase: OnboardingPhase; status: Exclude<PhaseStatus, "pending">; detail?: string; keywordsFound?: number; planned?: OnboardingPlanned[]; article?: OnboardingArticle }
+  | { phase: OnboardingPhase; status: Exclude<PhaseStatus, "pending">; detail?: string; keywordsFound?: number; planned?: OnboardingPlanned[]; article?: OnboardingArticle; emptyPool?: EmptyPool }
   | { phase: "ready" }
   | { phase: "error"; detail: string };
 
@@ -159,6 +188,8 @@ export interface OnboardingState {
   /** True once the run has emitted `ready`: the screen may hand off. */
   ready: boolean;
   error: string | null;
+  /** Set when the planning phase found nothing to plan without failing; see `EmptyPool`. */
+  emptyPool: EmptyPool | null;
 }
 
 export function initialOnboardingState(): OnboardingState {
@@ -171,6 +202,7 @@ export function initialOnboardingState(): OnboardingState {
     drafts: [],
     ready: false,
     error: null,
+    emptyPool: null,
   };
 }
 
@@ -193,6 +225,7 @@ export function reduceOnboarding(state: OnboardingState, event: OnboardingEvent)
     keywordsFound: event.keywordsFound ?? state.keywordsFound,
     planned: event.planned ?? state.planned,
     article: event.article ?? state.article,
+    emptyPool: event.emptyPool ?? state.emptyPool,
     // A draft on the wire joins the list once; a replayed event is a no-op.
     drafts:
       event.article && !state.drafts.some((d) => d.id === event.article!.id)
@@ -215,7 +248,7 @@ export function isTerminal(state: OnboardingState): boolean {
 // article is a foreign key rather than a copy, so the row cannot claim a draft
 // that has since been deleted; /state joins the article row back in.
 
-export type OnboardingRunStatus = "running" | "done" | "partial" | "error";
+export type OnboardingRunStatus = "running" | "done" | "partial" | "nothing_planned" | "error";
 
 export interface OnboardingRunRow {
   id: string;
@@ -226,6 +259,8 @@ export interface OnboardingRunRow {
   keywords_found: number | null;
   article_id: string | null;
   error: string | null;
+  /** Migration 104. Absent on rows read before it; null on every run that planned something. */
+  empty_pool?: EmptyPool | null;
   started_at: string;
   updated_at: string;
   finished_at: string | null;
@@ -289,6 +324,14 @@ export function shouldResumeRun(snapshot: OnboardingRunSnapshot | null, now: num
   return run.finished_at !== null && now - new Date(run.finished_at).getTime() < RUN_RECENT_MS;
 }
 
+/**
+ * The run's sentence when nothing cleared the bar. Deliberately not the
+ * planning phase's own detail ("No keyword clear enough to plan yet. 10
+ * searches ... want a landing page; see Keywords"), which points at a page a
+ * person before their trial cannot open.
+ */
+export const NOTHING_PLANNED_LINE = "Nothing on your site cleared the bar for a first article yet.";
+
 export const STALE_RUN_ERROR =
   "This run stopped responding. Everything it finished is kept, and tonight's run picks up the rest.";
 
@@ -333,6 +376,15 @@ export function stateFromRun(
   // run whose caller did not fetch the list still shows the one it knows.
   const listed = (opts.drafts ?? []).map(toOnboardingArticle);
   const drafts = draft && !listed.some((d) => d.id === draft.id) ? [draft, ...listed] : listed;
+  // A stale row that had already planned nothing, cleanly, reads the way the
+  // reaper will settle it (run-store.ts `closeRun`): nothing planned, not a
+  // run that stopped responding. Read as an error, the screen offered the
+  // retry and asked for a card over it (review, 2026-09-29).
+  const quietlyEmpty =
+    Boolean(opts.stale) &&
+    (run.planned ?? []).length === 0 &&
+    !run.article_id &&
+    plannedNothingCleanly({ steps, emptyPool: run.empty_pool ?? null });
   return {
     steps,
     keywordsFound: run.keywords_found,
@@ -340,25 +392,99 @@ export function stateFromRun(
     held: opts.held ?? null,
     article: draft,
     drafts,
-    ready: run.status !== "running",
-    error: run.error ?? (opts.stale ? STALE_RUN_ERROR : null),
+    ready: run.status !== "running" || quietlyEmpty,
+    error: run.error ?? (opts.stale && !quietlyEmpty ? STALE_RUN_ERROR : null),
+    emptyPool: run.empty_pool ?? null,
   };
 }
 
 /**
  * The status a run settles on, from what it produced. The same rule
  * `onboardingOutcome` reads the "Done." line from, so the row and the sentence
- * cannot disagree: a plan and a draft is `done`; anything less is `partial`,
- * and the phases say which part. `error` is reserved for the worker itself
- * throwing - a phase that failed is `partial`, because the others still ran.
+ * cannot disagree: a plan and a draft is `done`; a plan or a draft is
+ * `partial`, and the phases say which part. `error` is reserved for the worker
+ * itself throwing - a phase that failed is `partial`, because the others
+ * still ran.
+ *
+ * `nothing_planned` is a run that produced nothing and fell short nowhere:
+ * the pipeline said the pool was empty (`emptyPool`) and no phase the plan
+ * depends on failed. It used to be `partial`, which everything downstream
+ * reads as "setup fell short" - the setup-failed email, the retry, the card
+ * ask over an empty calendar - for a site where nothing was broken and
+ * nothing cleared the bar (both real signups, 2026-09-28).
  */
-export function runStatusFrom(state: Pick<OnboardingState, "planned" | "article" | "error">): Exclude<OnboardingRunStatus, "running"> {
+export function runStatusFrom(
+  state: Pick<OnboardingState, "planned" | "article" | "error"> & Partial<Pick<OnboardingState, "steps" | "emptyPool">>,
+): Exclude<OnboardingRunStatus, "running"> {
   if (state.error) return "error";
-  return state.planned.length > 0 && state.article !== null ? "done" : "partial";
+  if (state.planned.length > 0 && state.article !== null) return "done";
+  if (state.planned.length > 0 || state.article !== null) return "partial";
+  return plannedNothingCleanly(state) ? "nothing_planned" : "partial";
 }
 
-/** What a run is worth saying about itself, once it has stopped. */
-export type OnboardingTone = "working" | "done" | "partial" | "error";
+/**
+ * The run wrote nothing, no phase the plan depends on failed, and the pool it
+ * left was actually judged (`poolWasJudged`). The one rule behind
+ * `runStatusFrom`, and behind a run closed from outside its worker
+ * (run-store.ts `closeRun`) and a stale row on the screen (`stateFromRun`):
+ * a first look cut off after it planned nothing is still a first look that
+ * planned nothing, not a setup to email about and retry.
+ */
+export function plannedNothingCleanly(state: Partial<Pick<OnboardingState, "steps" | "emptyPool">>): boolean {
+  const fellShort = (state.steps ?? []).some((s) => OUTCOME_PHASES.includes(s.phase) && s.status === "failed");
+  return !fellShort && poolWasJudged(state.emptyPool);
+}
+
+/**
+ * Pending causes that mean nobody could answer, not that the answer was no:
+ * the SERP or model call failed, the buyer test returned nothing, the model's
+ * answer was unusable, there was no business profile to judge against. A
+ * pool emptied by these is a setup that fell short - the failure email and
+ * the retry - not "nothing cleared the bar". `unspecified` is a pending row
+ * with no cause at all, which says nothing either way and is not counted as
+ * an answer.
+ */
+const UNANSWERED_CAUSES = ["provider_error", "no_verdict", "judge_incomplete", "no_profile", "unspecified"] as const;
+
+/**
+ * Rows a judge actually decided: qualified, rejected for any cause, or held
+ * because the results page was too thin to judge against (`thin_serp`, a
+ * reading of the SERP, not a failed call). Rows never reached (`unjudged`)
+ * are not counted: the first look qualifies at most four batches, and on
+ * both real signups on 2026-09-28 hundreds of rows were never reached while
+ * every row that was reached was a rejection.
+ */
+export function judgedRows(pool: EmptyPool): number {
+  const rejected = Object.values(pool.rejected).reduce((sum, n) => sum + n, 0);
+  return pool.qualified + rejected + (pool.pending.thin_serp ?? 0);
+}
+
+/**
+ * Whether an empty pool is an answer: research looked and found nothing, or
+ * every row a judge was asked about was answered and none qualified.
+ *
+ * Not when any row is pending for a reason in UNANSWERED_CAUSES, not when no
+ * row was judged at all (no model key leaves every row `unjudged`), and not
+ * at the `planning` stage - something qualified and the planner placed none
+ * of it, which is the planner falling short, not the site. An earlier cut
+ * took any recorded pool as nothing-planned, and a SERP outage or a missing
+ * key would have been told "nothing on your site cleared the bar" with no
+ * failure email and no retry (review, 2026-09-29).
+ */
+export function poolWasJudged(pool: EmptyPool | null | undefined): boolean {
+  if (!pool) return false;
+  if (pool.stage === "keywords") return true;
+  if (pool.stage !== "qualification") return false;
+  if (UNANSWERED_CAUSES.some((cause) => (pool.pending[cause] ?? 0) > 0)) return false;
+  return judgedRows(pool) > 0;
+}
+
+/**
+ * What a run is worth saying about itself, once it has stopped.
+ * `nothing_planned` is not a kind of `partial`: nothing fell short, so there
+ * is nothing to retry and nothing to email the person about.
+ */
+export type OnboardingTone = "working" | "done" | "partial" | "nothing_planned" | "error";
 
 export interface OnboardingOutcome {
   tone: OnboardingTone;
@@ -431,7 +557,9 @@ function asClause(reason: string): string {
  *
  * A partial run that produced something - a calendar, a draft - is not a
  * failure to announce: the person can open what it made, and the run screen
- * already says what is missing.
+ * already says what is missing. Nor is a `nothing_planned` one: the bar reads
+ * "Setup didn't finish" and offers Try again, which buys the same empty
+ * answer, for a run that finished and found nothing to plan.
  */
 export interface FailedRunNotice {
   runId: string;
@@ -487,6 +615,9 @@ export function onboardingOutcome(state: OnboardingState, handoff = false, opts:
       line: `Your first ${opts.preTrial ? "article is written" : "draft is in review"}. Nothing else could be scheduled yet${because}`,
       produced: true,
     };
+  }
+  if (runStatusFrom(state) === "nothing_planned") {
+    return { tone: "nothing_planned", line: NOTHING_PLANNED_LINE, produced: false };
   }
   return {
     tone: "partial",

@@ -13,7 +13,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type Row = Record<string, unknown>;
 
-type Filter = { col: string; op: "eq" | "is" | "not-is" | "gte" | "lt"; val: unknown };
+type Filter = { col: string; op: "eq" | "neq" | "is" | "not-is" | "gte" | "lt"; val: unknown };
 
 let nextId = 1;
 
@@ -21,6 +21,7 @@ function matches(row: Row, f: Filter): boolean {
   const v = row[f.col];
   if (f.op === "is") return v === f.val;
   if (f.op === "not-is") return v !== f.val;
+  if (f.op === "neq") return v !== f.val;
   if (f.op === "gte") return String(v) >= String(f.val);
   // ISO timestamps compare lexicographically, which is what the reaper needs.
   if (f.op === "lt") return String(v) < String(f.val);
@@ -112,6 +113,7 @@ export function fakeDb(tables: Record<string, Row[]> = {}): FakeDb {
       insert: (row: Row | Row[]) => ((op = "insert"), (inserted = (Array.isArray(row) ? row : [row]).map((r) => ({ ...r }))), (wantRows = false), q),
       update: (p: Row) => ((op = "update"), (patch = p), (wantRows = false), q),
       eq: (col: string, val: unknown) => (filters.push({ col, op: "eq", val }), q),
+      neq: (col: string, val: unknown) => (filters.push({ col, op: "neq", val }), q),
       is: (col: string, val: unknown) => (filters.push({ col, op: "is", val }), q),
       gte: (col: string, val: unknown) => (filters.push({ col, op: "gte", val }), q),
       lt: (col: string, val: unknown) => (filters.push({ col, op: "lt", val }), q),
