@@ -181,7 +181,7 @@ describe("the clinic's first article, through the whole generation path", () => 
   it("puts the picker's request for the owner's input at the top of the review notes", async () => {
     const ask = "Needs your input before publishing: check each clinical statement.";
     const result = await generateArticle({
-      supabase: client(), workspaceId: "ws1", keyword: "physiotherapy vs athletic therapy", callerEmail: null,
+      supabase: client(), workspaceId: "ws1", keyword: "acme-service vs acme-alternative", callerEmail: null,
       selection: { reasons: ["r"], score: 1, difficulty: null, volume: null, reviewNotes: [ask] },
     });
     expect(result.research.reviewNotes?.[0]).toBe(ask);

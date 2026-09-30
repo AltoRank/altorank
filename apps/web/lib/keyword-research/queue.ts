@@ -6,7 +6,9 @@
 // the writer may take:
 //
 //   unjudged   status `new`, no current verdict. Eligible for qualification.
-//   ready      status `new`, a current `qualified` verdict. The queue.
+//   ready      status `new`, a current `qualified` verdict in a value tier
+//              (`readyApproval`). The queue. A qualified row in inventory
+//              is kept and re-ordered every run, but not counted as ready.
 //   parked     status `stored` with `plan_excluded_at` set and the verdict
 //              that parked it. Never taken by the cron or the planner, shown
 //              on the keywords page with the reason, kept for the day the
@@ -36,6 +38,8 @@ import {
 } from "./opportunity";
 import type { IntentLeader } from "./intent-leaders";
 import { SpendRefusedError } from "@/lib/billing/spend-gate";
+import { winnability } from "@/lib/seo/difficulty";
+import { plannableApproval } from "./value-tiers";
 
 /** Never fewer ready topics than this, whatever the pace. */
 export const QUEUE_MIN = 3;
@@ -63,6 +67,22 @@ export interface QueueRow {
   unmeasured?: boolean;
   /** The saved buyer-test verdict, reused by qualification when it answers today's question. */
   buyer_fit?: unknown;
+  /**
+   * How winnable the term is for this site (lib/seo/difficulty.ts), when the
+   * caller scored it: with the verdict's value, whether an approval is in a
+   * value tier or in inventory. Unknown reads as an unknown difficulty.
+   */
+  winnability?: number;
+}
+
+/**
+ * A row the planner can take: a current approval in a value tier, not
+ * inventory (lib/keyword-research/value-tiers.ts `plannableApproval`). What
+ * "ready" means everywhere the queue is counted, so an inventory-only queue
+ * buys verdicts for new candidates instead of reading as full.
+ */
+export function readyApproval(verdict: Opportunity | null | undefined, row: Pick<QueueRow, "winnability">): boolean {
+  return plannableApproval(verdict, row.winnability ?? winnability(null));
 }
 
 const rawStatus = (row: QueueRow): string | undefined => {
@@ -267,8 +287,8 @@ export async function refillQualifiedQueue(
     const cached = readOpportunity(row.opportunity, fingerprint);
     if (cached) {
       verdicts.set(row.id, cached);
-      if (cached.status === "qualified" && row.status === "new") ready.add(row.id);
-      if (cached.status === "qualified" && isRequalifiable(row)) { await unpark(supabase, workspaceId, row.id); ready.add(row.id); }
+      if (cached.status === "qualified" && row.status === "new" && readyApproval(cached, row)) ready.add(row.id);
+      if (cached.status === "qualified" && isRequalifiable(row)) { await unpark(supabase, workspaceId, row.id); if (readyApproval(cached, row)) ready.add(row.id); }
       if (cached.status !== "pending" || cached.cause !== "unjudged") continue;
     }
     if (isJudgeable(row)) unjudged.push(row);
@@ -303,7 +323,8 @@ export async function refillQualifiedQueue(
       if (result.status === "qualified") {
         qualified++;
         if (isRequalifiable(row)) await unpark(supabase, workspaceId, row.id);
-        ready.add(row.id);
+        // Qualified and kept either way; ready only in a value tier.
+        if (readyApproval(result, row)) ready.add(row.id);
       } else if (result.status === "rejected") {
         toPark.push({ id: row.id, verdict: result });
       }
@@ -320,16 +341,22 @@ export async function refillQualifiedQueue(
 /**
  * How many ready topics a workspace holds right now, from the table. The
  * cheap check a research job makes before spending on new candidates.
+ * Ready is `readyApproval`: an approval in inventory is kept, not counted,
+ * so a queue of topics out of reach still asks for research. `authority` is
+ * the site's domain rating, which winnability is judged against.
  */
-export async function countReady(supabase: SupabaseClient, workspaceId: string, context: OpportunityContext): Promise<number> {
+export async function countReady(supabase: SupabaseClient, workspaceId: string, context: OpportunityContext, authority?: number | null): Promise<number> {
   const { data, error } = await supabase
     .from("keywords")
-    .select("id, term, status, opportunity, plan_excluded_at")
+    .select("id, term, status, opportunity, plan_excluded_at, volume, difficulty")
     .eq("workspace_id", workspaceId)
     .eq("status", "new")
     .is("plan_excluded_at", null)
     .not("opportunity", "is", null);
   if (error) throw new Error(`Could not count the queue: ${error.message}`);
   const fingerprint = contextKey(context);
-  return ((data ?? []) as QueueRow[]).filter((row) => readOpportunity(row.opportunity, fingerprint)?.status === "qualified").length;
+  return ((data ?? []) as Array<QueueRow & { volume?: number | null; difficulty?: number | null }>).filter((row) => {
+    const verdict = readOpportunity(row.opportunity, fingerprint);
+    return verdict?.status === "qualified" && readyApproval(verdict, { winnability: winnability(row.difficulty ?? null, row.volume ?? 0, authority) });
+  }).length;
 }

@@ -89,11 +89,13 @@ vi.mock("../funnel-event", () => ({ recordPlanFunnel: (e: unknown) => recordFunn
 // real database (run-store.db.test.ts); here the question is when the
 // pipeline asks for it and where it puts the answer.
 const EMPTY_POOL = { stage: "qualification" as const, cause: "buyer_mismatch", keywords: 94, qualified: 0, rejected: { buyer_mismatch: 94 }, pending: {}, summary: "None of 94 searches qualified." };
-const emptyPool = vi.fn(async (..._a: unknown[]) => EMPTY_POOL);
-vi.mock("../empty-pool", () => ({ readEmptyPool: (...a: unknown[]) => emptyPool(...a) }));
+const emptyPool = vi.fn(async (..._a: unknown[]): Promise<EmptyPool> => EMPTY_POOL);
+vi.mock("../empty-pool", async (original) => ({ ...(await original<object>()), readEmptyPool: (...a: unknown[]) => emptyPool(...a) }));
+const announceNoFirst = vi.fn(async (..._a: unknown[]) => undefined);
+vi.mock("../first-article-ops", () => ({ announceNoFirstArticle: (...a: unknown[]) => announceNoFirst(...a) }));
 
 import { runOnboarding } from "../pipeline";
-import type { OnboardingEvent } from "../events";
+import type { EmptyPool, OnboardingEvent } from "../events";
 
 const WS = { id: "ws1", domain: "example.com", account_id: "ag1", language: "en" };
 const BRIEF = { version: 2, context: "c", checkedAt: "2026-09-30T00:00:00.000Z", status: "qualified", reason: "a founder choosing a tool", format: "article", value: 2, angle: "What an SEO agent does", buyingJob: "choose a tool" };
@@ -567,8 +569,10 @@ describe("runOnboarding: the topic funnel", () => {
     });
     await runOnboarding(richClient(0), WS, () => undefined, { firstDraft: "dispatch", runId: "run-9" });
     expect(recordFunnel).toHaveBeenCalledOnce();
+    // Recorded once drafting has settled: with nothing planned, the rule
+    // still chose the first article from the recommender's approvals.
     expect(recordFunnel).toHaveBeenCalledWith({
-      runId: "run-9", workspaceId: "ws1", accountId: "ag1", funnel: FUNNEL,
+      runId: "run-9", workspaceId: "ws1", accountId: "ag1", funnel: { ...FUNNEL, firstArticle: "rule" },
       planningDetail: "No keyword clear enough to plan yet.",
     });
   });
@@ -579,7 +583,7 @@ describe("runOnboarding: the topic funnel", () => {
       throw new Error("Start your trial to keep going.");
     });
     await runOnboarding(richClient(0), WS, () => undefined, { firstDraft: "dispatch" });
-    expect(recordFunnel).toHaveBeenCalledWith(expect.objectContaining({ runId: null, funnel: { ...FUNNEL, planned: 0 }, planningDetail: "Start your trial to keep going." }));
+    expect(recordFunnel).toHaveBeenCalledWith(expect.objectContaining({ runId: null, funnel: { ...FUNNEL, planned: 0, firstArticle: "rule" }, planningDetail: "Start your trial to keep going." }));
   });
 
   it("writes a run with no keywords as one the planner never read", async () => {
@@ -616,22 +620,38 @@ describe("runOnboarding: the first-article rule", () => {
     const a = brief(3, { tier: "t1" });
     const b = brief(2, { tier: "t1" });
     plan.mockResolvedValue([
-      { term: "dental crown or veneer", date: "2026-10-01", keywordId: "a", brief: a },
-      { term: "dental implant aftercare", date: "2026-10-02", keywordId: "b", brief: b },
+      { term: "tooth extraction recovery time", date: "2026-10-01", keywordId: "a", brief: a },
+      { term: "painkiller dosage after a dental implant", date: "2026-10-02", keywordId: "b", brief: b },
     ]);
-    recommend.mockResolvedValue([recOf("dental crown or veneer", a), recOf("dental implant aftercare", b)]);
+    recommend.mockResolvedValue([recOf("tooth extraction recovery time", a), recOf("painkiller dosage after a dental implant", b)]);
     const { result } = await collectDispatch();
-    expect(result.pendingDraft?.term).toBe("dental crown or veneer");
+    expect(result.pendingDraft?.term).toBe("tooth extraction recovery time");
     expect(result.pendingDraft?.selection.reviewNotes?.[0]).toMatch(/^Needs your input before publishing: every planned topic about your services asks for clinical claims/);
   });
 
-  it("writes nothing first when no planned topic is about a service, and says why", async () => {
+  it("writes a clinic's condition topic by the rule, not the fallback: the profession's words are not a claim", async () => {
+    const a = brief(3, { tier: "t1", angle: "Dentist for sensitive teeth: what the visit involves" });
+    plan.mockResolvedValue([{ term: "dentist for sensitive teeth", date: "2026-10-01", keywordId: "a", brief: a }]);
+    recommend.mockResolvedValue([recOf("dentist for sensitive teeth", a)]);
+    const { result } = await collectDispatch();
+    expect(result.pendingDraft?.term).toBe("dentist for sensitive teeth");
+    expect(result.pendingDraft?.selection.reviewNotes).toBeUndefined();
+  });
+
+  it("writes nothing first when no planned topic is about a service, says a person picks, and tells the operators", async () => {
+    announceNoFirst.mockClear();
     const general = brief(1, { tier: "t3" });
-    plan.mockResolvedValue([{ term: "bike commuting tips", date: "2026-10-01", keywordId: "g", brief: general }]);
+    plan.mockImplementation(async (...a: unknown[]) => {
+      (a[3] as { onFunnel?: (f: unknown) => void }).onFunnel?.({ found: 1, removed: {}, qualified: 1, planned: 1 });
+      return [{ term: "bike commuting tips", date: "2026-10-01", keywordId: "g", brief: general }];
+    });
     recommend.mockResolvedValue([recOf("bike commuting tips", general), recOf("wheel building cost", brief(3, { tier: "inventory" }))]);
-    const { events, result } = await collectDispatch();
+    const events: OnboardingEvent[] = [];
+    const result = await runOnboarding(richClient(0), WS, (e) => events.push(e), { firstDraft: "dispatch", runId: "run-7" });
     expect(result.pendingDraft).toBeNull();
-    expect(events.filter((e) => e.phase === "drafting").at(-1)).toMatchObject({ status: "skipped", detail: expect.stringContaining("No planned topic is about one of your services closely enough") });
+    expect(events.filter((e) => e.phase === "drafting").at(-1)).toMatchObject({ status: "skipped", detail: expect.stringMatching(/No planned topic is about one of your services closely enough.*We will pick your first topic with you/) });
+    expect(announceNoFirst).toHaveBeenCalledWith(expect.anything(), "run-7", expect.objectContaining({ workspaceId: "ws1" }), 1, expect.stringContaining("No planned topic"));
+    expect(recordFunnel).toHaveBeenCalledWith(expect.objectContaining({ funnel: expect.objectContaining({ firstArticle: "none" }) }));
   });
 
   it("does not write a planned topic the second read no longer offers, and picks again among the planned", async () => {
@@ -644,6 +664,21 @@ describe("runOnboarding: the first-article rule", () => {
     recommend.mockResolvedValue([{ ...recOf("tubeless conversion cost", first), action: "skip" }, recOf("brake rub fix", second)]);
     const { result } = await collectDispatch();
     expect(result.pendingDraft?.term).toBe("brake rub fix");
+  });
+
+  it("says the chosen topic was refused on the second read when no other planned topic is eligible", async () => {
+    const first = brief(3, { tier: "t1" });
+    const general = brief(1, { tier: "t3" });
+    plan.mockResolvedValue([
+      { term: "tubeless conversion cost", date: "2026-10-01", keywordId: "s", brief: first },
+      { term: "bike commuting tips", date: "2026-10-02", keywordId: "g", brief: general },
+    ]);
+    recommend.mockResolvedValue([{ ...recOf("tubeless conversion cost", first), action: "skip" }, recOf("bike commuting tips", general)]);
+    const { events, result } = await collectDispatch();
+    expect(result.pendingDraft).toBeNull();
+    const detail = (events.filter((e) => e.phase === "drafting").at(-1) as { detail?: string }).detail ?? "";
+    expect(detail).toContain(`"tubeless conversion cost" was chosen as your first article`);
+    expect(detail).not.toContain("No planned topic is about one of your services");
   });
 });
 
@@ -663,6 +698,32 @@ describe("the empty pool", () => {
     const events = await collect();
     expect(planningEvent(events)).toMatchObject({ status: "skipped", emptyPool: EMPTY_POOL });
     expect(emptyPool).toHaveBeenCalledWith(expect.anything(), "ws1");
+  });
+
+  it("reads qualified topics the value tiers kept in the queue as an answer: nothing planned, a person picks, no draft bought", async () => {
+    const PLANNING = { stage: "planning" as const, cause: null, keywords: 30, qualified: 4, rejected: { buyer_mismatch: 26 }, pending: {}, summary: "4 of 30 searches qualified and the planner placed none of them." };
+    emptyPool.mockResolvedValueOnce(PLANNING);
+    plan.mockImplementation(async (...a: unknown[]) => {
+      (a[3] as { onFunnel?: (f: unknown) => void }).onFunnel?.({ found: 30, removed: { buyer_mismatch: 26 }, qualified: 4, planned: 0, notPlanned: { inventory: 4 } });
+      return [];
+    });
+    recommend.mockClear();
+    const events = await collect();
+    expect(planningEvent(events)).toMatchObject({ status: "skipped", emptyPool: { stage: "planning", cause: "value", qualified: 4 } });
+    expect((planningEvent(events) as { detail?: string }).detail).toContain("none is both close enough to a service you list and within reach");
+    expect(events.filter((e) => e.phase === "drafting").at(-1)).toMatchObject({ status: "skipped", detail: expect.stringContaining("We will pick it with you") });
+    expect(recommend).not.toHaveBeenCalled();
+  });
+
+  it("leaves a planning pool the planner fell short on as it was", async () => {
+    const PLANNING = { stage: "planning" as const, cause: null, keywords: 30, qualified: 4, rejected: {}, pending: {}, summary: "s" };
+    emptyPool.mockResolvedValueOnce(PLANNING);
+    plan.mockImplementation(async (...a: unknown[]) => {
+      (a[3] as { onFunnel?: (f: unknown) => void }).onFunnel?.({ found: 4, removed: {}, qualified: 4, planned: 0, notPlanned: { no_room: 4 } });
+      return [];
+    });
+    const events = await collect();
+    expect(planningEvent(events)).toMatchObject({ emptyPool: PLANNING });
   });
 
   it("is not read when the plan has something on it", async () => {

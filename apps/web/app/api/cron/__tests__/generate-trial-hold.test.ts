@@ -87,7 +87,10 @@ import { TrialHoldError } from "@/lib/billing/trial-hold";
 import { TRIAL_HOLD_MESSAGE, trialCancelledMessage } from "@/lib/billing/trial-refusal";
 
 const req = () => new Request("http://localhost/api/cron/generate", { headers: { "x-cron-secret": "s" } });
-const GOOD = { term: "crm for agencies", keywordId: "k1", action: "write", quality: "ok", reasons: ["fixture"], score: 1, difficulty: 10, volume: 100 };
+const GOOD = {
+  term: "booking software for agencies", keywordId: "k1", action: "write", quality: "ok", reasons: ["fixture"], score: 1, difficulty: 10, volume: 100,
+  tier: "t1", opportunity: { status: "qualified", format: "article", value: 3, reason: "r" },
+};
 
 beforeEach(() => {
   process.env.CRON_SECRET = "s";
@@ -129,12 +132,57 @@ describe("cron/generate and a trial-gated account", () => {
 
   it("reports the hold as a skip when the writer itself refuses (a race the read above lost)", async () => {
     getQuota.mockResolvedValue({ limit: 7, used: 0, remaining: 7, reason: "no-plan", plan: null, trialEligible: true });
-    duePlannedKeyword.mockResolvedValue({ entryId: "e1", keywordId: "k1", term: "crm for agencies" });
+    duePlannedKeyword.mockResolvedValue({ entryId: "e1", keywordId: "k1", term: "booking software for agencies" });
     generateArticle.mockRejectedValue(new TrialHoldError());
     const body = await (await GET(req())).json();
     expect(body.results[0]).toMatchObject({ status: "skipped", detail: TRIAL_HOLD_MESSAGE });
     expect(body.errors).toBe(0);
     expect(claim.recordEntryFailure).toHaveBeenCalledWith(expect.anything(), "e1", expect.stringMatching(/^cron:/), TRIAL_HOLD_MESSAGE);
+  });
+});
+
+// An account before its trial writes one article, and it is its first
+// article: the first-article rule holds here as it does at onboarding
+// (lib/keyword-research/value-tiers.ts `chooseFirstArticle`).
+describe("cron/generate and the pre-trial first article", () => {
+  const preTrial = { limit: 7, used: 0, remaining: 7, reason: "no-plan", plan: null, trialEligible: true };
+  const general = { ...GOOD, term: "bike commuting tips", keywordId: "g", tier: "t3", opportunity: { status: "qualified", format: "article", value: 1, reason: "r" } };
+
+  it("does not write a top-of-funnel topic first, planned or not; a person picks", async () => {
+    getQuota.mockResolvedValue(preTrial);
+    recommendKeywords.mockResolvedValue([general]);
+    duePlannedKeyword.mockResolvedValue({ entryId: "e1", keywordId: "g", term: "bike commuting tips" });
+    const body = await (await GET(req())).json();
+    expect(body.results[0]).toMatchObject({ status: "skipped", detail: expect.stringContaining("the first article waits for a person") });
+    expect(generateArticle).not.toHaveBeenCalled();
+  });
+
+  it("writes the rule's pick over a planned entry the rule refuses", async () => {
+    getQuota.mockResolvedValue(preTrial);
+    recommendKeywords.mockResolvedValue([general, GOOD]);
+    duePlannedKeyword.mockResolvedValue({ entryId: "e1", keywordId: "g", term: "bike commuting tips" });
+    await GET(req());
+    expect(generateArticle).toHaveBeenCalledOnce();
+    expect(generateArticle.mock.calls[0][0]).toMatchObject({ keyword: "booking software for agencies", keywordId: "k1" });
+  });
+
+  it("carries the fact-risk note onto the draft when the first article needs the owner's facts", async () => {
+    getQuota.mockResolvedValue(preTrial);
+    const risky = { ...GOOD, term: "tooth extraction recovery time", keywordId: "r" };
+    recommendKeywords.mockResolvedValue([risky]);
+    duePlannedKeyword.mockResolvedValue({ entryId: "e1", keywordId: "r", term: "tooth extraction recovery time" });
+    await GET(req());
+    expect(generateArticle).toHaveBeenCalledOnce();
+    const selection = (generateArticle.mock.calls[0][0] as { selection: { reviewNotes?: string[] } }).selection;
+    expect(selection.reviewNotes?.[0]).toMatch(/^Needs your input before publishing/);
+  });
+
+  it("leaves an open account's autopilot to the queue as before", async () => {
+    getQuota.mockResolvedValue({ limit: 100, used: 1, remaining: 99, reason: "plan", plan: "starter" });
+    recommendKeywords.mockResolvedValue([general]);
+    await GET(req());
+    expect(generateArticle).toHaveBeenCalledOnce();
+    expect((generateArticle.mock.calls[0][0] as { selection: { reviewNotes?: string[] } }).selection.reviewNotes).toBeUndefined();
   });
 });
 
@@ -205,16 +253,16 @@ describe("cron/generate and claimed entries", () => {
   });
 
   it("claims today's entry before writing it, and writes nothing when somebody else holds it", async () => {
-    duePlannedKeyword.mockResolvedValue({ entryId: "e1", keywordId: "k1", term: "crm for agencies" });
+    duePlannedKeyword.mockResolvedValue({ entryId: "e1", keywordId: "k1", term: "booking software for agencies" });
     claim.claimEntry.mockResolvedValue(false);
     const body = await (await GET(req())).json();
     expect(claim.claimEntry).toHaveBeenCalledWith(expect.anything(), "e1", expect.stringMatching(/^cron:\d+$/));
-    expect(body.results[0]).toMatchObject({ status: "skipped", detail: '"crm for agencies" is already being written by another run; leaving it to that one' });
+    expect(body.results[0]).toMatchObject({ status: "skipped", detail: '"booking software for agencies" is already being written by another run; leaving it to that one' });
     expect(generateArticle).not.toHaveBeenCalled();
   });
 
   it("writes a failed draft's reason on its entry, so the calendar says it and the next run takes it back", async () => {
-    duePlannedKeyword.mockResolvedValue({ entryId: "e1", keywordId: "k1", term: "crm for agencies" });
+    duePlannedKeyword.mockResolvedValue({ entryId: "e1", keywordId: "k1", term: "booking software for agencies" });
     generateArticle.mockRejectedValue(new Error("The model timed out."));
     const body = await (await GET(req())).json();
     expect(body.results[0]).toMatchObject({ status: "error", detail: "The model timed out." });

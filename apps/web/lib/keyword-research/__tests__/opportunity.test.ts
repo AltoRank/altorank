@@ -12,7 +12,7 @@ import { balanceSources, diverseSeeds } from "../diversity";
 const context = { domain: "example.com", languageCode: "it", locationCode: 2380, business: { name: "Clinic Studio", description: "Clinic Studio builds booking websites for clinics and salons at a fixed price.", offerings: ["clinic booking websites"], audiences: ["clinic owners"] } };
 const term = "clinic booking website costs";
 const urls = ["https://one.test/guide", "https://two.test/guide", "https://three.test/guide", "https://four.test/guide"];
-const approval = { stage: "comparing", kinds: ["article", "article", "article", "article"], value: 3, service: "clinic booking websites", reason: "Clinic owners compare the cost of a booking website", audience: "clinic owners", buyingJob: "choose a booking website", offering: "clinic booking websites", angle: "What clinics should budget for a booking website", conversionPath: "https://example.com/contact" };
+const approval = { stage: "comparing", kinds: ["article", "article", "article", "article"], value: 3, service: "clinic booking websites", match: "named", reason: "Clinic owners compare the cost of a booking website", audience: "clinic owners", buyingJob: "choose a booking website", offering: "clinic booking websites", angle: "What clinics should budget for a booking website", conversionPath: "https://example.com/contact" };
 /** How many results the judge was shown, read back from its prompt. */
 const shown = (prompt: string) => (JSON.parse(prompt.slice(prompt.lastIndexOf("\n") + 1)) as { results: unknown[] }).results.length;
 /** The judge names every result `kinds` (one word for all, or one each), with the approval's brief. */
@@ -328,18 +328,31 @@ describe("business value", () => {
     expect(await run()).toMatchObject({ status: "qualified", value: 2, service: "clinic booking websites" });
   });
   it("caps a grade of 2 or 3 at 1 when no listed service is named, and says so", async () => {
-    answerWith("article", { value: 3, service: "none" });
+    answerWith("article", { value: 3, service: "none", match: "adjacent" });
     const out = await run();
-    expect(out).toMatchObject({ status: "qualified", value: 1, valueCapped: true });
+    expect(out).toMatchObject({ status: "qualified", value: 1, valueCapped: true, valueCap: "no_service" });
     expect(out.service).toBeUndefined();
     expect(out.reason).toContain("capped at 1");
     // A service the business does not list is no service.
     answerWith("article", { value: 3, service: "hospital software" });
     expect(await run()).toMatchObject({ value: 1, valueCapped: true });
-    // Without offerings every grade is capped: there is nothing to name.
+  });
+  it("caps a grade on an adjacent service at 1, and a service the search does not name at 2", async () => {
+    answerWith("article", { value: 2, service: "clinic booking websites", match: "adjacent" });
+    const adjacent = await run();
+    expect(adjacent).toMatchObject({ status: "qualified", value: 1, valueCapped: true, valueCap: "adjacent", serviceMatch: "adjacent" });
+    expect(adjacent.service).toBeUndefined();
+    answerWith("article", { value: 3, service: "clinic booking websites", match: "implied" });
+    const implied = await run();
+    expect(implied).toMatchObject({ value: 2, service: "clinic booking websites", valueCapped: true, valueCap: "implied" });
+    expect(implied.reason).toContain("capped at 2");
+  });
+  it("leaves the grade uncapped and flagged when the profile lists no services", async () => {
     const bare = { ...context, business: { ...context.business, offerings: [] } };
-    answerWith("article", { value: 3, service: "clinic booking websites" });
-    expect((await qualifyOpportunities(db, "ws", [{ id: "k", term }], bare)).get("k")).toMatchObject({ value: 1, valueCapped: true });
+    answerWith("article", { value: 3, service: "none", match: "adjacent" });
+    const out = (await qualifyOpportunities(db, "ws", [{ id: "k", term }], bare)).get("k");
+    expect(out).toMatchObject({ value: 3, valueUnlisted: true });
+    expect(out?.valueCapped).toBeUndefined();
   });
   it("keeps a grade of 1 with no service as it is", async () => {
     answerWith("article", { value: 1, service: "none" });

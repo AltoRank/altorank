@@ -47,6 +47,13 @@ describe("heldTopics", () => {
     ];
     expect((await heldTopics(client(held), "ws", 3, [])).count).toBe(1);
   });
+  it("does not count an approval the retired floor saved: the planner refuses it", async () => {
+    const held: Row[] = [
+      { id: "a", term: "floor topic", opportunity: { status: "qualified", value: 3, confidence: "lower", reason: "Lower confidence: fewer articles hold this search than the bar asks for." } },
+      { id: "b", term: "easy service topic", opportunity: { status: "qualified", value: 3 }, difficulty: 5 } as Row,
+    ];
+    expect((await heldTopics(client(held), "ws", 3, [])).count).toBe(1);
+  });
   it("is empty when nothing is held", async () => {
     expect(await heldTopics(client(0), "ws", 3, [])).toEqual({ count: 0, dates: [] });
   });

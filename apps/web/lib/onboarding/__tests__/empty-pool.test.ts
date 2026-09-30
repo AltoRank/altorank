@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { describeEmptyPool } from "../empty-pool";
+import { describeEmptyPool, explainPlanningPool } from "../empty-pool";
+import { poolWasJudged, runStatusFrom, initialOnboardingState } from "../events";
 
 describe("describeEmptyPool", () => {
   it("names research as the stage when there was nothing to judge", () => {
@@ -38,5 +39,30 @@ describe("describeEmptyPool", () => {
 
   it("names the planner when something qualified and nothing was placed", () => {
     expect(describeEmptyPool([{ status: "qualified" }, { status: "rejected", cause: "duplicate" }])).toMatchObject({ stage: "planning", qualified: 1, keywords: 2 });
+  });
+});
+
+describe("explainPlanningPool", () => {
+  const planning = describeEmptyPool([{ status: "qualified" }, { status: "qualified" }, { status: "rejected", cause: "buyer_mismatch" }]);
+
+  it("reads qualified topics the value tiers kept in the queue as an answer: nothing planned, not a planner that fell short", () => {
+    expect(poolWasJudged(planning)).toBe(false);
+    const pool = explainPlanningPool(planning, { inventory: 1, first_article: 1 });
+    expect(pool).toMatchObject({ stage: "planning", cause: "value", qualified: 2 });
+    expect(pool.summary).toContain("the value tiers planned none");
+    expect(poolWasJudged(pool)).toBe(true);
+    const state = { ...initialOnboardingState(), ready: true, emptyPool: pool, steps: [{ phase: "planning" as const, status: "skipped" as const }] };
+    expect(runStatusFrom(state)).toBe("nothing_planned");
+  });
+
+  it("leaves a pool the planner fell short on (no room, a refusal) as it was", () => {
+    expect(explainPlanningPool(planning, { inventory: 1, no_room: 1 })).toBe(planning);
+    expect(explainPlanningPool(planning, { refused: 2 })).toBe(planning);
+    expect(explainPlanningPool(planning, null)).toBe(planning);
+  });
+
+  it("does not call an unanswered pool an answer, value or not", () => {
+    const withErrors = { ...explainPlanningPool(planning, { inventory: 2 }), pending: { provider_error: 3 } };
+    expect(poolWasJudged(withErrors)).toBe(false);
   });
 });

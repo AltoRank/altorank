@@ -196,11 +196,16 @@ describe("value tiers order the approvals", () => {
       row("hardprob", "disc brake squeal", { volume: 800, difficulty: 35 }),
     ]);
     const writable = recs.filter((r) => r.action === "write");
-    expect(writable.map((r) => `${r.keywordId}:${r.tier}`)).toEqual(["prob:t1", "svc:t1", "hardsvc:t2", "gen:t3", "hardprob:inventory"]);
-    expect(writable[0].reasons[1]).toBe("Business value 2 (bike repair): about a service you sell, and within reach");
-    expect(pickNextKeyword(recs)?.keywordId).toBe("prob");
-    // Inventory is kept, never written unattended.
-    expect(pickNextKeyword(recs.filter((r) => r.keywordId === "hardprob"))).toBeNull();
+    // Value 3 before value 2 inside T1, whatever the volume.
+    expect(writable.map((r) => `${r.keywordId}:${r.tier}`)).toEqual(["svc:t1", "prob:t1", "hardsvc:t2", "gen:t3", "hardprob:inventory"]);
+    expect(writable[1].reasons[1]).toBe("Business value 2 (bike repair): about a service you sell, and within reach");
+    expect(pickNextKeyword(recs)?.keywordId).toBe("svc");
+    // Inventory is written only when nothing in a tier is left, and never
+    // counts as "something left" to the pool refill.
+    const onlyInventory = recs.filter((r) => r.keywordId === "hardprob");
+    expect(pickNextKeyword(onlyInventory)?.keywordId).toBe("hardprob");
+    expect(pickNextKeyword(onlyInventory, { inventory: false })).toBeNull();
+    expect(pickNextKeyword(recs, { inventory: false })?.keywordId).toBe("svc");
   });
   it("keeps the phrasing closer to a service when two phrasings are one search, whatever their volumes", async () => {
     const shared = ["https://p.test/a", "https://p.test/b", "https://p.test/c", "https://p.test/d"];

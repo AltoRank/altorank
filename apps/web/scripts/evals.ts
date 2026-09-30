@@ -109,6 +109,16 @@ async function main() {
     console.error(`${result.recorder.misses} prompts have no stored answer: the prompts changed since the last live run. Re-record with --live.`);
     process.exitCode = 1;
   }
+  // The product's plans in one line, strict precision first: whether the
+  // invariants hold, and how many labelled slots are revenue topics.
+  const mine = result.plans.filter((p) => p.selector === result.plans[0]?.selector);
+  if (mine.length) {
+    const labelled = mine.reduce((n, p) => n + p.slots.labelled, 0);
+    const strict = mine.reduce((n, p) => n + p.slots.strict, 0);
+    const lenient = mine.reduce((n, p) => n + p.slots.correct, 0);
+    const breaks = mine.reduce((n, p) => n + p.violations.length, 0);
+    log(`Plans (${result.plans[0].selector}): slot precision ${strict}/${labelled} at value >= 2 (lenient ${lenient}/${labelled}); ${breaks} invariant break${breaks === 1 ? "" : "s"}.`);
+  }
   const broken = result.plans.filter((p) => p.violations.length && p.selector === result.plans[0]?.selector);
   if (arg("require-invariants") && broken.length) {
     console.error(`${broken.length} plan(s) break an invariant: ${broken.map((p) => `${p.caseId}: ${p.violations.join("; ")}`).join(" | ")}`);

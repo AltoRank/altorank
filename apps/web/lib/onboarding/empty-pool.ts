@@ -15,6 +15,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { readAllPages } from "@/lib/supabase/read-all";
 import { causeLabel } from "@/lib/keyword-research/opportunity";
 import type { EmptyPool } from "./events";
+import type { PlannerStage } from "@/lib/keyword-research/topic-funnel";
 
 /** A keyword row's verdict, as far as this reads it. */
 export type VerdictRow = { status?: string | null; cause?: string | null };
@@ -91,6 +92,27 @@ export function describeEmptyPool(rows: readonly VerdictRow[]): EmptyPool {
     rejected,
     pending,
     summary: `None of ${keywords} searches qualified${cause ? `; the largest group: ${causeLabel(cause)}` : ""} (${parts.join("; ")}).`,
+  };
+}
+
+/**
+ * A `planning` pool the value tiers emptied: topics qualified, and the
+ * planner kept every one of them in the queue because none is close enough
+ * to a listed service and within reach (inventory), its tier was full, or -
+ * on a calendar held at its first article - none passed the first-article
+ * rule. That is an answer about the site, not the planner falling short,
+ * so it reads as nothing planned (cause "value", `poolWasJudged`), with the
+ * operator's follow-up and no failure email. Any other planner reason (no
+ * room, a refusal) leaves the pool as it was.
+ */
+export function explainPlanningPool(pool: EmptyPool, notPlanned: Partial<Record<PlannerStage, number>> | null | undefined): EmptyPool {
+  if (pool.stage !== "planning" || !notPlanned) return pool;
+  const kept = (notPlanned.inventory ?? 0) + (notPlanned.tier_full ?? 0) + (notPlanned.first_article ?? 0);
+  if (!kept || (notPlanned.no_room ?? 0) > 0 || (notPlanned.refused ?? 0) > 0) return pool;
+  return {
+    ...pool,
+    cause: "value",
+    summary: `${pool.qualified} of ${pool.keywords} searches qualified, and the value tiers planned none: none is both close enough to a service the site lists and within reach, or fit to be its first article (${kept} kept in the queue). A person picks the first topic.`,
   };
 }
 

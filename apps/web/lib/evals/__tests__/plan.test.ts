@@ -6,8 +6,8 @@ import type { DecisionCase, TermCase } from "../types";
 
 /**
  * The plan scorer on invented cases: a bike workshop whose highest-volume
- * approval is general interest, the shape of the 2026-09-30 failure where a
- * clinic's first article was a general-fitness topic.
+ * approval is general interest, the shape of the failure the value tiers
+ * exist for: a general-interest topic outranking the services.
  */
 
 const CASE: DecisionCase = {
@@ -42,7 +42,7 @@ describe("scoring a plan", () => {
     expect(score.planned.map((p) => p.term)).toEqual(["cycling for weight loss", "wheel truing stand", "brake squeal fix", "chain lube guide", "tubeless conversion cost"]);
     // General interest by volume: the failure the value tiers exist for.
     expect(score.first).toMatchObject({ term: "cycling for weight loss", rule: "plan[0]", outcome: "wrong", why: "value 1" });
-    expect(score.slots).toEqual({ labelled: 4, correct: 3, unlabelled: 1, precision: 0.75 });
+    expect(score.slots).toEqual({ labelled: 4, correct: 3, strict: 2, unlabelled: 1, precision: 0.75, strictPrecision: 0.5 });
     expect(score.topOfFunnel.labelled).toBe(2);
     expect(score.pageTypeInPlan).toEqual({ product: [], labelled: ["wheel truing stand"] });
     expect(score.violations).toEqual([]);
@@ -104,7 +104,7 @@ describe("candidates and totals", () => {
     const x = cand(term("brake squeal fix", { verdict: "qualified", value: 2 }), approved());
     const scores = [scorePlan(CASE, [x], VOLUME_FIRST), scorePlan({ ...CASE, id: "site-b" }, [x], VOLUME_FIRST)];
     const t = planTotals(scores, VOLUME_FIRST.name);
-    expect(t).toMatchObject({ cases: 2, slots: { labelled: 2, correct: 2, precision: 1 }, first: { correct: 2 } });
+    expect(t).toMatchObject({ cases: 2, slots: { labelled: 2, correct: 2, strict: 2, precision: 1, strictPrecision: 1 }, first: { correct: 2 } });
     const md = renderPlanMarkdown(scores, valueAgreement([x]));
     expect(md).toContain("## plan");
     expect(md).toContain("### site-b - volume first (#263)");
@@ -131,17 +131,32 @@ describe("the value-first selector: the product's planner on the same verdicts",
     const before = scorePlan(c, [general, service, problem], VOLUME_FIRST);
     const after = scorePlan(c, [general, service, problem], VALUE_FIRST);
     expect(before.first).toMatchObject({ term: "cycling for weight loss", outcome: "wrong" });
-    expect(after.planned.map((p) => `${p.term}:${p.tier}`)).toEqual(["brake squeal fix:t1", "tubeless conversion cost:t1", "cycling for weight loss:t3"]);
-    expect(after.first).toMatchObject({ term: "brake squeal fix", rule: "rule", outcome: "correct" });
+    // Value 3 before value 2 inside T1.
+    expect(after.planned.map((p) => `${p.term}:${p.tier}`)).toEqual(["tubeless conversion cost:t1", "brake squeal fix:t1", "cycling for weight loss:t3"]);
+    expect(after.first).toMatchObject({ term: "tubeless conversion cost", rule: "rule", outcome: "correct" });
     expect(after.topOfFunnel.product).toBe(1);
     expect(after.violations).toEqual([]);
   });
-  it("fills a short plan with labelled lower-confidence slots, and keeps the floor invariant", () => {
+  it("keeps top of funnel at one slot however short the plan, and the floor invariant counts it so", () => {
     const tof = (t: string) => cand(term(t, { verdict: "qualified", value: 1 }), graded(1));
     const s = scorePlan(CASE, [tof("chain lube guide"), tof("saddle height guide"), tof("tyre pressure guide")], VALUE_FIRST);
-    expect(s.planned.map((p) => p.relaxed)).toEqual([false, true, true]);
+    expect(s.planned.map((p) => `${p.term}:${p.tier}`)).toEqual(["chain lube guide:t3"]);
+    expect(s.eligible).toBe(1);
     expect(s.first).toMatchObject({ term: null, rule: "none", outcome: "none" });
     expect(s.violations).toEqual([]);
+  });
+  it("fills a short plan with labelled lower-confidence slots from the long-term bets", () => {
+    const hard = (t: string, value: 2 | 3) => cand(term(t, { verdict: "qualified", value }, { volume: 100, difficulty: 90 }), graded(value));
+    const s = scorePlan({ ...CASE, authority: 0 }, [hard("wheel building cost", 3), hard("wheel truing service", 3), hard("spoke keeps breaking", 2)], VALUE_FIRST);
+    expect(s.planned.map((p) => `${p.term}:${p.tier}${p.relaxed ? "*" : ""}`)).toEqual(["wheel building cost:t2", "wheel truing service:t2*", "spoke keeps breaking:t2*"]);
+    expect(s.violations).toEqual([]);
+  });
+  it("scores slot precision strictly at label value 2 or more, the lenient share beside it", () => {
+    const general = cand(term("chain lube guide", { verdict: "qualified", value: 1 }), graded(1));
+    const service = cand(term("tubeless conversion cost", { verdict: "qualified", value: 3 }), graded(3, { service: "bike servicing" }));
+    const s = scorePlan(CASE, [general, service], VALUE_FIRST);
+    expect(s.slots).toMatchObject({ labelled: 2, correct: 2, strict: 1, precision: 1, strictPrecision: 0.5 });
+    expect(renderPlanMarkdown([s])).toContain("| value first | 1/2 (50%) | 2/2 (100%) |");
   });
   it("never plans a refusal or an approval on a page that is not editorial", () => {
     const page = cand(term("bike shop open sunday", { verdict: "needs_page" }), refused("needs_page"));

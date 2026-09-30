@@ -131,7 +131,8 @@ export interface OnboardingArticle {
  *   keywords        research found nothing to judge
  *   qualification   every candidate was judged and none qualified; `cause`
  *                   is the verdict that removed the most
- *   planning        some qualified, and the planner still placed none
+ *   planning        some qualified, and the planner still placed none;
+ *                   cause "value" when the value tiers kept them all
  */
 export interface EmptyPool {
   stage: "keywords" | "qualification" | "planning";
@@ -466,7 +467,9 @@ export function judgedRows(pool: EmptyPool): number {
  * Not when any row is pending for a reason in UNANSWERED_CAUSES, not when no
  * row was judged at all (no model key leaves every row `unjudged`), and not
  * at the `planning` stage - something qualified and the planner placed none
- * of it, which is the planner falling short, not the site. An earlier cut
+ * of it, which is the planner falling short, not the site - unless the
+ * cause is "value": the value tiers kept every qualified topic in the
+ * queue, which is an answer about the site. An earlier cut
  * took any recorded pool as nothing-planned, and a SERP outage or a missing
  * key would have been told "nothing on your site cleared the bar" with no
  * failure email and no retry (review, 2026-09-29).
@@ -474,7 +477,10 @@ export function judgedRows(pool: EmptyPool): number {
 export function poolWasJudged(pool: EmptyPool | null | undefined): boolean {
   if (!pool) return false;
   if (pool.stage === "keywords") return true;
-  if (pool.stage !== "qualification") return false;
+  // The one planning answer: the value tiers kept every qualified topic in
+  // the queue (lib/onboarding/empty-pool.ts `explainPlanningPool`).
+  if (pool.stage === "planning" && pool.cause !== "value") return false;
+  if (pool.stage !== "qualification" && pool.stage !== "planning") return false;
   if (UNANSWERED_CAUSES.some((cause) => (pool.pending[cause] ?? 0) > 0)) return false;
   return judgedRows(pool) > 0;
 }

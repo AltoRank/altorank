@@ -13,6 +13,9 @@
 // (recorded, so a replay is free) and scores the plan it makes:
 //
 //   planned-slot precision   of the planned slots a person labelled, the
+//                            share labelled qualified AND of value >= 2
+//                            (the headline: a general-interest slot is not
+//                            a revenue slot), and beside it the lenient
 //                            share labelled qualified (value 0 is wrong)
 //   first article            correct when its label is an editorial
 //                            topic (not needs_page, not_editorial,
@@ -35,7 +38,7 @@ import type { Opportunity } from "@/lib/keyword-research/opportunity";
 import { namedIn } from "@/lib/keyword-research/results-page";
 import { clusterByIntent, intentLanguage } from "@/lib/keyword-research/intent";
 import { volumeScore, winnability } from "@/lib/seo/difficulty";
-import { chooseFirstArticle, planOrder, selectPlan, tierOf, valueOf as plannedValue, type Rankable } from "@/lib/keyword-research/value-tiers";
+import { chooseFirstArticle, planOrder, selectPlan, tierCaps, tierOf, valueOf as plannedValue, type Rankable } from "@/lib/keyword-research/value-tiers";
 import type { DecisionCase, TermCase, TopicLabel } from "./types";
 
 /** The first look's plan size (lib/onboarding/pipeline.ts `maxEntries`). */
@@ -131,8 +134,13 @@ export const VALUE_FIRST: PlanSelector = {
     const distinct = oneBySearch(ordered, c.languageCode);
     const selection = selectPlan(distinct, rank, { slots, relax: true });
     const planned = selection.picks.map((p) => ({ candidate: p.item, tier: p.tier, relaxed: p.relaxed }));
-    const first = chooseFirstArticle(planned, (p) => ({ term: p.candidate.term.term, brief: p.candidate.verdict }), { language: c.languageCode, profile: c.business });
-    const eligible = distinct.filter((p) => tierOf(rank(p).value, rank(p).winnability) !== "inventory").length;
+    const first = chooseFirstArticle(planned, (p) => ({ term: p.candidate.term.term, brief: p.candidate.verdict }), { language: c.languageCode });
+    // What the rules could put in a slot: T1 and T2, a value-2 topic out of
+    // reach (a first look relaxes to it), and top of funnel only up to its
+    // cap - the founder's one in five outranks the floor of three.
+    const tiers = distinct.map((p) => ({ tier: tierOf(rank(p).value, rank(p).winnability), value: rank(p).value }));
+    const eligible = tiers.filter((t) => t.tier === "t1" || t.tier === "t2" || (t.tier === "inventory" && t.value >= 2)).length
+      + Math.min(tiers.filter((t) => t.tier === "t3").length, tierCaps(slots).t3Total);
     return { planned, first: first.pick?.candidate ?? null, firstRule: first.rule, eligible };
   },
 };
@@ -153,8 +161,10 @@ export interface SlotScore {
   labelValue: number | null;
   /** The reader's value grade, after code's cap, when it gave one. */
   productValue: number | null;
-  /** Labelled and right: labelled qualified, and not graded value 0. Null when unlabelled. */
+  /** Labelled and right, leniently: labelled qualified, and not graded value 0. Null when unlabelled. */
   correct: boolean | null;
+  /** Labelled and right, strictly: labelled qualified with a label value of 2 or more. Null when unlabelled. */
+  strict: boolean | null;
 }
 
 export interface CasePlanScore {
@@ -164,7 +174,11 @@ export interface CasePlanScore {
   candidates: number;
   eligible: number;
   planned: SlotScore[];
-  slots: { labelled: number; correct: number; unlabelled: number; precision: number | null };
+  /**
+   * `strict` / `strictPrecision`: labelled qualified and of label value 2 or
+   * more, the headline. `correct` / `precision`: labelled qualified at all.
+   */
+  slots: { labelled: number; correct: number; strict: number; unlabelled: number; precision: number | null; strictPrecision: number | null };
   first: {
     term: string | null;
     rule: string;
@@ -219,10 +233,12 @@ export function scorePlan(c: DecisionCase, candidates: readonly PlanCandidate[],
       labelValue,
       productValue: valueOf(s.candidate.verdict),
       correct: label ? label === "qualified" && labelValue !== 0 : null,
+      strict: label ? label === "qualified" && (labelValue ?? -1) >= 2 : null,
     };
   });
   const labelled = planned.filter((p) => p.correct !== null);
   const correct = labelled.filter((p) => p.correct).length;
+  const strict = labelled.filter((p) => p.strict).length;
   const first = firstOutcome(selection.first);
   const brandPlanned = selection.planned.map((s) => s.candidate.term.term).filter((term) => namedIn(term, names));
   const productPageType = selection.planned.filter((s) => !editorialApproval(s.candidate.verdict)).map((s) => s.candidate.term.term);
@@ -233,7 +249,11 @@ export function scorePlan(c: DecisionCase, candidates: readonly PlanCandidate[],
     candidates: candidates.length,
     eligible: selection.eligible,
     planned,
-    slots: { labelled: labelled.length, correct, unlabelled: planned.length - labelled.length, precision: labelled.length ? correct / labelled.length : null },
+    slots: {
+      labelled: labelled.length, correct, strict, unlabelled: planned.length - labelled.length,
+      precision: labelled.length ? correct / labelled.length : null,
+      strictPrecision: labelled.length ? strict / labelled.length : null,
+    },
     first: { term: selection.first?.term.term ?? null, rule: selection.firstRule, ...first },
     topOfFunnel: {
       product: selection.planned.filter((s) => s.tier === "t3" || s.candidate.verdict.funnel === "audience").length,
@@ -269,7 +289,7 @@ export function planInvariants(score: Pick<CasePlanScore, "eligible" | "planned"
 export interface PlanTotals {
   selector: string;
   cases: number;
-  slots: { labelled: number; correct: number; unlabelled: number; precision: number | null };
+  slots: { labelled: number; correct: number; strict: number; unlabelled: number; precision: number | null; strictPrecision: number | null };
   first: Record<CasePlanScore["first"]["outcome"], number>;
   topOfFunnel: number;
   brandPlanned: number;
@@ -282,12 +302,13 @@ export function planTotals(scores: readonly CasePlanScore[], selector: string): 
   const sum = (pick: (s: CasePlanScore) => number) => mine.reduce((n, s) => n + pick(s), 0);
   const labelled = sum((s) => s.slots.labelled);
   const correct = sum((s) => s.slots.correct);
+  const strict = sum((s) => s.slots.strict);
   const first = { correct: 0, wrong: 0, unlabelled: 0, none: 0 };
   for (const s of mine) first[s.first.outcome]++;
   return {
     selector,
     cases: mine.length,
-    slots: { labelled, correct, unlabelled: sum((s) => s.slots.unlabelled), precision: labelled ? correct / labelled : null },
+    slots: { labelled, correct, strict, unlabelled: sum((s) => s.slots.unlabelled), precision: labelled ? correct / labelled : null, strictPrecision: labelled ? strict / labelled : null },
     first,
     topOfFunnel: sum((s) => s.topOfFunnel.product),
     brandPlanned: sum((s) => s.brandPlanned.length),
@@ -333,10 +354,11 @@ export function renderPlanMarkdown(scores: readonly CasePlanScore[], value?: Ret
   if (!scores.length) return "";
   const selectors = [...new Set(scores.map((s) => s.selector))];
   const lines = ["## plan", "", "The planner's selection replayed over the reader's verdicts (lib/evals/plan.ts).", ""];
-  lines.push("| selector | slot precision | unlabelled slots | first article right | wrong | unlabelled | none | top of funnel | brand planned | page type (product / labelled) | invariant breaks |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
+  lines.push("Slot precision is the share of labelled planned slots labelled qualified with value 2 or more; the lenient figure beside it counts any qualified label.", "");
+  lines.push("| selector | slot precision (value >= 2) | lenient | unlabelled slots | first article right | wrong | unlabelled | none | top of funnel | brand planned | page type (product / labelled) | invariant breaks |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|");
   for (const name of selectors) {
     const t = planTotals(scores, name);
-    lines.push(`| ${name} | ${t.slots.correct}/${t.slots.labelled} (${pct(t.slots.precision)}) | ${t.slots.unlabelled} | ${t.first.correct} | ${t.first.wrong} | ${t.first.unlabelled} | ${t.first.none} | ${t.topOfFunnel} | ${t.brandPlanned} | ${t.pageTypeInPlan.product} / ${t.pageTypeInPlan.labelled} | ${t.violations} |`);
+    lines.push(`| ${name} | ${t.slots.strict}/${t.slots.labelled} (${pct(t.slots.strictPrecision)}) | ${t.slots.correct}/${t.slots.labelled} (${pct(t.slots.precision)}) | ${t.slots.unlabelled} | ${t.first.correct} | ${t.first.wrong} | ${t.first.unlabelled} | ${t.first.none} | ${t.topOfFunnel} | ${t.brandPlanned} | ${t.pageTypeInPlan.product} / ${t.pageTypeInPlan.labelled} | ${t.violations} |`);
   }
   lines.push("");
   if (value && value.tp + value.fn + value.tn + value.fp > 0) {
@@ -346,7 +368,7 @@ export function renderPlanMarkdown(scores: readonly CasePlanScore[], value?: Ret
     lines.push(`### ${s.caseId} - ${s.selector}`, "", `${s.planned.length} planned from ${s.eligible} plannable of ${s.candidates} offered (judged, and kept by the buyer test). First article: ${s.first.term ? `"${cell(s.first.term)}"` : "none"} (${s.first.rule}): **${s.first.outcome}**, ${cell(s.first.why)}.`, "");
     if (s.planned.length) {
       lines.push("| # | term | tier | label | label value | reader value | right |", "|---:|---|---|---|---:|---:|---|");
-      s.planned.forEach((p, i) => lines.push(`| ${i + 1} | ${cell(p.term)} | ${p.tier ?? "–"}${p.relaxed ? " (lower confidence)" : ""} | ${p.label ?? "unlabelled"} | ${p.labelValue ?? "–"} | ${p.productValue ?? "–"} | ${p.correct === null ? "–" : p.correct ? "yes" : "no"} |`));
+      s.planned.forEach((p, i) => lines.push(`| ${i + 1} | ${cell(p.term)} | ${p.tier ?? "–"}${p.relaxed ? " (lower confidence)" : ""} | ${p.label ?? "unlabelled"} | ${p.labelValue ?? "–"} | ${p.productValue ?? "–"} | ${p.strict === null ? "–" : p.strict ? "yes" : p.correct ? "lenient only" : "no"} |`));
       lines.push("");
     }
     if (s.violations.length) lines.push(...s.violations.map((v) => `- invariant broken: ${cell(v)}`), "");

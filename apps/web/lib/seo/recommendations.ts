@@ -1031,7 +1031,7 @@ export async function recommendKeywords(
   }
   const candidateRows = eligible
     .filter((rec) => rec.action === "write")
-    .map((rec) => ({ ...rowOf.get(rec.keywordId)!, id: rec.keywordId, term: rec.term, ...(rec.demand ? { unmeasured: true } : {}) }));
+    .map((rec) => ({ ...rowOf.get(rec.keywordId)!, id: rec.keywordId, term: rec.term, winnability: rec.winnability, ...(rec.demand ? { unmeasured: true } : {}) }));
   // Where every row went, for the caller's funnel: the first stage, in the
   // order this pass applies them, that set it aside (see
   // lib/keyword-research/topic-funnel.ts). Read from this pass's own
@@ -1059,10 +1059,17 @@ export async function recommendKeywords(
       [...qualifiedIds].filter((id) => test(verdicts.get(id), recOf.get(id))).length;
     const lowerConfidence = labelled((o) => o?.confidence === "lower");
     const unmeasured = labelled((o, rec) => o?.demand === "unmeasured" || rec?.demand === "unmeasured");
+    // Grades code lowered, and grades with no service list to hold them to:
+    // a planning step whose every grade was capped says why its tiers are
+    // empty (lib/onboarding/pipeline.ts).
+    const valueCapped = labelled((o) => o?.valueCapped === true);
+    const valueUnlisted = labelled((o) => o?.valueUnlisted === true);
     options.onFunnel(tallyFunnel(outcomes.map((o) => o.outcome), {
       ...(judged === undefined ? {} : { judged }),
       ...(lowerConfidence ? { lowerConfidence } : {}),
       ...(unmeasured ? { unmeasured } : {}),
+      ...(valueCapped ? { valueCapped } : {}),
+      ...(valueUnlisted ? { valueUnlisted } : {}),
     }), qualifiedIds);
   };
 
@@ -1144,7 +1151,7 @@ export async function recommendKeywords(
     clusters.push(rec);
     const rank = rankOf(rec);
     rec.tier = tierOf(rank.value, rank.winnability);
-    rec.reasons.unshift(o.reason, `Business value ${rank.value}${o.service ? ` (${o.service})` : o.valueCapped ? " (capped: no service named)" : ""}: ${TIER_WORDS[rec.tier]}`);
+    rec.reasons.unshift(o.reason, `Business value ${rank.value}${o.service ? ` (${o.service})` : o.valueCapped ? " (capped: no listed service answers it)" : ""}: ${TIER_WORDS[rec.tier]}`);
     if (unfolded) rec.reasons.push(`Checked against your existing pages by exact words: ${unfolded}.`);
   }
   // The order every caller reads: approvals by value tier, then the rest as
@@ -1211,9 +1218,16 @@ export function demandFirst(a: Pick<KeywordRecommendation, "demand" | "score">, 
  */
 export function pickNextKeyword(
   recommendations: KeywordRecommendation[],
+  options: { inventory?: boolean } = {},
 ): KeywordRecommendation | null {
-  // Inventory is kept, not written: an approval no value tier admits (hard
-  // and not one of the owner's services, or general interest and hard) waits
-  // for a better run rather than going out unattended.
-  return recommendations.find((r) => r.action === "write" && r.quality === "ok" && r.tier !== "inventory") ?? null;
+  // A tier's topic first. Inventory (value 2 or 1 and hard to win, or an
+  // approval graded before grades existed and hard) is written only when
+  // nothing in a tier is left, and only when the caller allows it: an open
+  // account's autopilot keeps writing rather than stopping with qualified
+  // topics in the queue, while "is anything left to plan" (the pool refill)
+  // passes `inventory: false` and researches for better topics instead.
+  const writable = recommendations.filter((r) => r.action === "write" && r.quality === "ok");
+  return writable.find((r) => r.tier !== "inventory")
+    ?? (options.inventory === false ? null : writable.find((r) => r.tier === "inventory"))
+    ?? null;
 }

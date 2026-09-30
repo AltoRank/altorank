@@ -159,6 +159,20 @@ describe("refillQualifiedQueue", () => {
     expect(unparked?.patch).toEqual({ status: "new", plan_excluded_at: null });
   });
 
+  it("does not count approvals the planner keeps in inventory as ready: an inventory-only queue buys verdicts for new candidates", async () => {
+    qualify.mockImplementation(async (_db: unknown, _ws: string, asked: Array<{ id: string }>) => new Map(asked.map((c) => [c.id, verdict("qualified", undefined, { value: 3 })])));
+    // Three value-2 approvals out of reach for this site, and a retired-floor approval: none plannable.
+    const hard = (id: string) => row(id, { opportunity: verdict("qualified", undefined, { value: 2 }), winnability: 0.1 });
+    const retired = row("floor", { opportunity: verdict("qualified", undefined, { value: 3, confidence: "lower", reason: "Lower confidence: fewer articles hold this search than the bar asks for." }) });
+    const candidates = [hard("h1"), hard("h2"), hard("h3"), retired, row("new1"), row("new2")];
+    const out = await refillQualifiedQueue(db, "ws", candidates, context, { target: 2 });
+    expect(qualify).toHaveBeenCalledOnce();
+    expect((qualify.mock.calls[0][2] as Array<{ id: string }>).map((c) => c.id)).toEqual(["new1", "new2"]);
+    expect(out).toMatchObject({ ready: 2, judged: 2, qualified: 2 });
+    // The inventory rows are kept as they were: nothing parks them.
+    expect(writes).toHaveLength(0);
+  });
+
   it("leaves a pending verdict for the next run without parking it", async () => {
     qualify.mockImplementation(async (_db: unknown, _ws: string, asked: Array<{ id: string }>) => new Map(asked.map((c) => [c.id, verdict("pending", "provider_error")])));
     const out = await refillQualifiedQueue(db, "ws", [row("a")], context, { target: 1 });
@@ -171,5 +185,16 @@ describe("countReady", () => {
   it("counts only current qualified verdicts on open rows", async () => {
     readyRows = [row("a", { opportunity: verdict("qualified") }), row("b", { opportunity: verdict("qualified", undefined, { context: "other" }) }), row("c", { opportunity: verdict("rejected", "buyer_mismatch") })];
     expect(await countReady(db, "ws", context)).toBe(1);
+  });
+  it("counts an approval only in a value tier: not one out of reach for this site, not a retired floor approval", async () => {
+    const hard = { opportunity: verdict("qualified", undefined, { value: 2 }), difficulty: 60, volume: 300 } as Partial<QueueRow>;
+    readyRows = [
+      row("easy", { opportunity: verdict("qualified", undefined, { value: 2 }), difficulty: 5, volume: 300 } as Partial<QueueRow>),
+      row("hard", hard),
+      row("floor", { opportunity: verdict("qualified", undefined, { value: 3, confidence: "lower", reason: "Lower confidence: fewer articles hold this search than the bar asks for." }) }),
+    ];
+    // At authority 0 a KD 60 term is out of reach; at 80 it is not.
+    expect(await countReady(db, "ws", context, 0)).toBe(1);
+    expect(await countReady(db, "ws", context, 80)).toBe(2);
   });
 });

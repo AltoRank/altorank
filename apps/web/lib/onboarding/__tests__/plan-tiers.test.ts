@@ -10,11 +10,11 @@ import { FakeDb } from "@/lib/plan/__tests__/fake-postgrest";
  * the calendar write and the funnel are real.
  */
 
-const { recs } = vi.hoisted(() => ({ recs: [] as Array<Record<string, unknown>> }));
+const { recs, hold } = vi.hoisted(() => ({ recs: [] as Array<Record<string, unknown>>, hold: { value: "open" as "open" | "held" } }));
 vi.mock("@/lib/billing/trial-hold", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/billing/trial-hold")>()),
-  planHold: async () => "open",
-  planHoldApplies: async () => false,
+  planHold: async () => hold.value,
+  planHoldApplies: async () => hold.value === "held",
 }));
 vi.mock("@/lib/seo/recommendations", () => ({
   recommendKeywords: async (_s: unknown, _w: unknown, options: { onFunnel?: (f: unknown, q: ReadonlySet<string>) => void }) => {
@@ -35,14 +35,14 @@ import type { Opportunity } from "@/lib/keyword-research/opportunity";
 const FROM = new Date("2026-10-01T09:00:00.000Z");
 let n = 0;
 /** A recommender row: an approval of `value` at `winnability`, or a refusal when `cause` is given. */
-function rec(id: string, value: 0 | 1 | 2 | 3, winnability: number, extra: { volume?: number; cause?: Opportunity["cause"]; format?: string } = {}) {
+function rec(id: string, value: 0 | 1 | 2 | 3, winnability: number, extra: { volume?: number; cause?: Opportunity["cause"]; format?: string; term?: string } = {}) {
   const urls = [`https://a${++n}.example/`, `https://b${n}.example/`, `https://c${n}.example/`];
   const tier = value >= 2 && winnability >= 0.5 ? "t1" : value === 3 ? "t2" : value === 1 && winnability >= 0.5 ? "t3" : "inventory";
   const opportunity = extra.cause
     ? { status: "rejected", cause: extra.cause, reason: String(extra.cause), organicUrls: urls }
     : { status: "qualified", format: extra.format ?? "article", value, reason: "r", organicUrls: urls, evidenceUrls: urls.slice(0, 2), checkedAt: FROM.toISOString() };
   return {
-    keywordId: id, term: `topic ${id}`, action: extra.cause ? "skip" : "write", quality: "ok", intent: "commercial",
+    keywordId: id, term: extra.term ?? `topic ${id}`, action: extra.cause ? "skip" : "write", quality: "ok", intent: "commercial",
     volume: extra.volume ?? 100, winnability, score: 1, reasons: [], ...(extra.cause ? {} : { tier }), opportunity,
   };
 }
@@ -67,6 +67,7 @@ async function plan(opts: { firstLook?: boolean; maxEntries?: number } = {}) {
 
 beforeEach(() => {
   recs.length = 0;
+  hold.value = "open";
 });
 
 describe("the plan by value tier", () => {
@@ -78,17 +79,17 @@ describe("the plan by value tier", () => {
       rec("page", 3, 0.9, { cause: "needs_page" }),
     );
     const { entries, funnel } = await plan();
-    expect(entries.map((e) => `${e.keywordId}:${e.brief?.tier}${e.brief?.confidence ? "*" : ""}`)).toEqual(["problem:t1", "service:t1", "problem2:t1", "bet:t2", "general:t3"]);
+    expect(entries.map((e) => `${e.keywordId}:${e.brief?.tier}${e.brief?.confidence ? "*" : ""}`)).toEqual(["service:t1", "problem:t1", "problem2:t1", "bet:t2", "general:t3"]);
     expect(funnel).toMatchObject({ qualified: 8, planned: 5, plannedTiers: { t1: 3, t2: 1, t3: 1 }, notPlanned: { tier_full: 2, inventory: 1 } });
     expect(funnelDiscrepancy(funnel)).toBeNull();
     expect(describeFunnel(funnel)).toContain("5 planned (3 T1, 1 T2, 1 T3; not planned: 1 inventory, 2 tier full)");
   });
 
-  it("relaxes on a first look short of T1: the next T2, then T3, labelled lower confidence on the calendar's rows", async () => {
+  it("relaxes on a first look short of T1: the next T2, labelled lower confidence on the calendar's rows, never a second top-of-funnel topic", async () => {
     recs.push(rec("problem", 2, 0.9), rec("bet", 3, 0.2), rec("bet2", 3, 0.1), rec("tof", 1, 0.9, { volume: 900 }), rec("tof2", 1, 0.9), rec("tof3", 1, 0.9));
     const { d, entries, funnel } = await plan();
-    expect(entries.map((e) => `${e.keywordId}:${e.brief?.tier}${e.brief?.confidence ? "*" : ""}`)).toEqual(["problem:t1", "bet:t2", "bet2:t2*", "tof:t3", "tof2:t3*"]);
-    expect(funnel).toMatchObject({ planned: 5, plannedLowerConfidence: 2, notPlanned: { tier_full: 1 } });
+    expect(entries.map((e) => `${e.keywordId}:${e.brief?.tier}${e.brief?.confidence ? "*" : ""}`)).toEqual(["problem:t1", "bet:t2", "bet2:t2*", "tof:t3"]);
+    expect(funnel).toMatchObject({ planned: 4, plannedLowerConfidence: 1, notPlanned: { tier_full: 2 } });
     expect(funnelDiscrepancy(funnel)).toBeNull();
     // The label is saved on the row the calendar and the first-article card read.
     const saved = Object.fromEntries(d.rows("keywords").map((r) => [r.id, r.opportunity as Opportunity]));
@@ -104,11 +105,13 @@ describe("the plan by value tier", () => {
     expect(funnel.notPlanned).toEqual({ tier_full: 2 });
   });
 
-  it("plans nothing from inventory, however short the plan", async () => {
+  it("fills a first look from a value-2 topic out of reach, labelled, and never from general interest out of reach", async () => {
     recs.push(rec("hard", 2, 0.2), rec("hardgeneral", 1, 0.1));
     const { entries, funnel } = await plan();
-    expect(entries).toEqual([]);
-    expect(funnel).toMatchObject({ qualified: 2, planned: 0, notPlanned: { inventory: 2 } });
+    expect(entries.map((e) => `${e.keywordId}:${e.brief?.tier}${e.brief?.confidence ? "*" : ""}`)).toEqual(["hard:t2*"]);
+    expect(funnel).toMatchObject({ qualified: 2, planned: 1, notPlanned: { inventory: 1 } });
+    // A nightly top-up plans neither.
+    expect((await plan({ firstLook: false })).entries).toEqual([]);
   });
 
   it("enforces the page type in code: an approval on a page that is not editorial never reaches the plan", async () => {
@@ -116,5 +119,37 @@ describe("the plan by value tier", () => {
     const { entries, funnel } = await plan();
     expect(entries.map((e) => e.keywordId)).toEqual(["good"]);
     expect(funnel.notPlanned).toEqual({ not_writable: 1 });
+  });
+});
+
+describe("a calendar held at its first article (an account before its trial)", () => {
+  beforeEach(() => { hold.value = "held"; });
+
+  it("chooses its one topic by the first-article rule, not by plan order", async () => {
+    // The service topic leads the plan, but it needs clinical claims; the
+    // problem topic passes the rule and is the one scheduled.
+    recs.push(
+      rec("tof", 1, 0.9, { volume: 20_000, term: "teeth whitening tips" }),
+      rec("claims", 3, 0.9, { volume: 5_000, term: "tooth extraction recovery time" }),
+      rec("clean", 2, 0.9, { volume: 300, term: "dentist for sensitive teeth" }),
+    );
+    const { entries, funnel } = await plan();
+    expect(entries.map((e) => e.term)).toEqual(["dentist for sensitive teeth"]);
+    expect(funnel).toMatchObject({ planned: 1 });
+    expect(funnelDiscrepancy(funnel)).toBeNull();
+  });
+
+  it("takes the fact-risk fallback when every topic of value 2 or more needs the owner's facts", async () => {
+    recs.push(rec("claims", 3, 0.9, { term: "tooth extraction recovery time" }), rec("tof", 1, 0.9, { volume: 90_000 }));
+    const { entries } = await plan();
+    expect(entries.map((e) => e.term)).toEqual(["tooth extraction recovery time"]);
+  });
+
+  it("plans nothing when only top-of-funnel topics qualified, and says the first-article rule is why", async () => {
+    recs.push(rec("tof", 1, 0.9, { volume: 20_000 }), rec("tof2", 1, 0.9));
+    const { entries, funnel } = await plan();
+    expect(entries).toEqual([]);
+    expect(funnel).toMatchObject({ qualified: 2, planned: 0, notPlanned: { first_article: 1, tier_full: 1 } });
+    expect(funnelDiscrepancy(funnel)).toBeNull();
   });
 });

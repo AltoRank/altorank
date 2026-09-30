@@ -124,6 +124,10 @@ export const PLANNER_STAGES = [
   // this run, or its tier's slots were taken. Kept in the queue either way.
   "inventory",
   "tier_full",
+  // A calendar held at its first article (a trial-gated account): the value
+  // tiers chose topics, and none passed the first-article rule
+  // (value-tiers.ts `chooseFirstArticle`). A person picks the first topic.
+  "first_article",
   "no_room",
 ] as const;
 
@@ -138,6 +142,7 @@ export const PLANNER_STAGE_LABELS: Record<PlannerStage, string> = {
   same_search: "same search as a topic planned ahead of it",
   inventory: "kept in inventory: no value tier admits it this run (hard, or general interest and hard)",
   tier_full: "its value tier's slots were taken (at most one long-term bet and one top-of-funnel topic per five)",
+  first_article: "no topic passed the first-article rule, and the calendar holds only the first article until the trial",
   no_room: "no room: calendar full, pace or the run's entry cap",
 };
 
@@ -150,6 +155,7 @@ export const PLANNER_STAGE_SHORT: Record<PlannerStage, string> = {
   same_search: "same search",
   inventory: "inventory",
   tier_full: "tier full",
+  first_article: "no first article",
   no_room: "no room",
 };
 
@@ -178,6 +184,18 @@ export interface TopicFunnel {
   /** Of the qualified, how many carry no measured demand ("unmeasured"). */
   unmeasured?: number;
   /**
+   * Of the qualified, how many grades code lowered (value-tiers.ts
+   * `capValue`: no listed service, only an adjacent one, or one the search
+   * does not name). Absent when none.
+   */
+  valueCapped?: number;
+  /**
+   * Of the qualified, how many were graded with no service list to grade
+   * against (the profile lists no offerings): uncapped and flagged. Absent
+   * when none.
+   */
+  valueUnlisted?: number;
+  /**
    * Of the planned, how many are lower confidence: planned by relaxing a
    * value-tier rule (lib/keyword-research/value-tiers.ts). Absent when none.
    */
@@ -185,9 +203,11 @@ export interface TopicFunnel {
   /** Of the planned, how many from each value tier. Sums to `planned`. Absent until a planner has run. */
   plannedTiers?: Partial<Record<"t1" | "t2" | "t3", number>>;
   /**
-   * Which rule chose the first article (value-tiers.ts `chooseFirstArticle`):
-   * the rule itself, the fact-risk fallback, or none. Absent when the run
-   * did not choose one (a held account, a workspace that already has a draft).
+   * Which rule chose the first article that drafting went on to write
+   * (value-tiers.ts `chooseFirstArticle`): the rule itself or the fact-risk
+   * fallback; "none" when drafting found no topic the rule admits. Recorded
+   * after drafting settles. Absent when the run did not choose one (the
+   * workspace already has a draft, or the quota or the trial hold stopped it).
    */
   firstArticle?: "rule" | "fact_risk_fallback" | "none";
 }
@@ -218,7 +238,7 @@ export function stageOfVerdict(verdict: Pick<Opportunity, "status" | "cause">): 
 }
 
 /** Count outcomes, one per candidate. */
-export function tallyFunnel(outcomes: Iterable<FunnelOutcome>, extra: Pick<TopicFunnel, "judged" | "lowerConfidence" | "unmeasured"> = {}): TopicFunnel {
+export function tallyFunnel(outcomes: Iterable<FunnelOutcome>, extra: Pick<TopicFunnel, "judged" | "lowerConfidence" | "unmeasured" | "valueCapped" | "valueUnlisted"> = {}): TopicFunnel {
   const removed: Partial<Record<FunnelStage, number>> = {};
   let found = 0;
   let qualified = 0;
@@ -232,6 +252,8 @@ export function tallyFunnel(outcomes: Iterable<FunnelOutcome>, extra: Pick<Topic
     ...(extra.judged !== undefined ? { judged: extra.judged } : {}),
     ...(extra.lowerConfidence ? { lowerConfidence: extra.lowerConfidence } : {}),
     ...(extra.unmeasured ? { unmeasured: extra.unmeasured } : {}),
+    ...(extra.valueCapped ? { valueCapped: extra.valueCapped } : {}),
+    ...(extra.valueUnlisted ? { valueUnlisted: extra.valueUnlisted } : {}),
   };
 }
 
@@ -334,6 +356,8 @@ export function describeFunnel(funnel: TopicFunnel): string {
   const labels = [
     funnel.lowerConfidence ? `${funnel.lowerConfidence} lower confidence` : "",
     funnel.unmeasured ? `${funnel.unmeasured} unmeasured` : "",
+    funnel.valueCapped ? `${funnel.valueCapped} value capped` : "",
+    funnel.valueUnlisted ? `${funnel.valueUnlisted} graded with no service list` : "",
   ].filter(Boolean);
   return `${head} -> ${funnel.qualified} qualified${labels.length ? ` (${labels.join(", ")})` : ""}${planned}`;
 }
