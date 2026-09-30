@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Opportunity } from "@/lib/keyword-research/opportunity";
-import { planInvariants, planTotals, renderPlanMarkdown, scorePlan, valueAgreement, VOLUME_FIRST, type PlanCandidate, type PlanSelector } from "../plan";
+import { PLAN_SELECTORS, planInvariants, planTotals, renderPlanMarkdown, scorePlan, valueAgreement, VALUE_FIRST, VOLUME_FIRST, type PlanCandidate, type PlanSelector } from "../plan";
 import { planCandidates } from "../decisions";
 import type { DecisionCase, TermCase } from "../types";
 
@@ -113,5 +113,39 @@ describe("candidates and totals", () => {
   it("grades the reader's value against the label, 2 and up as the positive class", () => {
     const v = (label: 0 | 1 | 2 | 3, product?: number) => cand(term(`t${label}${product}`, { value: label }), approved(product === undefined ? {} : ({ value: product } as Partial<Opportunity>)));
     expect(valueAgreement([v(3, 3), v(2, 1), v(1, 1), v(0, 2), v(3)])).toEqual({ tp: 1, fn: 1, tn: 1, fp: 1, tpr: 0.5, tnr: 0.5 });
+  });
+});
+
+describe("the value-first selector: the product's planner on the same verdicts", () => {
+  const graded = (value: 0 | 1 | 2 | 3, extra: Partial<Opportunity> = {}) => approved({ value, ...extra } as Partial<Opportunity>);
+  it("is the product's, and scored first", () => {
+    expect(PLAN_SELECTORS[0]).toBe(VALUE_FIRST);
+  });
+  it("puts the service topic first where volume put general interest first", () => {
+    const general = cand(term("cycling for weight loss", { verdict: "qualified", value: 1 }, { volume: 9000, difficulty: 5 }), graded(1));
+    const service = cand(term("tubeless conversion cost", { verdict: "qualified", value: 3 }, { volume: 90, difficulty: 10 }), graded(3, { service: "bike servicing" }));
+    const problem = cand(term("brake squeal fix", { verdict: "qualified", value: 2 }, { volume: 400, difficulty: 10 }), graded(2, { service: "bike servicing" }));
+    const c = { ...CASE, authority: 10 };
+    const before = scorePlan(c, [general, service, problem], VOLUME_FIRST);
+    const after = scorePlan(c, [general, service, problem], VALUE_FIRST);
+    expect(before.first).toMatchObject({ term: "cycling for weight loss", outcome: "wrong" });
+    expect(after.planned.map((p) => `${p.term}:${p.tier}`)).toEqual(["brake squeal fix:t1", "tubeless conversion cost:t1", "cycling for weight loss:t3"]);
+    expect(after.first).toMatchObject({ term: "brake squeal fix", rule: "rule", outcome: "correct" });
+    expect(after.topOfFunnel.product).toBe(1);
+    expect(after.violations).toEqual([]);
+  });
+  it("fills a short plan with labelled lower-confidence slots, and keeps the floor invariant", () => {
+    const tof = (t: string) => cand(term(t, { verdict: "qualified", value: 1 }), graded(1));
+    const s = scorePlan(CASE, [tof("chain lube guide"), tof("saddle height guide"), tof("tyre pressure guide")], VALUE_FIRST);
+    expect(s.planned.map((p) => p.relaxed)).toEqual([false, true, true]);
+    expect(s.first).toMatchObject({ term: null, rule: "none", outcome: "none" });
+    expect(s.violations).toEqual([]);
+  });
+  it("never plans a refusal or an approval on a page that is not editorial", () => {
+    const page = cand(term("bike shop open sunday", { verdict: "needs_page" }), refused("needs_page"));
+    const odd = cand(term("bike stand prices", { verdict: "needs_page" }), graded(3, { format: "product" }));
+    const s = scorePlan(CASE, [page, odd], VALUE_FIRST);
+    expect(s.planned).toEqual([]);
+    expect(s.pageTypeInPlan.product).toEqual([]);
   });
 });

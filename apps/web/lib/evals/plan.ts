@@ -35,6 +35,7 @@ import type { Opportunity } from "@/lib/keyword-research/opportunity";
 import { namedIn } from "@/lib/keyword-research/results-page";
 import { clusterByIntent, intentLanguage } from "@/lib/keyword-research/intent";
 import { volumeScore, winnability } from "@/lib/seo/difficulty";
+import { chooseFirstArticle, planOrder, selectPlan, tierOf, valueOf as plannedValue, type Rankable } from "@/lib/keyword-research/value-tiers";
 import type { DecisionCase, TermCase, TopicLabel } from "./types";
 
 /** The first look's plan size (lib/onboarding/pipeline.ts `maxEntries`). */
@@ -109,8 +110,35 @@ export const VOLUME_FIRST: PlanSelector = {
   },
 };
 
+/**
+ * The product's planner (lib/keyword-research/value-tiers.ts), as a first
+ * look runs it: editorial approvals ordered by value tier, one per search,
+ * chosen by `selectPlan` with the rules allowed to relax, and the first
+ * article by `chooseFirstArticle`. Winnability comes from the case's stored
+ * difficulty and authority; a term with no volume is unmeasured.
+ */
+export const VALUE_FIRST: PlanSelector = {
+  name: "value first",
+  select(c, candidates, slots) {
+    const rank = (p: PlanCandidate): Rankable => ({
+      term: p.term.term,
+      value: plannedValue(p.verdict),
+      winnability: reachOf(c, p.term),
+      volume: typeof p.term.volume === "number" ? p.term.volume : null,
+      unmeasured: typeof p.term.volume !== "number",
+    });
+    const ordered = candidates.filter((p) => editorialApproval(p.verdict)).sort((a, b) => planOrder(rank(a), rank(b)));
+    const distinct = oneBySearch(ordered, c.languageCode);
+    const selection = selectPlan(distinct, rank, { slots, relax: true });
+    const planned = selection.picks.map((p) => ({ candidate: p.item, tier: p.tier, relaxed: p.relaxed }));
+    const first = chooseFirstArticle(planned, (p) => ({ term: p.candidate.term.term, brief: p.candidate.verdict }), { language: c.languageCode, profile: c.business });
+    const eligible = distinct.filter((p) => tierOf(rank(p).value, rank(p).winnability) !== "inventory").length;
+    return { planned, first: first.pick?.candidate ?? null, firstRule: first.rule, eligible };
+  },
+};
+
 /** Every selector the report compares, the product's first. */
-export const PLAN_SELECTORS: readonly PlanSelector[] = [VOLUME_FIRST];
+export const PLAN_SELECTORS: readonly PlanSelector[] = [VALUE_FIRST, VOLUME_FIRST];
 
 // ── Scoring ───────────────────────────────────────────────────────────────
 
@@ -157,7 +185,7 @@ function brandNames(c: DecisionCase): string[] {
   return [...(b.competitors ?? []), ...(b.searchRivals ?? []), c.domain, ...(b.name ? [b.name] : [])].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
 }
 
-/** The value a verdict carries, when the reader graded one. */
+/** The value a verdict carries, when the reader graded one (the planner reads an ungraded one as 1). */
 function valueOf(o: Opportunity): number | null {
   const v = (o as { value?: unknown }).value;
   return typeof v === "number" ? v : null;
@@ -304,7 +332,7 @@ export function renderPlanMarkdown(scores: readonly CasePlanScore[], value?: Ret
     lines.push(`Value grade against the label (>= 2 is positive): TPR ${pct(value.tpr)} (${value.tp}/${value.tp + value.fn}), TNR ${pct(value.tnr)} (${value.tn}/${value.tn + value.fp}).`, "");
   }
   for (const s of scores) {
-    lines.push(`### ${s.caseId} - ${s.selector}`, "", `${s.planned.length} planned from ${s.eligible} plannable of ${s.candidates} judged. First article: ${s.first.term ? `"${cell(s.first.term)}"` : "none"} (${s.first.rule}): **${s.first.outcome}**, ${cell(s.first.why)}.`, "");
+    lines.push(`### ${s.caseId} - ${s.selector}`, "", `${s.planned.length} planned from ${s.eligible} plannable of ${s.candidates} offered (judged, and kept by the buyer test). First article: ${s.first.term ? `"${cell(s.first.term)}"` : "none"} (${s.first.rule}): **${s.first.outcome}**, ${cell(s.first.why)}.`, "");
     if (s.planned.length) {
       lines.push("| # | term | tier | label | label value | reader value | right |", "|---:|---|---|---|---:|---:|---|");
       s.planned.forEach((p, i) => lines.push(`| ${i + 1} | ${cell(p.term)} | ${p.tier ?? "–"}${p.relaxed ? " (lower confidence)" : ""} | ${p.label ?? "unlabelled"} | ${p.labelValue ?? "–"} | ${p.productValue ?? "–"} | ${p.correct === null ? "–" : p.correct ? "yes" : "no"} |`));
