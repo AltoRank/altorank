@@ -20,12 +20,12 @@
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { AskModel } from "@/lib/keyword-research/buyer-model";
+import { samplingFor, type AskModel } from "@/lib/keyword-research/buyer-model";
 
 export type RecorderMode = "replay" | "live" | "plan";
 
 /** The one call a live run makes. Injected, so tests never touch the network. */
-export type ModelClient = (request: { model: string; prompt: string; maxTokens: number }) => Promise<{
+export type ModelClient = (request: { model: string; prompt: string; maxTokens: number; params?: Record<string, unknown> }) => Promise<{
   text: string | null;
   inputTokens: number;
   outputTokens: number;
@@ -50,6 +50,10 @@ export interface RecorderOptions {
   model: string;
   /** Price per million tokens for `model`. */
   rate: { input: number; output: number };
+  /** The model a "decision"-tier call is made with (production's `anthropicModel("decision")`). Defaults to `model`. */
+  decisionModel?: string;
+  /** Prices per model, for calls on a model other than `model`. */
+  rates?: Record<string, { input: number; output: number }>;
   /** Hard cap on what this run may spend, in USD, across every paid call it makes. */
   maxUsd: number;
   client?: ModelClient;
@@ -62,9 +66,13 @@ export class BudgetExceededError extends Error {
   }
 }
 
-/** The key an answer is stored under: everything that decides the answer except the sampling. */
-export function promptKey(model: string, operation: string, prompt: string, maxTokens: number): string {
-  return createHash("sha256").update(JSON.stringify([model, operation, maxTokens, prompt])).digest("hex");
+/**
+ * The key an answer is stored under: everything that decides the answer
+ * except the sampling. A reply schema (structured outputs) is part of it: the
+ * same prompt under another schema is another question.
+ */
+export function promptKey(model: string, operation: string, prompt: string, maxTokens: number, schema?: Record<string, unknown>): string {
+  return createHash("sha256").update(JSON.stringify(schema ? [model, operation, maxTokens, prompt, schema] : [model, operation, maxTokens, prompt])).digest("hex");
 }
 
 /** Roughly how many tokens a prompt is: 3 characters a token errs high for English and Turkish alike. */
@@ -113,14 +121,16 @@ export class Recorder {
     return JSON.parse(readFileSync(file, "utf8")) as Recording;
   }
 
-  cost(inputTokens: number, outputTokens: number): number {
-    return (inputTokens * this.options.rate.input + outputTokens * this.options.rate.output) / 1_000_000;
+  cost(inputTokens: number, outputTokens: number, model: string = this.options.model): number {
+    const rate = this.options.rates?.[model] ?? this.options.rate;
+    return (inputTokens * rate.input + outputTokens * rate.output) / 1_000_000;
   }
 
   /** The `AskModel` the decisions are handed. */
-  readonly ask: AskModel = async (operation, prompt, { maxTokens }) => {
-    const { model, mode } = this.options;
-    const key = promptKey(model, operation, prompt, maxTokens);
+  readonly ask: AskModel = async (operation, prompt, { maxTokens, tier, schema }) => {
+    const { mode } = this.options;
+    const model = tier === "decision" ? this.options.decisionModel ?? this.options.model : this.options.model;
+    const key = promptKey(model, operation, prompt, maxTokens, schema);
     const stored = this.read(key);
     if (stored) {
       this.hits++;
@@ -129,7 +139,7 @@ export class Recorder {
     const inputTokens = estimateTokens(prompt);
     if (mode === "plan") {
       // Typical: a structured answer is a few hundred tokens, not the ceiling.
-      this.planned.set(key, { upperUsd: this.cost(inputTokens, maxTokens), typicalUsd: this.cost(inputTokens, Math.min(maxTokens, 450)) });
+      this.planned.set(key, { upperUsd: this.cost(inputTokens, maxTokens, model), typicalUsd: this.cost(inputTokens, Math.min(maxTokens, 450), model) });
       return null;
     }
     if (mode === "replay") {
@@ -137,9 +147,9 @@ export class Recorder {
       return null;
     }
     if (!this.options.client) throw new Error("Live mode needs a model client.");
-    this.budget.reserve(this.cost(inputTokens, maxTokens));
-    const answer = await this.options.client({ model, prompt, maxTokens });
-    const costUsd = this.cost(answer.inputTokens, answer.outputTokens);
+    this.budget.reserve(this.cost(inputTokens, maxTokens, model));
+    const answer = await this.options.client({ model, prompt, maxTokens, params: samplingFor(model, tier, schema) });
+    const costUsd = this.cost(answer.inputTokens, answer.outputTokens, model);
     this.budget.charge(costUsd);
     this.calls++;
     const recording: Recording = {

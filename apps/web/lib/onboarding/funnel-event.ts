@@ -59,6 +59,9 @@ export function planFunnelEvent(input: PlanFunnelEventInput): SystemEvent {
       notPlanned: f.notPlanned ?? null,
       judged: f.judged ?? null,
       removed: f.removed,
+      ...(f.lowerConfidence ? { lowerConfidence: f.lowerConfidence } : {}),
+      ...(f.unmeasured ? { unmeasured: f.unmeasured } : {}),
+      ...(f.plannedLowerConfidence ? { plannedLowerConfidence: f.plannedLowerConfidence } : {}),
     },
   };
 }

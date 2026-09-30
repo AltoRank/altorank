@@ -20,6 +20,7 @@
 // that said it was, and offer a retry that re-ran the whole setup (about
 // $0.22 of provider calls) for an article that already existed.
 
+import { topicLabels, type TopicLabel } from "@/lib/keyword-research/topic-labels";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { tiptapToHtml } from "@/lib/cms/html";
 import { decodeEntities } from "@/lib/audit/html-utils";
@@ -47,6 +48,8 @@ export interface FirstArticleCard {
   verdict: FirstArticleVerdict | null;
   /** Further written drafts the workspace holds beyond this one. */
   more: number;
+  /** What the topic's verdict says about itself: lower confidence, unmeasured (lib/keyword-research/topic-labels.ts). */
+  labels: TopicLabel[];
 }
 
 export interface FirstArticleFact {
@@ -109,7 +112,7 @@ export function toFirstArticleCard(
     fact_check_verdict: string | null;
     content: unknown;
   },
-  opts: { domain: string | null | undefined; scheduledDate: string | null; more: number },
+  opts: { domain: string | null | undefined; scheduledDate: string | null; more: number; verdict?: unknown; volume?: number | null },
 ): FirstArticleCard {
   const html = contentHtml(row.content);
   return {
@@ -122,6 +125,7 @@ export function toFirstArticleCard(
     sources: sourcesCited(html, opts.domain),
     verdict: VERDICTS.has(row.fact_check_verdict ?? "") ? (row.fact_check_verdict as FirstArticleVerdict) : null,
     more: Math.max(0, opts.more),
+    labels: topicLabels(opts.verdict ?? null, { volume: opts.volume ?? null }),
   };
 }
 
@@ -143,7 +147,7 @@ export async function loadFirstArticle(
   const [written, writing] = await Promise.all([
     supabase
       .from("articles")
-      .select("id, title, keyword, word_count, fact_check_verdict", { count: "exact" })
+      .select("id, title, keyword, keyword_id, word_count, fact_check_verdict", { count: "exact" })
       .eq("workspace_id", workspaceId)
       .in("status", WRITTEN)
       // A written article has words; the text itself is not a column this
@@ -168,19 +172,29 @@ export async function loadFirstArticle(
   const [body] = await readArticlesWhole<{ content: unknown }>([found.id as string], "content");
   const row = { ...found, content: body?.content ?? null };
 
-  const { data: entry } = await supabase
-    .from("calendar_entries")
-    .select("scheduled_date")
-    .eq("workspace_id", workspaceId)
-    .eq("article_id", row.id)
-    .order("scheduled_date", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+  const keywordId = (found as { keyword_id?: string | null }).keyword_id ?? null;
+  const [{ data: entry }, { data: topic }] = await Promise.all([
+    supabase
+      .from("calendar_entries")
+      .select("scheduled_date")
+      .eq("workspace_id", workspaceId)
+      .eq("article_id", row.id)
+      .order("scheduled_date", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    // The verdict the topic was planned on, for its labels. A failed read is
+    // a card without labels, not a failed card.
+    keywordId
+      ? supabase.from("keywords").select("opportunity, volume").eq("workspace_id", workspaceId).eq("id", keywordId).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
   return {
     article: toFirstArticleCard(row, {
       domain,
       scheduledDate: (entry?.scheduled_date as string | undefined) ?? null,
       more: (written.count ?? 1) - 1,
+      verdict: (topic as { opportunity?: unknown } | null)?.opportunity ?? null,
+      volume: (topic as { volume?: number | null } | null)?.volume ?? null,
     }),
     writing: false,
   };

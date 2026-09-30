@@ -44,6 +44,8 @@ export interface EvalOptions {
   mode: RecorderMode;
   model: string;
   rate: { input: number; output: number };
+  decisionModel?: string;
+  rates?: Record<string, { input: number; output: number }>;
   maxUsd: number;
   only?: DecisionName[];
   caseIds?: string[];
@@ -62,7 +64,7 @@ export interface EvalResult {
 }
 
 export async function runEvals(options: EvalOptions): Promise<EvalResult> {
-  const recorder = new Recorder({ dir: options.dir, mode: options.mode, model: options.model, rate: options.rate, maxUsd: options.maxUsd, client: options.client }, options.budget);
+  const recorder = new Recorder({ dir: options.dir, mode: options.mode, model: options.model, rate: options.rate, decisionModel: options.decisionModel, rates: options.rates, maxUsd: options.maxUsd, client: options.client }, options.budget);
   const wanted = (d: DecisionName) => !options.only?.length || options.only.includes(d);
   const cases = loadCases(options.dir).map((c) => c.value).filter((c) => !options.caseIds?.length || options.caseIds.includes(c.id));
   const claims = loadClaims(options.dir).filter((c) => !options.caseIds?.length || options.caseIds.includes(c.value.id));

@@ -25,6 +25,7 @@ import { CLAIM_LEASE_MS } from "@/lib/plan/draft-claim";
 import { PRE_TRIAL_DRAFTS, planHold } from "@/lib/billing/trial-hold";
 import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
 import { recommendKeywords, type KeywordRecommendation } from "@/lib/seo/recommendations";
+import type { FirstLook } from "@/lib/keyword-research/opportunity";
 import { classifyKeyword, type KeywordTaxonomy } from "@/lib/keywords/taxonomy";
 import { generateQualityQuestionsBatch, parseStoredQuestions, toQualityQuestions } from "@/lib/keywords/questions";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
@@ -304,6 +305,8 @@ export interface PlanOptions {
    * came out at one topic with twenty-three kept candidates never judged.
    */
   qualifyBatches?: number;
+  /** A first look: passed on to the recommender (`recommendKeywords`' `firstLook`). */
+  firstLook?: FirstLook;
   from?: Date;
   /** Weekdays the site publishes on, from its cadence. Absent = any day. */
   daysOfWeek?: readonly number[];
@@ -378,7 +381,7 @@ async function planFor(
       const stage = whyNot(id);
       notPlanned[stage] = (notPlanned[stage] ?? 0) + 1;
     }
-    opts.onFunnel(withPlanned(seen.funnel, planned.length, notPlanned));
+    opts.onFunnel(withPlanned(seen.funnel, planned.length, notPlanned, planned.filter((p) => p.brief?.confidence === "lower").length));
   };
   let recommended: KeywordRecommendation[];
   try {
@@ -386,6 +389,7 @@ async function planFor(
       limit: 1000,
       qualify: true,
       qualifyBatches: opts.qualifyBatches,
+      ...(opts.firstLook ? { firstLook: opts.firstLook } : {}),
       ...(opts.onFunnel ? { onFunnel: (f: TopicFunnel, qualified: ReadonlySet<string>) => { seen.funnel = f; seen.qualified = qualified; } } : {}),
     });
   } catch (err) {

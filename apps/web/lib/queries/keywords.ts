@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { Keyword, KeywordRanking } from "@/lib/types";
 import { rollupSourceYields, type KeywordSourceYields } from "@/lib/keywords/yields";
+import { topicLabels, type TopicLabel } from "@/lib/keyword-research/topic-labels";
 
 export async function getKeywords(
   workspaceId?: string,
@@ -35,7 +36,10 @@ export async function getKeywordRankings(keywordId: string): Promise<KeywordRank
 export type PlannerKeyword = Pick<
   Keyword,
   "id" | "workspace_id" | "term" | "volume" | "difficulty" | "intent" | "article_type" | "article_subtype" | "expected_length" | "instructions" | "quality_questions"
->;
+> & {
+  /** What the topic's verdict says about itself (lib/keyword-research/topic-labels.ts). */
+  labels: TopicLabel[];
+};
 
 /**
  * The keyword rows behind a set of calendar entries, scoped to the workspace
@@ -48,11 +52,12 @@ export async function getPlannerKeywords(workspaceId: string, keywordIds: string
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("keywords")
-    .select("id, workspace_id, term, volume, difficulty, intent, article_type, article_subtype, expected_length, instructions, quality_questions")
+    .select("id, workspace_id, term, volume, difficulty, intent, article_type, article_subtype, expected_length, instructions, quality_questions, opportunity")
     .eq("workspace_id", workspaceId)
     .in("id", ids);
   if (error) throw new Error(error.message);
-  return (data ?? []) as PlannerKeyword[];
+  // The verdict itself stays on the server: the card gets its labels.
+  return ((data ?? []) as Array<PlannerKeyword & { opportunity?: unknown }>).map(({ opportunity, ...k }) => ({ ...k, labels: topicLabels(opportunity, { volume: k.volume }) }));
 }
 
 /**

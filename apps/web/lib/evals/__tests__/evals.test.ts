@@ -25,7 +25,9 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
  * A stand-in for the model that answers the way the prompts ask, from what
  * is in them: the buyer test keeps anything but a sign-in, a recipe or a
  * local search, and
- * the results judge approves a page of lists, versus pages or how-tos.
+ * the results judge names a comparing searcher (a sign-in is navigation) and
+ * a kind for every result from its title. Code reads the page type from the
+ * kinds.
  */
 const scripted = vi.fn<ModelClient>(async ({ prompt }) => {
   const usage = { inputTokens: Math.ceil(prompt.length / 4), outputTokens: 120 };
@@ -39,8 +41,10 @@ const scripted = vi.fn<ModelClient>(async ({ prompt }) => {
   const editorial = data.results.filter((r) => /best|vs|alternatives|how to|steps|workflow/i.test(r.title)).map((r) => r.url);
   const pricing = /pricing|plans/.test(titles);
   const shape = /vs|alternatives/.test(titles) ? "comparison" : /how to|steps|workflow/.test(titles) ? "howTo" : "listicle";
+  const kindOf = (title: string) => /pricing|plans/i.test(title) ? "product" : /sign in/i.test(title) ? "portal" : /official site|try free/i.test(title) ? "service" : /github/i.test(title) ? "tool" : "article";
   return { ...usage, text: JSON.stringify({
-    approve: !pricing && editorial.length >= 2, reason: pricing ? "Vendor pricing pages" : editorial.length >= 2 ? "Editorial results" : "Navigation",
+    kinds: data.results.map((r) => kindOf(r.title)),
+    stage: /login/.test(data.query) ? "navigation" : "comparing", reason: pricing ? "Vendor pricing pages" : editorial.length >= 2 ? "Editorial results" : "Navigation",
     audience: "founders", buyingJob: "choose a tool", offering: "drafting", angle: `A guide to ${data.query}`,
     format: pricing ? "product" : editorial.length >= 2 ? "article" : "navigation", shape, conversionPath: "https://altorank.co", evidenceUrls: editorial,
   }) };
@@ -86,7 +90,8 @@ describe("recorder", () => {
 describe("a run over the public sample", () => {
   it("prices a live run without calling anything", async () => {
     const plan = await planEvals({ dir, model, rate, maxUsd: 1 });
-    // One buyer-test batch; five results pages go to the model (the sixth is the site's own page).
+    // One buyer-test batch; five results pages go to the judge, which names
+    // every result. The site's own page is decided from the results alone.
     expect(plan.calls).toBe(6);
     expect(plan.upperUsd).toBeGreaterThan(plan.typicalUsd);
     expect(scripted).not.toHaveBeenCalled();
@@ -112,7 +117,7 @@ describe("a run over the public sample", () => {
       "seo content approval workflow": "qualified",
       "ai seo software pricing plans": "needs_page",
       "open source seo content tool": "existing_page",
-      "altorank login": "not_editorial",
+      "altorank login": "buyer_mismatch",
     });
     // A term that is not a buyer search is right to be refused for any reason.
     expect(qual.find((i) => i.item === "altorank login")!.agrees).toBe(true);

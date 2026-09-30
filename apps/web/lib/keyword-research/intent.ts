@@ -226,10 +226,36 @@ interface Prepared { key: string; exact: string; serp: Set<string> | null }
 function prepare(topic: IntentTopic, locale: Locale): Prepared {
   return { key: keyIn(topic.term, locale), exact: exactKey(topic.term, locale), serp: comparableSerp(topic.organicUrls) };
 }
+/**
+ * Two phrasings that differ in one word only, and only by an abbreviation
+ * or a plural no rule set folds: the shorter spelling (six letters or more)
+ * begins the longer, which either adds "s" or "es" (an English plural inside
+ * a Turkish phrase, a rival's name with and without it) or adds four letters
+ * or more ("photog" / "photographer"). A derivational ending is another
+ * word ("engine" / "engineer", "build" / "building", "ajan" / "ajans"), and
+ * the results page decides those.
+ */
+export function nearIdentical(a: string, b: string): boolean {
+  const x = a.split(" ");
+  const y = b.split(" ");
+  if (!a || !b || a === b || x.length !== y.length) return false;
+  const differ = x.map((w, i) => [w, y[i]] as const).filter(([p, q]) => p !== q);
+  if (differ.length !== 1) return false;
+  const [short, long] = differ[0][0].length <= differ[0][1].length ? differ[0] : [differ[0][1], differ[0][0]];
+  if (short.length < 6 || !long.startsWith(short)) return false;
+  const added = long.slice(short.length);
+  return added === "s" || added === "es" || added.length >= 4;
+}
+
 function compare(a: Prepared, b: Prepared, note: string | null): IntentMatch {
   // One query typed twice is one search, whatever two results pages bought
   // weeks apart say.
   if (a.exact && a.exact === b.exact) return { same: true, basis: "words" };
+  // So is one query typed with one word shortened or inflected: two first
+  // looks (2026-09-30) planned a phrase and its abbreviated twin, and a
+  // rival's name with and without the plural, as separate articles, because
+  // their results pages shared fewer than four URLs on the day.
+  if (nearIdentical(a.exact, b.exact)) return { same: true, basis: "words", note: "one word abbreviated or inflected" };
   if (a.serp && b.serp) {
     let shared = 0;
     for (const url of a.serp) if (b.serp.has(url)) shared++;
