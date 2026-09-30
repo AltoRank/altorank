@@ -33,10 +33,11 @@ import { trainVoiceProfile } from "@/lib/voice/train";
 import { analyseDomain, isTransientCrawlFailure } from "@/lib/audit/domain-analysis";
 import { refusing } from "@/lib/audit/host-circuit";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
+import { chooseFirstArticle, type FirstArticleChoice } from "@/lib/keyword-research/value-tiers";
 import { generateArticle } from "@/lib/content/generate";
 import { draftHoldReason, planHold } from "@/lib/billing/trial-hold";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
-import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
+import { recommendKeywords } from "@/lib/seo/recommendations";
 import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
 import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
@@ -69,7 +70,8 @@ export interface RunOnboardingOptions {
 export interface PendingDraft {
   term: string;
   keywordId: string | null;
-  selection: { reasons: string[]; score: number; difficulty: number | null; volume: number | null };
+  /** `reviewNotes`: what the first-article rule asks the owner before publishing (value-tiers.ts `chooseFirstArticle`). */
+  selection: { reasons: string[]; score: number; difficulty: number | null; volume: number | null; reviewNotes?: string[] };
   /** This draft's share of the run's one related-keyword lookup, when it ran. */
   relatedKeywords?: RelatedKeyword[];
 }
@@ -371,6 +373,10 @@ async function runPhases(
   // Where every candidate went (./funnel-event.ts): written down for every
   // run, planned or not, so an empty plan can be explained from one row.
   let planFunnel: TopicFunnel | null = null;
+  // The first article, chosen from the plan by the first-article rule
+  // (lib/keyword-research/value-tiers.ts): value 2 or more, an editorial
+  // page, no fact risk, with the fact-risk fallback. Null until planned.
+  let firstChoice: FirstArticleChoice<PlannedEntry> | null = null;
   let planningDetail: string | null = null;
   if (keywordsFound === 0) {
     planningDetail = "Nothing to schedule until there are keywords.";
@@ -400,6 +406,7 @@ async function runPhases(
         firstLook,
         onFunnel: (f) => { planFunnel = f; },
       });
+      firstChoice = chooseFirstArticle(plan, (p) => ({ term: p.term, brief: p.brief }), { language: workspace.language, profile: workspace.business_profile });
       const held = gated && plan.length
         ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [] }))
         : { count: 0, dates: [] };
@@ -466,7 +473,8 @@ async function runPhases(
       emit({ phase: "planning", status: "failed", detail: planningDetail });
     }
   }
-  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail });
+  const counted = withScreened(planFunnel, screened);
+  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: counted && firstChoice && plan.length ? { ...counted, firstArticle: firstChoice.rule } : counted, planningDetail });
 
   emit({ phase: "drafting", status: "active" });
   // The status and detail the drafting phase settled on. The fan-out note
@@ -521,10 +529,28 @@ async function runPhases(
         // site with 25 page-one rankings filled it with skips before any
         // writable term appeared (lib/onboarding/plan.ts has the same note).
         const recs = await recommendKeywords(supabase, workspace.id, { limit: 1000, qualify: true, firstLook });
-        // The first day of the plan is what the person just watched get
-        // scheduled; writing anything else would contradict the calendar.
-        const first = plan[0];
-        const next = (first && recs.find((r) => r.term === first.term)) ?? pickNextKeyword(recs);
+        // The first article is a planned topic, chosen by the first-article
+        // rule, not the plan's first day: the highest-volume survivor was a
+        // general-interest topic a clinic does not sell (2026-09-30). The
+        // recommender's row for it carries the reasons it was chosen; a
+        // planned topic the second read no longer offers as writable
+        // (refused, or another phrasing's duplicate since) is not written,
+        // and the rule picks again among the planned topics it still offers.
+        // With no plan (a held second site) the rule reads the recommender's
+        // approvals; inventory is never written first.
+        const writableRecs = recs.filter((r) => r.action === "write" && r.quality === "ok" && r.tier !== "inventory");
+        const onPlan = new Set(plan.map((p) => p.term));
+        const rule = <T,>(items: readonly T[], read: (item: T) => { term: string; brief?: PlannedEntry["brief"] | null }) =>
+          chooseFirstArticle(items, read, { language: workspace.language, profile: workspace.business_profile });
+        const fromPlan = plan.length ? firstChoice ?? rule(plan, (p) => ({ term: p.term, brief: p.brief })) : null;
+        const planned = fromPlan?.pick ? writableRecs.find((r) => r.term === fromPlan.pick!.term) : undefined;
+        const choice = planned && fromPlan
+          ? fromPlan
+          : fromPlan?.rule === "none"
+            ? fromPlan
+            : rule(plan.length ? writableRecs.filter((r) => onPlan.has(r.term)) : writableRecs, (r) => ({ term: r.term, brief: r.opportunity }));
+        const next = planned ?? (choice.pick ? writableRecs.find((r) => r.term === choice.pick!.term) ?? null : null);
+        const reviewNotes = choice.notes.length ? { reviewNotes: choice.notes } : {};
 
         // The week's related keywords, in one paid task instead of seven.
         //
@@ -542,14 +568,16 @@ async function runPhases(
         relatedByTerm = next ? await fetchWeeksRelatedKeywords(workspace, next.term, plan) : new Map();
 
         if (!next) {
-          settle("skipped", "No keyword clear enough to write to yet.");
+          settle("skipped", plan.length && choice.rule === "none"
+            ? `${choice.why} Pick a topic on your calendar to write first, or tell us which service to write about.`
+            : "No keyword clear enough to write to yet.");
         } else if (firstDraft === "dispatch") {
           // Chosen and gated here, written in its own invocation. The phase
           // stays `active` with the keyword named; the draft route settles it.
           pendingDraft = {
             term: next.term,
             keywordId: next.keywordId ?? null,
-            selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
+            selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume, ...reviewNotes },
             relatedKeywords: relatedByTerm.get(next.term),
           };
           settle("active", `Writing "${next.term}" now. It lands in your review queue when it is done.`);
@@ -560,7 +588,7 @@ async function runPhases(
             keyword: next.term,
             keywordId: next.keywordId,
             autonomous: true,
-            selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
+            selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume, ...reviewNotes },
             relatedKeywords: relatedByTerm.get(next.term),
             // The one boundary inside the draft: research is done, the model
             // is about to write. Emitted as the same phase still active, with

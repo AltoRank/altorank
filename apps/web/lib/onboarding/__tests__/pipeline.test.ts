@@ -38,7 +38,10 @@ vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: (e: unknow
 const plan = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
 const held = vi.fn(async () => ({ count: 0, dates: [] as string[] }));
 const scheduled = vi.fn(async () => 0);
-vi.mock("../plan", () => ({ schedulePlan: (...a: unknown[]) => plan(...a), heldTopics: () => held(), countScheduled: () => scheduled(), fulfilPlannedEntry: vi.fn(async () => undefined) }));
+// Planned entries carry the verdict they were planned on, as the planner's
+// do: an approval of value 2 on an article page, which the first-article
+// rule accepts, unless a test says otherwise.
+vi.mock("../plan", () => ({ schedulePlan: async (...a: unknown[]) => ((await plan(...a)) as Array<Record<string, unknown>>).map((e) => ({ brief: BRIEF, ...e })), heldTopics: () => held(), countScheduled: () => scheduled(), fulfilPlannedEntry: vi.fn(async () => undefined) }));
 // Whether the planner holds this account's calendar is the planner's own
 // question (lib/billing/trial-hold.ts); the pipeline only words the screen
 // from it. The draft-side predicate stays real.
@@ -93,7 +96,8 @@ import { runOnboarding } from "../pipeline";
 import type { OnboardingEvent } from "../events";
 
 const WS = { id: "ws1", domain: "example.com", account_id: "ag1", language: "en" };
-const NEXT = { term: "seo agent", reasons: ["27,100 searches/mo"], score: 35.5, difficulty: 19, volume: 27100 };
+const BRIEF = { version: 2, context: "c", checkedAt: "2026-09-30T00:00:00.000Z", status: "qualified", reason: "a founder choosing a tool", format: "article", value: 2, angle: "What an SEO agent does", buyingJob: "choose a tool" };
+const NEXT = { term: "seo agent", reasons: ["27,100 searches/mo"], score: 35.5, difficulty: 19, volume: 27100, action: "write", quality: "ok", opportunity: BRIEF };
 
 /** Enough client for the "already has a draft?" count. */
 const client = (existing: number) =>
@@ -534,8 +538,7 @@ describe("the trial gate and the first plan", () => {
   it("still writes the first article of a held account", async () => {
     quota.mockResolvedValue({ limit: 7, used: 0, remaining: 7, reason: "no-plan", trialEligible: true });
     plan.mockResolvedValue([]);
-    recommend.mockResolvedValue([{ term: "seo agent", keywordId: "k1", action: "write", quality: "ok", reasons: ["r"], score: 1, difficulty: 1, volume: 10 }]);
-    pick.mockImplementation((recs: unknown[]) => recs[0]);
+    recommend.mockResolvedValue([{ term: "seo agent", keywordId: "k1", action: "write", quality: "ok", reasons: ["r"], score: 1, difficulty: 1, volume: 10, opportunity: BRIEF }]);
     generate.mockResolvedValue({ articleId: "a1", title: "T", wordCount: 900, factCheck: { verdict: "clean" } });
     await collect();
     expect(generate).toHaveBeenCalledTimes(1);
@@ -584,6 +587,63 @@ describe("runOnboarding: the topic funnel", () => {
     await runOnboarding(richClient(0), WS, () => undefined, { firstDraft: "dispatch" });
     expect(plan).not.toHaveBeenCalled();
     expect(recordFunnel).toHaveBeenCalledWith(expect.objectContaining({ funnel: null, planningDetail: "Nothing to schedule until there are keywords." }));
+  });
+});
+
+describe("runOnboarding: the first-article rule", () => {
+  const brief = (value: number, extra: Record<string, unknown> = {}) => ({ ...BRIEF, value, ...extra });
+  const recOf = (term: string, b: Record<string, unknown>) => ({ ...NEXT, term, keywordId: term, opportunity: b });
+  beforeEach(() => recordFunnel.mockReset());
+
+  it("writes the first planned topic of value 2 or more, not the plan's first day, and counts the rule", async () => {
+    const general = brief(1, { tier: "t3" });
+    const service = brief(3, { tier: "t1" });
+    plan.mockImplementation(async (...a: unknown[]) => {
+      (a[3] as { onFunnel?: (f: unknown) => void }).onFunnel?.({ found: 2, removed: {}, qualified: 2, planned: 2 });
+      return [
+        { term: "bike commuting tips", date: "2026-10-01", keywordId: "g", brief: general },
+        { term: "tubeless conversion cost", date: "2026-10-02", keywordId: "s", brief: service },
+      ];
+    });
+    recommend.mockResolvedValue([recOf("bike commuting tips", general), recOf("tubeless conversion cost", service)]);
+    const { result } = await collectDispatch();
+    expect(result.pendingDraft?.term).toBe("tubeless conversion cost");
+    expect(result.pendingDraft?.selection.reviewNotes).toBeUndefined();
+    expect(recordFunnel).toHaveBeenCalledWith(expect.objectContaining({ funnel: expect.objectContaining({ firstArticle: "rule" }) }));
+  });
+
+  it("writes the best topic anyway when every one needs clinical claims, and asks the owner in the review notes", async () => {
+    const a = brief(3, { tier: "t1" });
+    const b = brief(2, { tier: "t1" });
+    plan.mockResolvedValue([
+      { term: "dental crown or veneer", date: "2026-10-01", keywordId: "a", brief: a },
+      { term: "dental implant aftercare", date: "2026-10-02", keywordId: "b", brief: b },
+    ]);
+    recommend.mockResolvedValue([recOf("dental crown or veneer", a), recOf("dental implant aftercare", b)]);
+    const { result } = await collectDispatch();
+    expect(result.pendingDraft?.term).toBe("dental crown or veneer");
+    expect(result.pendingDraft?.selection.reviewNotes?.[0]).toMatch(/^Needs your input before publishing: every planned topic about your services asks for clinical claims/);
+  });
+
+  it("writes nothing first when no planned topic is about a service, and says why", async () => {
+    const general = brief(1, { tier: "t3" });
+    plan.mockResolvedValue([{ term: "bike commuting tips", date: "2026-10-01", keywordId: "g", brief: general }]);
+    recommend.mockResolvedValue([recOf("bike commuting tips", general), recOf("wheel building cost", brief(3, { tier: "inventory" }))]);
+    const { events, result } = await collectDispatch();
+    expect(result.pendingDraft).toBeNull();
+    expect(events.filter((e) => e.phase === "drafting").at(-1)).toMatchObject({ status: "skipped", detail: expect.stringContaining("No planned topic is about one of your services closely enough") });
+  });
+
+  it("does not write a planned topic the second read no longer offers, and picks again among the planned", async () => {
+    const first = brief(3, { tier: "t1" });
+    const second = brief(2, { tier: "t1" });
+    plan.mockResolvedValue([
+      { term: "tubeless conversion cost", date: "2026-10-01", keywordId: "s", brief: first },
+      { term: "brake rub fix", date: "2026-10-02", keywordId: "p", brief: second },
+    ]);
+    recommend.mockResolvedValue([{ ...recOf("tubeless conversion cost", first), action: "skip" }, recOf("brake rub fix", second)]);
+    const { result } = await collectDispatch();
+    expect(result.pendingDraft?.term).toBe("brake rub fix");
   });
 });
 
