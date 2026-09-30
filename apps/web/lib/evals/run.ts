@@ -15,7 +15,8 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import path from "node:path";
 import type { SerpData } from "@/lib/seo/brief-data";
 import type { PageFetcher } from "@/lib/seo/citation-check";
-import { pipelineOf, runBuyerFit, runFactCheck, runQualification } from "./decisions";
+import { judgeCase, planCandidates, pipelineOf, runBuyerFit, runFactCheck, runQualification } from "./decisions";
+import { PLAN_SELECTORS, scorePlan, valueAgreement, type CasePlanScore, type PlanCandidate } from "./plan";
 import { Budget, BudgetExceededError, Recorder, type ModelClient, type RecorderMode } from "./recorder";
 import { scoreDecision, type DecisionScore } from "./score";
 import { caseFunnels, type CaseFunnel } from "./funnel";
@@ -61,6 +62,10 @@ export interface EvalResult {
   stoppedAt?: string;
   /** Per case, the pipeline items as the planner's funnel: labels and product side by side. */
   funnels: CaseFunnel[];
+  /** Per case and selector, the plan made from the reader's verdicts (./plan.ts). Empty unless `plan` ran. */
+  plans: CasePlanScore[];
+  /** The reader's value grades against the value labels, over every candidate. */
+  value: ReturnType<typeof valueAgreement>;
 }
 
 export async function runEvals(options: EvalOptions): Promise<EvalResult> {
@@ -71,11 +76,23 @@ export async function runEvals(options: EvalOptions): Promise<EvalResult> {
   const fit: Scored[] = [];
   const qualification: Scored[] = [];
   const facts: Scored[] = [];
+  const plans: CasePlanScore[] = [];
+  const candidates: PlanCandidate[] = [];
   let stoppedAt: string | undefined;
   try {
     for (const c of cases) {
-      if (wanted("buyer-fit") || wanted("pipeline")) fit.push(...await runBuyerFit(c, recorder.ask));
-      if (wanted("qualification") || wanted("pipeline")) qualification.push(...await runQualification(c, recorder.ask));
+      const caseFit = wanted("buyer-fit") || wanted("pipeline") || wanted("plan") ? await runBuyerFit(c, recorder.ask) : [];
+      fit.push(...caseFit);
+      // The plan reads every judgeable term, labelled or not: what the
+      // planner would have to choose from. Judged once, shared with the
+      // qualification score.
+      const judged = wanted("plan") ? await judgeCase(c, recorder.ask) : undefined;
+      if (wanted("qualification") || wanted("pipeline")) qualification.push(...await runQualification(c, recorder.ask, judged));
+      if (judged) {
+        const offered = planCandidates(c, judged, caseFit);
+        candidates.push(...offered);
+        for (const selector of PLAN_SELECTORS) plans.push(scorePlan(c, offered, selector));
+      }
     }
   } catch (err) {
     if (!(err instanceof BudgetExceededError)) throw err;
@@ -101,11 +118,12 @@ export async function runEvals(options: EvalOptions): Promise<EvalResult> {
   add("qualification", qualification);
   add("pipeline", pipelineOf(fit, qualification, cases));
   add("fact-check", facts);
-  return { items, scores, recorder, stoppedAt, funnels: caseFunnels(items) };
+  return { items, scores, recorder, stoppedAt, funnels: caseFunnels(items), plans, value: valueAgreement(candidates) };
 }
 
 /** What a live run would buy, priced before anything is spent. */
 export async function planEvals(options: Omit<EvalOptions, "mode" | "client">): Promise<{ calls: number; upperUsd: number; typicalUsd: number }> {
+  // "plan" here is the recorder's pricing mode; the plan decision prices as the judge calls it makes.
   const { recorder } = await runEvals({ ...options, mode: "plan", only: (options.only ?? []).filter((d) => d !== "fact-check") });
   const planned = [...recorder.planned.values()];
   return {

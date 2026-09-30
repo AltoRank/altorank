@@ -14,6 +14,7 @@ import { factCheckArticle, type ClaimStatus } from "@/lib/ai/fact-check";
 import { verifyCitedFigures, type PageFetcher } from "@/lib/seo/citation-check";
 import type { ArticleResearch } from "@/lib/seo/research";
 import type { ClaimCase, DecisionCase, Scored, TermCase } from "./types";
+import type { PlanCandidate } from "./plan";
 
 export function contextOf(c: DecisionCase): OpportunityContext {
   return { domain: c.domain, languageCode: c.languageCode, locationCode: c.locationCode, business: c.business };
@@ -55,18 +56,39 @@ export function topicAgrees(expected: string, predicted: string): boolean {
   return expected === predicted;
 }
 
+/** A term the results judge can read: a results page is stored and the term is not labelled as lacking one. */
+export function judgeable(t: TermCase): t is TermCase & { serp: NonNullable<TermCase["serp"]> } {
+  return Boolean(t.serp) && t.label.verdict !== "needs_serp";
+}
+
+/** The results judge's verdict on one term, as the planner would get it. */
+export async function judgeTerm(c: DecisionCase, t: TermCase & { serp: NonNullable<TermCase["serp"]> }, ask: AskModel): Promise<Opportunity> {
+  const result: Opportunity = { version: OPPORTUNITY_VERSION, context: "eval", checkedAt: `${c.today}T00:00:00.000Z`, status: "pending", reason: "" };
+  await judgeOnResults(result, { term: t.term, sourceUrl: t.sourceUrl ?? null, context: contextOf(c), verdict: keptVerdictFor(t), organic: t.serp.organic }, { ask, today: c.today });
+  return result;
+}
+
+/**
+ * Every judgeable term through the results judge, labelled or not: what the
+ * plan scorer (./plan.ts) chooses from. Keyed by the term as written.
+ */
+export async function judgeCase(c: DecisionCase, ask: AskModel): Promise<Map<string, Opportunity>> {
+  const out = new Map<string, Opportunity>();
+  for (const t of c.terms) if (judgeable(t)) out.set(t.term, await judgeTerm(c, t, ask));
+  return out;
+}
+
 /**
  * Every term with a results page and a label through the results judge.
  * Terms labelled `needs_serp`, or with no stored page, are skipped: there is
- * no evidence to judge them on.
+ * no evidence to judge them on. `judged` holds verdicts already bought for
+ * this case (`judgeCase`), so a term is never asked twice.
  */
-export async function runQualification(c: DecisionCase, ask: AskModel): Promise<Scored[]> {
-  const context = contextOf(c);
+export async function runQualification(c: DecisionCase, ask: AskModel, judged?: ReadonlyMap<string, Opportunity>): Promise<Scored[]> {
   const out: Scored[] = [];
   for (const t of c.terms) {
-    if (!t.label.verdict || t.label.verdict === "needs_serp" || !t.serp) continue;
-    const result: Opportunity = { version: OPPORTUNITY_VERSION, context: "eval", checkedAt: `${c.today}T00:00:00.000Z`, status: "pending", reason: "" };
-    await judgeOnResults(result, { term: t.term, sourceUrl: t.sourceUrl ?? null, context, verdict: keptVerdictFor(t), organic: t.serp.organic }, { ask, today: c.today });
+    if (!t.label.verdict || !judgeable(t)) continue;
+    const result = judged?.get(t.term) ?? await judgeTerm(c, t, ask);
     const predicted = topicOutcome(result);
     const scored: Scored = {
       decision: "qualification", caseId: c.id, item: t.term, expected: t.label.verdict, predicted,
@@ -76,6 +98,21 @@ export async function runQualification(c: DecisionCase, ask: AskModel): Promise<
     out.push(scored);
   }
   return out;
+}
+
+/**
+ * The terms the planner would choose from: judged, and not refused by the
+ * buyer test where the product asked it (`fit`, from `runBuyerFit`). A term
+ * the buyer test was not asked about passes on its stored verdict, as the
+ * results judge was run (`keptVerdictFor`), unless that verdict refused it.
+ */
+export function planCandidates(c: DecisionCase, judged: ReadonlyMap<string, Opportunity>, fit: readonly Scored[]): PlanCandidate[] {
+  const refused = new Set(fit.filter((s) => s.caseId === c.id && s.predicted !== "keep").map((s) => s.item));
+  return c.terms.flatMap((t) => {
+    const verdict = judged.get(t.term);
+    if (!verdict || refused.has(t.term) || t.storedFit?.keep === false) return [];
+    return [{ term: t, verdict }];
+  });
 }
 
 /**

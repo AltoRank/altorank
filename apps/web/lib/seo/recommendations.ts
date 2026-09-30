@@ -39,7 +39,7 @@ import type { KeywordIntent } from "@/lib/types";
 import { readGsc } from "@/lib/gsc/read";
 import { scoreRelevance, subjectVocabulary, type TopicalProfile } from "./topical-profile";
 import { commercialFit } from "./commercial-fit";
-import { relativeDifficulty, isOutOfReach } from "./difficulty";
+import { relativeDifficulty, isOutOfReach, volumeScore, winnability } from "./difficulty";
 
 export type RecommendedAction = "write" | "refresh" | "skip";
 
@@ -290,53 +290,6 @@ export const AUDIENCE_TOPIC_WEIGHT = 0.5;
 
 /** What an unmeasured volume scores: the same as ~30 searches a month. */
 const UNKNOWN_VOLUME_SCORE = 15;
-
-function volumeScore(volume: number): number {
-  if (volume <= 0) return 0;
-  return Math.log10(volume + 1) * 10;
-}
-
-/**
- * Difficulty as a 0-1 multiplier.
- *
- * Unknown difficulty resolves to 0.6 rather than 1.0. Treating "we do not know"
- * as "easy" would float every unmeasured keyword to the top, which is the same
- * failure as rendering a null difficulty as a green zero.
- */
-/**
- * What an out-of-reach keyword keeps, rather than zero.
- *
- * `relativeDifficulty` saturates: at authority 0 every KD from 45 to 100 maps
- * to relative 100, so `1 - relative/100` was exactly 0 and multiplied the
- * whole score away. Twelve of qasimcode.com's twenty keywords scored 0.0 and
- * were therefore in arbitrary order - insertion order, since the sort is
- * stable - so the plan picked among KD 56, KD 86 and KD 100 by whichever row
- * the provider had returned first. Order has to survive even when the answer
- * is "none of these".
- */
-const UNWINNABLE_FLOOR = 0.02;
-
-function winnability(difficulty: number | null, volume = 0, authority?: number | null): number {
-  if (difficulty === null) return 0.6;
-  // Judged against this site when we know its authority. KD is absolute - it
-  // describes the SERP, not the contender - so KD 40 is a rounding error at
-  // DR 80 and unreachable at DR 0.2, and ranking both the same way is how a
-  // new site gets a content plan it cannot execute. Both numbers are fetched
-  // in the same analyseDomain run and were never compared.
-  if (typeof authority === "number" && Number.isFinite(authority)) {
-    const { relative } = relativeDifficulty(difficulty, authority);
-    if (relative !== null) {
-      if (difficulty === 0 && volume >= 1000) return 0.6;
-      return Math.max(UNWINNABLE_FLOOR, 1 - relative / 100);
-    }
-  }
-  // Difficulty 0 on a term with real volume is the provider saying "not
-  // computed", not "free". Treated as easy it multiplies by 1.0 and floats a
-  // fragment like "no keywords" (27,100/mo, KD 0) to the top of the queue.
-  if (difficulty === 0 && volume >= 1000) return 0.6;
-  const d = Math.min(Math.max(difficulty, 0), 100);
-  return 1 - d / 100;
-}
 
 /**
  * Commercial and transactional terms are worth marginally more to an account's
