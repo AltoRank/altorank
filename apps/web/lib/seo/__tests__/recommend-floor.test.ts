@@ -17,7 +17,7 @@ vi.mock("@/lib/keyword-research/opportunity", async () => {
   return { ...real, qualifyOpportunities: (...a: unknown[]) => qualify(...a) };
 });
 
-import { demandFirst, recommendKeywords } from "../recommendations";
+import { demandFirst, pickNextKeyword, recommendKeywords } from "../recommendations";
 import { buildTopicalProfile } from "../topical-profile";
 import { describeFunnel, funnelDiscrepancy, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 import { contextKey, type Opportunity } from "@/lib/keyword-research/opportunity";
@@ -167,5 +167,50 @@ describe("no floor: the page type never relaxes", () => {
     verdicts = {};
     const { recs } = await recommend([row("old", "chain wear checker", { status: "stored", plan_excluded_at: now(), opportunity: parked })]);
     expect(recs.find((r) => r.keywordId === "old")?.action).toBe("skip");
+  });
+});
+
+describe("value tiers order the approvals", () => {
+  const graded = (angle: string, value: 0 | 1 | 2 | 3, service?: string): Opportunity => ({ ...approved(angle), value, ...(service ? { service } : {}) });
+  it("puts value first, then winnability, and leaves volume to break ties; the cron writes the first", async () => {
+    verdicts = {
+      gen: graded("commuting", 1),
+      svc: graded("tubeless cost", 3, "bike repair"),
+      prob: graded("brake rub", 2, "bike repair"),
+      hardsvc: graded("wheel build cost", 3, "bike repair"),
+      hardprob: graded("disc squeal", 2, "bike repair"),
+    };
+    const { recs } = await recommend([
+      row("gen", "bike commuting tips", { volume: 9000, difficulty: 5 }),
+      row("svc", "tubeless conversion cost", { volume: 20, difficulty: 10 }),
+      row("prob", "brake rub fix", { volume: 400, difficulty: 10 }),
+      row("hardsvc", "wheel building cost", { volume: 300, difficulty: 35 }),
+      row("hardprob", "disc brake squeal", { volume: 800, difficulty: 35 }),
+    ]);
+    const writable = recs.filter((r) => r.action === "write");
+    expect(writable.map((r) => `${r.keywordId}:${r.tier}`)).toEqual(["prob:t1", "svc:t1", "hardsvc:t2", "gen:t3", "hardprob:inventory"]);
+    expect(writable[0].reasons[1]).toBe("Business value 2 (bike repair): about a service you sell, and within reach");
+    expect(pickNextKeyword(recs)?.keywordId).toBe("prob");
+    // Inventory is kept, never written unattended.
+    expect(pickNextKeyword(recs.filter((r) => r.keywordId === "hardprob"))).toBeNull();
+  });
+  it("keeps the phrasing closer to a service when two phrasings are one search, whatever their volumes", async () => {
+    const shared = ["https://p.test/a", "https://p.test/b", "https://p.test/c", "https://p.test/d"];
+    verdicts = {
+      loud: { ...graded("x", 1), organicUrls: shared, evidenceUrls: shared.slice(0, 2) },
+      close: { ...graded("y", 3, "bike repair"), organicUrls: shared, evidenceUrls: shared.slice(0, 2) },
+    };
+    const { recs, funnel } = await recommend([
+      row("loud", "bike brake adjustment", { volume: 5000 }),
+      row("close", "brake adjustment service cost", { volume: 30 }),
+    ]);
+    expect(recs.filter((r) => r.action === "write").map((r) => r.keywordId)).toEqual(["close"]);
+    expect(recs.find((r) => r.keywordId === "loud")?.skippedBy).toBe("duplicate");
+    expect(funnelDiscrepancy(funnel)).toBeNull();
+  });
+  it("reads a verdict saved before the grade existed as value 1: planned only as top of funnel", async () => {
+    verdicts = { old: approved("legacy") };
+    const { recs } = await recommend([row("old", "gravel tubeless setup", { volume: 50, difficulty: 5 })]);
+    expect(recs.find((r) => r.keywordId === "old")?.tier).toBe("t3");
   });
 });

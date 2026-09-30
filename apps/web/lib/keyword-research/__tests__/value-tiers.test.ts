@@ -88,7 +88,7 @@ describe("the plan", () => {
     const relaxed = plan(items);
     expect(names(relaxed)).toEqual(["a:t1", "b:t1", "c:t2", "d:t2*", "e:t3"]);
     expect(relaxed.relaxations).toEqual(["lower_confidence"]);
-    expect(relaxed.left.map((l) => `${l.item.term}:${l.why}`)).toEqual(["f:no_room", "g:inventory"]);
+    expect(relaxed.left.map((l) => `${l.item.term}:${l.why}`)).toEqual(["f:tier_full", "g:inventory"]);
   });
   it("fills T1 first when it has plenty, and says the rest had no room", () => {
     const s = plan([r("a", 3), r("b", 3), r("c", 2), r("d", 2), r("e", 2), r("f", 2), r("x", 1)]);

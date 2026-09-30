@@ -9,6 +9,7 @@ import { funnelOf, type FitVerdict, type Funnel } from "@/lib/keyword-research/b
 import { isJudgeable, isParked, isParkedForGood, isRequalifiable, parkKeywords, queueTarget, refillQualifiedQueue, RefillRefusedError, type QueueRow } from "@/lib/keyword-research/queue";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 import { stageOfVerdict, tallyFunnel, type FunnelOutcome, type FunnelStage, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
+import { planOrder, rankOf, tierOf, type ValueTier } from "@/lib/keyword-research/value-tiers";
 // ---------------------------------------------------------------------------
 // What to write next
 // ---------------------------------------------------------------------------
@@ -97,7 +98,21 @@ export interface KeywordRecommendation {
    * the reasons are what every caller acts on.
    */
   skippedBy?: FunnelStage;
+  /** How likely this site is to win the term, 0-1 (lib/seo/difficulty.ts `winnability`). */
+  winnability: number;
+  /**
+   * An approved topic's value tier (lib/keyword-research/value-tiers.ts):
+   * what orders it for the plan. Unset on a row with no approval.
+   */
+  tier?: ValueTier;
 }
+
+const TIER_WORDS: Record<ValueTier, string> = {
+  t1: "about a service you sell, and within reach",
+  t2: "one of your services, hard to win for now: a long-term bet",
+  t3: "top of funnel: general interest in your field, within reach",
+  inventory: "kept in the queue, not planned while better topics exist",
+};
 
 /**
  * Spot keyword-provider noise.
@@ -602,7 +617,8 @@ export async function recommendKeywords(
       reasons.push(`${impressions.toLocaleString()} impressions already earned`);
     }
 
-    score *= winnability(difficulty, volume ?? 0, authority);
+    const reach = winnability(difficulty, volume ?? 0, authority);
+    score *= reach;
     reasons.push(
       difficulty === null
         ? "difficulty unknown, scored conservatively"
@@ -851,6 +867,7 @@ export async function recommendKeywords(
       funnel,
       quality,
       qualityNote: note,
+      winnability: reach,
       ...(skippedBy ? { skippedBy } : {}),
       ...(unmeasured ? { demand: "unmeasured" as const } : {}),
     };
@@ -1087,13 +1104,16 @@ export async function recommendKeywords(
   }
   // Fresh approvals, ranked against each other: the first of a search is
   // the one written, the rest wait behind it in memory and are parked once it
-  // is on the calendar (the pass above, next time round).
+  // is on the calendar (the pass above, next time round). Ranked by value
+  // tier (lib/keyword-research/value-tiers.ts), so of two phrasings of one
+  // search the one closer to a service leads, not the one searched more.
   const clusters: KeywordRecommendation[] = [];
   // Owners with no results page of their own (a crawled page, an article
   // with no keyword row) are only ever compared by words, and in a language
   // without a rule set that means the exact words. Said on every approval it
   // applies to, not assumed away.
   const unfolded = leaders.some((l) => !l.organicUrls?.length) ? unfoldedNote(language) : null;
+  const approvals: KeywordRecommendation[] = [];
   for (const rec of eligible) {
     if (rec.action !== "write") continue;
     const found = evidence.get(rec.keywordId);
@@ -1101,22 +1121,33 @@ export async function recommendKeywords(
     const o = found && rec.demand ? { ...found, demand: rec.demand } : found;
     rec.opportunity = o;
     if (o?.status === "qualified") {
-      const topic = { term: rec.term, organicUrls: o.organicUrls ?? null };
-      const duplicate = clusters.find((other) => sameIntent(topic, { term: other.term, organicUrls: other.opportunity?.organicUrls ?? null }, language).same);
-      if (duplicate) {
-        rec.action = "skip";
-        rec.skippedBy = "duplicate";
-        rec.reasons.push(`Same search as “${duplicate.term}”, which is ahead of it in the queue; one article per search.`);
-      } else {
-        clusters.push(rec);
-        rec.reasons.unshift(o.reason);
-        if (unfolded) rec.reasons.push(`Checked against your existing pages by exact words: ${unfolded}.`);
-      }
+      approvals.push(rec);
     } else if (options?.qualify || o) {
       rec.action = o?.existingUrl ? "refresh" : "skip";
       rec.reasons.unshift(o?.reason ?? "Topic qualification pending: buyer fit and live search evidence are required before automatic writing.");
     }
   }
+  for (const rec of approvals.sort((a, b) => planOrder(rankOf(a), rankOf(b)))) {
+    const o = rec.opportunity!;
+    const topic = { term: rec.term, organicUrls: o.organicUrls ?? null };
+    const duplicate = clusters.find((other) => sameIntent(topic, { term: other.term, organicUrls: other.opportunity?.organicUrls ?? null }, language).same);
+    if (duplicate) {
+      rec.action = "skip";
+      rec.skippedBy = "duplicate";
+      rec.reasons.push(`Same search as “${duplicate.term}”, which is ahead of it in the queue; one article per search.`);
+      continue;
+    }
+    clusters.push(rec);
+    const rank = rankOf(rec);
+    rec.tier = tierOf(rank.value, rank.winnability);
+    rec.reasons.unshift(o.reason, `Business value ${rank.value}${o.service ? ` (${o.service})` : o.valueCapped ? " (capped: no service named)" : ""}: ${TIER_WORDS[rec.tier]}`);
+    if (unfolded) rec.reasons.push(`Checked against your existing pages by exact words: ${unfolded}.`);
+  }
+  // The order every caller reads: approvals by value tier, then the rest as
+  // scored. The planner takes its plan from the top (lib/onboarding/plan.ts),
+  // the cron writes the first (`pickNextKeyword`).
+  const approved = (r: KeywordRecommendation) => r.action === "write" && r.tier !== undefined;
+  sorted.sort((a, b) => (approved(a) && approved(b) ? planOrder(rankOf(a), rankOf(b)) : Number(approved(b)) - Number(approved(a))));
   // No floor. Until 2026-10 a first look short of three approvals promoted
   // searches whose results held too few articles (not_editorial) into the
   // plan as "lower confidence"; three of seven live runs then planned a
@@ -1177,5 +1208,8 @@ export function demandFirst(a: Pick<KeywordRecommendation, "demand" | "score">, 
 export function pickNextKeyword(
   recommendations: KeywordRecommendation[],
 ): KeywordRecommendation | null {
-  return recommendations.find((r) => r.action === "write" && r.quality === "ok") ?? null;
+  // Inventory is kept, not written: an approval no value tier admits (hard
+  // and not one of the owner's services, or general interest and hard) waits
+  // for a better run rather than going out unattended.
+  return recommendations.find((r) => r.action === "write" && r.quality === "ok" && r.tier !== "inventory") ?? null;
 }

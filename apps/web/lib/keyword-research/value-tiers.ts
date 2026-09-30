@@ -125,6 +125,25 @@ export interface Rankable {
   score?: number;
 }
 
+/** What the value tiers read from a recommendation (lib/seo/recommendations.ts). */
+export function rankOf(rec: {
+  term: string;
+  winnability: number;
+  volume: number | null;
+  demand?: "unmeasured";
+  score?: number;
+  opportunity?: Pick<Opportunity, "value" | "demand"> | null;
+}): Rankable {
+  return {
+    term: rec.term,
+    value: valueOf(rec.opportunity),
+    winnability: rec.winnability,
+    volume: rec.volume,
+    unmeasured: rec.demand === "unmeasured" || rec.opportunity?.demand === "unmeasured",
+    score: rec.score,
+  };
+}
+
 const TIER_RANK: Record<ValueTier, number> = { t1: 0, t2: 1, t3: 2, inventory: 3 };
 
 /** Winnability as the within-tier key: weighted, in tenths, so volume can break a tie. */
@@ -218,10 +237,13 @@ export function selectPlan<T>(items: readonly T[], read: (item: T) => Rankable, 
     }
   }
   picks.sort((a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier] || Number(a.relaxed) - Number(b.relaxed) || a.order - b.order);
-  const full = room() <= 0;
+  // A T2 or T3 left out once its tier's cap was taken is out by the cap,
+  // full plan or not; anything else ran out of room.
+  const pickedOf = (tier: PlannedTier) => picks.filter((p) => p.tier === tier).length;
   const left = ranked.filter((x) => !taken.has(x.item)).map((x) => {
     const tier = tierOf(x.r.value, x.r.winnability);
-    return { item: x.item, why: (tier === "inventory" ? "inventory" : full || tier === "t1" ? "no_room" : "tier_full") as Unplanned };
+    const why: Unplanned = tier === "inventory" ? "inventory" : tier !== "t1" && pickedOf(tier) >= caps[tier] ? "tier_full" : "no_room";
+    return { item: x.item, why };
   });
   return { picks: picks.map(({ order: _order, ...p }) => { void _order; return p; }), left, relaxations };
 }

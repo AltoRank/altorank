@@ -25,6 +25,7 @@ import { CLAIM_LEASE_MS } from "@/lib/plan/draft-claim";
 import { PRE_TRIAL_DRAFTS, planHold } from "@/lib/billing/trial-hold";
 import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
 import { recommendKeywords, type KeywordRecommendation } from "@/lib/seo/recommendations";
+import { rankOf, selectPlan, type PlannedTier, type Unplanned } from "@/lib/keyword-research/value-tiers";
 import type { FirstLook } from "@/lib/keyword-research/opportunity";
 import { classifyKeyword, type KeywordTaxonomy } from "@/lib/keywords/taxonomy";
 import { generateQualityQuestionsBatch, parseStoredQuestions, toQualityQuestions } from "@/lib/keywords/questions";
@@ -381,7 +382,9 @@ async function planFor(
       const stage = whyNot(id);
       notPlanned[stage] = (notPlanned[stage] ?? 0) + 1;
     }
-    opts.onFunnel(withPlanned(seen.funnel, planned.length, notPlanned, planned.filter((p) => p.brief?.confidence === "lower").length));
+    const tiers: Partial<Record<PlannedTier, number>> = {};
+    for (const p of planned) if (p.brief?.tier) tiers[p.brief.tier] = (tiers[p.brief.tier] ?? 0) + 1;
+    opts.onFunnel(withPlanned(seen.funnel, planned.length, notPlanned, planned.filter((p) => p.brief?.confidence === "lower").length, planned.length ? tiers : undefined));
   };
   let recommended: KeywordRecommendation[];
   try {
@@ -444,15 +447,18 @@ async function planFor(
   const sameAsCalendar = new Set([...onCalendar].filter(([, f]) => !f.leader.rec).map(([t]) => t.rec));
   const recs = ranked.filter((rec) => !sameAsCalendar.has(rec));
   const recById = new Map(recommended.map((rec) => [rec.keywordId, rec]));
-  // In the order the planner applies them; `buildPlan` takes only writable,
-  // non-suspect rows, and what it leaves after that is a repeat or no room.
-  const whyNot = (repeats: ReadonlySet<string>) => (id: string): PlannerStage => {
+  // In the order the planner applies them: writable approvals on an
+  // editorial page (the page type, in code), one per search, then the value
+  // tiers (`selectPlan`), then the pace grid.
+  const whyNot = (repeats: ReadonlySet<string>, unplanned: ReadonlyMap<string, Unplanned> = new Map()) => (id: string): PlannerStage => {
     if (excluded.has(id)) return "excluded";
     if (takenIds.has(id)) return "on_calendar";
     const rec = recById.get(id);
-    if (!rec || rec.action !== "write" || rec.quality !== "ok") return "not_writable";
+    if (!rec || !plannable(rec)) return "not_writable";
     if (sameAsCalendar.has(rec)) return "same_as_calendar";
     if (repeats.has(id)) return "same_search";
+    const left = unplanned.get(id);
+    if (left === "inventory" || left === "tier_full") return left;
     return "no_room";
   };
 
@@ -469,7 +475,18 @@ async function planFor(
     }
   }
 
-  const { entries: plan, repeats } = arrangePlan(recs, {
+  // One per search, in the recommender's order (value tier first), then the
+  // value tiers choose the plan: T1, at most one T2 and one T3 per five
+  // slots, and - on a first look only - T1's share filled from T2 and T3,
+  // labelled lower confidence (lib/keyword-research/value-tiers.ts). What
+  // the tiers leave stays in the queue, ordered again next run.
+  const topics = recs.filter(plannable).map((rec) => ({ rec, term: rec.term, organicUrls: rec.opportunity?.organicUrls ?? null, stage: "candidate" as const }));
+  const repeatOf = clusterByIntent(topics, language);
+  const distinct = topics.filter((t) => !repeatOf.has(t)).map((t) => t.rec);
+  const slots = Math.min(maxEntries, gridCount(weeklyLimit, PLAN_HORIZON_DAYS, room));
+  const selection = selectPlan(distinct, rankOf, { slots, relax: Boolean(opts.firstLook) });
+  const picked = selection.picks.map((p) => ({ ...p.item, opportunity: labelled(p.item.opportunity!, p.tier, p.relaxed) }));
+  const { entries: plan } = arrangePlan(picked, {
     weeklyLimit,
     from: start,
     maxEntries,
@@ -477,8 +494,34 @@ async function planFor(
     daysOfWeek: opts.daysOfWeek,
     occupied: existing.map((e) => e.scheduled_date).filter(Boolean) as string[],
   });
-  report(plan, whyNot(repeats));
+  const repeats = new Set([...repeatOf.keys()].map((t) => t.rec.keywordId));
+  report(plan, whyNot(repeats, new Map(selection.left.map((l) => [l.item.keywordId, l.why]))));
   return { plan, recs };
+}
+
+/**
+ * A writable approval on a page an article can win. The page type is
+ * enforced here as well as by the reader: needs_page and not_editorial
+ * verdicts are refusals, and nothing but an article or mixed page reaches
+ * the blog plan, whatever a caller hands in.
+ */
+function plannable(rec: Pick<KeywordRecommendation, "action" | "quality" | "keywordId" | "tier" | "opportunity">): boolean {
+  const o = rec.opportunity;
+  return rec.action === "write" && rec.quality === "ok" && Boolean(rec.keywordId) && rec.tier !== undefined &&
+    o?.status === "qualified" && (o.format === "article" || o.format === "mixed");
+}
+
+/** How many entries the pace grid can hold over the horizon, as `arrangePlan` counts them. */
+function gridCount(weeklyLimit: number, horizon: number, cap: number): number {
+  const weekly = Math.max(0, Math.min(MAX_PACE, Math.floor(weeklyLimit)));
+  return Math.max(0, Math.min(cap, PLAN_MAX_ENTRIES, Math.ceil((weekly * horizon) / 7)));
+}
+
+/** The verdict a planned topic carries onto the calendar: its tier, and "lower" when a rule was relaxed for it. */
+function labelled(o: Opportunity, tier: PlannedTier, relaxed: boolean): Opportunity {
+  const out: Opportunity = { ...o, tier };
+  if (relaxed) out.confidence = "lower";
+  return out;
 }
 
 /**
@@ -540,6 +583,16 @@ export async function schedulePlan(
     .eq("workspace_id", workspaceId)
     .eq("status", "new")
     .in("id", plan.map((p) => p.keywordId));
+
+  // The tier and any lower-confidence label go with the verdict onto the
+  // row, which the calendar and the first-article card read
+  // (lib/keyword-research/topic-labels.ts). Best-effort: a label is not
+  // worth a plan.
+  for (const p of plan) {
+    if (!p.brief?.tier) continue;
+    const { error: labelError } = await supabase.from("keywords").update({ opportunity: p.brief }).eq("workspace_id", workspaceId).eq("id", p.keywordId);
+    if (labelError) console.warn("[plan] could not save a planned topic's label:", labelError.message);
+  }
 
   // Best-effort: a plan is written even if the shape or the questions fail.
   try {

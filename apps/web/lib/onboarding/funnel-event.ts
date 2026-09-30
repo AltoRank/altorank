@@ -62,6 +62,8 @@ export function planFunnelEvent(input: PlanFunnelEventInput): SystemEvent {
       ...(f.lowerConfidence ? { lowerConfidence: f.lowerConfidence } : {}),
       ...(f.unmeasured ? { unmeasured: f.unmeasured } : {}),
       ...(f.plannedLowerConfidence ? { plannedLowerConfidence: f.plannedLowerConfidence } : {}),
+      ...(f.plannedTiers ? { plannedTiers: f.plannedTiers } : {}),
+      ...(f.firstArticle ? { firstArticle: f.firstArticle } : {}),
     },
   };
 }

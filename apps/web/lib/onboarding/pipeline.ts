@@ -431,7 +431,7 @@ async function runPhases(
       // yet: "a buyer" would be the wrong word for them.
       const who = plan.some((p) => p.brief?.funnel === "audience") ? "a reader you serve" : "a buyer";
       const labelNote = [
-        lower ? ` ${lower === plan.length ? (plan.length === 1 ? "It is" : "They are") : `${lower} of them ${lower === 1 ? "is" : "are"}`} lower confidence: fewer than three topics cleared the bar, and fewer results for ${lower === 1 ? "that search" : "those searches"} are articles than we ask for.` : "",
+        lower ? ` ${lower === plan.length ? (plan.length === 1 ? "It is" : "They are") : `${lower} of them ${lower === 1 ? "is" : "are"}`} lower confidence: fewer than three topics were both about a service you sell and within reach, so ${lower === 1 ? "it was" : "they were"} planned to fill the plan.` : "",
         unmeasured && unmeasured === plan.length
           ? ` No search volume is reported for ${plan.length === 1 ? "it" : "them"} in your market yet (unmeasured).`
           : unmeasured

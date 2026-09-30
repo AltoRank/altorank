@@ -42,7 +42,7 @@ function client(language = "tr"): SupabaseClient {
 }
 
 const rec = (keywordId: string, term: string, organicUrls: string[] | null) =>
-  ({ keywordId, term, action: "write", quality: "ok", intent: "commercial", opportunity: organicUrls ? { status: "qualified", organicUrls } : undefined });
+  ({ keywordId, term, action: "write", quality: "ok", intent: "commercial", volume: 100, winnability: 0.9, tier: "t1", opportunity: { status: "qualified", format: "article", value: 2, ...(organicUrls ? { organicUrls } : {}) } });
 
 beforeEach(() => {
   recommend.mockReset();
