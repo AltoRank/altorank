@@ -358,10 +358,9 @@ export async function recommendKeywords(
     qualify?: boolean;
     qualifyBatches?: number;
     /**
-     * A first look (lib/onboarding/pipeline.ts): approvals are asked twice,
-     * qualification stops before the run's spend ceiling, and the floor may
-     * fill the plan to PLAN_FLOOR. Nothing else passes it: the nightly passes
-     * and the planner's top-up plan only what cleared the bar.
+     * A first look (lib/onboarding/pipeline.ts): approvals are asked twice
+     * and qualification stops before the run's spend ceiling. Nothing else
+     * passes it.
      */
     firstLook?: FirstLook;
     /**
@@ -1118,43 +1117,12 @@ export async function recommendKeywords(
       rec.reasons.unshift(o?.reason ?? "Topic qualification pending: buyer fit and live search evidence are required before automatic writing.");
     }
   }
-  // The floor. A first look (and only a first look: `firstLook` is passed by
-  // lib/onboarding/pipeline.ts and nothing else, so a nightly pass never
-  // plans a lower-confidence topic for the autopilot to write) that clears
-  // fewer than PLAN_FLOOR topics fills up
-  // to it from the best searches a served buyer makes that fell short of the
-  // bar only because too few results are articles (lib/keyword-research/
-  // opportunity.ts keeps their brief and the observed article, `floor`).
-  // Planned as "lower confidence", said on the row, the calendar, the first
-  // article's card and the run's funnel; measured before unmeasured, best
-  // score first; never a search already approved. Nothing refused for the
-  // searcher (brand, navigation, another city, a service not offered) and
-  // nothing the free gates removed can reach it: those carry other causes.
-  const floorPicks: KeywordRecommendation[] = [];
-  if (options?.qualify && options.firstLook && clusters.length < PLAN_FLOOR) {
-    const floorable = sorted.filter((rec) => {
-      if (rec.quality !== "ok" || rec.skippedBy || dropped.has(rec)) return false;
-      const o = evidence.get(rec.keywordId) ?? current(rec.keywordId);
-      return Boolean(o && isFloorable(o));
-    });
-    for (const rec of floorable) {
-      if (clusters.length + floorPicks.length >= PLAN_FLOOR) break;
-      const o = (evidence.get(rec.keywordId) ?? current(rec.keywordId))!;
-      const topic = { term: rec.term, organicUrls: o.organicUrls ?? null };
-      if ([...clusters, ...floorPicks].some((other) => sameIntent(topic, { term: other.term, organicUrls: other.opportunity?.organicUrls ?? null }, language).same)) continue;
-      const promoted = floorVerdict(o, rec.demand);
-      floorPicks.push(rec);
-      rec.action = "write";
-      rec.opportunity = promoted;
-      rec.reasons = [promoted.reason, ...rec.reasons.filter((r) => r !== o.reason && !r.startsWith("Parked:"))];
-      evidence.set(rec.keywordId, promoted);
-      const row = rowOf.get(rec.keywordId);
-      if (row) { row.opportunity = promoted; row.plan_excluded_at = null; row.status = row.status === "stored" ? "new" : row.status; }
-    }
-    if (floorPicks.length) await saveFloorPicks(supabase, workspaceId, floorPicks);
-  }
-  // A lower-confidence topic is planned after every topic that cleared the bar.
-  if (floorPicks.length) sorted.sort((a, b) => Number(a.opportunity?.confidence === "lower") - Number(b.opportunity?.confidence === "lower"));
+  // No floor. Until 2026-10 a first look short of three approvals promoted
+  // searches whose results held too few articles (not_editorial) into the
+  // plan as "lower confidence"; three of seven live runs then planned a
+  // page type no article wins. The page type never relaxes now: a short plan
+  // is relaxed by value tier instead (lib/keyword-research/value-tiers.ts),
+  // and a first look with nothing to plan says so (lib/onboarding/pipeline.ts).
 
   // A planned row that will not be written, behind a phrasing of its search
   // that may be, comes off the calendar: refused, with its own refusal, the
@@ -1185,49 +1153,6 @@ export async function recommendKeywords(
     }
   }
   return sorted.slice(0, limit);
-}
-
-/** Topics a first look plans before the floor steps in (see recommendKeywords). */
-export const PLAN_FLOOR = 3;
-
-/**
- * A verdict the floor may take: a not_editorial page whose searcher the
- * judge said the business serves, with the brief written and at least one
- * observed article. Anything else - a refusal of the searcher, a landing-page
- * search, an existing page, a duplicate - is not.
- */
-export function isFloorable(o: Opportunity): boolean {
-  return o.status === "rejected" && o.cause === "not_editorial" && o.floor === true &&
-    [o.audience, o.buyingJob, o.offering, o.angle].every((v) => typeof v === "string" && v.trim().length > 0) &&
-    Array.isArray(o.evidenceUrls) && o.evidenceUrls.length >= 1;
-}
-
-/** The floor's verdict: planned, and saying why it is lower confidence. */
-export function floorVerdict(o: Opportunity, demand?: "unmeasured"): Opportunity {
-  const { cause: _cause, floor: _floor, ...rest } = o;
-  void _cause; void _floor;
-  return {
-    ...rest,
-    status: "qualified",
-    confidence: "lower",
-    format: "article",
-    ...(demand ? { demand } : {}),
-    checkedAt: new Date().toISOString(),
-    reason: `Lower confidence: fewer articles hold this search than the bar asks for, and it is planned because fewer than ${PLAN_FLOOR} topics cleared it. ${o.reason}`.slice(0, 400),
-  };
-}
-
-/** Save the floor's picks and return them to the queue (unparked, status new). */
-async function saveFloorPicks(supabase: SupabaseClient, workspaceId: string, picks: readonly KeywordRecommendation[]): Promise<void> {
-  for (const rec of picks) {
-    const { error } = await supabase
-      .from("keywords")
-      .update({ opportunity: rec.opportunity, status: "new", plan_excluded_at: null })
-      .eq("id", rec.keywordId)
-      .eq("workspace_id", workspaceId)
-      .in("status", ["new", "stored"]);
-    if (error) throw new Error(`Could not save a lower-confidence topic: ${error.message}`);
-  }
 }
 
 /**

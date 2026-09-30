@@ -47,6 +47,8 @@ export const FUNNEL_STAGES = [
   "provider_error",
   "thin_serp",
   "judge_incomplete",
+  // The value veto: the reader graded 0, no path to the business.
+  "no_value",
   "existing_page",
   "needs_page",
   "not_editorial",
@@ -74,6 +76,7 @@ export const FUNNEL_STAGE_LABELS: Record<FunnelStage, string> = {
   provider_error: "provider call failed",
   thin_serp: "too few results to judge",
   judge_incomplete: "judge answer unusable",
+  no_value: "judge: no path to what the business sells (value 0)",
   existing_page: "judge: an own page ranks for it",
   needs_page: "judge: wants a landing page",
   not_editorial: "judge: results are not articles",
@@ -98,6 +101,7 @@ export const FUNNEL_STAGE_SHORT: Record<FunnelStage, string> = {
   provider_error: "provider error",
   thin_serp: "thin serp",
   judge_incomplete: "judge incomplete",
+  no_value: "value 0",
   existing_page: "existing page",
   needs_page: "needs page",
   not_editorial: "not editorial",
@@ -181,6 +185,7 @@ const CAUSE_STAGE: Record<OpportunityCause, FunnelStage> = {
   existing_page: "existing_page",
   needs_page: "needs_page",
   not_editorial: "not_editorial",
+  no_value: "no_value",
 };
 
 /**

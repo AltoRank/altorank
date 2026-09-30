@@ -12,7 +12,7 @@ import { balanceSources, diverseSeeds } from "../diversity";
 const context = { domain: "example.com", languageCode: "it", locationCode: 2380, business: { name: "Clinic Studio", description: "Clinic Studio builds booking websites for clinics and salons at a fixed price.", offerings: ["clinic booking websites"], audiences: ["clinic owners"] } };
 const term = "clinic booking website costs";
 const urls = ["https://one.test/guide", "https://two.test/guide", "https://three.test/guide", "https://four.test/guide"];
-const approval = { stage: "comparing", kinds: ["article", "article", "article", "article"], reason: "Clinic owners compare the cost of a booking website", audience: "clinic owners", buyingJob: "choose a booking website", offering: "clinic booking websites", angle: "What clinics should budget for a booking website", conversionPath: "https://example.com/contact" };
+const approval = { stage: "comparing", kinds: ["article", "article", "article", "article"], value: 3, service: "clinic booking websites", reason: "Clinic owners compare the cost of a booking website", audience: "clinic owners", buyingJob: "choose a booking website", offering: "clinic booking websites", angle: "What clinics should budget for a booking website", conversionPath: "https://example.com/contact" };
 /** How many results the judge was shown, read back from its prompt. */
 const shown = (prompt: string) => (JSON.parse(prompt.slice(prompt.lastIndexOf("\n") + 1)) as { results: unknown[] }).results.length;
 /** The judge names every result `kinds` (one word for all, or one each), with the approval's brief. */
@@ -111,7 +111,11 @@ describe("topic qualification", () => {
   });
   it("asks the judge as a decision, with its reply held to the schema", async () => {
     await run();
-    expect(ask).toHaveBeenCalledWith("keyword-research/opportunity", expect.any(String), expect.objectContaining({ tier: "decision", schema: opportunitySchema() }));
+    expect(ask).toHaveBeenCalledWith("keyword-research/opportunity", expect.any(String), expect.objectContaining({ tier: "decision", schema: opportunitySchema(["clinic booking websites"]) }));
+    // The service is an enum of the site's own services, and "none".
+    expect((opportunitySchema(["clinic booking websites"]).properties as Record<string, { enum?: unknown[] }>).service.enum).toEqual(["clinic booking websites", "none"]);
+    const prompt = ask.mock.calls[0][1] as string;
+    expect(JSON.parse(prompt.slice(prompt.lastIndexOf("\n") + 1)).services).toEqual(["clinic booking websites"]);
   });
   it("rejects a searcher the business does not serve, from the stage the model names", async () => {
     ask.mockResolvedValue(JSON.stringify({ stage: "practitioner", reason: "a developer learning to build booking sites" }));
@@ -275,7 +279,6 @@ describe("page-type decisions", () => {
     const out = (await qualifyOpportunities(db, "ws", [{ id: "k", term: compound }], context)).get("k");
     expect(out).toMatchObject({ status: "rejected", cause: "not_editorial" });
     expect(out?.reason).toContain("not about this search");
-    expect(out?.floor).toBeUndefined();
   });
   it("reads the results from the word lists when the judge names no kinds in a language they cover, and says so", async () => {
     ask.mockResolvedValue(JSON.stringify({ ...approval, kinds: undefined }));
@@ -303,27 +306,12 @@ describe("page-type decisions", () => {
     expect((await qualifyOpportunities(db, "ws", [{ id: "k", term }], withRival)).get("k")?.status).toBe("qualified");
     expect(ask).toHaveBeenCalled();
   });
-  it("keeps the brief on a thin editorial page a served searcher asks about, for the planner's floor", async () => {
+  it("keeps no brief on a page short of articles: the page type never reaches the plan", async () => {
     answerWith(["article", "tool", "service", "offtopic"]);
     const out = await run();
-    expect(out).toMatchObject({ status: "rejected", cause: "not_editorial", floor: true, angle: approval.angle, evidenceUrls: [urls[0]] });
-    answerWith("tool");
-    expect((await run()).floor).toBeUndefined();
-  });
-  it("keeps no floor brief on a page of tools or portals, one mostly off-topic, or a phrase naming a rival", async () => {
-    answerWith(["article", "tool", "tool", "portal"]);
-    expect(await run()).toMatchObject({ status: "rejected", cause: "not_editorial" });
-    expect((await run()).floor).toBeUndefined();
-    answerWith(["article", "offtopic", "offtopic", "offtopic"]);
-    expect((await run()).floor).toBeUndefined();
-    const withRival = { ...context, business: { ...context.business, competitors: ["bookwell.test"] } };
-    const named = "bookwell alternatives";
-    judge.mockResolvedValue({ basis: "model", verdicts: new Map([[named, { keep: true, reason: "comparing" }]]) });
-    fetchSerp.mockResolvedValue(serpOf(urls.map((url) => ({ url, title: "Bookwell alternatives for clinics" }))));
-    answerWith(["article", "tool", "service", "offtopic"]);
-    const out = (await qualifyOpportunities(db, "ws", [{ id: "k", term: named }], withRival)).get("k");
     expect(out).toMatchObject({ status: "rejected", cause: "not_editorial" });
-    expect(out?.floor).toBeUndefined();
+    expect(out.angle).toBeUndefined();
+    expect(out.evidenceUrls).toBeUndefined();
   });
   it("sends a searcher ready to hire to a landing page when providers' pages crowd the results", async () => {
     fetchSerp.mockResolvedValue(serpOf([...urls.map((url) => ({ url, title: "Clinic booking website cost guide" })), ...productPages.organic]));
@@ -331,6 +319,47 @@ describe("page-type decisions", () => {
     expect((await run()).cause).toBe("needs_page");
     answerWith([...Array(4).fill("article"), ...Array(4).fill("product")], { stage: "comparing" });
     expect(await run()).toMatchObject({ status: "qualified", format: "mixed" });
+  });
+});
+
+describe("business value", () => {
+  it("saves the grade and the service the reader named, on an approval", async () => {
+    answerWith("article", { value: 2, service: "Clinic Booking Websites " });
+    expect(await run()).toMatchObject({ status: "qualified", value: 2, service: "clinic booking websites" });
+  });
+  it("caps a grade of 2 or 3 at 1 when no listed service is named, and says so", async () => {
+    answerWith("article", { value: 3, service: "none" });
+    const out = await run();
+    expect(out).toMatchObject({ status: "qualified", value: 1, valueCapped: true });
+    expect(out.service).toBeUndefined();
+    expect(out.reason).toContain("capped at 1");
+    // A service the business does not list is no service.
+    answerWith("article", { value: 3, service: "hospital software" });
+    expect(await run()).toMatchObject({ value: 1, valueCapped: true });
+    // Without offerings every grade is capped: there is nothing to name.
+    const bare = { ...context, business: { ...context.business, offerings: [] } };
+    answerWith("article", { value: 3, service: "clinic booking websites" });
+    expect((await qualifyOpportunities(db, "ws", [{ id: "k", term }], bare)).get("k")).toMatchObject({ value: 1, valueCapped: true });
+  });
+  it("keeps a grade of 1 with no service as it is", async () => {
+    answerWith("article", { value: 1, service: "none" });
+    const out = await run();
+    expect(out).toMatchObject({ status: "qualified", value: 1 });
+    expect(out.valueCapped).toBeUndefined();
+  });
+  it("vetoes value 0 whatever the page type, with its own cause", async () => {
+    answerWith("article", { value: 0, service: "none" });
+    expect(await run()).toMatchObject({ status: "rejected", cause: "no_value", value: 0 });
+    answerWith("service", { value: 0, service: "none" });
+    expect(await run()).toMatchObject({ status: "rejected", cause: "no_value" });
+  });
+  it("leaves a served searcher with no grade pending; a refused searcher needs none", async () => {
+    answerWith("article", { value: undefined });
+    expect(await run()).toMatchObject({ status: "pending", cause: "judge_incomplete" });
+    answerWith("article", { value: 7 });
+    expect(await run()).toMatchObject({ status: "pending", cause: "judge_incomplete" });
+    ask.mockResolvedValue(JSON.stringify({ stage: "navigation", reason: "a login" }));
+    expect(await run()).toMatchObject({ status: "rejected", cause: "buyer_mismatch" });
   });
 });
 

@@ -81,12 +81,16 @@ export function isParked(row: QueueRow): boolean {
 /**
  * Refusals about the results page rather than the searcher. A results page
  * changes - articles get written, a shop page drops out, a thin page fills
- * in - so these are asked again after `REJUDGE_AFTER_MS`. A refusal of the
- * searcher (buyer_mismatch: brand, navigation, another city, a service not
- * offered), an existing page and a duplicate stay parked until a person or
- * a profile change says otherwise.
+ * in - so these are asked again after `REJUDGE_AFTER_MS`. So is a value-0
+ * grade (`no_value`): it is graded against the services the profile lists,
+ * and those get confirmed and added to. A refusal of the searcher
+ * (buyer_mismatch: brand, navigation, another city, a service not offered),
+ * an existing page and a duplicate stay parked until a person or a profile
+ * change says otherwise. A qualified topic the plan does not take is never
+ * parked: it stays in the queue and is ordered again on the next run
+ * (lib/keyword-research/value-tiers.ts).
  */
-export const TTL_CAUSES: ReadonlySet<string> = new Set(["not_editorial", "needs_page", "thin_serp"]);
+export const TTL_CAUSES: ReadonlySet<string> = new Set(["not_editorial", "needs_page", "thin_serp", "no_value"]);
 /** How long a results-page refusal parks a row. */
 export const REJUDGE_AFTER_MS = 30 * 86_400_000;
 /**

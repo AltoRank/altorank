@@ -44,6 +44,7 @@ const scripted = vi.fn<ModelClient>(async ({ prompt }) => {
   const kindOf = (title: string) => /pricing|plans/i.test(title) ? "product" : /sign in/i.test(title) ? "portal" : /official site|try free/i.test(title) ? "service" : /github/i.test(title) ? "tool" : "article";
   return { ...usage, text: JSON.stringify({
     kinds: data.results.map((r) => kindOf(r.title)),
+    value: pricing ? 2 : 3, service: "SEO article drafting with an approval gate",
     stage: /login/.test(data.query) ? "navigation" : "comparing", reason: pricing ? "Vendor pricing pages" : editorial.length >= 2 ? "Editorial results" : "Navigation",
     audience: "founders", buyingJob: "choose a tool", offering: "drafting", angle: `A guide to ${data.query}`,
     format: pricing ? "product" : editorial.length >= 2 ? "article" : "navigation", shape, conversionPath: "https://altorank.co", evidenceUrls: editorial,
