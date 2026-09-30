@@ -25,7 +25,8 @@ import { CLAIM_LEASE_MS } from "@/lib/plan/draft-claim";
 import { PRE_TRIAL_DRAFTS, planHold } from "@/lib/billing/trial-hold";
 import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
 import { recommendKeywords, type KeywordRecommendation } from "@/lib/seo/recommendations";
-import { rankOf, selectPlan, type PlannedTier, type Unplanned } from "@/lib/keyword-research/value-tiers";
+import { rankOf, selectPlan, tierOf, valueOf, type PlannedTier, type Unplanned } from "@/lib/keyword-research/value-tiers";
+import { winnability } from "@/lib/seo/difficulty";
 import type { FirstLook } from "@/lib/keyword-research/opportunity";
 import { classifyKeyword, type KeywordTaxonomy } from "@/lib/keywords/taxonomy";
 import { generateQualityQuestionsBatch, parseStoredQuestions, toQualityQuestions } from "@/lib/keywords/questions";
@@ -664,7 +665,9 @@ export interface HeldTopics {
  * screen of a real signup (2026-09-22) promised an article for a search that
  * was already drafted and another queued for the next day, under a third
  * spelling. A held row that is the same search as something live, drafted or
- * scheduled, or as another held row, is not another article.
+ * scheduled, or as another held row, is not another article. Nor is one the
+ * value tiers keep in inventory (lib/keyword-research/value-tiers.ts): the
+ * planner will not take it while it stays one.
  */
 export async function heldTopics(
   supabase: SupabaseClient,
@@ -676,18 +679,21 @@ export async function heldTopics(
   const [{ data: rows, error }, leaders, { data: ws }] = await Promise.all([
     supabase
       .from("keywords")
-      .select("id, term, opportunity")
+      .select("id, term, opportunity, volume, difficulty")
       .eq("workspace_id", workspaceId)
       .eq("status", "new")
       .eq("opportunity->>status", "qualified")
       .is("plan_excluded_at", null),
     // Read the way the held rows are: by the verdict as stored.
     readIntentLeaders(supabase, workspaceId, approvedWhenJudged),
-    supabase.from("workspaces").select("language").eq("id", workspaceId).maybeSingle(),
+    supabase.from("workspaces").select("language, dr").eq("id", workspaceId).maybeSingle(),
   ]);
   if (error) throw new Error(`Could not read held topics: ${error.message}`);
   const language = intentLanguage((ws as { language?: string | null } | null)?.language);
-  const held = ((rows ?? []) as Array<{ id: string; term: string; opportunity: unknown }>).map((r) => ({
+  const authority = (ws as { dr?: number | null } | null)?.dr ?? null;
+  type HeldRow = { id: string; term: string; opportunity: unknown; volume?: number | null; difficulty?: number | null };
+  const plannable = (r: HeldRow) => tierOf(valueOf(r.opportunity as Opportunity | null), winnability(r.difficulty ?? null, r.volume ?? 0, authority)) !== "inventory";
+  const held = ((rows ?? []) as HeldRow[]).filter(plannable).map((r) => ({
     term: r.term, organicUrls: storedSerp(r.opportunity), stage: "candidate" as const,
   }));
   const repeats = clusterByIntent([...leaders, ...held], language);

@@ -112,7 +112,9 @@ describe("candidates and totals", () => {
 
   it("grades the reader's value against the label, 2 and up as the positive class", () => {
     const v = (label: 0 | 1 | 2 | 3, product?: number) => cand(term(`t${label}${product}`, { value: label }), approved(product === undefined ? {} : ({ value: product } as Partial<Opportunity>)));
-    expect(valueAgreement([v(3, 3), v(2, 1), v(1, 1), v(0, 2), v(3)])).toEqual({ tp: 1, fn: 1, tn: 1, fp: 1, tpr: 0.5, tnr: 0.5 });
+    expect(valueAgreement([v(3, 3), v(2, 1), v(1, 1), v(0, 2), v(3)])).toEqual({ tp: 1, fn: 1, tn: 1, fp: 1, tpr: 0.5, tnr: 0.5, service: { n: 0, agreed: 0 } });
+    const named = (label: string, product?: string) => cand(term(`s${label}${product}`, { value: 3, service: label }), approved({ value: product ? 3 : 1, ...(product ? { service: product } : {}) } as Partial<Opportunity>));
+    expect(valueAgreement([named("Bike servicing", "bike servicing"), named("Wheel building", "Bike servicing"), named("none")]).service).toEqual({ n: 3, agreed: 2 });
   });
 });
 

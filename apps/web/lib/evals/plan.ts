@@ -301,9 +301,20 @@ export function planTotals(scores: readonly CasePlanScore[], selector: string): 
  * 2 or more is the positive class (a topic worth a revenue slot). Reported,
  * not required: the labels come from three sites.
  */
-export function valueAgreement(candidates: readonly PlanCandidate[]): { tp: number; fn: number; tn: number; fp: number; tpr: number | null; tnr: number | null } {
+export function valueAgreement(candidates: readonly PlanCandidate[]): {
+  tp: number; fn: number; tn: number; fp: number; tpr: number | null; tnr: number | null;
+  /** Where both a service label and the reader's service exist: how many name the same one. */
+  service: { n: number; agreed: number };
+} {
   let tp = 0, fn = 0, tn = 0, fp = 0;
+  const service = { n: 0, agreed: 0 };
   for (const p of candidates) {
+    const labelled = p.term.label.service?.trim().toLowerCase();
+    const named = typeof p.verdict.service === "string" ? p.verdict.service.trim().toLowerCase() : "";
+    if (labelled && (named || typeof p.verdict.value === "number")) {
+      service.n++;
+      if (labelled === (named || "none")) service.agreed++;
+    }
     const label = p.term.label.value;
     const product = valueOf(p.verdict);
     if (label === undefined || product === null) continue;
@@ -311,7 +322,7 @@ export function valueAgreement(candidates: readonly PlanCandidate[]): { tp: numb
     else if (product >= 2) fp++;
     else tn++;
   }
-  return { tp, fn, tn, fp, tpr: tp + fn ? tp / (tp + fn) : null, tnr: tn + fp ? tn / (tn + fp) : null };
+  return { tp, fn, tn, fp, tpr: tp + fn ? tp / (tp + fn) : null, tnr: tn + fp ? tn / (tn + fp) : null, service };
 }
 
 const pct = (v: number | null) => (v === null ? "–" : `${Math.round(v * 100)}%`);
@@ -329,7 +340,7 @@ export function renderPlanMarkdown(scores: readonly CasePlanScore[], value?: Ret
   }
   lines.push("");
   if (value && value.tp + value.fn + value.tn + value.fp > 0) {
-    lines.push(`Value grade against the label (>= 2 is positive): TPR ${pct(value.tpr)} (${value.tp}/${value.tp + value.fn}), TNR ${pct(value.tnr)} (${value.tn}/${value.tn + value.fp}).`, "");
+    lines.push(`Value grade against the label (>= 2 is positive): TPR ${pct(value.tpr)} (${value.tp}/${value.tp + value.fn}), TNR ${pct(value.tnr)} (${value.tn}/${value.tn + value.fp}).${value.service.n ? ` Service named as labelled: ${value.service.agreed}/${value.service.n}.` : ""}`, "");
   }
   for (const s of scores) {
     lines.push(`### ${s.caseId} - ${s.selector}`, "", `${s.planned.length} planned from ${s.eligible} plannable of ${s.candidates} offered (judged, and kept by the buyer test). First article: ${s.first.term ? `"${cell(s.first.term)}"` : "none"} (${s.first.rule}): **${s.first.outcome}**, ${cell(s.first.why)}.`, "");

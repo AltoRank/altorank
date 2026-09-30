@@ -3,7 +3,7 @@ import { heldTopics } from "../plan";
 import { stateFromRun } from "../events";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-type Row = { id: string; term: string; status?: string; opportunity?: unknown };
+type Row = { id: string; term: string; status?: string; opportunity?: unknown; difficulty?: number | null };
 /** A client that answers the held-row read, the owners read and the workspace's language. */
 function client(held: Row[] | number, owners: { keywords?: Row[]; articles?: unknown[]; pages?: unknown[] } = {}, language = "tr"): SupabaseClient {
   const heldRows = typeof held === "number" ? Array.from({ length: held }, (_, i) => ({ id: `h${i}`, term: `held topic ${i}`, opportunity: { status: "qualified" } })) : held;
@@ -39,6 +39,13 @@ describe("heldTopics", () => {
     expect(out.dates).toHaveLength(3);
     expect(out.dates[0] > "2026-09-21").toBe(true);
     expect(new Set(out.dates).size).toBe(3);
+  });
+  it("does not count a topic the value tiers keep in inventory", async () => {
+    const held: Row[] = [
+      { id: "a", term: "hard problem topic", opportunity: { status: "qualified", value: 2 }, difficulty: 90 } as Row,
+      { id: "b", term: "easy service topic", opportunity: { status: "qualified", value: 3 }, difficulty: 5 } as Row,
+    ];
+    expect((await heldTopics(client(held), "ws", 3, [])).count).toBe(1);
   });
   it("is empty when nothing is held", async () => {
     expect(await heldTopics(client(0), "ws", 3, [])).toEqual({ count: 0, dates: [] });
