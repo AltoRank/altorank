@@ -45,7 +45,8 @@ import { readEmptyPool } from "./empty-pool";
 import { modelAvailable } from "@/lib/keyword-research/buyer-model";
 import { countScheduled, heldTopics, schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
 import { recordPlanFunnel } from "./funnel-event";
-import type { TopicFunnel } from "@/lib/keyword-research/topic-funnel";
+import { withScreened, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
+import type { FirstLook } from "@/lib/keyword-research/opportunity";
 
 /** Pages the onboarding minute reads. The nightly pass reads up to forty. */
 const ONBOARDING_CRAWL_PAGES = 20;
@@ -137,6 +138,10 @@ async function runPhases(
   runId: string | null = null,
 ): Promise<RunOnboardingResult> {
   const domain = workspace.domain;
+  // This run's spend is what the site's provider calls cost from here on:
+  // qualification stops buying before it reaches the first look's ceiling
+  // less the first draft's share (lib/keyword-research/opportunity.ts).
+  const firstLook: FirstLook = { since: new Date().toISOString() };
 
   // --- Phase 0: is there a site here at all? -------------------------------
   //
@@ -210,6 +215,8 @@ async function runPhases(
   // failure. False for every reason the research could not look (no domain,
   // no provider, a crawl that failed, a keyword layer that was unavailable).
   let researchFoundNothing = false;
+  // What discovery's hygiene dropped before storing anything, for the funnel.
+  let screened: { generalRival: number; offProfile: number } | undefined;
   if (!domain) {
     emit({ phase: "keywords", status: "skipped", detail: "No domain to analyse." });
   } else if (!hasDataForSEOCredentials()) {
@@ -232,6 +239,7 @@ async function runPhases(
         maxPages: ONBOARDING_CRAWL_PAGES,
       });
       keywordsFound = analysis.keywordsFound;
+      screened = analysis.screened;
 
       // What Google has already measured for this site, before anything the
       // model or a provider guessed. A workspace that connected Search Console
@@ -389,6 +397,7 @@ async function runPhases(
       plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, {
         maxEntries: 5,
         qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES,
+        firstLook,
         onFunnel: (f) => { planFunnel = f; },
       });
       const held = gated && plan.length
@@ -415,11 +424,25 @@ async function runPhases(
       // already holds its one article, which is not the same news as "no
       // keyword is clear enough".
       const firstAlreadyPlanned = gated && plan.length === 0 && (await countScheduled(supabase, workspace.id)) > 0;
+      // The labels the plan carries, said in the line as well as on the cards.
+      const lower = plan.filter((p) => p.brief?.confidence === "lower").length;
+      const unmeasured = plan.filter((p) => p.brief?.demand === "unmeasured").length;
+      // A top-of-funnel topic's reader has the problem, and is not shopping
+      // yet: "a buyer" would be the wrong word for them.
+      const who = plan.some((p) => p.brief?.funnel === "audience") ? "a reader you serve" : "a buyer";
+      const labelNote = [
+        lower ? ` ${lower === plan.length ? (plan.length === 1 ? "It is" : "They are") : `${lower} of them ${lower === 1 ? "is" : "are"}`} lower confidence: fewer than three topics cleared the bar, and fewer results for ${lower === 1 ? "that search" : "those searches"} are articles than we ask for.` : "",
+        unmeasured && unmeasured === plan.length
+          ? ` No search volume is reported for ${plan.length === 1 ? "it" : "them"} in your market yet (unmeasured).`
+          : unmeasured
+            ? ` ${unmeasured} of them ${unmeasured === 1 ? "has" : "have"} no search volume reported in your market yet (unmeasured); measured topics come first.`
+            : "",
+      ].join("");
       planningDetail =
         plan.length > 0
           ? held.count > 0
-            ? `Scheduled your first article. ${held.count} more topic${held.count === 1 ? " is" : "s are"} ready, each with a buyer and supporting search evidence; the trial opens them.${pageNote}`
-            : `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has a buyer and supporting search evidence.${pageNote}`
+            ? `Scheduled your first article. ${held.count} more topic${held.count === 1 ? " is" : "s are"} ready, each with ${who} and supporting search evidence; the trial opens them.${labelNote}${pageNote}`
+            : `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has ${who} and supporting search evidence.${labelNote}${pageNote}`
           : firstAlreadyPlanned
             ? `Your first article is already on the calendar; the rest of the plan opens with the trial.${pageNote}`
             : `No keyword clear enough to plan yet.${pageNote}`;
@@ -443,7 +466,7 @@ async function runPhases(
       emit({ phase: "planning", status: "failed", detail: planningDetail });
     }
   }
-  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: planFunnel, planningDetail });
+  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail });
 
   emit({ phase: "drafting", status: "active" });
   // The status and detail the drafting phase settled on. The fan-out note
@@ -497,7 +520,7 @@ async function runPhases(
         // Not 25: the list is cut after scoring across every action, and a
         // site with 25 page-one rankings filled it with skips before any
         // writable term appeared (lib/onboarding/plan.ts has the same note).
-        const recs = await recommendKeywords(supabase, workspace.id, { limit: 1000, qualify: true });
+        const recs = await recommendKeywords(supabase, workspace.id, { limit: 1000, qualify: true, firstLook });
         // The first day of the plan is what the person just watched get
         // scheduled; writing anything else would contradict the calendar.
         const first = plan[0];

@@ -6,6 +6,7 @@ import {
   foldsInflections,
   intentKey,
   intentLanguage,
+  nearIdentical,
   sameIntent,
   sharedResults,
   unfoldedNote,
@@ -263,5 +264,22 @@ describe("clusterByIntent: the leader is whatever is furthest along", () => {
   it("marks a words-only join in a language without rules", () => {
     const followers = clusterByIntent([t("a", "Agenzia SEO", "drafted"), t("b", "agenzia seo", "candidate")], "it");
     expect([...followers.values()][0].match).toEqual({ same: true, basis: "words" });
+  });
+});
+
+describe("one word shortened or pluralised", () => {
+  const apart = (n: number, prefix: string) => Array.from({ length: n }, (_, i) => `https://${prefix}${i}.test/p`);
+  it("is one search even when the two results pages share fewer than four URLs", () => {
+    // An abbreviation, and an English plural inside a Turkish phrase.
+    expect(sameIntent({ term: "photog for weddings", organicUrls: apart(10, "a") }, { term: "photographer for weddings", organicUrls: apart(10, "b") }, "en"))
+      .toEqual({ same: true, basis: "words", note: "one word abbreviated or inflected" });
+    expect(sameIntent({ term: "zentrocrm alternative", organicUrls: apart(10, "a") }, { term: "zentrocrm alternatives", organicUrls: apart(10, "b") }, "tr").same).toBe(true);
+  });
+  it("leaves a derivational ending, a short word and a second changed word to the results page", () => {
+    expect(nearIdentical("search engine jobs", "search engineer jobs")).toBe(false);
+    expect(nearIdentical("build management software", "building management software")).toBe(false);
+    expect(nearIdentical("seo ajan", "seo ajans")).toBe(false);
+    expect(nearIdentical("photog for weddings", "photographer for events")).toBe(false);
+    expect(nearIdentical("photog weddings", "photog weddings cost")).toBe(false);
   });
 });

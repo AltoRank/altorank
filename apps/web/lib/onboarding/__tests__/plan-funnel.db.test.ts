@@ -44,7 +44,8 @@ const TERMS: Array<{ term: string; volume: number | null; difficulty: number; ve
   { term: "chain wear checker", volume: 300, difficulty: 5, verdict: { status: "rejected", cause: "not_editorial" } },
   { term: "bike repair shop open weekends", volume: 260, difficulty: 5, verdict: { status: "rejected", cause: "needs_page" } },
   { term: "bike mechanic salary", volume: 150, difficulty: 5, verdict: { status: "rejected", cause: "buyer_mismatch" } },
-  { term: "bike repair open sundays", volume: null, difficulty: 5 },
+  // Measured at zero: no demand. (Unmeasured and kept by the buyer test would go to the judge.)
+  { term: "bike repair open sundays", volume: 0, difficulty: 5 },
   { term: "bike repair", volume: 40000, difficulty: 95 },
 ];
 

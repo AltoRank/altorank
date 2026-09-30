@@ -65,6 +65,16 @@ export function FirstArticleCardView({
         {verdict && <span className={`shrink-0 text-[11.5px] ${VERDICT[verdict].className}`}>{VERDICT[verdict].text}</span>}
       </div>
       <h2 className="m-0 text-[16px] font-semibold leading-snug text-ink">{title}</h2>
+      {article && article.labels.length > 0 && (
+        <ul className="m-0 mt-2 list-none p-0">
+          {article.labels.map((l) => (
+            <li key={l.label} className="text-[12px] leading-[1.5] text-ink-2">
+              <span className={`mr-1.5 rounded-full border border-line px-2 py-0.5 text-[11px] ${l.label === "Top of funnel" ? "text-ink-3" : "text-warn"}`}>{l.label}</span>
+              {l.explain}
+            </li>
+          ))}
+        </ul>
+      )}
 
       <dl className="m-0 mt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
         <Fact label="Target keyword">{keyword || "—"}</Fact>

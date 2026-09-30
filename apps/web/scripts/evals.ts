@@ -17,7 +17,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import path from "node:path";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { anthropicModel } from "@/lib/ai/models";
+import { anthropicModel, replyText } from "@/lib/ai/models";
 import { ANTHROPIC_RATES } from "@/lib/billing/spend";
 import { fetchAdvancedSerp } from "@/lib/seo/brief-data";
 import { setSpendReporter } from "@/lib/seo/client";
@@ -59,31 +59,35 @@ async function main() {
   }
 
   const model = anthropicModel("structured");
+  const decisionModel = anthropicModel("decision");
   const rate = ANTHROPIC_RATES[model];
   if (!rate) throw new Error(`No price known for ${model}; add it to ANTHROPIC_RATES before running evals on it.`);
+  if (!ANTHROPIC_RATES[decisionModel]) throw new Error(`No price known for ${decisionModel}; add it to ANTHROPIC_RATES before running evals on it.`);
+  const rates = ANTHROPIC_RATES;
   const live = Boolean(arg("live"));
   let client: ModelClient | undefined;
   if (live) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error("--live needs ANTHROPIC_API_KEY in the environment.");
-    const plan = await planEvals({ dir, model, rate, maxUsd, only, caseIds });
-    log(`Live run on ${model}: ${plan.calls} unrecorded prompts, about $${plan.typicalUsd.toFixed(3)} (at most $${plan.upperUsd.toFixed(3)}), cap $${maxUsd.toFixed(2)}.`);
+    const plan = await planEvals({ dir, model, rate, decisionModel, rates, maxUsd, only, caseIds });
+    log(`Live run on ${model} / decisions on ${decisionModel}: ${plan.calls} unrecorded prompts, about $${plan.typicalUsd.toFixed(3)} (at most $${plan.upperUsd.toFixed(3)}), cap $${maxUsd.toFixed(2)}.`);
     if (plan.typicalUsd > maxUsd) throw new Error("The estimated cost is over the cap. Raise --max-usd or narrow with --case/--only; nothing was spent.");
     const anthropic = new Anthropic({ apiKey });
-    client = async ({ model: m, prompt, maxTokens }) => {
-      const response = await anthropic.messages.create({ model: m, max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] });
+    client = async ({ model: m, prompt, maxTokens, params }) => {
+      const response = await anthropic.messages.create({ model: m, max_tokens: maxTokens, messages: [{ role: "user", content: prompt }], ...params } as Anthropic.MessageCreateParamsNonStreaming);
       return {
-        text: response.content[0]?.type === "text" ? response.content[0].text : null,
+        text: replyText(response.content),
         inputTokens: response.usage?.input_tokens ?? 0,
         outputTokens: response.usage?.output_tokens ?? 0,
       };
     };
   }
 
-  const result = await runEvals({ dir, mode: live ? "live" : "replay", model, rate, maxUsd, only, caseIds, client, budget });
+  const result = await runEvals({ dir, mode: live ? "live" : "replay", model, rate, decisionModel, rates, maxUsd, only, caseIds, client, budget });
   const meta: Record<string, string | number> = {
     mode: live ? "live" : "replay",
     model,
+    "decision model": decisionModel,
     "stored answers used": result.recorder.hits,
     "answers bought this run": result.recorder.calls,
     "missing answers (prompt not recorded)": result.recorder.misses,

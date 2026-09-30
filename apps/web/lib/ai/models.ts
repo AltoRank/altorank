@@ -25,7 +25,63 @@ export type ModelTier =
   /** Long-form writing and analysis, where output quality is the product. */
   | "content"
   /** Short structured work: meta descriptions, clustering, SERP summaries. */
-  | "structured";
+  | "structured"
+  /**
+   * The topic decisions: is this searcher someone the business serves, and
+   * what are the results for a search. The buyer test (lib/keyword-research/
+   * buyer-fit.ts) and the results judge (lib/keyword-research/opportunity.ts)
+   * and nothing else. Measured on the labelled decision eval (2026-09-30):
+   * Haiku at its default temperature flipped the same topic between runs;
+   * these calls decide whether a customer gets any plan at all. Asked as
+   * `DECISION_CALL` says.
+   *
+   * Everything else short and structured stays on `structured` (Haiku): the
+   * buyer seeds, the rival vetting, the planned topics' questions. Those
+   * propose or annotate; a code rule or a later decision checks them, so a
+   * cheap classifier is enough there.
+   */
+  | "decision";
+
+/**
+ * How a topic decision is asked, in one place: the model tier and the
+ * sampling. Read by `samplingFor` (lib/keyword-research/buyer-model.ts) for
+ * production and by the decision evals, so the two cannot drift.
+ *
+ * - `temperature: 0` is sent to every model that takes one. claude-sonnet-5
+ *   does not: it answers 400 "`temperature` is deprecated for this model"
+ *   (measured 2026-09-30), as do the other current Sonnet/Opus/Fable models.
+ *   For those, determinism comes from the rest of this setting.
+ * - `thinking: "disabled"`: a decision is a classification, not a problem to
+ *   reason through, and a thinking-off answer is cheaper and steadier.
+ * - `structuredOutput: true`: the reply is constrained to the caller's JSON
+ *   schema, stage and kind as enums, so a model that starts to reason in its
+ *   visible text ("<think>...", seen on Sonnet 5 with thinking off) cannot
+ *   produce an answer the parser loses, and cannot name a stage that does
+ *   not exist.
+ */
+export const DECISION_CALL = {
+  tier: "decision",
+  temperature: 0,
+  thinking: "disabled",
+  structuredOutput: true,
+} as const;
+
+/** Models that refuse a `temperature` parameter (400). */
+export function refusesTemperature(model: string): boolean {
+  return /^claude-(sonnet|opus|fable|mythos)-[5-9]/.test(model) || /^claude-opus-4-[78]/.test(model);
+}
+
+/**
+ * Models known to accept `thinking: {type: "disabled"}`: Sonnet 5, Opus 5 (at
+ * its default effort) and Opus 4.7/4.8 (Anthropic's model table, checked
+ * 2026-09-30). Opus 5.5 and the Fable and Mythos models answer it with a 400,
+ * so for any model not listed here the parameter is left out and the model
+ * thinks as it defaults to: a decision that costs more beats one that is
+ * never made.
+ */
+export function acceptsThinkingDisabled(model: string): boolean {
+  return /^claude-sonnet-5(-\d{8})?$/.test(model) || /^claude-opus-5(-\d{8})?$/.test(model) || /^claude-opus-4-[78](-\d{8})?$/.test(model);
+}
 
 const DEFAULTS = {
   /**
@@ -50,6 +106,7 @@ const DEFAULTS = {
    */
   anthropicContent: "claude-sonnet-5",
   anthropicStructured: "claude-haiku-4-5-20251001",
+  anthropicDecision: "claude-sonnet-5",
 
   /**
    * Left as-is. This was already the OpenAI default and is a current model;
@@ -70,6 +127,9 @@ function fromEnv(name: string, fallback: string): string {
 
 /** Anthropic model for a given tier. */
 export function anthropicModel(tier: ModelTier = "content"): string {
+  // A self-hoster who pins one model with ANTHROPIC_MODEL (a key or proxy
+  // without Sonnet 5) gets it for the decisions too, as for `structured`.
+  if (tier === "decision") return fromEnv("ANTHROPIC_MODEL_DECISION", fromEnv("ANTHROPIC_MODEL", DEFAULTS.anthropicDecision));
   return tier === "structured"
     ? fromEnv("ANTHROPIC_MODEL_STRUCTURED", fromEnv("ANTHROPIC_MODEL", DEFAULTS.anthropicStructured))
     : fromEnv("ANTHROPIC_MODEL", DEFAULTS.anthropicContent);

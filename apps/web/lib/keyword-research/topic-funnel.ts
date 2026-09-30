@@ -25,6 +25,10 @@ import type { Opportunity, OpportunityCause } from "./opportunity";
  * at the first one that removed it.
  */
 export const FUNNEL_STAGES = [
+  // Candidate hygiene at discovery, before any judge (./hygiene.ts): never
+  // stored, counted from the run's discovery (`withScreened`).
+  "general_rival",
+  "off_profile",
   // Before the recommender scores anything.
   "buyer_fit",
   "removed_by_person",
@@ -53,6 +57,8 @@ export type FunnelOutcome = FunnelStage | "qualified";
 
 /** What each stage means, in the words an operator reads on the events page. */
 export const FUNNEL_STAGE_LABELS: Record<FunnelStage, string> = {
+  general_rival: "from a general site read as a rival, dropped with it",
+  off_profile: "rival phrase with no word of the business",
   buyer_fit: "buyer test refused",
   removed_by_person: "taken off the plan by a person",
   covered: "already ranking, or a page or article of the site targets it",
@@ -75,6 +81,8 @@ export const FUNNEL_STAGE_LABELS: Record<FunnelStage, string> = {
 
 /** The shorter name used in one-line summaries and table headers. */
 export const FUNNEL_STAGE_SHORT: Record<FunnelStage, string> = {
+  general_rival: "general rival",
+  off_profile: "off profile",
   buyer_fit: "buyer fit",
   removed_by_person: "removed by person",
   covered: "covered",
@@ -149,6 +157,16 @@ export interface TopicFunnel {
   notPlanned?: Partial<Record<PlannerStage, number>>;
   /** Verdicts bought this pass (results judge plus buyer test), when known. */
   judged?: number;
+  /**
+   * Of the qualified, how many the floor planned as lower confidence
+   * (lib/seo/recommendations.ts, PLAN_FLOOR): searches a served buyer makes
+   * whose results hold too few articles to clear the bar.
+   */
+  lowerConfidence?: number;
+  /** Of the qualified, how many carry no measured demand ("unmeasured"). */
+  unmeasured?: number;
+  /** Of the planned, how many are lower confidence. Absent when none. */
+  plannedLowerConfidence?: number;
 }
 
 const CAUSE_STAGE: Record<OpportunityCause, FunnelStage> = {
@@ -176,7 +194,7 @@ export function stageOfVerdict(verdict: Pick<Opportunity, "status" | "cause">): 
 }
 
 /** Count outcomes, one per candidate. */
-export function tallyFunnel(outcomes: Iterable<FunnelOutcome>, extra: Pick<TopicFunnel, "judged"> = {}): TopicFunnel {
+export function tallyFunnel(outcomes: Iterable<FunnelOutcome>, extra: Pick<TopicFunnel, "judged" | "lowerConfidence" | "unmeasured"> = {}): TopicFunnel {
   const removed: Partial<Record<FunnelStage, number>> = {};
   let found = 0;
   let qualified = 0;
@@ -185,7 +203,28 @@ export function tallyFunnel(outcomes: Iterable<FunnelOutcome>, extra: Pick<Topic
     if (outcome === "qualified") qualified++;
     else removed[outcome] = (removed[outcome] ?? 0) + 1;
   }
-  return { found, removed, qualified, ...(extra.judged !== undefined ? { judged: extra.judged } : {}) };
+  return {
+    found, removed, qualified,
+    ...(extra.judged !== undefined ? { judged: extra.judged } : {}),
+    ...(extra.lowerConfidence ? { lowerConfidence: extra.lowerConfidence } : {}),
+    ...(extra.unmeasured ? { unmeasured: extra.unmeasured } : {}),
+  };
+}
+
+/**
+ * The funnel with what discovery's hygiene dropped before anything was
+ * stored (./hygiene.ts): those phrases were found too, so they join `found`
+ * and their own stages. With no funnel (the planner read nothing), a funnel
+ * of the dropped alone.
+ */
+export function withScreened(funnel: TopicFunnel | null, screened: { generalRival: number; offProfile: number } | null | undefined): TopicFunnel | null {
+  const extra = (screened?.generalRival ?? 0) + (screened?.offProfile ?? 0);
+  if (!extra) return funnel;
+  const base: TopicFunnel = funnel ?? { found: 0, removed: {}, qualified: 0 };
+  const removed = { ...base.removed };
+  if (screened!.generalRival) removed.general_rival = (removed.general_rival ?? 0) + screened!.generalRival;
+  if (screened!.offProfile) removed.off_profile = (removed.off_profile ?? 0) + screened!.offProfile;
+  return { ...base, found: base.found + extra, removed };
 }
 
 /** Sum of every removal. */
@@ -204,10 +243,15 @@ export function funnelDiscrepancy(funnel: TopicFunnel): string | null {
   if (Object.values(funnel.removed).some((n) => !Number.isInteger(n) || (n as number) < 0)) return "a stage count is not a non-negative integer";
   if (removed + funnel.qualified !== funnel.found) return `${funnel.found} found, but ${removed} removed + ${funnel.qualified} qualified = ${removed + funnel.qualified}`;
   if (funnel.planned !== undefined && funnel.planned > funnel.qualified) return `${funnel.planned} planned from ${funnel.qualified} qualified`;
+  for (const key of ["lowerConfidence", "unmeasured"] as const) {
+    const n = funnel[key];
+    if (n !== undefined && (!Number.isInteger(n) || n < 0 || n > funnel.qualified)) return `${n} ${key} of ${funnel.qualified} qualified`;
+  }
   if (funnel.notPlanned) {
     const unknownPlanner = Object.keys(funnel.notPlanned).filter((k) => !(PLANNER_STAGES as readonly string[]).includes(k));
     if (unknownPlanner.length) return `unknown planner stage ${unknownPlanner.join(", ")}`;
     if (Object.values(funnel.notPlanned).some((n) => !Number.isInteger(n) || (n as number) < 0)) return "a planner stage count is not a non-negative integer";
+    if ((funnel.plannedLowerConfidence ?? 0) > (funnel.planned ?? 0) || (funnel.plannedLowerConfidence ?? 0) > (funnel.lowerConfidence ?? 0)) return `${funnel.plannedLowerConfidence} lower-confidence planned from ${funnel.lowerConfidence ?? 0} lower-confidence qualified`;
     const left = totalNotPlanned(funnel);
     const planned = funnel.planned ?? 0;
     if (planned + left !== funnel.qualified) return `${funnel.qualified} qualified, but ${planned} planned + ${left} not planned = ${planned + left}`;
@@ -221,8 +265,8 @@ export function totalNotPlanned(funnel: TopicFunnel): number {
 }
 
 /** The funnel with the planner's count on it, and where the rest went when known. */
-export function withPlanned(funnel: TopicFunnel, planned: number, notPlanned?: Partial<Record<PlannerStage, number>>): TopicFunnel {
-  return { ...funnel, planned, ...(notPlanned ? { notPlanned } : {}) };
+export function withPlanned(funnel: TopicFunnel, planned: number, notPlanned?: Partial<Record<PlannerStage, number>>, plannedLowerConfidence = 0): TopicFunnel {
+  return { ...funnel, planned, ...(notPlanned ? { notPlanned } : {}), ...(plannedLowerConfidence ? { plannedLowerConfidence } : {}) };
 }
 
 /**
@@ -234,8 +278,13 @@ export function describeFunnel(funnel: TopicFunnel): string {
   const parts = FUNNEL_STAGES.filter((s) => (funnel.removed[s] ?? 0) > 0).map((s) => `${funnel.removed[s]} ${FUNNEL_STAGE_SHORT[s]}`);
   const head = `${funnel.found} found${parts.length ? `: ${parts.join(", ")}` : ""}`;
   const rest = PLANNER_STAGES.filter((s) => (funnel.notPlanned?.[s] ?? 0) > 0).map((s) => `${funnel.notPlanned![s]} ${PLANNER_STAGE_SHORT[s]}`);
-  const planned = funnel.planned !== undefined ? ` -> ${funnel.planned} planned${rest.length ? ` (not planned: ${rest.join(", ")})` : ""}` : "";
-  return `${head} -> ${funnel.qualified} qualified${planned}`;
+  const planNotes = [funnel.plannedLowerConfidence ? `${funnel.plannedLowerConfidence} lower confidence` : "", rest.length ? `not planned: ${rest.join(", ")}` : ""].filter(Boolean);
+  const planned = funnel.planned !== undefined ? ` -> ${funnel.planned} planned${planNotes.length ? ` (${planNotes.join("; ")})` : ""}` : "";
+  const labels = [
+    funnel.lowerConfidence ? `${funnel.lowerConfidence} lower confidence` : "",
+    funnel.unmeasured ? `${funnel.unmeasured} unmeasured` : "",
+  ].filter(Boolean);
+  return `${head} -> ${funnel.qualified} qualified${labels.length ? ` (${labels.join(", ")})` : ""}${planned}`;
 }
 
 /**
@@ -252,6 +301,8 @@ export function funnelTable(columns: ReadonlyArray<{ label: string; funnel: Topi
     ...used.map((s) => `| − ${FUNNEL_STAGE_SHORT[s]} | ${cells((f) => f.removed[s] ?? 0).join(" | ")} |`),
     `| **qualified** | ${cells((f) => f.qualified).join(" | ")} |`,
   ];
+  if (columns.some((c) => c.funnel.lowerConfidence)) lines.push(`| of which lower confidence | ${cells((f) => f.lowerConfidence ?? 0).join(" | ")} |`);
+  if (columns.some((c) => c.funnel.unmeasured)) lines.push(`| of which unmeasured | ${cells((f) => f.unmeasured ?? 0).join(" | ")} |`);
   const plannerUsed = PLANNER_STAGES.filter((s) => columns.some((c) => (c.funnel.notPlanned?.[s] ?? 0) > 0));
   lines.push(...plannerUsed.map((s) => `| − ${PLANNER_STAGE_SHORT[s]} | ${cells((f) => (f.notPlanned ? f.notPlanned[s] ?? 0 : undefined)).join(" | ")} |`));
   if (columns.some((c) => c.funnel.planned !== undefined)) lines.push(`| planned | ${cells((f) => f.planned).join(" | ")} |`);

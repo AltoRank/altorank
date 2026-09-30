@@ -96,6 +96,7 @@ describe("toFirstArticleCard", () => {
       sources: 2,
       verdict: "clean",
       more: 0,
+      labels: [],
     });
     const bytes = JSON.stringify(card);
     expect(bytes).not.toContain(INTRO);

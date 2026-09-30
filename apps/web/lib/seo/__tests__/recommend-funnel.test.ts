@@ -52,8 +52,10 @@ const ROWS: Row[] = [
   row("person", "wheel building workshop", { plan_excluded_at: PARKED_AT, status: "stored" }),
   // A page of the site already targets it.
   row("covered", "brake bleeding service"),
-  // No volume, no impressions, no position.
-  row("nodemand", "bike repair open sundays", { volume: null }),
+  // Measured at zero searches, no impressions, no position.
+  row("nodemand", "bike repair open sundays", { volume: 0 }),
+  // Never measured, kept by the buyer test: it goes to the judge, labelled.
+  row("unmeasured", "bike repair open late fridays", { volume: null }),
   // Far beyond an authority-10 site.
   row("reach", "bike repair", { difficulty: 95, volume: 40000 }),
   // Provider fragment: ends in a two-letter token.
@@ -132,7 +134,7 @@ describe("recommendKeywords: the funnel", () => {
       out_of_reach: 1,
       quality: 1,
       duplicate: 1,
-      not_judged: 1,
+      not_judged: 2, // "unjudged", and the unmeasured row: measured rows are judged first
       thin_serp: 1,
       existing_page: 1,
       needs_page: 1,
@@ -152,7 +154,7 @@ describe("recommendKeywords: the funnel", () => {
     expect(funnelDiscrepancy(f)).toBeNull();
     expect(f.found).toBe(ROWS.length);
     // Every row the free gates let through: nothing was judged.
-    expect(f.removed.spend_refused).toBe(8);
+    expect(f.removed.spend_refused).toBe(9);
     expect(f.qualified).toBe(0);
   });
 

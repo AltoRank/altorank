@@ -339,9 +339,14 @@ export function PlannerCard({
           )}
           {keyword && (
             <div className="mt-1 font-mono text-[10px] text-ink-3">
-              Vol {num(keyword.volume)} · Diff {num(keyword.difficulty || null)}
+              Vol {keyword.labels?.some((l) => l.label === "Unmeasured") ? "unmeasured" : num(keyword.volume)} · Diff {num(keyword.difficulty || null)}
             </div>
           )}
+          {keyword?.labels?.filter((l) => l.label !== "Unmeasured").map((l) => (
+            <div key={l.label} title={l.explain} className={`mt-1 mr-1 inline-flex items-center rounded-[5px] border border-line bg-panel px-1.5 py-[1px] font-mono text-[9.5px] uppercase tracking-[0.04em] ${l.label === "Top of funnel" ? "text-ink-3" : "text-warn"}`}>
+              {l.label}
+            </div>
+          ))}
         </>
       )}
       <div className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1">

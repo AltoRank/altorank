@@ -29,6 +29,7 @@ import {
   readOpportunity,
   OPPORTUNITY_VERSION,
   QUALIFICATION_LIMIT,
+  type FirstLook,
   type Opportunity,
   type OpportunityCandidate,
   type OpportunityContext,
@@ -58,6 +59,10 @@ export interface QueueRow {
   source_url?: string | null;
   opportunity?: unknown;
   plan_excluded_at?: string | null;
+  /** Kept by the buyer test with no measured demand: its verdict is labelled so. */
+  unmeasured?: boolean;
+  /** The saved buyer-test verdict, reused by qualification when it answers today's question. */
+  buyer_fit?: unknown;
 }
 
 const rawStatus = (row: QueueRow): string | undefined => {
@@ -74,13 +79,45 @@ export function isParked(row: QueueRow): boolean {
 }
 
 /**
- * A parked row the queue may judge again: parked for want of a verdict, not
- * by a verdict and not by a person. Rejected verdicts stay parked past their
- * TTL - a "no" is not undone by the calendar turning - and a row a person
- * took off the plan has no verdict at all and stays where they put it.
+ * Refusals about the results page rather than the searcher. A results page
+ * changes - articles get written, a shop page drops out, a thin page fills
+ * in - so these are asked again after `REJUDGE_AFTER_MS`. A refusal of the
+ * searcher (buyer_mismatch: brand, navigation, another city, a service not
+ * offered), an existing page and a duplicate stay parked until a person or
+ * a profile change says otherwise.
  */
-export function isRequalifiable(row: QueueRow): boolean {
-  return isParked(row) && rawCause(row) === "unjudged" && rawStatus(row) !== "rejected";
+export const TTL_CAUSES: ReadonlySet<string> = new Set(["not_editorial", "needs_page", "thin_serp"]);
+/** How long a results-page refusal parks a row. */
+export const REJUDGE_AFTER_MS = 30 * 86_400_000;
+/**
+ * A verdict parks its row within minutes of being bought (the refill parks
+ * as it goes). A row whose park stamp is much later than its verdict was
+ * taken off the plan by a person after it was judged, and stays where they
+ * put it.
+ */
+const PARKED_BY_VERDICT_MS = 60 * 60_000;
+
+/** A row parked by a results-page refusal that is now older than its TTL. */
+export function parkExpired(row: QueueRow, now: number = Date.now()): boolean {
+  // A contested refusal (two reads disagreed, lib/keyword-research/
+  // opportunity.ts) ages out whatever its cause.
+  const contested = (row.opportunity as { contested?: unknown } | null | undefined)?.contested === true;
+  if (!isParked(row) || rawStatus(row) !== "rejected" || !(TTL_CAUSES.has(rawCause(row) ?? "") || contested)) return false;
+  const checked = Date.parse(String((row.opportunity as { checkedAt?: unknown }).checkedAt ?? ""));
+  const parked = Date.parse(String(row.plan_excluded_at));
+  if (!Number.isFinite(checked) || !Number.isFinite(parked)) return false;
+  return parked - checked <= PARKED_BY_VERDICT_MS && now - checked > REJUDGE_AFTER_MS;
+}
+
+/**
+ * A parked row the queue may judge again: parked for want of a verdict, or
+ * parked by a results-page refusal whose 30 days are up (`TTL_CAUSES`). A
+ * refusal of the searcher stays parked - a "no" to who is searching is not
+ * undone by the calendar turning - and a row a person took off the plan
+ * stays where they put it.
+ */
+export function isRequalifiable(row: QueueRow, now: number = Date.now()): boolean {
+  return isParked(row) && ((rawCause(row) === "unjudged" && rawStatus(row) !== "rejected") || parkExpired(row, now));
 }
 
 /** A parked row nothing should touch again without a person. */
@@ -213,6 +250,8 @@ export async function refillQualifiedQueue(
     maxBatches?: number;
     /** What already owns a search, as the caller worked it out (see `qualifyOpportunities`). */
     owners?: readonly IntentLeader[];
+    /** A first look: approvals asked twice, spend bounded (see `qualifyOpportunities`). */
+    firstLook?: FirstLook;
   },
 ): Promise<RefillOutcome> {
   const fingerprint = contextKey(context);
@@ -240,10 +279,13 @@ export async function refillQualifiedQueue(
     const needed = options.target - ready.size;
     const batch = unjudged.splice(0, Math.min(QUALIFICATION_LIMIT, needed * 3));
     batches++;
-    const asked: OpportunityCandidate[] = batch.map((row) => ({ id: row.id, term: row.term, source_url: row.source_url, opportunity: null }));
+    const asked: OpportunityCandidate[] = batch.map((row) => ({ id: row.id, term: row.term, source_url: row.source_url, opportunity: null, buyer_fit: row.buyer_fit ?? null, ...(row.unmeasured ? { unmeasured: true } : {}) }));
     let results: Map<string, Opportunity>;
     try {
-      results = await qualifyOpportunities(supabase, workspaceId, asked, context, options.owners ? { owners: options.owners } : {});
+      results = await qualifyOpportunities(supabase, workspaceId, asked, context, {
+        ...(options.owners ? { owners: options.owners } : {}),
+        ...(options.firstLook ? { firstLook: options.firstLook } : {}),
+      });
     } catch (err) {
       if (err instanceof SpendRefusedError) throw new RefillRefusedError(err, verdicts, judged);
       throw err;
@@ -263,6 +305,9 @@ export async function refillQualifiedQueue(
       }
     }
     if (toPark.length) parked += (await parkKeywords(supabase, workspaceId, toPark)).parked;
+    // A first look that stopped part-way through a batch hit its budget:
+    // the next batch would stop before buying anything too.
+    if (options.firstLook && batch.some((row) => !results.has(row.id))) break;
   }
 
   return { ready: ready.size, target: options.target, judged, qualified, parked, verdicts };

@@ -1,5 +1,6 @@
 import { readAllPages } from "@/lib/supabase/read-all";
-import { readOpportunity, contextKey, duplicateVerdict, OPPORTUNITY_VERSION, type Opportunity, type OpportunityCause } from "@/lib/keyword-research/opportunity";
+import { readOpportunity, contextKey, duplicateVerdict, OPPORTUNITY_VERSION, type FirstLook, type Opportunity, type OpportunityCause } from "@/lib/keyword-research/opportunity";
+import { rivalNamed } from "@/lib/keyword-research/results-page";
 import { clusterByIntent, intentKey, intentLanguage, sameIntent, storedSerp, unfoldedNote, type IntentFollower, type IntentStage, type StagedTopic } from "@/lib/keyword-research/intent";
 import { articleStage, leadersFrom, type IntentLeader, type KeywordRow, type OnCalendar } from "@/lib/keyword-research/intent-leaders";
 import { ensureBusinessProfile } from "@/lib/keyword-research/business-context";
@@ -84,6 +85,12 @@ export interface KeywordRecommendation {
   opportunity?: Opportunity;
   /** "audience" for a top-of-funnel topic; null when no buyer verdict is saved. */
   funnel: Funnel | null;
+  /**
+   * "unmeasured": no provider volume, no impressions, no position, and kept
+   * by the buyer test. Judged and plannable, never ranked above a measured
+   * row (`demandFirst`), and labelled so wherever it is shown.
+   */
+  demand?: "unmeasured";
   /**
    * The free gate that first took this row off "write", for the run's funnel
    * (lib/keyword-research/topic-funnel.ts). Descriptive only: the action and
@@ -398,6 +405,13 @@ export async function recommendKeywords(
     qualify?: boolean;
     qualifyBatches?: number;
     /**
+     * A first look (lib/onboarding/pipeline.ts): approvals are asked twice,
+     * qualification stops before the run's spend ceiling, and the floor may
+     * fill the plan to PLAN_FLOOR. Nothing else passes it: the nightly passes
+     * and the planner's top-up plan only what cleared the bar.
+     */
+    firstLook?: FirstLook;
+    /**
      * Handed where every keyword read went, once this pass has decided
      * (lib/keyword-research/topic-funnel.ts), with the ids of the rows it
      * counted as qualified so a planner can say where each one went. Also
@@ -445,8 +459,15 @@ export async function recommendKeywords(
     description?: string | null;
     audiences?: string[] | null;
     competitors?: string[] | null;
+    searchRivals?: string[] | null;
   } | null;
   const subject = subjectVocabulary(business, profile);
+  // The businesses a phrase may name: an unmeasured phrase naming one is a
+  // model's idea of a comparison search, not a measured one (below).
+  const rivals = [...(business?.competitors ?? []), ...(business?.searchRivals ?? [])].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  // Markets where the keyword provider's index is thin enough that a real
+  // search often has no volume row: every market but the two it covers best.
+  const thinMarket = ![2840, 2826].includes((workspace?.location_code as number | null | undefined) ?? 2840);
   // Null when never measured, which relativeDifficulty treats as "do not
   // judge" rather than "zero authority".
   const authority = (workspace?.dr as number | null) ?? null;
@@ -806,11 +827,33 @@ export async function recommendKeywords(
     // three is a model's idea of what buyers type: fitsuite.co's first plan
     // (2026-09-19) was four such phrases and one keyword anyone searches.
     // Refused here, before qualification, so no results page is bought for it.
+    //
+    // Unmeasured is not measured-zero. A phrase the provider has no row for
+    // (volume null) that the buyer test kept goes on to the judge, labelled
+    // "unmeasured" (founder decision 2026-09-29, amending "unmeasured never
+    // planned" for small markets): in a small city or a Turkish market the
+    // index simply does not know most of what a small business's buyers
+    // type, and the skip removed 21 of 31 kept terms before any judge ran.
+    // It never outranks a measured topic: every ordering below puts measured
+    // first (`demandFirst`), and the label follows it onto the screen.
+    //
+    // Not every unmeasured phrase (review, 2026-09-30): only in a market the
+    // provider covers thinly (not the US or the UK, where no volume row means
+    // nobody searches it), and never a phrase naming a rival. "<rival>
+    // alternative(s)" is made up from the rival's name (lib/keyword-research/
+    // alternative-seeds.ts), and unmeasured it is exactly the model's guess
+    // this skip was written for; two first looks planned both phrasings of
+    // one such guess as two of five slots.
     const measuredDemand = (volume ?? 0) > 0 || (impressions ?? 0) > 0 || position !== null;
+    const unmeasured = !measuredDemand && volume === null && kept !== null && thinMarket && !rivalNamed(term, rivals);
     if (action === "write" && !measuredDemand) {
-      action = "skip";
-      skippedBy = "no_demand";
-      reasons.push("no measured demand: no search volume, no impressions, no ranking");
+      if (unmeasured) {
+        reasons.push("unmeasured: no provider reports searches for it and the site has no impressions or position; judged, and ranked below every measured topic");
+      } else {
+        action = "skip";
+        skippedBy = "no_demand";
+        reasons.push("no measured demand: no search volume, no impressions, no ranking");
+      }
     }
 
     if (action === "write" && !proven && isOutOfReach(difficulty, authority)) {
@@ -857,6 +900,7 @@ export async function recommendKeywords(
       quality,
       qualityNote: note,
       ...(skippedBy ? { skippedBy } : {}),
+      ...(unmeasured ? { demand: "unmeasured" as const } : {}),
     };
   });
 
@@ -938,7 +982,7 @@ export async function recommendKeywords(
   // provider noise, out of reach, refused, or a calendar entry nobody will
   // write.
   const standing = (r: KeywordRecommendation) => (mayBeWritten(r) ? 0 : 1);
-  recommendations.sort((a, b) => b.score - a.score);
+  recommendations.sort(demandFirst);
   for (const rec of [...recommendations].sort((a, b) => standing(a) - standing(b))) {
     const row = rowOf.get(rec.keywordId);
     if (row && isParkedForGood(row)) continue;
@@ -1018,7 +1062,7 @@ export async function recommendKeywords(
   }
   const candidateRows = eligible
     .filter((rec) => rec.action === "write")
-    .map((rec) => ({ ...rowOf.get(rec.keywordId)!, id: rec.keywordId, term: rec.term }));
+    .map((rec) => ({ ...rowOf.get(rec.keywordId)!, id: rec.keywordId, term: rec.term, ...(rec.demand ? { unmeasured: true } : {}) }));
   // Where every row went, for the caller's funnel: the first stage, in the
   // order this pass applies them, that set it aside (see
   // lib/keyword-research/topic-funnel.ts). Read from this pass's own
@@ -1040,7 +1084,17 @@ export async function recommendKeywords(
     if (!options?.onFunnel) return;
     const outcomes = recommendations.map((rec) => ({ id: rec.keywordId, outcome: funnelOutcome(rec, verdicts, refused) }));
     const qualifiedIds = new Set(outcomes.filter((o) => o.outcome === "qualified").map((o) => o.id));
-    options.onFunnel(tallyFunnel(outcomes.map((o) => o.outcome), judged === undefined ? {} : { judged }), qualifiedIds);
+    // Of the qualified, how many the floor planned and how many carry no
+    // measured demand: labels on the count, not stages of their own.
+    const labelled = (test: (o: Opportunity | undefined, rec: KeywordRecommendation | undefined) => boolean) =>
+      [...qualifiedIds].filter((id) => test(verdicts.get(id), recOf.get(id))).length;
+    const lowerConfidence = labelled((o) => o?.confidence === "lower");
+    const unmeasured = labelled((o, rec) => o?.demand === "unmeasured" || rec?.demand === "unmeasured");
+    options.onFunnel(tallyFunnel(outcomes.map((o) => o.outcome), {
+      ...(judged === undefined ? {} : { judged }),
+      ...(lowerConfidence ? { lowerConfidence } : {}),
+      ...(unmeasured ? { unmeasured } : {}),
+    }), qualifiedIds);
   };
 
   let evidence: Map<string, Opportunity>;
@@ -1065,6 +1119,7 @@ export async function recommendKeywords(
         target: queueTarget(workspace?.auto_generate_weekly_limit as number | null | undefined),
         owners: leaders,
         ...(options.qualifyBatches ? { maxBatches: options.qualifyBatches } : {}),
+        ...(options.firstLook ? { firstLook: options.firstLook } : {}),
       });
       evidence = refill.verdicts;
       judged = refill.judged;
@@ -1089,7 +1144,9 @@ export async function recommendKeywords(
   const unfolded = leaders.some((l) => !l.organicUrls?.length) ? unfoldedNote(language) : null;
   for (const rec of eligible) {
     if (rec.action !== "write") continue;
-    const o = evidence.get(rec.keywordId);
+    const found = evidence.get(rec.keywordId);
+    // The label goes with the verdict wherever it is shown, however old.
+    const o = found && rec.demand ? { ...found, demand: rec.demand } : found;
     rec.opportunity = o;
     if (o?.status === "qualified") {
       const topic = { term: rec.term, organicUrls: o.organicUrls ?? null };
@@ -1108,6 +1165,44 @@ export async function recommendKeywords(
       rec.reasons.unshift(o?.reason ?? "Topic qualification pending: buyer fit and live search evidence are required before automatic writing.");
     }
   }
+  // The floor. A first look (and only a first look: `firstLook` is passed by
+  // lib/onboarding/pipeline.ts and nothing else, so a nightly pass never
+  // plans a lower-confidence topic for the autopilot to write) that clears
+  // fewer than PLAN_FLOOR topics fills up
+  // to it from the best searches a served buyer makes that fell short of the
+  // bar only because too few results are articles (lib/keyword-research/
+  // opportunity.ts keeps their brief and the observed article, `floor`).
+  // Planned as "lower confidence", said on the row, the calendar, the first
+  // article's card and the run's funnel; measured before unmeasured, best
+  // score first; never a search already approved. Nothing refused for the
+  // searcher (brand, navigation, another city, a service not offered) and
+  // nothing the free gates removed can reach it: those carry other causes.
+  const floorPicks: KeywordRecommendation[] = [];
+  if (options?.qualify && options.firstLook && clusters.length < PLAN_FLOOR) {
+    const floorable = sorted.filter((rec) => {
+      if (rec.quality !== "ok" || rec.skippedBy || dropped.has(rec)) return false;
+      const o = evidence.get(rec.keywordId) ?? current(rec.keywordId);
+      return Boolean(o && isFloorable(o));
+    });
+    for (const rec of floorable) {
+      if (clusters.length + floorPicks.length >= PLAN_FLOOR) break;
+      const o = (evidence.get(rec.keywordId) ?? current(rec.keywordId))!;
+      const topic = { term: rec.term, organicUrls: o.organicUrls ?? null };
+      if ([...clusters, ...floorPicks].some((other) => sameIntent(topic, { term: other.term, organicUrls: other.opportunity?.organicUrls ?? null }, language).same)) continue;
+      const promoted = floorVerdict(o, rec.demand);
+      floorPicks.push(rec);
+      rec.action = "write";
+      rec.opportunity = promoted;
+      rec.reasons = [promoted.reason, ...rec.reasons.filter((r) => r !== o.reason && !r.startsWith("Parked:"))];
+      evidence.set(rec.keywordId, promoted);
+      const row = rowOf.get(rec.keywordId);
+      if (row) { row.opportunity = promoted; row.plan_excluded_at = null; row.status = row.status === "stored" ? "new" : row.status; }
+    }
+    if (floorPicks.length) await saveFloorPicks(supabase, workspaceId, floorPicks);
+  }
+  // A lower-confidence topic is planned after every topic that cleared the bar.
+  if (floorPicks.length) sorted.sort((a, b) => Number(a.opportunity?.confidence === "lower") - Number(b.opportunity?.confidence === "lower"));
+
   // A planned row that will not be written, behind a phrasing of its search
   // that may be, comes off the calendar: refused, with its own refusal, the
   // way the refill parks every refusal it buys; otherwise as that phrasing's
@@ -1137,6 +1232,57 @@ export async function recommendKeywords(
     }
   }
   return sorted.slice(0, limit);
+}
+
+/** Topics a first look plans before the floor steps in (see recommendKeywords). */
+export const PLAN_FLOOR = 3;
+
+/**
+ * A verdict the floor may take: a not_editorial page whose searcher the
+ * judge said the business serves, with the brief written and at least one
+ * observed article. Anything else - a refusal of the searcher, a landing-page
+ * search, an existing page, a duplicate - is not.
+ */
+export function isFloorable(o: Opportunity): boolean {
+  return o.status === "rejected" && o.cause === "not_editorial" && o.floor === true &&
+    [o.audience, o.buyingJob, o.offering, o.angle].every((v) => typeof v === "string" && v.trim().length > 0) &&
+    Array.isArray(o.evidenceUrls) && o.evidenceUrls.length >= 1;
+}
+
+/** The floor's verdict: planned, and saying why it is lower confidence. */
+export function floorVerdict(o: Opportunity, demand?: "unmeasured"): Opportunity {
+  const { cause: _cause, floor: _floor, ...rest } = o;
+  void _cause; void _floor;
+  return {
+    ...rest,
+    status: "qualified",
+    confidence: "lower",
+    format: "article",
+    ...(demand ? { demand } : {}),
+    checkedAt: new Date().toISOString(),
+    reason: `Lower confidence: fewer articles hold this search than the bar asks for, and it is planned because fewer than ${PLAN_FLOOR} topics cleared it. ${o.reason}`.slice(0, 400),
+  };
+}
+
+/** Save the floor's picks and return them to the queue (unparked, status new). */
+async function saveFloorPicks(supabase: SupabaseClient, workspaceId: string, picks: readonly KeywordRecommendation[]): Promise<void> {
+  for (const rec of picks) {
+    const { error } = await supabase
+      .from("keywords")
+      .update({ opportunity: rec.opportunity, status: "new", plan_excluded_at: null })
+      .eq("id", rec.keywordId)
+      .eq("workspace_id", workspaceId)
+      .in("status", ["new", "stored"]);
+    if (error) throw new Error(`Could not save a lower-confidence topic: ${error.message}`);
+  }
+}
+
+/**
+ * The order every ranking of recommendations uses: a measured topic before an
+ * unmeasured one, whatever the scores, then the higher score.
+ */
+export function demandFirst(a: Pick<KeywordRecommendation, "demand" | "score">, b: Pick<KeywordRecommendation, "demand" | "score">): number {
+  return Number(a.demand === "unmeasured") - Number(b.demand === "unmeasured") || b.score - a.score;
 }
 
 /**

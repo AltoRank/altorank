@@ -4,20 +4,31 @@ vi.mock("../buyer-model", async (original) => ({ ...await original<object>(), mo
 vi.mock("../buyer-fit", async (original) => ({ ...await original<object>(), judgeBuyerFit: judge }));
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: available }));
 vi.mock("@/lib/seo/brief-data", () => ({ fetchAdvancedSerp: fetchSerp }));
-import { qualifyOpportunities, readOpportunity, contextKey, validArticleAngle, assertAutonomousTopic, summarizeQualification, type Opportunity } from "../opportunity";
+import { askedKey } from "../buyer-fit";
+import { FIRST_LOOK_CEILING_USD, FIRST_LOOK_DRAFT_RESERVE_USD, opportunitySchema, qualifyOpportunities, readOpportunity, contextKey, validArticleAngle, assertAutonomousTopic, summarizeQualification, type Opportunity } from "../opportunity";
 import { sameIntent, sharedResults } from "../intent";
 import { balanceSources, diverseSeeds } from "../diversity";
 
 const context = { domain: "example.com", languageCode: "it", locationCode: 2380, business: { name: "Clinic Studio", description: "Clinic Studio builds booking websites for clinics and salons at a fixed price.", offerings: ["clinic booking websites"], audiences: ["clinic owners"] } };
 const term = "clinic booking website costs";
 const urls = ["https://one.test/guide", "https://two.test/guide", "https://three.test/guide", "https://four.test/guide"];
-const approval = { approve: true, reason: "Clinic owners compare the cost of a booking website", audience: "clinic owners", buyingJob: "choose a booking website", offering: "clinic booking websites", angle: "What clinics should budget for a booking website", format: "article", conversionPath: "https://example.com/contact", evidenceUrls: urls.slice(0, 2) };
+const approval = { stage: "comparing", kinds: ["article", "article", "article", "article"], reason: "Clinic owners compare the cost of a booking website", audience: "clinic owners", buyingJob: "choose a booking website", offering: "clinic booking websites", angle: "What clinics should budget for a booking website", conversionPath: "https://example.com/contact" };
+/** How many results the judge was shown, read back from its prompt. */
+const shown = (prompt: string) => (JSON.parse(prompt.slice(prompt.lastIndexOf("\n") + 1)) as { results: unknown[] }).results.length;
+/** The judge names every result `kinds` (one word for all, or one each), with the approval's brief. */
+const answerWith = (kinds: string | string[], extra: Record<string, unknown> = {}) =>
+  ask.mockImplementation(async (_op: string, prompt: string) => JSON.stringify({ ...approval, ...extra, kinds: Array.isArray(kinds) ? kinds : Array(shown(prompt)).fill(kinds) }));
+/** Results pages as `fetchAdvancedSerp` returns them. */
+const serpOf = (pages: Array<{ url: string; title: string; description?: string }>) => ({ organic: pages.map((p, i) => ({ description: "", ...p, rank: i + 1 })), peopleAlsoAsk: [], aiOverview: null });
+const productPages = serpOf(["https://vendor-one.test/", "https://vendor-two.test/pricing", "https://vendor-three.test/", "https://vendor-four.test/features"].map((url) => ({ url, title: "Clinic booking websites | Book a demo" })));
+const toolPages = serpOf([{ url: "https://apps.apple.com/app/clinic-booking", title: "Clinic Booking on the App Store" }, { url: "https://play.google.com/store/apps/clinic-booking", title: "Clinic booking website app" }, { url: "https://www.udemy.com/course/clinic-booking-website", title: "Build a clinic booking website course" }, { url: "https://github.com/x/clinic-booking-website", title: "clinic booking website template" }]);
 const writes: unknown[] = [];
 let covered: unknown[] = [];
 let articles: unknown[] = [];
-const db = { from: (table: string) => ({ select: (_columns?: string, options?: { count?: string }) => { const rows = table === "keywords" ? covered : table === "articles" ? articles : []; const q: Record<string, unknown> = { eq: () => q, in: () => q, not: () => q, neq: () => q, gte: () => q, order: () => q, range: () => q, maybeSingle: async () => ({ data: table === "workspaces" ? { account_id: "acc", status: "active", paused_until: null } : null, error: null }), then: (resolve: (v: unknown) => unknown) => resolve({ data: rows, error: null, count: options?.count ? rows.length : null }) }; return q; }, update: (row: unknown) => { writes.push(row); const q = { eq: () => q, then: (resolve: (v: unknown) => unknown) => resolve({error:null}) }; return q; } }), auth: { getUser: async () => ({ data: { user: null } }) } } as never;
+let spendRows: unknown[] = [];
+const db = { from: (table: string) => ({ select: (_columns?: string, options?: { count?: string }) => { const rows = table === "keywords" ? covered : table === "articles" ? articles : table === "provider_spend" ? spendRows : []; const q: Record<string, unknown> = { eq: () => q, in: () => q, not: () => q, neq: () => q, gte: () => q, order: () => q, range: () => q, maybeSingle: async () => ({ data: table === "workspaces" ? { account_id: "acc", status: "active", paused_until: null } : null, error: null }), then: (resolve: (v: unknown) => unknown) => resolve({ data: rows, error: null, count: options?.count ? rows.length : null }) }; return q; }, update: (row: unknown) => { writes.push(row); const q = { eq: () => q, then: (resolve: (v: unknown) => unknown) => resolve({error:null}) }; return q; } }), auth: { getUser: async () => ({ data: { user: null } }) } } as never;
 beforeEach(() => {
-  vi.clearAllMocks(); writes.length = 0; covered = []; articles = []; available.mockReturnValue(true);
+  vi.clearAllMocks(); writes.length = 0; covered = []; articles = []; spendRows = []; available.mockReturnValue(true);
   judge.mockResolvedValue({ basis: "model", verdicts: new Map([[term, {keep:true,reason:"specific buyer need"}]]) });
   fetchSerp.mockResolvedValue({ organic: urls.map((url, i) => ({url,title:"Clinic booking website cost guide",description:"A buyer guide",rank:i+1})), peopleAlsoAsk:[],aiOverview:null });
   ask.mockResolvedValue(JSON.stringify(approval));
@@ -84,17 +95,39 @@ describe("topic qualification", () => {
   });
   it("records an article's buyer, angle, observed sources and correct market", async () => {
     const result = await run();
-    expect(result).toMatchObject({status:"qualified",audience:approval.audience,angle:approval.angle,evidenceUrls:urls.slice(0,2)});
+    expect(result).toMatchObject({status:"qualified",audience:approval.audience,angle:approval.angle,format:"article",evidenceUrls:urls});
     expect(fetchSerp).toHaveBeenCalledWith(term, context);
   });
-  it("does not accept invented evidence URLs", async () => {
-    ask.mockResolvedValue(JSON.stringify({...approval,evidenceUrls:["https://invented.test/a","https://invented.test/b"]}));
-    expect((await run()).status).toBe("pending");
+  it("cites only observed editorial results, whatever the model names", async () => {
+    answerWith("article", { evidenceUrls: ["https://invented.test/a", "https://invented.test/b"] });
+    const result = await run();
+    expect(result.status).toBe("qualified");
+    expect(result.evidenceUrls).toEqual(urls);
   });
-  it("does not treat a tool-dominated search as an approved article", async () => {
-    ask.mockResolvedValue(JSON.stringify({...approval,format:"tool"}));
-    // Not pending any more: the answer is known, and it is a page, not an article.
-    expect(await run()).toMatchObject({ status: "rejected", cause: "needs_page" });
+  it("does not treat a tool-dominated search as an approved article: the kinds the judge names decide", async () => {
+    fetchSerp.mockResolvedValue(toolPages);
+    answerWith("tool");
+    expect(await run()).toMatchObject({ status: "rejected", cause: "not_editorial" });
+  });
+  it("asks the judge as a decision, with its reply held to the schema", async () => {
+    await run();
+    expect(ask).toHaveBeenCalledWith("keyword-research/opportunity", expect.any(String), expect.objectContaining({ tier: "decision", schema: opportunitySchema() }));
+  });
+  it("rejects a searcher the business does not serve, from the stage the model names", async () => {
+    ask.mockResolvedValue(JSON.stringify({ stage: "practitioner", reason: "a developer learning to build booking sites" }));
+    expect(await run()).toMatchObject({ status: "rejected", cause: "buyer_mismatch" });
+  });
+  it("keeps a problem-aware searcher, labelled top of funnel", async () => {
+    answerWith("article", { stage: "problem" });
+    expect(await run()).toMatchObject({ status: "qualified", funnel: "audience" });
+  });
+  it("leaves an answer with no stage pending", async () => {
+    ask.mockResolvedValue(JSON.stringify({ ...approval, stage: undefined, approve: true }));
+    expect(await run()).toMatchObject({ status: "pending", cause: "judge_incomplete" });
+  });
+  it("reads the answer after reasoning the model wrote into its reply", async () => {
+    ask.mockResolvedValue(`<think>\n1. {"stage": maybe [hiring]}\n</think>\n${JSON.stringify(approval)}`);
+    expect((await run()).status).toBe("qualified");
   });
   it("routes existing own-page targets to review instead of a new blog", async () => {
     const result = await run({source_url:"https://www.example.com/booking"});
@@ -133,7 +166,8 @@ describe("topic qualification", () => {
   it("names a thin search page as the cause", async () => {
     fetchSerp.mockResolvedValue({ organic: urls.slice(0, 2).map((url, i) => ({url,title:"t",description:"d",rank:i+1})), peopleAlsoAsk:[], aiOverview:null });
     const result = await run();
-    expect(result).toMatchObject({ status: "pending", cause: "thin_serp" });
+    // Rejected, so the refill parks it; for 30 days, not for good (queue.ts).
+    expect(result).toMatchObject({ status: "rejected", cause: "thin_serp" });
     expect(ask).not.toHaveBeenCalled();
   });
   it("without a business profile, stamps every term 'no profile' and buys nothing", async () => {
@@ -151,8 +185,12 @@ describe("topic qualification", () => {
     judge.mockResolvedValue({basis:"model",verdicts:new Map([[term,{keep:false,reason:"student homework"}]])});
     expect(await run()).toMatchObject({ status: "rejected", cause: "buyer_mismatch" });
     judge.mockResolvedValue({ basis: "model", verdicts: new Map([[term, {keep:true,reason:"specific buyer need"}]]) });
-    ask.mockResolvedValue(JSON.stringify({ ...approval, approve: false, reason: "product pages only" }));
+    fetchSerp.mockResolvedValue(toolPages);
+    answerWith("tool");
     expect(await run()).toMatchObject({ status: "rejected", cause: "not_editorial" });
+    fetchSerp.mockResolvedValue(productPages);
+    answerWith("product");
+    expect(await run()).toMatchObject({ status: "rejected", cause: "needs_page" });
     expect(await run({source_url:"https://www.example.com/booking"})).toMatchObject({ status: "rejected", cause: "existing_page" });
   });
   it("sums the verdicts into one line for the run log", () => {
@@ -189,24 +227,154 @@ describe("candidate diversity", () => {
 
 describe("page-type decisions", () => {
   it("saves the shape the results page is won by", async () => {
-    ask.mockResolvedValue(JSON.stringify({ ...approval, shape: "comparison" }));
+    answerWith("article", { shape: "comparison" });
     const out = await run();
     expect(out.status).toBe("qualified");
     expect(out.shape).toBe("comparison");
   });
   it("ignores a shape outside the taxonomy", async () => {
-    ask.mockResolvedValue(JSON.stringify({ ...approval, shape: "poem" }));
+    answerWith("article", { shape: "poem" });
     expect((await run()).shape).toBeUndefined();
   });
-  it("says a search wants a landing page when the results are product or tool pages", async () => {
-    ask.mockResolvedValue(JSON.stringify({ ...approval, approve: false, format: "tool", reason: "Results are app store and product pages." }));
+  it("says a search wants a landing page when most results are product pages: the kinds decide, not a format word", async () => {
+    fetchSerp.mockResolvedValue(productPages);
+    answerWith("product", { format: "article" });
     const out = await run();
     expect(out.status).toBe("rejected");
     expect(out.cause).toBe("needs_page");
     expect(out.reason).toContain("landing page");
   });
-  it("does the same when the model approved but the results are product pages", async () => {
-    ask.mockResolvedValue(JSON.stringify({ ...approval, format: "product" }));
+  it("counts shop and category pages as products even where their URLs look like guides (no word lists for Italian)", async () => {
+    // Six shop category pages whose paths read like articles, four guides:
+    // the word lists would have called nine of ten editorial.
+    fetchSerp.mockResolvedValue(serpOf([
+      ...[1, 2, 3, 4, 5, 6].map((i) => ({ url: `https://shop${i}.test/caldaie-condensazione-guida-${i}`, title: "Caldaie a condensazione: come scegliere" })),
+      ...[1, 2, 3, 4].map((i) => ({ url: `https://guide${i}.test/blog/caldaie-condensazione`, title: "Caldaie a condensazione: cosa sono" })),
+    ]));
+    const boilers = "caldaie a condensazione";
+    judge.mockResolvedValue({ basis: "model", verdicts: new Map([[boilers, { keep: true, reason: "a homeowner choosing a boiler" }]]) });
+    const runBoilers = async () => (await qualifyOpportunities(db, "ws", [{ id: "k", term: boilers }], context)).get("k");
+    answerWith([...Array(6).fill("product"), ...Array(4).fill("article")]);
+    expect(await runBoilers()).toMatchObject({ status: "rejected", cause: "needs_page" });
+    answerWith([...Array(4).fill("product"), ...Array(6).fill("article")]);
+    expect(await runBoilers()).toMatchObject({ status: "qualified", format: "mixed" });
+  });
+  it("counts an article the judge names as off-topic when it carries none of the phrase's words", async () => {
+    // A phrase nobody writes about (a made-up compound name) comes back as
+    // other people's unrelated articles; the judge's generous "article" is
+    // checked against the words, as the word lists' reading is.
+    const compound = "zentrocrm alternatives";
+    judge.mockResolvedValue({ basis: "model", verdicts: new Map([[compound, { keep: true, reason: "comparing" }]]) });
+    fetchSerp.mockResolvedValue(serpOf([
+      { url: "https://news.test/blog/zen-garden", title: "Zen gardens for beginners" },
+      { url: "https://crm.test/blog/what-is-crm", title: "What is a CRM?" },
+      { url: "https://field.test/blog/field-guide", title: "A field guide to birds" },
+      { url: "https://zentrocrm.test/", title: "Zentrocrm - the CRM for studios" },
+    ]));
+    answerWith("article");
+    const out = (await qualifyOpportunities(db, "ws", [{ id: "k", term: compound }], context)).get("k");
+    expect(out).toMatchObject({ status: "rejected", cause: "not_editorial" });
+    expect(out?.reason).toContain("not about this search");
+    expect(out?.floor).toBeUndefined();
+  });
+  it("reads the results from the word lists when the judge names no kinds in a language they cover, and says so", async () => {
+    ask.mockResolvedValue(JSON.stringify({ ...approval, kinds: undefined }));
+    fetchSerp.mockResolvedValue(serpOf(urls.map((url) => ({ url: url.replace("/guide", "/blog/clinic-booking-website-cost-guide"), title: "How much does a clinic booking website cost?" }))));
+    const en = await qualifyOpportunities(db, "ws", [{ id: "k", term }], { ...context, languageCode: "en" });
+    expect(en.get("k")).toMatchObject({ status: "qualified" });
+    expect(en.get("k")?.reason).toContain("read from URLs and titles");
+    expect(await run()).toMatchObject({ status: "pending", cause: "judge_incomplete" });
+  });
+  it("refuses a phrase naming a known rival without asking the judge", async () => {
+    const withRival = { ...context, business: { ...context.business, competitors: ["bookwell.test"] } };
+    judge.mockResolvedValue({ basis: "model", verdicts: new Map([["bookwell login", { keep: true, reason: "a clinic owner" }]]) });
+    const out = (await qualifyOpportunities(db, "ws", [{ id: "k", term: "bookwell login" }], withRival)).get("k");
+    expect(out).toMatchObject({ status: "rejected", cause: "buyer_mismatch" });
+    expect(ask).not.toHaveBeenCalled();
+    judge.mockResolvedValue({ basis: "model", verdicts: new Map([["bookwell alternatives", { keep: true, reason: "comparing" }]]) });
+    fetchSerp.mockResolvedValue(serpOf(urls.map((url) => ({ url, title: "Bookwell alternatives for clinics" }))));
+    expect((await qualifyOpportunities(db, "ws", [{ id: "k", term: "bookwell alternatives" }], withRival)).get("k")?.status).toBe("qualified");
+  });
+  it("leaves a phrase built from generic words to the judge, even when a rival's domain is those words run together", async () => {
+    // A local rival's domain is often a service plus a city: the site's own
+    // core search "<service> <city>" must not read as that business's name.
+    const withRival = { ...context, business: { ...context.business, competitors: ["clinicbookingwebsite.test", "booking.test"] } };
+    judge.mockResolvedValue({ basis: "model", verdicts: new Map([[term, { keep: true, reason: "a clinic owner" }]]) });
+    expect((await qualifyOpportunities(db, "ws", [{ id: "k", term }], withRival)).get("k")?.status).toBe("qualified");
+    expect(ask).toHaveBeenCalled();
+  });
+  it("keeps the brief on a thin editorial page a served searcher asks about, for the planner's floor", async () => {
+    answerWith(["article", "tool", "service", "offtopic"]);
+    const out = await run();
+    expect(out).toMatchObject({ status: "rejected", cause: "not_editorial", floor: true, angle: approval.angle, evidenceUrls: [urls[0]] });
+    answerWith("tool");
+    expect((await run()).floor).toBeUndefined();
+  });
+  it("keeps no floor brief on a page of tools or portals, one mostly off-topic, or a phrase naming a rival", async () => {
+    answerWith(["article", "tool", "tool", "portal"]);
+    expect(await run()).toMatchObject({ status: "rejected", cause: "not_editorial" });
+    expect((await run()).floor).toBeUndefined();
+    answerWith(["article", "offtopic", "offtopic", "offtopic"]);
+    expect((await run()).floor).toBeUndefined();
+    const withRival = { ...context, business: { ...context.business, competitors: ["bookwell.test"] } };
+    const named = "bookwell alternatives";
+    judge.mockResolvedValue({ basis: "model", verdicts: new Map([[named, { keep: true, reason: "comparing" }]]) });
+    fetchSerp.mockResolvedValue(serpOf(urls.map((url) => ({ url, title: "Bookwell alternatives for clinics" }))));
+    answerWith(["article", "tool", "service", "offtopic"]);
+    const out = (await qualifyOpportunities(db, "ws", [{ id: "k", term: named }], withRival)).get("k");
+    expect(out).toMatchObject({ status: "rejected", cause: "not_editorial" });
+    expect(out?.floor).toBeUndefined();
+  });
+  it("sends a searcher ready to hire to a landing page when providers' pages crowd the results", async () => {
+    fetchSerp.mockResolvedValue(serpOf([...urls.map((url) => ({ url, title: "Clinic booking website cost guide" })), ...productPages.organic]));
+    answerWith([...Array(4).fill("article"), ...Array(4).fill("product")], { stage: "hiring" });
     expect((await run()).cause).toBe("needs_page");
+    answerWith([...Array(4).fill("article"), ...Array(4).fill("product")], { stage: "comparing" });
+    expect(await run()).toMatchObject({ status: "qualified", format: "mixed" });
+  });
+});
+
+describe("a first look", () => {
+  const firstLook = { since: "2026-09-30T00:00:00.000Z" };
+  const look = async (extra = {}) => (await qualifyOpportunities(db, "ws", [{ id: "k", term, ...extra }], context, { firstLook })).get("k");
+  it("approves only when two reads of the results page agree", async () => {
+    answerWith("article");
+    expect(await look()).toMatchObject({ status: "qualified" });
+    expect(ask).toHaveBeenCalledTimes(2);
+  });
+  it("keeps a refusing second read, marked contested, and says both", async () => {
+    let calls = 0;
+    ask.mockImplementation(async (_op: string, prompt: string) => JSON.stringify({ ...approval, kinds: Array(shown(prompt)).fill(calls++ === 0 ? "article" : "service") }));
+    const out = await look();
+    expect(out).toMatchObject({ status: "rejected", cause: "needs_page", contested: true });
+    expect(out?.reason).toMatch(/^Two reads of this results page disagreed/);
+  });
+  it("keeps the approval when the second read returned nothing usable", async () => {
+    let calls = 0;
+    ask.mockImplementation(async (_op: string, prompt: string) => (calls++ === 0 ? JSON.stringify({ ...approval, kinds: Array(shown(prompt)).fill("article") }) : null));
+    expect(await look()).toMatchObject({ status: "qualified" });
+  });
+  it("asks once outside a first look", async () => {
+    answerWith("article");
+    await run();
+    expect(ask).toHaveBeenCalledTimes(1);
+  });
+  it("reuses the buyer verdict discovery saved for the same question, and asks for the rest", async () => {
+    const business = { ...context.business, language: context.languageCode };
+    const saved = { keep: true, reason: "a clinic owner", funnel: "buyer", asked: askedKey(business) };
+    answerWith("article");
+    expect(await run({ buyer_fit: saved })).toMatchObject({ status: "qualified" });
+    expect(judge).not.toHaveBeenCalled();
+    await run({ buyer_fit: { ...saved, asked: "fit1-other" } });
+    expect(judge).toHaveBeenCalledTimes(1);
+  });
+  it("stops buying before the run's spend reaches the ceiling less the first draft's share", async () => {
+    spendRows = [{ cost_usd: FIRST_LOOK_CEILING_USD - FIRST_LOOK_DRAFT_RESERVE_USD }];
+    expect(await look()).toBeUndefined();
+    expect(judge).not.toHaveBeenCalled();
+    expect(ask).not.toHaveBeenCalled();
+    spendRows = [{ cost_usd: 0.2 }, { cost_usd: null }];
+    answerWith("article");
+    expect(await look()).toMatchObject({ status: "qualified" });
   });
 });
