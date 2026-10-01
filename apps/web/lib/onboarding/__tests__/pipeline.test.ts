@@ -28,13 +28,11 @@ vi.mock("@/lib/seo/recommendations", () => ({
   recommendKeywords: (...a: unknown[]) => recommend(...a),
   pickNextKeyword: (...a: unknown[]) => pick(...a),
 }));
-const setSpendReporter = vi.fn();
 vi.mock("@/lib/seo/client", () => ({
   hasDataForSEOCredentials: () => creds(),
-  setSpendReporter: (fn: unknown) => setSpendReporter(fn),
 }));
 const recordSpendByDefault = vi.fn();
-vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: (e: unknown) => recordSpendByDefault(e) }));
+vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: (e: unknown) => recordSpendByDefault(e), spendClient: () => null }));
 const plan = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
 const held = vi.fn(async () => ({ count: 0, dates: [] as string[] }));
 const scheduled = vi.fn(async () => 0);
@@ -90,6 +88,7 @@ const emptyPool = vi.fn(async (..._a: unknown[]) => EMPTY_POOL);
 vi.mock("../empty-pool", () => ({ readEmptyPool: (...a: unknown[]) => emptyPool(...a) }));
 
 import { runOnboarding } from "../pipeline";
+import { currentSpendScope } from "@/lib/billing/spend-scope";
 import type { OnboardingEvent } from "../events";
 
 const WS = { id: "ws1", domain: "example.com", account_id: "ag1", language: "en" };
@@ -133,7 +132,7 @@ const richClient = (existing: number) =>
   ({ from: (table: string) => (table === "articles" ? chain({ count: existing }) : chain({ data: [] })) }) as never;
 
 beforeEach(() => {
-  for (const m of [scrape, voice, analyse, generate, quota, recommend, pick, creds, setSpendReporter, recordSpendByDefault]) m.mockReset();
+  for (const m of [scrape, voice, analyse, generate, quota, recommend, pick, creds, recordSpendByDefault]) m.mockReset();
   fanOut.mockReset();
   fanOut.mockReturnValue({ dispatched: 0, settled: Promise.resolve() });
   relatedBatch.mockReset();
@@ -352,26 +351,19 @@ describe("runOnboarding", () => {
   /**
    * Discovery is the expensive phase and it ran with no reporter armed, so its
    * DataForSEO rows fell through to the unattributed default: fourteen rows
-   * from one onboarding, none with a workspace_id. The reporter is armed for
-   * the whole run, stamps every call with this workspace, and is cleared
-   * however the run ends - including an abort partway through.
+   * from one onboarding, none with a workspace_id. Then the reporter was a
+   * process global, and a concurrent run billed this one's calls. Every call
+   * in the run now sees the run's spend scope - its workspace, and the stage
+   * it is in - and nothing outside the run does.
    */
-  it("attributes every DataForSEO call in the run to the workspace, then disarms", async () => {
-    analyse.mockImplementation(async () => {
-      // What lib/seo/client does after each response, while discovery runs.
-      const armed = setSpendReporter.mock.calls.at(-1)?.[0] as (e: unknown) => void;
-      armed({ operation: "/dataforseo_labs/google/ranked_keywords/live", costUsd: 0.0132 });
-      return { keywordsFound: 94 };
-    });
+  it("attributes every call in the run to the workspace and its stage, and nothing outside the run", async () => {
+    const seen: Array<ReturnType<typeof currentSpendScope>> = [];
+    scrape.mockImplementation(async () => { seen.push(currentSpendScope()); return "word ".repeat(80); });
+    voice.mockImplementation(async () => { seen.push(currentSpendScope()); });
+    analyse.mockImplementation(async () => { seen.push(currentSpendScope()); return { keywordsFound: 0, layers: [] }; });
     await collect();
-    expect(recordSpendByDefault).toHaveBeenCalledWith({
-      provider: "dataforseo",
-      operation: "/dataforseo_labs/google/ranked_keywords/live",
-      costUsd: 0.0132,
-      workspaceId: "ws1",
-    });
-    expect(setSpendReporter.mock.calls[0][0]).toEqual(expect.any(Function));
-    expect(setSpendReporter.mock.calls.at(-1)).toEqual([null]);
+    expect(seen.map((s) => [s?.workspaceId, s?.stage])).toEqual([["ws1", "voice"], ["ws1", "voice"], ["ws1", "discovery"]]);
+    expect(currentSpendScope()).toBeUndefined();
   });
 
   it("skips everything that needs a domain when there is none", async () => {
@@ -562,11 +554,22 @@ describe("runOnboarding: the topic funnel", () => {
       (a[3] as { onFunnel?: (f: unknown) => void }).onFunnel?.(FUNNEL);
       return [];
     });
-    await runOnboarding(richClient(0), WS, () => undefined, { firstDraft: "dispatch", runId: "run-9" });
+    // The run's budget row, as the worker opened it and the run spent it.
+    const ROW = { ceiling_usd: 1, committed_usd: 0.42, refused: 2, stages: { discovery: { spent: 0.3, calls: 5, committed: 0.3 }, judge: { spent: 0.12, calls: 4, refused: 2, committed: 0.12 } } };
+    const opened: unknown[] = [];
+    const base = richClient(0) as unknown as { from: (t: string) => unknown };
+    const budgetTable = {
+      upsert: async (row: unknown) => { opened.push(row); return { error: null }; },
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: ROW, error: null }) }) }),
+    };
+    const db = { from: (t: string) => (t === "run_budgets" ? budgetTable : base.from(t)), rpc: async () => ({ data: 0.01, error: null }) } as never;
+    await runOnboarding(db, WS, () => undefined, { firstDraft: "dispatch", runId: "run-9" });
+    expect(opened).toEqual([{ run_id: "run-9", workspace_id: "ws1", ceiling_usd: 1, reserves: { draft: 0.3, outline_swap: 0.05 } }]);
     expect(recordFunnel).toHaveBeenCalledOnce();
     expect(recordFunnel).toHaveBeenCalledWith({
       runId: "run-9", workspaceId: "ws1", accountId: "ag1", funnel: FUNNEL,
       planningDetail: "No keyword clear enough to plan yet.",
+      spend: { ceilingUsd: 1, committedUsd: 0.42, refused: 2, stages: { discovery: { spent: 0.3, calls: 5, committed: 0.3, refused: 0 }, judge: { spent: 0.12, calls: 4, refused: 2, committed: 0.12 } } },
     });
   });
 

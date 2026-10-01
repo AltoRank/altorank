@@ -45,6 +45,26 @@ export function firstLookReserves(): Partial<Record<SpendStage, number>> {
   return { draft: FIRST_LOOK_DRAFT_RESERVE_USD, outline_swap: FIRST_LOOK_SWAP_RESERVE_USD };
 }
 
+/**
+ * The least the draft stage must still be able to claim before a first
+ * draft is started: the writer's floor (WRITER_MIN_OUTPUT_TOKENS on the
+ * content tier, about $0.16) plus its prompt (up to $0.06), the results page and the
+ * question pick. Below it the research would be bought for a draft the
+ * writer cannot be sent for.
+ */
+export const FIRST_DRAFT_MIN_USD = 0.25;
+
+/**
+ * Why the first draft cannot be written on what is left of the run's budget,
+ * or null when it can (or the budget cannot be read: the claims decide then).
+ */
+export async function draftBudgetShort(budget: RunBudget | null): Promise<string | null> {
+  if (!budget) return null;
+  const room = await budget.room("draft").catch(() => null);
+  if (room === null || room >= FIRST_DRAFT_MIN_USD) return null;
+  return `This first look's budget has $${Math.max(0, room).toFixed(2)} left, and a first draft needs about $${FIRST_DRAFT_MIN_USD.toFixed(2)}. It was not started; a person picks the first article up.`;
+}
+
 /** The budget row as stored: what the funnel event reports. */
 export interface RunBudgetState {
   ceilingUsd: number;

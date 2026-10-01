@@ -38,8 +38,10 @@ import { draftHoldReason, planHold } from "@/lib/billing/trial-hold";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
-import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
-import { recordSpendByDefault } from "@/lib/billing/default-spend";
+import { hasDataForSEOCredentials } from "@/lib/seo/client";
+import { spendClient } from "@/lib/billing/default-spend";
+import { currentSpendScope, isBudgetRefusal, withSpendScope, withStage } from "@/lib/billing/spend-scope";
+import { draftBudgetShort, openRunBudget, readRunBudget, type RunBudgetState } from "@/lib/billing/run-budget";
 import type { EmptyPool, OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { readEmptyPool } from "./empty-pool";
 import { modelAvailable } from "@/lib/keyword-research/buyer-model";
@@ -112,22 +114,21 @@ export async function runOnboarding(
   emit: Emit,
   options: RunOnboardingOptions = {},
 ): Promise<RunOnboardingResult> {
-  // Every DataForSEO call this run makes belongs to this workspace. With no
-  // reporter armed the client falls back to the unattributed default, and one
-  // onboarding on 2026-09-05 left fourteen rows with no workspace_id - the
-  // discovery that costs the most per site, and the one the per-site margin
-  // cannot see. Written through the service role: the client handed to this
-  // pipeline is the signed-in user's, and provider_spend refuses its inserts.
-  // generateArticle arms its own, finer reporter (article and run) for the
-  // draft and clears it after; the finally clears ours however the run ends.
-  setSpendReporter(({ operation, costUsd }) => {
-    recordSpendByDefault({ provider: "dataforseo", operation, costUsd, workspaceId: workspace.id });
-  });
-  try {
-    return await runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", options.runId ?? null);
-  } finally {
-    setSpendReporter(null);
-  }
+  // Every provider call this run makes belongs to this workspace and this
+  // run, and the run has a dollar (lib/billing/run-budget.ts). Both travel in
+  // a spend scope (lib/billing/spend-scope.ts), not in a process-global
+  // reporter: that one was armed over by whatever else the process ran, and
+  // concurrent runs billed each other's calls (2026-09-28). Every paid call
+  // inside claims its estimate from the budget first; a refused claim buys
+  // nothing, and the phase that asked carries on with what it has. Spend and
+  // the budget are written with the service role: provider_spend refuses a
+  // signed-in client's inserts, and run_budgets is server only.
+  const runId = options.runId ?? null;
+  const db = spendClient() ?? supabase;
+  const budget = runId ? await openRunBudget(db, { runId, workspaceId: workspace.id }).catch(() => null) : null;
+  return withSpendScope({ workspaceId: workspace.id, runId, budget }, () =>
+    runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", runId, budget ? () => readRunBudget(db, budget.runId).catch(() => null) : null),
+  );
 }
 
 async function runPhases(
@@ -136,12 +137,13 @@ async function runPhases(
   emit: Emit,
   firstDraft: "inline" | "dispatch",
   runId: string | null = null,
+  /** The run's budget as it stands, for the funnel event; null when it has none. */
+  readSpend: (() => Promise<RunBudgetState | null>) | null = null,
 ): Promise<RunOnboardingResult> {
   const domain = workspace.domain;
-  // This run's spend is what the site's provider calls cost from here on:
-  // qualification stops buying before it reaches the first look's ceiling
-  // less the first draft's share (lib/keyword-research/opportunity.ts).
-  const firstLook: FirstLook = { since: new Date().toISOString() };
+  // Approvals asked twice and the floor allowed; the spend bound is the
+  // scope's budget, which every paid call claims from.
+  const firstLook: FirstLook = { runId };
 
   // --- Phase 0: is there a site here at all? -------------------------------
   //
@@ -185,10 +187,10 @@ async function runPhases(
       // Same reader as the wizard: homepage, then the blog when the homepage
       // is a JavaScript shell, then a rendered fetch. A voice learned from the
       // site's own articles is better than one learned from its landing page.
-      const read = await readSiteText(domain);
+      const read = await withStage("voice", () => readSiteText(domain));
       const text = read.text;
       if (text && text.split(/\s+/).length > 50) {
-        await trainVoiceProfile(supabase, workspace.id, text);
+        await withStage("voice", () => trainVoiceProfile(supabase, workspace.id, text));
         emit({
           phase: "scanning",
           status: "done",
@@ -223,7 +225,7 @@ async function runPhases(
     emit({ phase: "keywords", status: "skipped", detail: "Keyword research is not configured on this install." });
   } else {
     try {
-      const analysis = await analyseDomain({
+      const analysis = await withStage("discovery", () => analyseDomain({
         domain,
         supabase,
         workspaceId: workspace.id,
@@ -237,7 +239,7 @@ async function runPhases(
         // rest. Every page here is one request against a host that may be
         // counting them (packhub.io bans after ten in forty seconds).
         maxPages: ONBOARDING_CRAWL_PAGES,
-      });
+      }));
       keywordsFound = analysis.keywordsFound;
       screened = analysis.screened;
 
@@ -466,7 +468,10 @@ async function runPhases(
       emit({ phase: "planning", status: "failed", detail: planningDetail });
     }
   }
-  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail });
+  // What the first look has spent so far, by stage, on the same event: the
+  // draft is still to come, and its reserve is on the budget row.
+  const spend = readSpend ? await readSpend() : null;
+  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail, spend });
 
   emit({ phase: "drafting", status: "active" });
   // The status and detail the drafting phase settled on. The fan-out note
@@ -539,8 +544,9 @@ async function runPhases(
         // each draft buys its own lookup exactly as before; a seed the task
         // answers nothing for gets an empty list, which is an answer and is
         // not re-bought.
-        relatedByTerm = next ? await fetchWeeksRelatedKeywords(workspace, next.term, plan) : new Map();
+        relatedByTerm = next ? await withStage("related_keywords", () => fetchWeeksRelatedKeywords(workspace, next.term, plan)) : new Map();
 
+        const budgetShort = next && firstDraft === "inline" ? await draftBudgetShort(currentSpendScope()?.budget ?? null) : null;
         if (!next) {
           settle("skipped", "No keyword clear enough to write to yet.");
         } else if (firstDraft === "dispatch") {
@@ -553,8 +559,11 @@ async function runPhases(
             relatedKeywords: relatedByTerm.get(next.term),
           };
           settle("active", `Writing "${next.term}" now. It lands in your review queue when it is done.`);
+        } else if (budgetShort !== null) {
+          // The same check the draft route makes (lib/billing/run-budget.ts).
+          settle("skipped", budgetShort);
         } else {
-          const result = await generateArticle({
+          const result = await withStage("draft", () => generateArticle({
             supabase,
             workspaceId: workspace.id,
             keyword: next.term,
@@ -575,7 +584,7 @@ async function runPhases(
                   `Read ${research.competitors.length} ranking page${research.competitors.length === 1 ? "" : "s"}` +
                   ` and ${research.peopleAlsoAsk.length} question${research.peopleAlsoAsk.length === 1 ? "" : "s"} people ask. Writing now.`,
               }),
-          });
+          }));
           const entry = plan.find((p) => p.term === next.term);
           if (entry) {
             const { data: row } = await supabase
@@ -598,7 +607,10 @@ async function runPhases(
       }
     }
   } catch (err) {
-    settle("failed", message(err));
+    // A claim the budget refused part-way through the draft: skipped, as
+    // the draft route says it, not a failed run.
+    if (isBudgetRefusal(err)) settle("skipped", `${message(err)} A person picks the first article up.`);
+    else settle("failed", message(err));
   }
 
   // The rest of the week waits for a person.

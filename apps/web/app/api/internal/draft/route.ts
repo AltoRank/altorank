@@ -43,6 +43,8 @@ import { stampRun } from "@/lib/onboarding/run-store";
 import { announceDraftBatch } from "@/lib/email/draft-batch";
 import { recordEntryFailure } from "@/lib/plan/draft-claim";
 import { continueFrom } from "@/lib/plan/resume-week";
+import { draftBudgetShort, loadRunBudget } from "@/lib/billing/run-budget";
+import { isBudgetRefusal, withSpendScope } from "@/lib/billing/spend-scope";
 import type { OnboardingEvent } from "@/lib/onboarding/events";
 import type { RelatedKeyword } from "@/lib/seo/brief-data";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -157,8 +159,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: "skipped", reason: held ? "trial-hold" : cancelled ? "trial-cancelled" : "quota" }, { status: 200 });
   }
 
+  // An onboarding run's first draft is paid from the run's budget, which the
+  // worker opened (lib/billing/run-budget.ts): the draft stage's reserve,
+  // plus whatever the research left. A budget that cannot cover a draft
+  // skips it before anything is bought; a claim refused part-way stops it
+  // the same way. Skipped, not failed: the plan stands, and the run says why.
+  const budget = runId ? await loadRunBudget(supabase, runId) : null;
+  const short = await draftBudgetShort(budget);
+  if (short) {
+    await stamp({ phase: "drafting", status: "skipped", detail: short }, { finish: true });
+    return NextResponse.json({ status: "skipped", reason: "budget" }, { status: 200 });
+  }
+
   try {
-    const result = await generateArticle({
+    const result = await withSpendScope({ workspaceId, runId: runId ?? null, budget, stage: budget ? "draft" : null }, () => generateArticle({
       supabase,
       workspaceId,
       keyword,
@@ -180,7 +194,7 @@ export async function POST(request: NextRequest) {
                 ` and ${research.peopleAlsoAsk.length} question${research.peopleAlsoAsk.length === 1 ? "" : "s"} people ask. Writing now.`,
             })
         : undefined,
-    });
+    }));
     if (entry) await fulfilPlannedEntry(supabase, entry.id as string, result.articleId);
     await stamp(
       {
@@ -211,6 +225,10 @@ export async function POST(request: NextRequest) {
     );
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
+    if (isBudgetRefusal(err)) {
+      await stamp({ phase: "drafting", status: "skipped", detail: `${detail} A person picks the first article up.` }, { finish: true });
+      return NextResponse.json({ status: "skipped", reason: "budget" }, { status: 200 });
+    }
     await stamp({ phase: "drafting", status: "failed", detail }, { finish: true });
     // On the calendar, in words, and handed back: the next scheduled run
     // takes an entry whose draft failed whatever its date.

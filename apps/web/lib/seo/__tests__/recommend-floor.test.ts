@@ -84,7 +84,7 @@ beforeEach(() => {
 async function recommend(rows: Row[], options: { firstLook?: boolean; business?: Row; location?: number } = {}) {
   const seen: TopicFunnel[] = [];
   const recs = await recommendKeywords(client(rows, options), "ws", {
-    qualify: true, limit: 1000, onFunnel: (f) => seen.push(f), ...(options.firstLook === false ? {} : { firstLook: { since: now() } }),
+    qualify: true, limit: 1000, onFunnel: (f) => seen.push(f), ...(options.firstLook === false ? {} : { firstLook: {} }),
   });
   return { recs, funnel: seen[0] };
 }
