@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
-import { setSpendReporter } from "@/lib/seo/client";
-import { recordSpend } from "@/lib/billing/spend";
+import { withSpendScope } from "@/lib/billing/spend-scope";
 import { createServiceClient } from "@/lib/supabase/server";
 import { collectRankingTasks, positionFor } from "@/lib/seo/serp";
 import { entitledToScheduledWork, getQuota } from "@/lib/billing/quota";
@@ -22,19 +21,18 @@ import { observedCron } from "@/lib/observability/cron";
  */
 async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
-    setSpendReporter(null);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const supabase = createServiceClient();
-  setSpendReporter(({ operation, costUsd }) => {
-    void recordSpend(supabase, { provider: "dataforseo", operation, costUsd });
-  });
 
   let collected;
   let skippedWorkspaces = 0;
   try {
-    collected = await collectRankingTasks({
+    // The collection's provider rows go through a spend scope
+    // (lib/billing/spend-scope.ts), written with this route's client; the
+    // process-global reporter it used to arm billed whatever else ran.
+    collected = await withSpendScope({ db: supabase }, () => collectRankingTasks({
       // cron/serp already refuses to post tasks for an account with no plan,
       // so in the ordinary case this filter drops nothing. It exists for the
       // window in between: a subscription that lapses, is cancelled or is
@@ -58,9 +56,8 @@ async function run(request: Request) {
         skippedWorkspaces = workspaceIds.length - keep.size;
         return keep;
       },
-    });
+    }));
   } catch (err) {
-    setSpendReporter(null);
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "collect failed" },
       { status: 500 },
@@ -101,7 +98,6 @@ async function run(request: Request) {
     insertError = error?.message ?? null;
   }
 
-  setSpendReporter(null);
   return NextResponse.json({
     success: !insertError,
     collected: collected.length,
