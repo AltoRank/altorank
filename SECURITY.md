@@ -9,8 +9,8 @@ Include what you need to make the problem reproducible: affected version or
 commit, the steps, and what an attacker gets out of it. If you have a proof of
 concept, send it privately rather than publishing it.
 
-You will get an acknowledgement. AltoRank is pre-launch and maintained by a very
-small team, so expect a human reply in days rather than hours, and no bounty
+You will get an acknowledgement. AltoRank is maintained by a very small team,
+so expect a human reply in days rather than hours, and no bounty
 programme.
 
 ## Scope

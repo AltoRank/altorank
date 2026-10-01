@@ -194,7 +194,7 @@ nowhere else.
 | `/api/cron/exchange` | `0 5 * * *` | backlink exchange |
 | `/api/cron/reports` | `0 6 1 * *` | monthly PDF reports |
 | `/api/cron/generate` | `0 7 * * *` | autonomous drafts (bounded, see above) |
-| `/api/cron/geo` | `0 8 * * 1` | AI-visibility measurement, weekly |
+| `/api/cron/geo` | `0 8 * * 1` | AI-visibility measurement, weekly; measures only workspaces with `geo_tracking` on and prompts in `geo_prompts`, which nothing in the app sets yet |
 | `/api/cron/publish` | `0 9 * * *` | scheduled publishing |
 
 **The Vercel account is on Hobby.** Hobby's documented rule is one run per day
