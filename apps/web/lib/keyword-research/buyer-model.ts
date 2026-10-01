@@ -10,7 +10,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { acceptsThinkingDisabled, anthropicModel, DECISION_CALL, refusesTemperature, replyText } from "@/lib/ai/models";
-import { anthropicCost, recordSpend } from "@/lib/billing/spend";
+import { anthropicCost, anthropicEstimate, recordSpend } from "@/lib/billing/spend";
+import { claimSpend, currentSpendScope, isBudgetRefusal } from "@/lib/billing/spend-scope";
+import { recordSpendByDefault } from "@/lib/billing/default-spend";
 
 /** Where to write the spend row. Optional: scripts and tests have none. */
 export interface SpendSink {
@@ -74,6 +76,20 @@ export async function askStructured(
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
   const model = anthropicModel(options.tier ?? "structured");
+  // A first look claims the call's most before making it
+  // (lib/billing/spend-scope.ts). A refusal is no decision, like any other
+  // missing answer, and the caller's watch on the scope sees it was refused.
+  let claim: Awaited<ReturnType<typeof claimSpend>>;
+  try {
+    claim = await claimSpend(operation, anthropicEstimate(model, prompt.length + JSON.stringify(options.schema ?? "").length, options.maxTokens));
+  } catch (err) {
+    if (isBudgetRefusal(err)) {
+      console.warn(`[${operation}] not asked: ${err.message}`);
+      return null;
+    }
+    throw err;
+  }
+  let cost: number | null = 0;
   try {
     const client = new Anthropic({ apiKey });
     const response = await client.messages.create({
@@ -82,18 +98,14 @@ export async function askStructured(
       messages: [{ role: "user", content: prompt }],
       ...samplingFor(model, options.tier, options.schema),
     } as Anthropic.MessageCreateParamsNonStreaming);
-    if (options.spend) {
-      const inputTokens = response.usage?.input_tokens ?? 0;
-      const outputTokens = response.usage?.output_tokens ?? 0;
-      await recordSpend(options.spend.supabase, {
-        provider: "anthropic",
-        operation,
-        costUsd: anthropicCost(model, inputTokens, outputTokens),
-        inputTokens,
-        outputTokens,
-        workspaceId: options.spend.workspaceId,
-      });
-    }
+    const inputTokens = response.usage?.input_tokens ?? 0;
+    const outputTokens = response.usage?.output_tokens ?? 0;
+    cost = anthropicCost(model, inputTokens, outputTokens);
+    const entry = { provider: "anthropic" as const, operation, costUsd: cost, inputTokens, outputTokens };
+    // With no sink, a call inside a spend scope is still written (with the
+    // operator's client); outside one, scripts and tests write nothing.
+    if (options.spend) await recordSpend(options.spend.supabase, { ...entry, workspaceId: options.spend.workspaceId });
+    else if (currentSpendScope()) recordSpendByDefault(entry);
     return replyText(response.content);
   } catch (err) {
     // Still no decision, never an approval; but a model the account cannot
@@ -103,6 +115,8 @@ export async function askStructured(
     const status = (err as { status?: unknown } | null)?.status;
     console.warn(`[${operation}] ${model} call failed${typeof status === "number" ? ` (${status})` : ""}: ${err instanceof Error ? err.message.slice(0, 200) : String(err)}`);
     return null;
+  } finally {
+    await claim.settle(cost);
   }
 }
 
