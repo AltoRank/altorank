@@ -88,7 +88,7 @@ const emptyPool = vi.fn(async (..._a: unknown[]) => EMPTY_POOL);
 vi.mock("../empty-pool", () => ({ readEmptyPool: (...a: unknown[]) => emptyPool(...a) }));
 
 import { runOnboarding } from "../pipeline";
-import { currentSpendScope } from "@/lib/billing/spend-scope";
+import { BudgetRefusedError, currentSpendScope } from "@/lib/billing/spend-scope";
 import type { OnboardingEvent } from "../events";
 
 const WS = { id: "ws1", domain: "example.com", account_id: "ag1", language: "en" };
@@ -246,6 +246,16 @@ describe("runOnboarding", () => {
    * drift again. It named a reset date until 2026-09-07; the allowance is
    * one-time since migration 083, so it no longer does.
    */
+  it("skips the draft, and does not fail the run, when the budget refuses a claim part-way through it", async () => {
+    generate.mockRejectedValue(new BudgetRefusedError("claude-sonnet-5", "draft", 0.42));
+    const events = await collect();
+    const drafting = events.find((e) => e.phase === "drafting" && "status" in e && e.status !== "active");
+    expect(drafting).toMatchObject({ status: "skipped" });
+    expect((drafting as { detail: string }).detail).toContain("A person picks the first article up.");
+    expect(events.some((e) => "status" in e && e.status === "failed")).toBe(false);
+    expect(events.at(-1)).toEqual({ phase: "ready" });
+  });
+
   it("skips the draft, with the reason, when the free allowance is used", async () => {
     quota.mockResolvedValue({ limit: 7, used: 7, remaining: 0, reason: "no-plan" });
     const events = await collect();
