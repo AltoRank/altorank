@@ -62,8 +62,12 @@ const WRITER_OUTPUT_USD_PER_TOKEN = 10 / 1_000_000;
 export const FIRST_DRAFT_MIN_USD = round2(DRAFT_RESEARCH_USD + WRITER_PROMPT_USD + WRITER_MIN_OUTPUT_TOKENS * WRITER_OUTPUT_USD_PER_TOKEN);
 /** Held for the first draft: what it needs to be started, and no more. */
 export const FIRST_LOOK_DRAFT_RESERVE_USD = FIRST_DRAFT_MIN_USD;
-/** Held for the founder gate's one outline swap before the trial (not built yet). */
-export const FIRST_LOOK_SWAP_RESERVE_USD = 0.05;
+/**
+ * Held for the founder gate's one outline swap before the trial. Zero until
+ * the swap ships: nothing claims it yet, so holding money back would only
+ * starve research. Set it (about 0.05) in the same change that builds the swap.
+ */
+export const FIRST_LOOK_SWAP_RESERVE_USD = 0;
 
 /**
  * The ceiling a first look opens with. `FIRST_LOOK_BUDGET_USD` lowers it for
