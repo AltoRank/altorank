@@ -1249,10 +1249,13 @@ nothing.
 
 **Apply BEFORE its code is deployed.** The new code opens a budget row at
 the start of every run and writes `stage` on first-look spend rows. On a
-database without the file the budget cannot be opened, so the run goes
-ahead unbounded (logged as `[spend] first-look budget unavailable`), and a
-spend row whose insert names `stage` is retried without it, so no row is
-lost. Old code never reads the table or the column, so applying early is
+database without the file the row cannot be written, so the worker bounds
+the run in its own memory instead and the draft route holds the draft to its
+reserve (logged as `[spend] ... bounded in memory` / `no budget row`): never
+unbounded, but the split is then only in the log. A spend row whose insert
+names `stage` is retried without it, so no row is lost. **Merging deploys**
+(Vercel builds `main`), so run the post-flight below before the merge, not
+after. Old code never reads the table or the column, so applying early is
 harmless. Re-running is a no-op (`if not exists`, `create or replace`).
 
 Post-flight (expect `t`, `t`, `f`):

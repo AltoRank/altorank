@@ -41,7 +41,7 @@ import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { spendClient } from "@/lib/billing/default-spend";
 import { currentSpendScope, isBudgetRefusal, withSpendScope, withStage } from "@/lib/billing/spend-scope";
-import { draftBudgetShort, openRunBudget, readRunBudget, type RunBudgetState } from "@/lib/billing/run-budget";
+import { draftBudgetShort, openFirstLookBudget, type RunBudgetState } from "@/lib/billing/run-budget";
 import type { EmptyPool, OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { readEmptyPool } from "./empty-pool";
 import { modelAvailable } from "@/lib/keyword-research/buyer-model";
@@ -123,11 +123,13 @@ export async function runOnboarding(
   // nothing, and the phase that asked carries on with what it has. Spend and
   // the budget are written with the service role: provider_spend refuses a
   // signed-in client's inserts, and run_budgets is server only.
+  // A run whose budget row cannot be written is bounded in this process
+  // instead (openFirstLookBudget), never left unbounded.
   const runId = options.runId ?? null;
   const db = spendClient() ?? supabase;
-  const budget = runId ? await openRunBudget(db, { runId, workspaceId: workspace.id }).catch(() => null) : null;
-  return withSpendScope({ workspaceId: workspace.id, runId, budget }, () =>
-    runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", runId, budget ? () => readRunBudget(db, budget.runId).catch(() => null) : null),
+  const opened = runId ? await openFirstLookBudget(db, { runId, workspaceId: workspace.id }) : null;
+  return withSpendScope({ workspaceId: workspace.id, runId, budget: opened?.budget ?? null }, () =>
+    runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", runId, opened?.read ?? null),
   );
 }
 
@@ -468,11 +470,6 @@ async function runPhases(
       emit({ phase: "planning", status: "failed", detail: planningDetail });
     }
   }
-  // What the first look has spent so far, by stage, on the same event: the
-  // draft is still to come, and its reserve is on the budget row.
-  const spend = readSpend ? await readSpend() : null;
-  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail, spend });
-
   emit({ phase: "drafting", status: "active" });
   // The status and detail the drafting phase settled on. The fan-out note
   // below is emitted on the same phase, and emitting it as `active` reset a
@@ -544,11 +541,26 @@ async function runPhases(
         // each draft buys its own lookup exactly as before; a seed the task
         // answers nothing for gets an empty list, which is an answer and is
         // not re-bought.
-        relatedByTerm = next ? await withStage("related_keywords", () => fetchWeeksRelatedKeywords(workspace, next.term, plan)) : new Map();
+        //
+        // In a first look the lookup is the draft's research and is paid from
+        // the draft's reserve, once: bought here, the draft does not buy it
+        // again. And it is not bought at all for a draft the budget cannot
+        // write: the same pre-check the draft route makes, made first.
+        const budget = currentSpendScope()?.budget ?? null;
+        const budgetShort = next ? await draftBudgetShort(budget) : null;
+        relatedByTerm = next && budgetShort === null
+          ? await withStage("draft", () => fetchWeeksRelatedKeywords(workspace, next.term, plan))
+          : new Map();
+        const writerShort = next && budgetShort === null && firstDraft === "inline"
+          ? await draftBudgetShort(budget, { lookupBought: relatedByTerm.has(next.term) })
+          : null;
 
-        const budgetShort = next && firstDraft === "inline" ? await draftBudgetShort(currentSpendScope()?.budget ?? null) : null;
         if (!next) {
           settle("skipped", "No keyword clear enough to write to yet.");
+        } else if (budgetShort !== null) {
+          // Before the lookup, and in both modes: nothing is bought, and
+          // nothing is dispatched, for a draft that cannot be written.
+          settle("skipped", budgetShort);
         } else if (firstDraft === "dispatch") {
           // Chosen and gated here, written in its own invocation. The phase
           // stays `active` with the keyword named; the draft route settles it.
@@ -559,9 +571,10 @@ async function runPhases(
             relatedKeywords: relatedByTerm.get(next.term),
           };
           settle("active", `Writing "${next.term}" now. It lands in your review queue when it is done.`);
-        } else if (budgetShort !== null) {
-          // The same check the draft route makes (lib/billing/run-budget.ts).
-          settle("skipped", budgetShort);
+        } else if (writerShort !== null) {
+          // The lookup is bought; the writer must still fit (the draft
+          // route makes the same check).
+          settle("skipped", writerShort);
         } else {
           const result = await withStage("draft", () => generateArticle({
             supabase,
@@ -612,6 +625,12 @@ async function runPhases(
     if (isBudgetRefusal(err)) settle("skipped", `${message(err)} A person picks the first article up.`);
     else settle("failed", message(err));
   }
+
+  // What the first look has spent, by stage, on the same event - recorded
+  // after the drafting phase, whose own qualification buys reads too. In
+  // dispatch mode the draft is still to come and its reserve is on the row.
+  const spend = readSpend ? await readSpend() : null;
+  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail, spend, draftIncluded: firstDraft === "inline" });
 
   // The rest of the week waits for a person.
   //

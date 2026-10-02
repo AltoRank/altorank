@@ -89,6 +89,7 @@ vi.mock("../empty-pool", () => ({ readEmptyPool: (...a: unknown[]) => emptyPool(
 
 import { runOnboarding } from "../pipeline";
 import { BudgetRefusedError, currentSpendScope } from "@/lib/billing/spend-scope";
+import { firstLookReserves } from "@/lib/billing/run-budget";
 import type { OnboardingEvent } from "../events";
 
 const WS = { id: "ws1", domain: "example.com", account_id: "ag1", language: "en" };
@@ -253,6 +254,21 @@ describe("runOnboarding", () => {
     expect(drafting).toMatchObject({ status: "skipped" });
     expect((drafting as { detail: string }).detail).toContain("A person picks the first article up.");
     expect(events.some((e) => "status" in e && e.status === "failed")).toBe(false);
+    expect(events.at(-1)).toEqual({ phase: "ready" });
+  });
+
+  it("buys no related keywords and dispatches no draft that the run's budget cannot write", async () => {
+    // A run whose research used its room: the draft stage has $0.10 left.
+    const base = richClient(0) as unknown as { from: (t: string) => unknown };
+    const budgetTable = { upsert: async () => ({ error: null }), select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+    const db = { from: (t: string) => (t === "run_budgets" ? budgetTable : base.from(t)), rpc: async () => ({ data: 0.1, error: null }) } as never;
+    plan.mockResolvedValue([{ term: NEXT.term }]);
+    const events: OnboardingEvent[] = [];
+    const result = await runOnboarding(db, WS, (e) => events.push(e), { firstDraft: "dispatch", runId: "run-7" });
+    expect(relatedBatch).not.toHaveBeenCalled();
+    expect(result.pendingDraft).toBeNull();
+    expect(events.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
+      .toMatchObject({ detail: expect.stringContaining("budget has $0.10 left") });
     expect(events.at(-1)).toEqual({ phase: "ready" });
   });
 
@@ -574,12 +590,13 @@ describe("runOnboarding: the topic funnel", () => {
     };
     const db = { from: (t: string) => (t === "run_budgets" ? budgetTable : base.from(t)), rpc: async () => ({ data: 0.01, error: null }) } as never;
     await runOnboarding(db, WS, () => undefined, { firstDraft: "dispatch", runId: "run-9" });
-    expect(opened).toEqual([{ run_id: "run-9", workspace_id: "ws1", ceiling_usd: 1, reserves: { draft: 0.3, outline_swap: 0.05 } }]);
+    expect(opened).toEqual([{ run_id: "run-9", workspace_id: "ws1", ceiling_usd: 1, reserves: firstLookReserves() }]);
     expect(recordFunnel).toHaveBeenCalledOnce();
     expect(recordFunnel).toHaveBeenCalledWith({
       runId: "run-9", workspaceId: "ws1", accountId: "ag1", funnel: FUNNEL,
       planningDetail: "No keyword clear enough to plan yet.",
       spend: { ceilingUsd: 1, committedUsd: 0.42, refused: 2, stages: { discovery: { spent: 0.3, calls: 5, committed: 0.3, refused: 0 }, judge: { spent: 0.12, calls: 4, refused: 2, committed: 0.12 } } },
+      draftIncluded: false,
     });
   });
 

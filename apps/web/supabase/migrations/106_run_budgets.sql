@@ -3,8 +3,9 @@
 -- Apply BEFORE its code is deployed: see RUNBOOK.md. The new code opens a
 -- budget row for every onboarding run and asks `run_budget_claim` before
 -- every paid call of the first look; on a database without this file the
--- budget cannot be opened, so the run goes ahead unbounded (and says so in
--- the log), and spend rows lose their stage. Old code never reads the table
+-- row cannot be written, so the run is bounded in the worker's memory
+-- instead (and says so in the log), the draft is held to its reserve, and
+-- spend rows lose their stage. Old code never reads the table
 -- or the column, so applying early changes nothing.
 --
 -- The first look had a $1 ceiling (founder decision 2026-09-29) that was
@@ -27,8 +28,9 @@
 -- it first, in one locked update:
 --
 -- `ceiling_usd`    the run's total, the draft included.
--- `reserves`       {stage: usd} held back for one stage: `draft` ($0.30) and
---                  `outline_swap` ($0.05). Any other stage sees the ceiling
+-- `reserves`       {stage: usd} held back for one stage: `draft` ($0.43: the writer's
+--                  floor and the draft's research, sized in
+--                  lib/billing/run-budget.ts) and `outline_swap` ($0.05). Any other stage sees the ceiling
 --                  less what those stages have not yet used; the stage itself
 --                  may also use whatever the others left.
 -- `committed_usd`  open claims at their estimate plus settled claims at what
@@ -42,7 +44,8 @@
 --
 -- And `provider_spend.stage`: which stage of a first look bought the row
 -- (voice, profile, discovery, buyer_fit, results_pages, judge,
--- related_keywords, questions, draft; `other` when untagged). Null outside
+-- questions, draft - the draft's related-keyword lookup included; `other`
+-- when untagged). Null outside
 -- a first look. A first look's rows, the draft's included, carry the
 -- onboarding run's id in `run_id`.
 --
@@ -52,7 +55,7 @@
 alter table public.provider_spend add column if not exists stage text;
 
 comment on column public.provider_spend.stage is
-  'Which stage of a first look bought this call (voice, profile, discovery, buyer_fit, results_pages, judge, related_keywords, questions, draft; other when untagged). Null outside a first look (migration 106).';
+  'Which stage of a first look bought this call (voice, profile, discovery, buyer_fit, results_pages, judge, questions, draft; other when untagged). Null outside a first look (migration 106).';
 comment on column public.provider_spend.run_id is
   'Groups the calls of one piece of work: the onboarding run for every row of a first look, the draft included; the generation job otherwise.';
 

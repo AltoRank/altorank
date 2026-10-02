@@ -6,6 +6,7 @@ import { anthropicModel } from "./models";
 import { GenerationTruncatedError } from "./errors";
 import { anthropicCost, anthropicEstimate, anthropicOutputRate } from "@/lib/billing/spend";
 import { claimSpend } from "@/lib/billing/spend-scope";
+import { WRITER_MIN_OUTPUT_TOKENS } from "@/lib/billing/run-budget";
 
 export { GenerationTruncatedError };
 
@@ -19,12 +20,11 @@ export { GenerationTruncatedError };
  */
 export const WRITER_MAX_TOKENS = 64_000;
 /**
- * The least a budgeted writer is sent with. Below this a draft is likelier to
- * be cut off mid-article than finished - one Sonnet 5 run thought for ~19,000
- * tokens before writing - so the claim is refused instead and the first look
- * keeps its money (lib/billing/spend-scope.ts).
+ * The least a budgeted writer is sent with: a first look's draft reserve is
+ * sized to it (lib/billing/run-budget.ts, where the reasoning is). Below it
+ * the claim is refused and the first look keeps its money.
  */
-export const WRITER_MIN_OUTPUT_TOKENS = 16_000;
+export { WRITER_MIN_OUTPUT_TOKENS };
 
 export class ClaudeProvider implements AIProvider {
   private client: Anthropic;

@@ -29,18 +29,21 @@ export interface PlanFunnelEventInput {
   /** The planning phase's own sentence, for a run with no funnel to show. */
   planningDetail?: string | null;
   /**
-   * The run's budget when the plan was made (lib/billing/run-budget.ts):
-   * what each stage has spent so far, and how many claims were refused. The
-   * draft comes after this event; its reserve is still held on the row.
+   * The run's budget after the drafting phase (lib/billing/run-budget.ts):
+   * what each stage has spent, and how many claims were refused. A draft
+   * written in its own invocation comes after this event; its reserve is
+   * still held on the row.
    */
   spend?: RunBudgetState | null;
+  /** The first draft was written in this invocation, so `spend` includes it. */
+  draftIncluded?: boolean;
 }
 
 /** The spend, said at the end of the message line. Empty without a budget. */
-function spendSentence(spend: ReturnType<typeof spendContext>): string {
+function spendSentence(spend: ReturnType<typeof spendContext>, draftIncluded: boolean): string {
   if (!spend) return "";
   const refused = Number(spend.refused) || 0;
-  return `. Spent $${Number(spend.spentUsd).toFixed(4)} of $${Number(spend.ceilingUsd).toFixed(2)} before the draft${refused ? `; ${refused} paid read${refused === 1 ? "" : "s"} refused by the budget, left not judged` : ""}`;
+  return `. Spent $${Number(spend.spentUsd).toFixed(4)} of $${Number(spend.ceilingUsd).toFixed(2)} ${draftIncluded ? "with the draft" : "before the draft"}${refused ? `; ${refused} paid read${refused === 1 ? "" : "s"} refused by the budget, left not judged` : ""}`;
 }
 
 /** The budget as the event carries it: USD per stage, the total, the refusals. */
@@ -84,7 +87,7 @@ export function planFunnelEvent(input: PlanFunnelEventInput): SystemEvent {
   return {
     ...base,
     level: (f.planned ?? f.qualified) > 0 && !discrepancy ? "info" : "warn",
-    message: `Topic funnel: ${describeFunnel(f)}${discrepancy ? ` (counts do not add up: ${discrepancy})` : ""}${spendSentence(spend)}`,
+    message: `Topic funnel: ${describeFunnel(f)}${discrepancy ? ` (counts do not add up: ${discrepancy})` : ""}${spendSentence(spend, input.draftIncluded === true)}`,
     context: {
       runId: input.runId ?? null,
       found: f.found,

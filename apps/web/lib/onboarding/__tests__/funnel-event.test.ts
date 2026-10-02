@@ -66,6 +66,11 @@ describe("the first look's spend on the funnel event", () => {
     },
   };
 
+  it("says the draft is included when it was written in the same invocation", () => {
+    const e = planFunnelEvent({ runId: "r", workspaceId: WS, funnel: { found: 4, removed: { buyer_fit: 2 }, qualified: 2, planned: 1 }, spend, draftIncluded: true });
+    expect(e.message).toContain("Spent $0.5100 of $1.00 with the draft");
+  });
+
   it("carries spend per stage, the total and the refusals, and says them on the message line", () => {
     const e = planFunnelEvent({ runId: "r", workspaceId: WS, funnel: { found: 4, removed: { buyer_fit: 2 }, qualified: 2, planned: 1 }, spend });
     expect(e.message).toContain("Spent $0.5100 of $1.00 before the draft; 2 paid reads refused by the budget, left not judged");

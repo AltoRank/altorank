@@ -64,7 +64,11 @@ export async function generateQualityQuestionsBatch(
       // look's budget claimed before it is sent, as the `questions` stage.
       const response = await withStage("questions", () => createMetered(client, {
         model: anthropicModel("structured"),
-        max_tokens: 4000,
+        // Sized to the batch: four short questions a term is under 200
+        // tokens in any language the product writes. The claim is this
+        // ceiling, and a flat 4,000 (about $0.02) was refused on a first look
+        // whose research had used its room, for a call that costs $0.001.
+        max_tokens: Math.min(4000, 300 + 200 * batch.length),
         messages: [
           {
             role: "user",

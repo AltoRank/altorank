@@ -27,7 +27,7 @@ vi.mock("@/lib/billing/spend-gate", async (original) => ({
 import { BudgetRefusedError, claimSpend, currentSpendScope, withSpendScope, withStage, type RunBudget, type SpendStage } from "../spend-scope";
 import { post } from "@/lib/seo/client";
 import { askStructured } from "@/lib/keyword-research/buyer-model";
-import { qualifyOpportunities } from "@/lib/keyword-research/opportunity";
+import { firstLookTermUsd, qualifyOpportunities } from "@/lib/keyword-research/opportunity";
 import { generateQualityQuestionsBatch } from "@/lib/keywords/questions-generate";
 
 /** Migration 106's rules, in memory: reserves held for their own stage, claims never past the ceiling. */
@@ -229,29 +229,47 @@ describe("a first look that runs out of budget", () => {
   });
 
   it("stops buying at the ceiling, leaves the rest not judged with nothing saved, and never commits past it", async () => {
-    // Measured on an unbounded look: what the buyer test and each read claim.
+    // Measured on an unbounded look: what the buyer test claims.
     const probe = memoryBudget("probe", 100);
     await qualify(probe, memoryDb().db);
     const want = (stage: SpendStage) => probe.claims.find((c) => c.stage === stage)!.want;
-    // The buyer test, every results page, and room for one judge read and a half.
-    const ceiling = want("buyer_fit") + 3 * want("results_pages") + 1.5 * want("judge");
+    // The buyer test, and room for one term's page and both its reads and a half.
+    const ceiling = want("buyer_fit") + 1.5 * firstLookTermUsd(true);
 
     const { db, spend, keywordWrites } = memoryDb();
     const run = memoryBudget("run-2", ceiling, {}, { keepEstimates: true });
     const out = await qualify(run, db);
     const judged = candidates.filter((c) => out.has(c.id));
-    // One term's judge read fits; its second read and the other two terms'
-    // reads do not. The one that was read keeps its approval: a refused
-    // second read is no answer, not a no.
+    // One term is read twice and approved; the other two are cut before
+    // their results pages are bought, so nothing is paid for a page no judge
+    // reads.
     expect(judged).toHaveLength(1);
     expect(out.get(judged[0].id)?.status).toBe("qualified");
+    expect(run.claims.filter((c) => c.stage === "results_pages")).toHaveLength(1);
+    expect(run.claims.filter((c) => c.stage === "judge" && c.granted !== null)).toHaveLength(2);
     // Not judged is not refused: no verdict written for those terms at all.
     expect(keywordWrites).toHaveLength(judged.length);
-    expect(run.claims.some((c) => c.granted === null)).toBe(true);
     expect(run.peak()).toBeLessThanOrEqual(ceiling + 1e-9);
     await new Promise((r) => setTimeout(r, 5));
     const billed = spend.reduce((sum, r) => sum + (Number(r.cost_usd) || 0), 0);
     expect(billed).toBeLessThanOrEqual(ceiling);
+  });
+
+  it("leaves a term whose second read is refused not judged: one approval is not a plan", async () => {
+    // Room for the buyer test and one term's page and first read, and the
+    // pre-check unable to see it (no room read): the claims decide.
+    const probe = memoryBudget("probe", 100);
+    await qualify(probe, memoryDb().db);
+    const want = (stage: SpendStage) => probe.claims.find((c) => c.stage === stage)!.want;
+    const ceiling = want("buyer_fit") + want("results_pages") + 1.5 * want("judge");
+    const { db, keywordWrites } = memoryDb();
+    const run = memoryBudget("run-4", ceiling, {}, { keepEstimates: true });
+    run.budget.room = async () => null;
+    const out = await qualify(run, db);
+    expect(out.size).toBe(0);
+    expect(keywordWrites).toEqual([]);
+    expect(run.claims.some((c) => c.stage === "judge" && c.granted === null)).toBe(true);
+    expect(run.peak()).toBeLessThanOrEqual(ceiling + 1e-9);
   });
 
   it("buys nothing at all when even the buyer test is refused", async () => {

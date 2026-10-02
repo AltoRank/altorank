@@ -13,7 +13,8 @@
 // $0.00012 a returned row; Google Ads keyword data on the live queue $0.09 a
 // task; a live organic results page $0.002 per ten results (doubled here: the
 // founder's spec prices a top-10 page at $0.004); the standard queue $0.0006;
-// backlinks $0.02 a call plus rows; a rendered instant page $0.0051.
+// backlinks $0.02 a call plus rows (the row rate from the 2026-10-01 bills);
+// a rendered instant page $0.0051.
 
 /** For an endpoint nobody listed here: dear enough that a first look notices. */
 export const UNLISTED_TASK_USD = 0.1;
@@ -41,7 +42,10 @@ function perTask(endpoint: string, task: Task): number {
   }
   if (endpoint.startsWith("/backlinks/")) {
     const targets = task.targets && typeof task.targets === "object" ? Object.keys(task.targets as object).length : 0;
-    return 0.02 + 0.00003 * Math.max(rows(task, 100), targets);
+    // Billed $0.024036 for a summary and $0.031056 for 200 backlinks on the
+    // proof runs of 2026-10-01: about $0.00005 a row over the $0.02, so
+    // $0.00006 keeps the estimate above the bill.
+    return 0.02 + 0.00006 * Math.max(rows(task, 100), targets);
   }
   if (endpoint.startsWith("/on_page/instant_pages")) return 0.006;
   return UNLISTED_TASK_USD;

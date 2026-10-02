@@ -43,7 +43,7 @@ import { stampRun } from "@/lib/onboarding/run-store";
 import { announceDraftBatch } from "@/lib/email/draft-batch";
 import { recordEntryFailure } from "@/lib/plan/draft-claim";
 import { continueFrom } from "@/lib/plan/resume-week";
-import { draftBudgetShort, loadRunBudget } from "@/lib/billing/run-budget";
+import { draftBudgetShort, loadDraftBudget } from "@/lib/billing/run-budget";
 import { isBudgetRefusal, withSpendScope } from "@/lib/billing/spend-scope";
 import type { OnboardingEvent } from "@/lib/onboarding/events";
 import type { RelatedKeyword } from "@/lib/seo/brief-data";
@@ -164,8 +164,11 @@ export async function POST(request: NextRequest) {
   // plus whatever the research left. A budget that cannot cover a draft
   // skips it before anything is bought; a claim refused part-way stops it
   // the same way. Skipped, not failed: the plan stands, and the run says why.
-  const budget = runId ? await loadRunBudget(supabase, runId) : null;
-  const short = await draftBudgetShort(budget);
+  // A run with no row to read is held to the draft's reserve, never left
+  // unbounded. The related keywords the worker bought come in the body; the
+  // draft buys them only when they do not.
+  const budget = runId ? await loadDraftBudget(supabase, runId) : null;
+  const short = await draftBudgetShort(budget, { lookupBought: Array.isArray(body.relatedKeywords) });
   if (short) {
     await stamp({ phase: "drafting", status: "skipped", detail: short }, { finish: true });
     return NextResponse.json({ status: "skipped", reason: "budget" }, { status: 200 });

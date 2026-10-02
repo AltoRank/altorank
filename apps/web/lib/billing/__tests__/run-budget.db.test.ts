@@ -6,10 +6,10 @@
 // through PostgREST into the local database (migration 106), which is the
 // only thing that can show:
 //
-// - the reserves hold: research cannot claim the draft's $0.30 or the swap's
-//   $0.05, and the draft can use its own reserve plus what research left;
+// - the reserves hold: research cannot claim the draft's or the swap's
+//   reserve, and the draft can use its own reserve plus what research left;
 // - concurrent claims take turns on the row lock, so thirty claims racing for
-//   one run never commit more than the ceiling allows;
+//   one run never commit more than its room allows;
 // - a settle moves the run by (actual - estimate) and fills the stage split;
 // - a client token can neither read the table nor call the functions;
 // - a spend row written inside the scope carries the run id and the stage.
@@ -21,12 +21,16 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
 import { connectLocalStack } from "@/lib/__tests__/support/local-db";
-import { openRunBudget, readRunBudget, runBudget } from "../run-budget";
+import { FIRST_LOOK_DRAFT_RESERVE_USD, FIRST_LOOK_SWAP_RESERVE_USD, openRunBudget, readRunBudget, runBudget } from "../run-budget";
 import { recordSpend } from "../spend";
 import { withSpendScope } from "../spend-scope";
 
 const STACK = await connectLocalStack();
 const TAG = `b14-spend-${randomUUID().slice(0, 8)}`;
+const DRAFT = FIRST_LOOK_DRAFT_RESERVE_USD;
+const SWAP = FIRST_LOOK_SWAP_RESERVE_USD;
+/** What research and judging may claim on a $1 run: the ceiling less both reserves. */
+const RESEARCH = 1 - DRAFT - SWAP;
 
 describe.skipIf(!STACK)("run budgets on the local database", () => {
   let db: ReturnType<typeof createServiceClient>;
@@ -66,14 +70,14 @@ describe.skipIf(!STACK)("run budgets on the local database", () => {
   it("holds the draft's and the swap's reserves back from research, and lets the draft use what research left", async () => {
     const budget = (await openRunBudget(db, { runId: await run(), workspaceId }))!;
     expect(budget).not.toBeNull();
-    expect(await budget.room("discovery")).toBeCloseTo(0.65, 6);
-    expect(await budget.room("draft")).toBeCloseTo(0.95, 6);
-    expect(await budget.claim("discovery", 0.6, 0.6)).toBeCloseTo(0.6, 6);
-    // Research has 0.05 left; the draft still has its 0.30 and that 0.05.
+    expect(await budget.room("discovery")).toBeCloseTo(RESEARCH, 6);
+    expect(await budget.room("draft")).toBeCloseTo(1 - SWAP, 6);
+    expect(await budget.claim("discovery", RESEARCH - 0.05, RESEARCH - 0.05)).toBeCloseTo(RESEARCH - 0.05, 6);
+    // Research has 0.05 left; the draft still has its reserve and that 0.05.
     expect(await budget.claim("judge", 0.1, 0.1)).toBeNull();
     expect(await budget.claim("judge", 0.1, 0.01)).toBeCloseTo(0.05, 6);
-    expect(await budget.room("draft")).toBeCloseTo(0.3, 6);
-    expect(await budget.claim("draft", 0.64, 0.2)).toBeCloseTo(0.3, 6);
+    expect(await budget.room("draft")).toBeCloseTo(DRAFT, 6);
+    expect(await budget.claim("draft", 0.64, 0.2)).toBeCloseTo(DRAFT, 6);
     expect(await budget.claim("draft", 0.01, 0.01)).toBeNull();
   });
 
@@ -94,9 +98,9 @@ describe.skipIf(!STACK)("run budgets on the local database", () => {
   it("does not hand a retried run a second dollar", async () => {
     const runId = await run();
     const first = (await openRunBudget(db, { runId, workspaceId }))!;
-    await first.claim("discovery", 0.5, 0.5);
+    await first.claim("discovery", 0.4, 0.4);
     const again = (await openRunBudget(db, { runId, workspaceId }))!;
-    expect(await again.room("discovery")).toBeCloseTo(0.15, 6);
+    expect(await again.room("discovery")).toBeCloseTo(RESEARCH - 0.4, 6);
   });
 
   it("never commits past the ceiling, however many claims race", async () => {
@@ -105,12 +109,14 @@ describe.skipIf(!STACK)("run budgets on the local database", () => {
     await openRunBudget(db, { runId, workspaceId });
     const grants = await Promise.all(Array.from({ length: 30 }, () => budget.claim("judge", 0.05, 0.05)));
     const granted = grants.filter((g) => g !== null);
-    // 0.65 of room at 0.05 a claim: thirteen, and the other seventeen refused.
-    expect(granted).toHaveLength(13);
+    // The research room at 0.05 a claim, and the rest refused.
+    const fits = Math.floor(RESEARCH / 0.05 + 1e-9);
+    expect(fits).toBeLessThan(30);
+    expect(granted).toHaveLength(fits);
     const state = await readRunBudget(db, runId);
-    expect(state?.committedUsd).toBeCloseTo(0.65, 6);
-    expect(state?.refused).toBe(17);
-    expect(state?.stages.judge?.refused).toBe(17);
+    expect(state?.committedUsd).toBeCloseTo(fits * 0.05, 6);
+    expect(state?.refused).toBe(30 - fits);
+    expect(state?.stages.judge?.refused).toBe(30 - fits);
   });
 
   it("is server only: a signed-in client reads no budget and calls no claim", async () => {

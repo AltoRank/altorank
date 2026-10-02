@@ -13,7 +13,10 @@ import { getLocale } from "@/lib/seo/locales";
 import { canonicalPage, describeMatch, intentMatcher, type IntentBasis, type IntentMatch } from "./intent";
 import { readIntentLeaders, stageWords, type IntentLeader, type OnCalendar } from "./intent-leaders";
 import { canSpendOnSite, SpendRefusedError } from "@/lib/billing/spend-gate";
-import { isBudgetRefusal, watchRefusals, withStage } from "@/lib/billing/spend-scope";
+import { currentSpendScope, isBudgetRefusal, watchRefusals, withStage } from "@/lib/billing/spend-scope";
+import { anthropicEstimate } from "@/lib/billing/spend";
+import { anthropicModel } from "@/lib/ai/models";
+import { estimateDataForSEOUsd } from "@/lib/seo/dataforseo-cost";
 
 export { canonicalPage };
 
@@ -201,6 +204,24 @@ export interface QualifyOptions {
   firstLook?: FirstLook;
 }
 
+/**
+ * The prompt a judge read is estimated at before its results page is bought:
+ * the instructions, the business and ten results (about 9,000 characters
+ * measured on the proof runs of 2026-10-01), rounded up.
+ */
+const JUDGE_PROMPT_CHARS = 12_000;
+
+/**
+ * What judging one kept term may cost at most: its results page and one
+ * judge read, two in a first look. A budgeted batch is cut to what the room
+ * covers before any page is bought.
+ */
+export function firstLookTermUsd(twoReads: boolean): number {
+  const page = estimateDataForSEOUsd("/serp/google/organic/live/advanced", [{}]);
+  const read = anthropicEstimate(anthropicModel("decision"), JUDGE_PROMPT_CHARS, OPPORTUNITY_MAX_TOKENS);
+  return page + read * (twoReads ? 2 : 1);
+}
+
 /** Paid work is bounded and cached. A missing response remains pending. */
 export async function qualifyOpportunities(
   supabase: SupabaseClient,
@@ -290,9 +311,25 @@ export async function qualifyOpportunities(
     : { value: { verdicts: new Map<string, FitVerdict>() }, refused: false };
   const fit = asked.value;
   for (const [term, v] of saved) if (!fit.verdicts.has(term)) fit.verdicts.set(term, v);
+  // Under a budget, a batch is cut to what the room left can judge before
+  // anything is bought: a results page bought for a term whose judge read is
+  // then refused paid for nothing (two such trios in one proof run). The
+  // claims are still what decide; this only stops buying a page early.
+  const budget = firstLook ? currentSpendScope()?.budget ?? null : null;
+  const perTerm = budget ? firstLookTermUsd(Boolean(firstLook)) : 0;
   for (let offset = 0; offset < pending.length; offset += 3) {
     if (stopped) break;
-    await Promise.all(pending.slice(offset, offset + 3).map(async (c) => {
+    let batch = pending.slice(offset, offset + 3);
+    if (budget) {
+      const room = await budget.room("judge").catch(() => null);
+      const paid = batch.filter((c) => fit.verdicts.get(c.term.trim().toLowerCase())?.keep === true);
+      if (room !== null && room < paid.length * perTerm) {
+        const affordable = new Set(paid.slice(0, Math.max(0, Math.floor(room / perTerm))));
+        batch = batch.filter((c) => affordable.has(c) || fit.verdicts.get(c.term.trim().toLowerCase())?.keep !== true);
+        stopped = true;
+      }
+    }
+    await Promise.all(batch.map(async (c) => {
     const verdict = fit.verdicts.get(c.term.trim().toLowerCase());
     // No buyer decision because the budget refused the batch's read: not
     // judged, which is not the same as "the model returned none".
@@ -325,11 +362,12 @@ export async function qualifyOpportunities(
         // same results page read twice gave needs_page, then qualified
         // (2026-09-30), and the first article goes out under the customer's
         // name. A refusing second read wins, marked contested; a second read
-        // that returned nothing usable - the budget's refusal included -
-        // says nothing either way.
+        // that returned nothing usable says nothing either way. A second
+        // read the budget refused leaves the term not judged, as a refused
+        // first read does: one approval is not what a first look plans on.
         if (firstLook && input && (result.status as Opportunity["status"]) === "qualified") {
           const again = await watchRefusals(() => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend })));
-          if (again.refused) stopped = true;
+          if (again.refused) { stopped = true; return; }
           const second = again.value;
           if (second.status === "rejected") {
             const first = result.reason;

@@ -32,7 +32,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /**
  * The stages of a first look, as provider_spend.stage and the run budget's
  * per-stage split name them. `outline_swap` is reserved for the founder gate's
- * one topic swap; nothing claims it yet. `other` is a call made under a
+ * one topic swap; nothing claims it yet. The draft's related-keyword lookup
+ * is `draft`: it is bought from the draft's reserve, once (pipeline.ts).
+ * `other` is a call made under a
  * budget that no stage named: a gap in the tagging, visible as such.
  */
 export const SPEND_STAGES = [
@@ -42,7 +44,6 @@ export const SPEND_STAGES = [
   "buyer_fit",
   "results_pages",
   "judge",
-  "related_keywords",
   "questions",
   "draft",
   "outline_swap",
@@ -181,6 +182,11 @@ export async function claimSpend(operation: string, wantUsd: number, opts: { min
     settle: async (actualUsd) => {
       if (settled) return;
       settled = true;
+      // An estimate is meant to be at or above the bill; one that is not
+      // lets the run's total pass its ceiling by the gap, so it is said.
+      if (actualUsd !== null && actualUsd > grantedUsd + 1e-9) {
+        console.warn(`[spend] ${operation} cost $${actualUsd.toFixed(6)}, over its claim of $${grantedUsd.toFixed(6)}`);
+      }
       try {
         await budget.settle(stage, grantedUsd, actualUsd);
       } catch (err) {

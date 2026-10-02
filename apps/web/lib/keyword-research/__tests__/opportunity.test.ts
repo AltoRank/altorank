@@ -5,7 +5,7 @@ vi.mock("../buyer-fit", async (original) => ({ ...await original<object>(), judg
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: available }));
 vi.mock("@/lib/seo/brief-data", () => ({ fetchAdvancedSerp: fetchSerp }));
 import { askedKey } from "../buyer-fit";
-import { opportunitySchema, qualifyOpportunities, readOpportunity, contextKey, validArticleAngle, assertAutonomousTopic, summarizeQualification, type Opportunity } from "../opportunity";
+import { firstLookTermUsd, opportunitySchema, qualifyOpportunities, readOpportunity, contextKey, validArticleAngle, assertAutonomousTopic, summarizeQualification, type Opportunity } from "../opportunity";
 import { sameIntent, sharedResults } from "../intent";
 import { claimSpend, withSpendScope, type RunBudget } from "@/lib/billing/spend-scope";
 import { balanceSources, diverseSeeds } from "../diversity";
@@ -405,8 +405,19 @@ describe("a first look", () => {
       expect(fetchSerp).not.toHaveBeenCalled();
       expect(writes).toEqual([]);
     });
-    it("keeps a first approval whose second read was refused: a refusal is no answer, not a no", async () => {
-      expect(await lookIn(budgetOf(3))).toMatchObject({ status: "qualified" });
+    it("leaves a first approval whose second read was refused not judged: one read is not what a first look plans on", async () => {
+      expect(await lookIn(budgetOf(3))).toBeUndefined();
+      expect(writes).toEqual([]);
+    });
+    it("buys no results page when the room left cannot judge the term", async () => {
+      const budget = { ...budgetOf(10), room: async () => firstLookTermUsd(true) / 2 };
+      expect(await lookIn(budget)).toBeUndefined();
+      expect(fetchSerp).not.toHaveBeenCalled();
+      expect(writes).toEqual([]);
+    });
+    it("judges the term when the room covers its page and both reads", async () => {
+      const budget = { ...budgetOf(10), room: async () => firstLookTermUsd(true) };
+      expect(await lookIn(budget)).toMatchObject({ status: "qualified" });
     });
   });
 });
