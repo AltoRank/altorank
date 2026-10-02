@@ -49,7 +49,7 @@ that is not `approved` (or `scheduled` with `approved_by` set), and nothing else
 in the code path writes `live`. What can write an approval:
 
 - **A person**, from the editor (`approveArticle`), recorded as `approved_by`.
-- **A rule the workspace owner set** (`auto_approve`, migration 079): the
+- **A rule a named member of the account set** (`auto_approve`, migration 079): the
   publish cron runs the same checks the Approve button runs - active plan, no
   unsourced figure, no failing audit item, SEO score at or above the floor -
   after a hold window (default 24h) during which the drafted email carries a
