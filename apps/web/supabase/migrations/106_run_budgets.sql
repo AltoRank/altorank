@@ -28,9 +28,9 @@
 -- it first, in one locked update:
 --
 -- `ceiling_usd`    the run's total, the draft included.
--- `reserves`       {stage: usd} held back for one stage: `draft` ($0.43: the writer's
---                  floor and the draft's research, sized in
---                  lib/billing/run-budget.ts) and `outline_swap` ($0.05). Any other stage sees the ceiling
+-- `reserves`       {stage: usd} held back for one stage: `draft` ($0.33: the writer's
+--                  floor, its prompt and the draft's research, sized
+--                  in lib/billing/run-budget.ts) and `outline_swap` ($0.05). Any other stage sees the ceiling
 --                  less what those stages have not yet used; the stage itself
 --                  may also use whatever the others left.
 -- `committed_usd`  open claims at their estimate plus settled claims at what

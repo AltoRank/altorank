@@ -23,26 +23,31 @@ import type { RunBudget, SpendStage } from "./spend-scope";
 /** $1 a first look, the article included (founder decision 2026-09-29). */
 export const FIRST_LOOK_CEILING_USD = 1;
 
-// What the first draft is held, built from what it buys. The founder's spec
-// held $0.30, and the proof runs of 2026-10-01 showed why that is short:
-// research spent to its line on every $1 run, the draft bought its related
-// keywords ($0.09) out of the $0.30, and the writer was sent with ~20,000
-// output tokens - under the 24,000 a Sonnet 5 run was cut off at
-// (lib/ai/claude.ts). A cut-off draft is a failed draft whose cost is spent.
-// So the reserve is the writer's floor plus everything the draft buys before
-// it, at Sonnet 5's $10 a million output tokens (lib/billing/spend.ts).
+// What the first draft is held, built from what the writer needs. The proof
+// runs of 2026-10-01 showed the trap in a fixed $0.30: research spent to its
+// line on every $1 run, the draft then bought its related keywords ($0.09)
+// out of the $0.30, and the writer was sent with ~20,000 output tokens -
+// under the 24,000 a Sonnet 5 run was cut off at (lib/ai/claude.ts). A
+// cut-off draft is a failed draft whose cost is spent. So the reserve is the
+// writer's floor plus its prompt and the draft's own research, at Sonnet 5's
+// $10 a million output tokens (lib/billing/spend.ts), and the related-keyword
+// lookup is bought only from room above that (`draftCanBuyLookup`): the
+// writer's headroom comes first, the related keywords are a nicety.
+//
+// It is not bigger because research pays for it: a reserve that also held the
+// lookup ($0.43) left research $0.52, and a proof run on it planned nothing.
 
 /**
  * The least a budgeted writer is sent with (lib/ai/claude.ts): the worst
- * thinking run seen (~19,000 tokens) plus a long article, with room to spare.
- * Below it the claim is refused rather than a draft started that is likely
- * to be cut off.
+ * thinking run seen (~19,000 tokens) plus an article, above the 24,000 that
+ * run was cut off at. Below it the claim is refused rather than a draft
+ * started that is likely to be cut off.
  */
 export const WRITER_MIN_OUTPUT_TOKENS = 28_000;
 /** The writer's prompt as its claim estimates it: $0.0185 on the proof runs, held at $0.03. */
 export const WRITER_PROMPT_USD = 0.03;
-/** What the draft buys before the writer: its results page, the keyword's facts, the question pick. */
-export const DRAFT_RESEARCH_USD = 0.03;
+/** What the draft buys before the writer: its results page and the question pick ($0.005 on the proof runs). */
+export const DRAFT_RESEARCH_USD = 0.02;
 /** The draft's related-keyword lookup: one Google Ads `keywords_for_keywords` task on the live queue. */
 export const RELATED_LOOKUP_USD = 0.09;
 /** Sonnet 5's output rate, per token: the content tier the writer runs on. */
@@ -50,14 +55,13 @@ const WRITER_OUTPUT_USD_PER_TOKEN = 10 / 1_000_000;
 
 /**
  * The least the draft stage must still be able to claim when a first draft
- * is started with its related keywords already bought: the writer's floor,
- * its prompt and the research before it. With the lookup still to buy, add
- * RELATED_LOOKUP_USD. Below it the research would be bought for a draft the
- * writer cannot be sent for.
+ * is started: the writer's floor, its prompt and the research before it.
+ * Below it the research would be bought for a draft the writer cannot be
+ * sent for.
  */
 export const FIRST_DRAFT_MIN_USD = round2(DRAFT_RESEARCH_USD + WRITER_PROMPT_USD + WRITER_MIN_OUTPUT_TOKENS * WRITER_OUTPUT_USD_PER_TOKEN);
-/** Held for the first draft: everything above, the related-keyword lookup included. */
-export const FIRST_LOOK_DRAFT_RESERVE_USD = round2(FIRST_DRAFT_MIN_USD + RELATED_LOOKUP_USD);
+/** Held for the first draft: what it needs to be started, and no more. */
+export const FIRST_LOOK_DRAFT_RESERVE_USD = FIRST_DRAFT_MIN_USD;
 /** Held for the founder gate's one outline swap before the trial (not built yet). */
 export const FIRST_LOOK_SWAP_RESERVE_USD = 0.05;
 
@@ -84,15 +88,23 @@ export function firstLookReserves(ceilingUsd: number = FIRST_LOOK_CEILING_USD): 
 /**
  * Why the first draft cannot be written on what is left of the run's budget,
  * or null when it can (or the budget cannot be read: the claims decide then).
- * `lookupBought`: the related keywords are in hand, so the draft will not buy
- * them.
  */
-export async function draftBudgetShort(budget: RunBudget | null, opts: { lookupBought?: boolean } = {}): Promise<string | null> {
+export async function draftBudgetShort(budget: RunBudget | null): Promise<string | null> {
   if (!budget) return null;
-  const need = round2(FIRST_DRAFT_MIN_USD + (opts.lookupBought ? 0 : RELATED_LOOKUP_USD));
   const room = await budget.room("draft").catch(() => null);
-  if (room === null || room >= need) return null;
-  return `This first look's budget has $${Math.max(0, room).toFixed(2)} left, and a first draft needs about $${need.toFixed(2)}. It was not started; a person picks the first article up.`;
+  if (room === null || room >= FIRST_DRAFT_MIN_USD) return null;
+  return `This first look's budget has $${Math.max(0, room).toFixed(2)} left, and a first draft needs about $${FIRST_DRAFT_MIN_USD.toFixed(2)}. It was not started; a person picks the first article up.`;
+}
+
+/**
+ * Whether the first draft's related-keyword lookup fits on top of what the
+ * writer needs. True with no budget (everything outside a first look buys it
+ * as before); false when the room cannot be read, so the writer keeps it.
+ */
+export async function draftCanBuyLookup(budget: RunBudget | null): Promise<boolean> {
+  if (!budget) return true;
+  const room = await budget.room("draft").catch(() => null);
+  return room !== null && room >= FIRST_DRAFT_MIN_USD + RELATED_LOOKUP_USD;
 }
 
 /** The budget row as stored: what the funnel event reports. */

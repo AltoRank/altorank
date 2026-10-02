@@ -41,7 +41,7 @@ import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { spendClient } from "@/lib/billing/default-spend";
 import { currentSpendScope, isBudgetRefusal, withSpendScope, withStage } from "@/lib/billing/spend-scope";
-import { draftBudgetShort, openFirstLookBudget, type RunBudgetState } from "@/lib/billing/run-budget";
+import { draftBudgetShort, draftCanBuyLookup, openFirstLookBudget, type RunBudgetState } from "@/lib/billing/run-budget";
 import type { EmptyPool, OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { readEmptyPool } from "./empty-pool";
 import { modelAvailable } from "@/lib/keyword-research/buyer-model";
@@ -543,17 +543,17 @@ async function runPhases(
         // not re-bought.
         //
         // In a first look the lookup is the draft's research and is paid from
-        // the draft's reserve, once: bought here, the draft does not buy it
-        // again. And it is not bought at all for a draft the budget cannot
+        // the draft's stage, once, and only from room above what the writer
+        // needs (lib/billing/run-budget.ts): bought here or not at all, the
+        // draft is handed a list - empty when it was not bought - and does
+        // not buy it again. Nothing is bought for a draft the budget cannot
         // write: the same pre-check the draft route makes, made first.
         const budget = currentSpendScope()?.budget ?? null;
         const budgetShort = next ? await draftBudgetShort(budget) : null;
-        relatedByTerm = next && budgetShort === null
+        relatedByTerm = next && budgetShort === null && await draftCanBuyLookup(budget)
           ? await withStage("draft", () => fetchWeeksRelatedKeywords(workspace, next.term, plan))
           : new Map();
-        const writerShort = next && budgetShort === null && firstDraft === "inline"
-          ? await draftBudgetShort(budget, { lookupBought: relatedByTerm.has(next.term) })
-          : null;
+        const relatedFor = (term: string): RelatedKeyword[] | undefined => relatedByTerm.get(term) ?? (budget ? [] : undefined);
 
         if (!next) {
           settle("skipped", "No keyword clear enough to write to yet.");
@@ -568,13 +568,9 @@ async function runPhases(
             term: next.term,
             keywordId: next.keywordId ?? null,
             selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
-            relatedKeywords: relatedByTerm.get(next.term),
+            relatedKeywords: relatedFor(next.term),
           };
           settle("active", `Writing "${next.term}" now. It lands in your review queue when it is done.`);
-        } else if (writerShort !== null) {
-          // The lookup is bought; the writer must still fit (the draft
-          // route makes the same check).
-          settle("skipped", writerShort);
         } else {
           const result = await withStage("draft", () => generateArticle({
             supabase,
@@ -583,7 +579,7 @@ async function runPhases(
             keywordId: next.keywordId,
             autonomous: true,
             selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
-            relatedKeywords: relatedByTerm.get(next.term),
+            relatedKeywords: relatedFor(next.term),
             // The one boundary inside the draft: research is done, the model
             // is about to write. Emitted as the same phase still active, with
             // a new detail, so the screen can say what is happening during the

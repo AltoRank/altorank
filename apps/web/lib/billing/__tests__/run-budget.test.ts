@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   draftBudgetShort,
+  draftCanBuyLookup,
   DRAFT_RESEARCH_USD,
   FIRST_DRAFT_MIN_USD,
   FIRST_LOOK_CEILING_USD,
@@ -38,17 +39,18 @@ describe("a first look's ceiling", () => {
     expect(firstLookReserves()).toEqual({ draft: FIRST_LOOK_DRAFT_RESERVE_USD, outline_swap: FIRST_LOOK_SWAP_RESERVE_USD });
   });
 
-  it("holds the draft what the writer's floor and the draft's own purchases cost, so the writer is not cut short", () => {
+  it("holds the draft what its writer's floor, prompt and research cost, so the writer is not cut short", () => {
     // The writer runs on Sonnet 5; its floor clears the 24,000 tokens a live
     // run was cut off at (lib/ai/claude.ts).
     expect(WRITER_MIN_OUTPUT_TOKENS).toBeGreaterThan(24_000);
     const writerFloor = WRITER_PROMPT_USD + WRITER_MIN_OUTPUT_TOKENS * anthropicOutputRate("claude-sonnet-5");
     expect(FIRST_DRAFT_MIN_USD).toBeCloseTo(DRAFT_RESEARCH_USD + writerFloor, 2);
-    // The related-keyword lookup is the draft's, bought once from its reserve.
+    expect(FIRST_LOOK_DRAFT_RESERVE_USD).toBe(FIRST_DRAFT_MIN_USD);
+    // The related-keyword lookup is priced as DataForSEO bills it, and is not
+    // in the reserve: it is bought only from room above it.
     expect(RELATED_LOOKUP_USD).toBe(estimateDataForSEOUsd("/keywords_data/google_ads/keywords_for_keywords/live", [{}]));
-    expect(FIRST_LOOK_DRAFT_RESERVE_USD).toBeCloseTo(FIRST_DRAFT_MIN_USD + RELATED_LOOKUP_USD, 2);
-    // And research still has most of the dollar.
-    expect(FIRST_LOOK_CEILING_USD - FIRST_LOOK_DRAFT_RESERVE_USD - FIRST_LOOK_SWAP_RESERVE_USD).toBeGreaterThan(0.5);
+    // Research keeps most of the dollar: the plan is what a first look is for.
+    expect(FIRST_LOOK_CEILING_USD - FIRST_LOOK_DRAFT_RESERVE_USD - FIRST_LOOK_SWAP_RESERVE_USD).toBeGreaterThanOrEqual(0.6);
   });
 
   it("can be lowered for a proof run, never raised, and ignores what is not a positive number", () => {
@@ -66,16 +68,18 @@ describe("a first look's ceiling", () => {
 });
 
 describe("whether a first draft can be started on what is left", () => {
-  it("says why not when the draft stage's room is under the writer's floor and the lookup", async () => {
+  it("says why not when the draft stage's room is under the writer's floor", async () => {
     const short = await draftBudgetShort(roomOf(0.1));
     expect(short).toContain("has $0.10 left");
-    expect(short).toContain(`about $${FIRST_LOOK_DRAFT_RESERVE_USD.toFixed(2)}`);
+    expect(short).toContain(`about $${FIRST_DRAFT_MIN_USD.toFixed(2)}`);
+    expect(await draftBudgetShort(roomOf(FIRST_DRAFT_MIN_USD))).toBeNull();
   });
 
-  it("counts the related-keyword lookup only when the draft still has to buy it", async () => {
-    expect(await draftBudgetShort(roomOf(FIRST_DRAFT_MIN_USD), { lookupBought: true })).toBeNull();
-    expect(await draftBudgetShort(roomOf(FIRST_DRAFT_MIN_USD))).toContain(`about $${FIRST_LOOK_DRAFT_RESERVE_USD.toFixed(2)}`);
-    expect(await draftBudgetShort(roomOf(FIRST_LOOK_DRAFT_RESERVE_USD))).toBeNull();
+  it("buys the related keywords only from room above what the writer needs", async () => {
+    expect(await draftCanBuyLookup(roomOf(FIRST_DRAFT_MIN_USD))).toBe(false);
+    expect(await draftCanBuyLookup(roomOf(FIRST_DRAFT_MIN_USD + RELATED_LOOKUP_USD))).toBe(true);
+    expect(await draftCanBuyLookup(roomOf(null))).toBe(false);
+    expect(await draftCanBuyLookup(null)).toBe(true);
   });
 
   it("lets it start when there is no budget, or when the room cannot be read (the claims decide then)", async () => {

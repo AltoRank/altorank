@@ -311,24 +311,33 @@ export async function qualifyOpportunities(
     : { value: { verdicts: new Map<string, FitVerdict>() }, refused: false };
   const fit = asked.value;
   for (const [term, v] of saved) if (!fit.verdicts.has(term)) fit.verdicts.set(term, v);
-  // Under a budget, a batch is cut to what the room left can judge before
+  // Under a budget, each batch is cut to what the room left can judge before
   // anything is bought: a results page bought for a term whose judge read is
   // then refused paid for nothing (two such trios in one proof run). The
-  // claims are still what decide; this only stops buying a page early.
+  // claims are still what decide; this only stops buying a page early. A
+  // batch the room cannot fit whole is made smaller, not abandoned: the room
+  // comes back as each claim settles at what was charged.
   const budget = firstLook ? currentSpendScope()?.budget ?? null : null;
-  const perTerm = budget ? firstLookTermUsd(Boolean(firstLook)) : 0;
-  for (let offset = 0; offset < pending.length; offset += 3) {
-    if (stopped) break;
-    let batch = pending.slice(offset, offset + 3);
+  const perTerm = budget ? firstLookTermUsd(true) : 0;
+  const paidRead = (c: OpportunityCandidate) => fit.verdicts.get(c.term.trim().toLowerCase())?.keep === true;
+  let cursor = 0;
+  while (cursor < pending.length && !stopped) {
+    let batch = pending.slice(cursor, cursor + 3);
     if (budget) {
       const room = await budget.room("judge").catch(() => null);
-      const paid = batch.filter((c) => fit.verdicts.get(c.term.trim().toLowerCase())?.keep === true);
-      if (room !== null && room < paid.length * perTerm) {
-        const affordable = new Set(paid.slice(0, Math.max(0, Math.floor(room / perTerm))));
-        batch = batch.filter((c) => affordable.has(c) || fit.verdicts.get(c.term.trim().toLowerCase())?.keep !== true);
-        stopped = true;
+      if (room !== null) {
+        let affordable = Math.floor(room / perTerm);
+        const fits: OpportunityCandidate[] = [];
+        for (const c of batch) {
+          if (paidRead(c) && affordable-- <= 0) break;
+          fits.push(c);
+        }
+        // Not even the next term: the rest are not judged.
+        if (!fits.length) { stopped = true; break; }
+        batch = fits;
       }
     }
+    cursor += batch.length;
     await Promise.all(batch.map(async (c) => {
     const verdict = fit.verdicts.get(c.term.trim().toLowerCase());
     // No buyer decision because the budget refused the batch's read: not

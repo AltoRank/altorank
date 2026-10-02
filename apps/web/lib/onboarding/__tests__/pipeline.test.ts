@@ -89,7 +89,7 @@ vi.mock("../empty-pool", () => ({ readEmptyPool: (...a: unknown[]) => emptyPool(
 
 import { runOnboarding } from "../pipeline";
 import { BudgetRefusedError, currentSpendScope } from "@/lib/billing/spend-scope";
-import { firstLookReserves } from "@/lib/billing/run-budget";
+import { FIRST_DRAFT_MIN_USD, firstLookReserves } from "@/lib/billing/run-budget";
 import type { OnboardingEvent } from "../events";
 
 const WS = { id: "ws1", domain: "example.com", account_id: "ag1", language: "en" };
@@ -270,6 +270,16 @@ describe("runOnboarding", () => {
     expect(events.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
       .toMatchObject({ detail: expect.stringContaining("budget has $0.10 left") });
     expect(events.at(-1)).toEqual({ phase: "ready" });
+  });
+
+  it("hands the draft an empty related list, and buys none, when the lookup does not fit above the writer's floor", async () => {
+    const base = richClient(0) as unknown as { from: (t: string) => unknown };
+    const budgetTable = { upsert: async () => ({ error: null }), select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+    const db = { from: (t: string) => (t === "run_budgets" ? budgetTable : base.from(t)), rpc: async () => ({ data: FIRST_DRAFT_MIN_USD + 0.01, error: null }) } as never;
+    plan.mockResolvedValue([{ term: NEXT.term }]);
+    const result = await runOnboarding(db, WS, () => undefined, { firstDraft: "dispatch", runId: "run-8" });
+    expect(relatedBatch).not.toHaveBeenCalled();
+    expect(result.pendingDraft).toMatchObject({ term: NEXT.term, relatedKeywords: [] });
   });
 
   it("skips the draft, with the reason, when the free allowance is used", async () => {
