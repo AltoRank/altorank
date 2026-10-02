@@ -63,6 +63,8 @@ export interface TermCase {
     funnel?: Funnel;
     /** Why, in a sentence, from the evidence. Shown next to a disagreement. */
     note?: string;
+    /** The business published an article on this topic: whatever else changes, it must stay qualified. */
+    published?: boolean;
   };
 }
 
@@ -89,7 +91,7 @@ export interface ClaimCase {
   expect: Array<{ id: string; match: string; label: ClaimLabel; note?: string }>;
 }
 
-export type DecisionName = "buyer-fit" | "qualification" | "pipeline" | "fact-check";
+export type DecisionName = "buyer-fit" | "qualification" | "pipeline" | "fact-check" | "page-type";
 
 /** One scored item: what the label says, what the product said, and why. */
 export interface Scored {
@@ -105,4 +107,12 @@ export interface Scored {
   volume?: number | null;
   /** Qualified on both sides: did the shape match? */
   shape?: { expected: string; predicted: string | null };
+  /** Page type: what the same results page came to before the page-type rule (the judge's or the word lists' reading final). */
+  baseline?: string;
+  /** Page type: who read the results the rule did not decide - the stored judge answer, or the word lists when none is stored. */
+  basis?: "judge" | "urls";
+  /** Page type: the label marks a topic the business published. */
+  published?: boolean;
+  /** Page type: the top results the needs-page threshold counts (providers' pages, listings, shop pages), after the rule and in the judge's reading alone. */
+  built?: { after: number; before: number };
 }
