@@ -561,6 +561,13 @@ export type PublishLogEntry = {
   publish_mode: PublishMode | null;
   /** The failed entry this attempt retried, when it was a retry. */
   retry_of: string | null;
+  /**
+   * `push`: an attempt through a connection. `found_on_site`: the nightly
+   * check found the article live on the customer's own site (migration 105).
+   */
+  source: "push" | "found_on_site";
+  /** The page a `found_on_site` row was found on; null for pushes. */
+  url: string | null;
   created_at: string;
 };
 

@@ -125,10 +125,24 @@ describe("findDraftsLiveOnSites", () => {
     // A git publish whose URL never resolved goes back to review with the
     // commit made; finding it later is our own publish, confirmed late.
     const sb = fakeSupabase(
-      seed({ publish_log: [{ id: "pl-1", article_id: "tr-draft", workspace_id: "ws-1", status: "success", triggered_by: "cron" }] }),
+      seed({ publish_log: [{ id: "pl-1", article_id: "tr-draft", workspace_id: "ws-1", status: "success", triggered_by: "cron", source: "push" }] }),
     );
     await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: fakeSite(site()).fetch, now: () => NIGHT_1 });
     expect(article(sb, "tr-draft").found_on_site_evidence).toMatchObject({ pushedEarlier: true });
+  });
+
+  it("does not take an earlier find's receipt for a push", async () => {
+    // A find a person undid leaves its found_on_site row in the log (migration
+    // 105). Found again at another page, it is still a copy made past us.
+    const sb = fakeSupabase(
+      seed({
+        publish_log: [
+          { id: "pl-1", article_id: "tr-draft", workspace_id: "ws-1", status: "success", triggered_by: "cron", source: "found_on_site", url: `${S}/old-page` },
+        ],
+      }),
+    );
+    await findDraftsLiveOnSites(client(sb), { budgetMs: 60_000, fetch: fakeSite(site()).fetch, now: () => NIGHT_1 });
+    expect(article(sb, "tr-draft").found_on_site_evidence).toMatchObject({ pushedEarlier: false });
   });
 
   it("reads robots.txt first, obeys it, and reads only pages new since the draft", async () => {
