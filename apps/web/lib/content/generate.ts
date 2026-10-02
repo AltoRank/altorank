@@ -33,7 +33,7 @@ import { recordOverageArticle } from "@/lib/billing/overage";
 import { recordFreeDraftWritten } from "@/lib/billing/free-drafts";
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { spendClient } from "@/lib/billing/default-spend";
-import { withSpendScope, type SpendScope } from "@/lib/billing/spend-scope";
+import { isBudgetRefusal, withSpendScope, type SpendScope } from "@/lib/billing/spend-scope";
 import { fetchKnownPages } from "@/lib/linking/targets";
 import { loadSiteFacts } from "@/lib/content/site-facts";
 import { siteFactUrls } from "@/lib/ai/prompts";
@@ -1296,7 +1296,22 @@ async function writeArticle(
     // should not strand a good draft in a state the UI reads as broken. The
     // content is untouched either way, since it is only written on success.
     // A rewrite wrote no row and restores nothing.
-    if (!refreshOf && article.id) {
+    //
+    // A first look's budget that refused a claim part-way (the writer's,
+    // most likely) bought no article: the row this run created is empty and
+    // is removed, so the review queue does not show a broken draft for a
+    // draft that was skipped. The caller says why. If it cannot be removed it
+    // is marked errored like any other failure.
+    const removed = isBudgetRefusal(err) && !refreshOf && !articleId && article.id
+      // Counted, not assumed: a delete RLS filters out is no error and no row.
+      ? await supabase.from("articles").delete().eq("id", article.id).select("id")
+        .then((r) => !r.error && (r.data?.length ?? 0) > 0, () => false)
+      : false;
+    // Nor did it use the account's one pre-trial draft: the refusal was the
+    // first look's budget, which nothing a client does can cause, and the
+    // person who picks the first article up needs that draft to write it.
+    if (isBudgetRefusal(err) && claimedPreTrial) await releasePreTrialDraft(supabase, billedAccountId);
+    if (!refreshOf && article.id && !removed) {
       await supabase
         .from("articles")
         .update({
