@@ -38,8 +38,10 @@ import { draftHoldReason, planHold } from "@/lib/billing/trial-hold";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
-import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
-import { recordSpendByDefault } from "@/lib/billing/default-spend";
+import { hasDataForSEOCredentials } from "@/lib/seo/client";
+import { spendClient } from "@/lib/billing/default-spend";
+import { currentSpendScope, isBudgetRefusal, watchRefusals, withSpendScope, withStage } from "@/lib/billing/spend-scope";
+import { draftBudgetShort, draftCanBuyLookup, openFirstLookBudget, type RunBudgetState } from "@/lib/billing/run-budget";
 import type { EmptyPool, OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { readEmptyPool } from "./empty-pool";
 import { modelAvailable } from "@/lib/keyword-research/buyer-model";
@@ -112,22 +114,23 @@ export async function runOnboarding(
   emit: Emit,
   options: RunOnboardingOptions = {},
 ): Promise<RunOnboardingResult> {
-  // Every DataForSEO call this run makes belongs to this workspace. With no
-  // reporter armed the client falls back to the unattributed default, and one
-  // onboarding on 2026-09-05 left fourteen rows with no workspace_id - the
-  // discovery that costs the most per site, and the one the per-site margin
-  // cannot see. Written through the service role: the client handed to this
-  // pipeline is the signed-in user's, and provider_spend refuses its inserts.
-  // generateArticle arms its own, finer reporter (article and run) for the
-  // draft and clears it after; the finally clears ours however the run ends.
-  setSpendReporter(({ operation, costUsd }) => {
-    recordSpendByDefault({ provider: "dataforseo", operation, costUsd, workspaceId: workspace.id });
-  });
-  try {
-    return await runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", options.runId ?? null);
-  } finally {
-    setSpendReporter(null);
-  }
+  // Every provider call this run makes belongs to this workspace and this
+  // run, and the run has a dollar (lib/billing/run-budget.ts). Both travel in
+  // a spend scope (lib/billing/spend-scope.ts), not in a process-global
+  // reporter: that one was armed over by whatever else the process ran, and
+  // concurrent runs billed each other's calls (2026-09-28). Every paid call
+  // inside claims its estimate from the budget first; a refused claim buys
+  // nothing, and the phase that asked carries on with what it has. Spend and
+  // the budget are written with the service role: provider_spend refuses a
+  // signed-in client's inserts, and run_budgets is server only.
+  // A run whose budget row cannot be written is bounded in this process
+  // instead (openFirstLookBudget), never left unbounded.
+  const runId = options.runId ?? null;
+  const db = spendClient() ?? supabase;
+  const opened = runId ? await openFirstLookBudget(db, { runId, workspaceId: workspace.id }) : null;
+  return withSpendScope({ workspaceId: workspace.id, runId, budget: opened?.budget ?? null }, () =>
+    runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", runId, opened?.read ?? null),
+  );
 }
 
 async function runPhases(
@@ -136,12 +139,13 @@ async function runPhases(
   emit: Emit,
   firstDraft: "inline" | "dispatch",
   runId: string | null = null,
+  /** The run's budget as it stands, for the funnel event; null when it has none. */
+  readSpend: (() => Promise<RunBudgetState | null>) | null = null,
 ): Promise<RunOnboardingResult> {
   const domain = workspace.domain;
-  // This run's spend is what the site's provider calls cost from here on:
-  // qualification stops buying before it reaches the first look's ceiling
-  // less the first draft's share (lib/keyword-research/opportunity.ts).
-  const firstLook: FirstLook = { since: new Date().toISOString() };
+  // Approvals asked twice and the floor allowed; the spend bound is the
+  // scope's budget, which every paid call claims from.
+  const firstLook: FirstLook = { runId };
 
   // --- Phase 0: is there a site here at all? -------------------------------
   //
@@ -185,10 +189,10 @@ async function runPhases(
       // Same reader as the wizard: homepage, then the blog when the homepage
       // is a JavaScript shell, then a rendered fetch. A voice learned from the
       // site's own articles is better than one learned from its landing page.
-      const read = await readSiteText(domain);
+      const read = await withStage("voice", () => readSiteText(domain));
       const text = read.text;
       if (text && text.split(/\s+/).length > 50) {
-        await trainVoiceProfile(supabase, workspace.id, text);
+        await withStage("voice", () => trainVoiceProfile(supabase, workspace.id, text));
         emit({
           phase: "scanning",
           status: "done",
@@ -223,7 +227,9 @@ async function runPhases(
     emit({ phase: "keywords", status: "skipped", detail: "Keyword research is not configured on this install." });
   } else {
     try {
-      const analysis = await analyseDomain({
+      // Watched for the budget's refusals: a buyer test the budget stopped
+      // stores nothing, and "nothing rankable" would blame the site for it.
+      const { value: analysis, refused: discoveryRefused } = await watchRefusals(() => withStage("discovery", () => analyseDomain({
         domain,
         supabase,
         workspaceId: workspace.id,
@@ -237,7 +243,7 @@ async function runPhases(
         // rest. Every page here is one request against a host that may be
         // counting them (packhub.io bans after ten in forty seconds).
         maxPages: ONBOARDING_CRAWL_PAGES,
-      });
+      })));
       keywordsFound = analysis.keywordsFound;
       screened = analysis.screened;
 
@@ -280,7 +286,8 @@ async function runPhases(
       const crawl = analysis.layers.find((l) => l.id === "crawl");
       const crawlFailed = crawl?.status === "failed" ? crawl.detail : null;
       const willRetry = crawlFailed !== null && isTransientCrawlFailure(crawlFailed);
-      researchFoundNothing = keywordsFound === 0 && crawlFailed === null && !why;
+      const budgetStopped = keywordsFound === 0 && discoveryRefused;
+      researchFoundNothing = keywordsFound === 0 && crawlFailed === null && !why && !budgetStopped;
       emit({
         phase: "keywords",
         status: keywordsFound > 0 ? "done" : "skipped",
@@ -298,7 +305,10 @@ async function runPhases(
                 ? `Your site could not be read (${crawlFailed}). Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there.`
                 : why
                   ? `${why.charAt(0).toUpperCase()}${why.slice(1)}. Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there.`
-                  : "Nothing rankable found for this site yet.",
+                  : budgetStopped
+                    // The run's budget, not the site: say so.
+                    ? "This first look's budget ran out before its keyword research finished, so no keyword was judged yet. Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there."
+                    : "Nothing rankable found for this site yet.",
         keywordsFound,
       });
     } catch (err) {
@@ -466,8 +476,6 @@ async function runPhases(
       emit({ phase: "planning", status: "failed", detail: planningDetail });
     }
   }
-  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail });
-
   emit({ phase: "drafting", status: "active" });
   // The status and detail the drafting phase settled on. The fan-out note
   // below is emitted on the same phase, and emitting it as `active` reset a
@@ -539,10 +547,26 @@ async function runPhases(
         // each draft buys its own lookup exactly as before; a seed the task
         // answers nothing for gets an empty list, which is an answer and is
         // not re-bought.
-        relatedByTerm = next ? await fetchWeeksRelatedKeywords(workspace, next.term, plan) : new Map();
+        //
+        // In a first look the lookup is the draft's research and is paid from
+        // the draft's stage, once, and only from room above what the writer
+        // needs (lib/billing/run-budget.ts): bought here or not at all, the
+        // draft is handed a list - empty when it was not bought - and does
+        // not buy it again. Nothing is bought for a draft the budget cannot
+        // write: the same pre-check the draft route makes, made first.
+        const budget = currentSpendScope()?.budget ?? null;
+        const budgetShort = next ? await draftBudgetShort(budget) : null;
+        relatedByTerm = next && budgetShort === null && await draftCanBuyLookup(budget)
+          ? await withStage("draft", () => fetchWeeksRelatedKeywords(workspace, next.term, plan))
+          : new Map();
+        const relatedFor = (term: string): RelatedKeyword[] | undefined => relatedByTerm.get(term) ?? (budget ? [] : undefined);
 
         if (!next) {
           settle("skipped", "No keyword clear enough to write to yet.");
+        } else if (budgetShort !== null) {
+          // Before the lookup, and in both modes: nothing is bought, and
+          // nothing is dispatched, for a draft that cannot be written.
+          settle("skipped", budgetShort);
         } else if (firstDraft === "dispatch") {
           // Chosen and gated here, written in its own invocation. The phase
           // stays `active` with the keyword named; the draft route settles it.
@@ -550,18 +574,18 @@ async function runPhases(
             term: next.term,
             keywordId: next.keywordId ?? null,
             selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
-            relatedKeywords: relatedByTerm.get(next.term),
+            relatedKeywords: relatedFor(next.term),
           };
           settle("active", `Writing "${next.term}" now. It lands in your review queue when it is done.`);
         } else {
-          const result = await generateArticle({
+          const result = await withStage("draft", () => generateArticle({
             supabase,
             workspaceId: workspace.id,
             keyword: next.term,
             keywordId: next.keywordId,
             autonomous: true,
             selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
-            relatedKeywords: relatedByTerm.get(next.term),
+            relatedKeywords: relatedFor(next.term),
             // The one boundary inside the draft: research is done, the model
             // is about to write. Emitted as the same phase still active, with
             // a new detail, so the screen can say what is happening during the
@@ -575,7 +599,7 @@ async function runPhases(
                   `Read ${research.competitors.length} ranking page${research.competitors.length === 1 ? "" : "s"}` +
                   ` and ${research.peopleAlsoAsk.length} question${research.peopleAlsoAsk.length === 1 ? "" : "s"} people ask. Writing now.`,
               }),
-          });
+          }));
           const entry = plan.find((p) => p.term === next.term);
           if (entry) {
             const { data: row } = await supabase
@@ -598,8 +622,17 @@ async function runPhases(
       }
     }
   } catch (err) {
-    settle("failed", message(err));
+    // A claim the budget refused part-way through the draft: skipped, as
+    // the draft route says it, not a failed run.
+    if (isBudgetRefusal(err)) settle("skipped", `${message(err)} A person picks the first article up.`);
+    else settle("failed", message(err));
   }
+
+  // What the first look has spent, by stage, on the same event - recorded
+  // after the drafting phase, whose own qualification buys reads too. In
+  // dispatch mode the draft is still to come and its reserve is on the row.
+  const spend = readSpend ? await readSpend() : null;
+  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail, spend, draftIncluded: firstDraft === "inline" });
 
   // The rest of the week waits for a person.
   //

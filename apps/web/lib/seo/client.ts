@@ -3,6 +3,8 @@
 // ---------------------------------------------------------------------------
 
 import { e2eStubsEnabled } from "@/lib/e2e/stubs";
+import { claimSpend, currentSpendScope, scopeAttribution } from "@/lib/billing/spend-scope";
+import { estimateDataForSEOUsd } from "./dataforseo-cost";
 
 const BASE_URL = "https://api.dataforseo.com/v3";
 
@@ -157,12 +159,14 @@ function isRetryableTaskStatus(code: number): boolean {
 const MAX_ATTEMPTS = 3;
 
 /**
- * Where to report what a call cost.
+ * Where a script reports what a call cost.
  *
- * A callback rather than an import: this module is used from `scripts/` and the
- * MCP server, neither of which has a Supabase client, and making the HTTP layer
- * depend on the database would break both. The app sets this once at startup;
- * everything else keeps working with it unset.
+ * Scripts only. It is one callback for the whole process, so two pieces of
+ * work in one server process armed it over each other and billed each other's
+ * calls (found 2026-09-28). The app attributes spend with a scope instead
+ * (`withSpendScope`, lib/billing/spend-scope.ts), which travels with the
+ * work; a scope, when there is one, wins over this. A guard test keeps app
+ * and lib code off it (lib/billing/__tests__/spend-scope-guard.test.ts).
  */
 type SpendReporter = (entry: {
   operation: string;
@@ -201,12 +205,16 @@ export function spendOperation(endpoint: string): string {
 function report(operation: string, costUsd: number | null): void {
   operation = spendOperation(operation);
   try {
-    if (reportSpend) {
+    // The scope the call was made in says whose it is: taken now, while this
+    // is still the caller's context.
+    const scope = currentSpendScope();
+    if (!scope && reportSpend) {
       reportSpend({ operation, costUsd });
       return;
     }
+    const who = scope ? scopeAttribution(scope) : {};
     void import("@/lib/billing/default-spend")
-      .then((m) => m.recordSpendByDefault({ provider: "dataforseo", operation, costUsd }))
+      .then((m) => m.recordSpendByDefault({ provider: "dataforseo", operation, costUsd, ...who }))
       .catch(() => {});
   } catch {
     // Never let bookkeeping break the call it is measuring.
@@ -220,6 +228,21 @@ export async function post<T = unknown>(
 ): Promise<DataForSEOResponse<T>> {
   const maxAttempts = Math.max(1, opts.maxAttempts ?? MAX_ATTEMPTS);
   if (e2eStubsEnabled()) throw new DataForSEOError(`E2E_STUBS: refused to call DataForSEO ${endpoint}`, 0);
+  // Under a first look's budget the estimate is claimed before anything is
+  // sent; a refusal throws BudgetRefusedError and nothing is bought. Settled
+  // with the reported cost, or with nothing when every attempt failed.
+  const claim = await claimSpend(spendOperation(endpoint), estimateDataForSEOUsd(endpoint, body));
+  try {
+    const parsed = await postAttempts<T>(endpoint, body, maxAttempts);
+    await claim.settle(parsed.cost ?? null);
+    return parsed;
+  } catch (err) {
+    await claim.settle(0);
+    throw err;
+  }
+}
+
+async function postAttempts<T>(endpoint: string, body: unknown[], maxAttempts: number): Promise<DataForSEOResponse<T>> {
   let lastError: unknown;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
