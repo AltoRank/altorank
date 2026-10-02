@@ -26,6 +26,7 @@
 
 import { stripTags } from "@/lib/audit/html-utils";
 import { isUnsafeHost } from "@/lib/seo/link-check";
+import { bareHost, isBlockedSource, type SourceReview } from "@/lib/seo/source-classes";
 import type { ExtractedClaim, FactCheckReport } from "@/lib/ai/fact-check";
 import { ENTITY_KINDS, summarise } from "@/lib/ai/fact-check";
 import {
@@ -40,6 +41,12 @@ import {
 export type PageFetcher = (url: string) => Promise<{ status: number; body: string }>;
 
 export interface VerifyCitationsOptions {
+  /**
+   * What research decided about the sites it read (`research.sourceReview`).
+   * A claim citing a business that sells the same service is high risk
+   * whatever its page says, and its page is not opened.
+   */
+  sourceReview?: SourceReview | null;
   fetcher?: PageFetcher;
   timeoutMs?: number;
   concurrency?: number;
@@ -250,6 +257,33 @@ export async function verifyCitedFigures(
   const timeoutMs = opts.timeoutMs ?? 8_000;
   const fetcher = opts.fetcher ?? defaultPageFetcher(timeoutMs);
   const concurrency = Math.max(1, opts.concurrency ?? 3);
+
+  // A figure on a rival's page is still the rival's figure: finding it there
+  // must not turn the claim `verified`. `factCheckArticle` already marks the
+  // claims it can see are a rival's (`rival_source`), and those are never
+  // re-judged here, because only `needs_verification` is touched. This
+  // catches the rest - a report built without the research - before any
+  // page is opened.
+  const rivalSourced = report.claims.filter(
+    (c) => c.status === "needs_verification" && c.sourceUrl && isBlockedSource(c.sourceUrl, opts.sourceReview),
+  );
+  if (rivalSourced.length) {
+    report = summarise(
+      report.claims.map((c) =>
+        rivalSourced.includes(c)
+          ? {
+              ...c,
+              status: "rival_source" as const,
+              severity: "high" as const,
+              note:
+                `Sourced from ${bareHost(c.sourceUrl!)}, a business that sells what this business sells. Do not send the reader ` +
+                `to a competitor or quote it as an authority: replace the source with a public body, research or an association, or cut the claim.`,
+            }
+          : c,
+      ),
+      resolveLocale(language),
+    );
+  }
 
   const checkable = report.claims.filter(
     (c) => c.status === "needs_verification" && c.sourceUrl && !isUnsafeHost(c.sourceUrl),

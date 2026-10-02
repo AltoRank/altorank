@@ -113,8 +113,12 @@ function spendSite(file: string, seen = new Set<string>(), depth = 0): string | 
   const src = readFileSync(file, "utf8");
   // spend.ts declares recordSpend; declaring it is not spending.
   if (file !== SPEND_MODULE && SPENDS.test(src)) return file;
-  for (const m of src.matchAll(/from\s+"(@\/[^"]+)"/g)) {
-    const resolved = resolveImport(m[1]);
+  // Every runtime import or re-export from an app path. `import type` and
+  // `export type` lines bring no code, so a type shared with a paid module is
+  // not an edge to its spend.
+  for (const m of src.matchAll(/(?:^|\n)\s*(?:import|export)(\s+type)?\s[^"';]*?\bfrom\s+"(@\/[^"]+)"/g)) {
+    if (m[1]) continue;
+    const resolved = resolveImport(m[2]);
     if (!resolved) continue;
     const hit = spendSite(resolved, seen, depth + 1);
     if (hit) return hit;
