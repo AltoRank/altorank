@@ -38,6 +38,7 @@ vi.mock("@/lib/keyword-research/opportunity", async (importOriginal) => ({
 
 import { duePlannedKeyword, previewPlan, schedulePlan, scheduleKeywords } from "../plan";
 import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
+import type { KeywordRecommendation } from "@/lib/seo/recommendations";
 
 const FROM = new Date("2026-09-24T09:00:00.000Z");
 const rec = (i: number) => ({ keywordId: `k${i}`, term: `topic ${i}`, action: "write", quality: "ok", intent: "commercial" });
@@ -60,6 +61,18 @@ beforeEach(() => {
 });
 
 describe("the planner and the trial hold", () => {
+  it("keeps an explicitly empty first-article shortlist empty without the general floor", async () => {
+    const d = db();
+    expect(await schedulePlan(d.client, "ws1", 7, { firstArticleRecommendations: [], from: FROM })).toEqual([]);
+    expect(recommended.calls).toBe(0);
+  });
+  it("preserves the strict shortlist's order and the account's one-article hold", async () => {
+    const d = db();
+    const chosen = [rec(4), rec(2)] as KeywordRecommendation[];
+    const plan = await schedulePlan(d.client, "ws1", 7, { firstArticleRecommendations: chosen, from: FROM });
+    expect(plan.map((p) => p.keywordId)).toEqual(["k4"]);
+    expect(recommended.calls).toBe(0);
+  });
   it("plans the first article only for a gated account at signup, whatever it is asked for", async () => {
     const d = db();
     const plan = await schedulePlan(d.client, "ws1", 7, { maxEntries: 5, from: FROM });

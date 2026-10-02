@@ -55,6 +55,10 @@ import { getLocale } from "@/lib/seo/locales";
 import { detectLinks } from "@/lib/linking/detect";
 import { assessExistingPages } from "./site-assessment";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
+import { automaticFirstLookEnabled } from "./automatic-first-look";
+import { researchFirstArticle } from "./first-look-research";
+import type { KeywordRecommendation } from "@/lib/seo/recommendations";
+import { languageCodeOf } from "@/lib/keyword-research/locale";
 
 export type Emit = (event: OnboardingEvent) => void;
 
@@ -138,6 +142,12 @@ async function runPhases(
   runId: string | null = null,
 ): Promise<RunOnboardingResult> {
   const domain = workspace.domain;
+  const automatic = automaticFirstLookEnabled(workspace.id);
+  let siteText = "";
+  let firstArticleRecommendations: KeywordRecommendation[] = [];
+  let checkedPages = false;
+  const firstArticleEmpty: EmptyPool = { stage: "keywords", cause: "first_article", keywords: 0, qualified: 0,
+    rejected: {}, pending: {}, summary: "No first-article topic passed service evidence, buyer decision, coverage and search-results checks." };
   // This run's spend is what the site's provider calls cost from here on:
   // qualification stops buying before it reaches the first look's ceiling
   // less the first draft's share (lib/keyword-research/opportunity.ts).
@@ -187,6 +197,7 @@ async function runPhases(
       // site's own articles is better than one learned from its landing page.
       const read = await readSiteText(domain);
       const text = read.text;
+      siteText = text;
       if (text && text.split(/\s+/).length > 50) {
         await trainVoiceProfile(supabase, workspace.id, text);
         emit({
@@ -221,6 +232,28 @@ async function runPhases(
     emit({ phase: "keywords", status: "skipped", detail: "No domain to analyse." });
   } else if (!hasDataForSEOCredentials()) {
     emit({ phase: "keywords", status: "skipped", detail: "Keyword research is not configured on this install." });
+  } else if (automatic) {
+    try {
+      // Read existing coverage before the semantic duplicate check. This
+      // branch does not buy broad competitor discovery to pick one article.
+      emit({ phase: "pages", status: "active" });
+      checkedPages = true;
+      const pages = await assessExistingPages(supabase, workspace.id, domain);
+      emit({ phase: "pages", status: pages.status, detail: pages.detail });
+      if (pages.status === "failed") throw new Error("Existing pages could not be checked. First-article selection is paused.");
+      const business = workspace.business_profile as BusinessProfile | null;
+      if (!business?.offerings?.length || !siteText.trim()) throw new Error("We need a readable description of what your business offers before choosing an article.");
+      const locale = getLocale(workspace.language ?? "en");
+      firstArticleRecommendations = await researchFirstArticle(supabase, workspace.id, {
+        domain, business, languageCode: languageCodeOf(workspace.language), locationCode: workspace.location_code ?? locale.locationCode,
+      }, siteText, firstLook);
+      keywordsFound = firstArticleRecommendations.length;
+      researchFoundNothing = keywordsFound === 0;
+      emit({ phase: "keywords", status: keywordsFound ? "done" : "skipped", keywordsFound,
+        detail: keywordsFound ? `Found ${keywordsFound} distinct article topic${keywordsFound === 1 ? "" : "s"} supported by your services and search results.` : firstArticleEmpty.summary });
+    } catch (err) {
+      emit({ phase: "keywords", status: "failed", detail: message(err) });
+    }
   } else {
     try {
       const analysis = await analyseDomain({
@@ -320,24 +353,27 @@ async function runPhases(
   // canonicals and robots directives. No model, no DataForSEO. Bounded by
   // ONBOARDING_CRAWL so a 600-post blog cannot eat the worker's 300 seconds,
   // and best-effort: `assessExistingPages` never throws.
-  emit({ phase: "pages", status: "active" });
-  if (domain && refusing(`https://${domain}/`)) {
-    // Eight more requests into a ban only extend it. The nightly pass reads
-    // the pages when the host is not counting.
-    emit({ phase: "pages", status: "skipped", detail: "The site is rate-limiting us right now; the nightly pass reads your existing pages." });
-  } else if (!domain) {
-    emit({ phase: "pages", status: "skipped", detail: "No domain to read pages from." });
-  } else {
-    const startedAt = Date.now();
-    const pages = await assessExistingPages(supabase, workspace.id, domain);
-    // The number the budget is set against. Logged rather than shown: the
-    // customer wants to know what was found, and whoever tunes ONBOARDING_CRAWL
-    // wants to know how long it took on a real site.
-    console.log(
-      `[onboarding] pages: ${pages.status} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s - ${pages.detail}`,
-    );
-    emit({ phase: "pages", status: pages.status, detail: pages.detail });
+  if (!automatic) {
+    emit({ phase: "pages", status: "active" });
+    if (domain && refusing(`https://${domain}/`)) {
+      // Eight more requests into a ban only extend it. The nightly pass reads
+      // the pages when the host is not counting.
+      emit({ phase: "pages", status: "skipped", detail: "The site is rate-limiting us right now; the nightly pass reads your existing pages." });
+    } else if (!domain) {
+      emit({ phase: "pages", status: "skipped", detail: "No domain to read pages from." });
+    } else {
+      const startedAt = Date.now();
+      const pages = await assessExistingPages(supabase, workspace.id, domain);
+      // The number the budget is set against. Logged rather than shown: the
+      // customer wants to know what was found, and whoever tunes ONBOARDING_CRAWL
+      // wants to know how long it took on a real site.
+      console.log(
+        `[onboarding] pages: ${pages.status} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s - ${pages.detail}`,
+      );
+      emit({ phase: "pages", status: pages.status, detail: pages.detail });
+    }
   }
+  if (automatic && !checkedPages) emit({ phase: "pages", status: "skipped", detail: "First-article research could not start, so the existing-page check has not run." });
 
   // --- The link pool, before anything is written ---------------------------
   //
@@ -376,7 +412,7 @@ async function runPhases(
     planningDetail = "Nothing to schedule until there are keywords.";
     // Only when the research looked and found nothing: a site that could not
     // be read is a setup that fell short, and says so.
-    const emptyPool = researchFoundNothing ? await emptyPoolOrNull(supabase, workspace.id) : null;
+    const emptyPool = researchFoundNothing ? automatic ? firstArticleEmpty : await emptyPoolOrNull(supabase, workspace.id) : null;
     emit({
       phase: "planning",
       status: "skipped",
@@ -398,9 +434,10 @@ async function runPhases(
         maxEntries: 5,
         qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES,
         firstLook,
+        ...(automatic ? { firstArticleRecommendations, maxEntries: 1 } : {}),
         onFunnel: (f) => { planFunnel = f; },
       });
-      const held = gated && plan.length
+      const held = !automatic && gated && plan.length
         ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [] }))
         : { count: 0, dates: [] };
       // Searches the right buyer makes that no article can win: the plan
@@ -520,11 +557,12 @@ async function runPhases(
         // Not 25: the list is cut after scoring across every action, and a
         // site with 25 page-one rankings filled it with skips before any
         // writable term appeared (lib/onboarding/plan.ts has the same note).
-        const recs = await recommendKeywords(supabase, workspace.id, { limit: 1000, qualify: true, firstLook });
+        const recs = automatic ? firstArticleRecommendations : await recommendKeywords(supabase, workspace.id, { limit: 1000, qualify: true, firstLook });
         // The first day of the plan is what the person just watched get
         // scheduled; writing anything else would contradict the calendar.
         const first = plan[0];
-        const next = (first && recs.find((r) => r.term === first.term)) ?? pickNextKeyword(recs);
+        // An empty strict plan must not silently draft from the general queue.
+        const next = (first && recs.find((r) => r.term === first.term)) ?? (automatic ? null : pickNextKeyword(recs));
 
         // The week's related keywords, in one paid task instead of seven.
         //

@@ -60,12 +60,19 @@ export function SetupAsk({
   canBuy,
   followUp,
   returnTo = "/dashboard",
+  requireArticle = false,
 }: {
   ending: SetupEnding;
   canBuy: boolean;
   followUp: boolean;
   returnTo?: string;
+  requireArticle?: boolean;
 }) {
+  if (requireArticle && ending !== "article") {
+    return <div className="rounded-lg border border-line bg-bg p-4 text-[13px] leading-relaxed text-ink-2" role="status">
+      {ending === "writing" ? "Your article is still being prepared. The trial offer will appear when it is ready." : "Your first look is saved. We need a suitable article before asking you to start a trial."}
+    </div>;
+  }
   if (!asksForCard(ending)) return <NothingPlannedNote followUp={followUp} />;
   return <TrialOffer canBuy={canBuy} returnTo={returnTo} />;
 }
