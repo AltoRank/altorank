@@ -88,7 +88,7 @@ const emptyPool = vi.fn(async (..._a: unknown[]) => EMPTY_POOL);
 vi.mock("../empty-pool", () => ({ readEmptyPool: (...a: unknown[]) => emptyPool(...a) }));
 
 import { runOnboarding } from "../pipeline";
-import { BudgetRefusedError, currentSpendScope } from "@/lib/billing/spend-scope";
+import { BudgetRefusedError, claimSpend, currentSpendScope } from "@/lib/billing/spend-scope";
 import { FIRST_DRAFT_MIN_USD, firstLookReserves } from "@/lib/billing/run-budget";
 import type { OnboardingEvent } from "../events";
 
@@ -280,6 +280,23 @@ describe("runOnboarding", () => {
     const result = await runOnboarding(db, WS, () => undefined, { firstDraft: "dispatch", runId: "run-8" });
     expect(relatedBatch).not.toHaveBeenCalled();
     expect(result.pendingDraft).toMatchObject({ term: NEXT.term, relatedKeywords: [] });
+  });
+
+  it("blames the budget, not the site, when discovery's buyer test was refused and nothing was stored", async () => {
+    emptyPool.mockClear();
+    const base = richClient(0) as unknown as { from: (t: string) => unknown };
+    const budgetTable = { upsert: async () => ({ error: null }), select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+    // Every claim refused: the buyer test inside discovery buys nothing.
+    const db = { from: (t: string) => (t === "run_budgets" ? budgetTable : base.from(t)), rpc: async () => ({ data: null, error: null }) } as never;
+    analyse.mockImplementation(async () => {
+      await claimSpend("keyword-research/buyer-fit", 0.05).catch(() => null);
+      return { keywordsFound: 0, layers: [] };
+    });
+    const events: OnboardingEvent[] = [];
+    await runOnboarding(db, WS, (e) => events.push(e), { firstDraft: "dispatch", runId: "run-6" });
+    const keywords = events.find((e) => e.phase === "keywords" && "status" in e && e.status === "skipped");
+    expect((keywords as { detail: string }).detail).toMatch(/budget ran out before its keyword research finished/);
+    expect(emptyPool).not.toHaveBeenCalled();
   });
 
   it("skips the draft, with the reason, when the free allowance is used", async () => {

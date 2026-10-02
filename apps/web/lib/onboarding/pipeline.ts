@@ -40,7 +40,7 @@ import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { spendClient } from "@/lib/billing/default-spend";
-import { currentSpendScope, isBudgetRefusal, withSpendScope, withStage } from "@/lib/billing/spend-scope";
+import { currentSpendScope, isBudgetRefusal, watchRefusals, withSpendScope, withStage } from "@/lib/billing/spend-scope";
 import { draftBudgetShort, draftCanBuyLookup, openFirstLookBudget, type RunBudgetState } from "@/lib/billing/run-budget";
 import type { EmptyPool, OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { readEmptyPool } from "./empty-pool";
@@ -227,7 +227,9 @@ async function runPhases(
     emit({ phase: "keywords", status: "skipped", detail: "Keyword research is not configured on this install." });
   } else {
     try {
-      const analysis = await withStage("discovery", () => analyseDomain({
+      // Watched for the budget's refusals: a buyer test the budget stopped
+      // stores nothing, and "nothing rankable" would blame the site for it.
+      const { value: analysis, refused: discoveryRefused } = await watchRefusals(() => withStage("discovery", () => analyseDomain({
         domain,
         supabase,
         workspaceId: workspace.id,
@@ -241,7 +243,7 @@ async function runPhases(
         // rest. Every page here is one request against a host that may be
         // counting them (packhub.io bans after ten in forty seconds).
         maxPages: ONBOARDING_CRAWL_PAGES,
-      }));
+      })));
       keywordsFound = analysis.keywordsFound;
       screened = analysis.screened;
 
@@ -284,7 +286,8 @@ async function runPhases(
       const crawl = analysis.layers.find((l) => l.id === "crawl");
       const crawlFailed = crawl?.status === "failed" ? crawl.detail : null;
       const willRetry = crawlFailed !== null && isTransientCrawlFailure(crawlFailed);
-      researchFoundNothing = keywordsFound === 0 && crawlFailed === null && !why;
+      const budgetStopped = keywordsFound === 0 && discoveryRefused;
+      researchFoundNothing = keywordsFound === 0 && crawlFailed === null && !why && !budgetStopped;
       emit({
         phase: "keywords",
         status: keywordsFound > 0 ? "done" : "skipped",
@@ -302,7 +305,10 @@ async function runPhases(
                 ? `Your site could not be read (${crawlFailed}). Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there.`
                 : why
                   ? `${why.charAt(0).toUpperCase()}${why.slice(1)}. Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there.`
-                  : "Nothing rankable found for this site yet.",
+                  : budgetStopped
+                    // The run's budget, not the site: say so.
+                    ? "This first look's budget ran out before its keyword research finished, so no keyword was judged yet. Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there."
+                    : "Nothing rankable found for this site yet.",
         keywordsFound,
       });
     } catch (err) {
