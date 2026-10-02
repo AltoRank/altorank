@@ -56,9 +56,6 @@ const SCOPED_TABLES = new Set([
  * scope (operator views) still sees the account.
  */
 const ALLOWED: Record<string, string> = {
-  "app/api/cron/publish/route.ts:publishing_cadences":
-    "the scheduler reads every workspace's cadence, then publishes per workspace - " +
-    "scoping it would mean only one site ever gets published",
   "app/api/cron/analytics/route.ts:workspace_integrations":
     "the sync walks every connected workspace; that walk is the job",
   "lib/content/generate.ts:articles":
