@@ -43,6 +43,7 @@ export const SPEND_STAGES = [
   "results_pages",
   "judge",
   "related_keywords",
+  "questions",
   "draft",
   "outline_swap",
   "other",
@@ -201,6 +202,8 @@ export function scopeAttribution(scope: SpendScope | undefined = storage.getStor
     workspaceId: scope?.workspaceId ?? null,
     articleId: scope?.articleId ?? null,
     runId: scope?.budget?.runId ?? scope?.runId ?? null,
-    stage: scope?.stage ?? null,
+    // A stage is a first look's: outside a budget (the crons, the editor)
+    // the same code runs under the same stage names, and the rows say null.
+    stage: scope?.budget ? (scope.stage ?? "other") : null,
   };
 }

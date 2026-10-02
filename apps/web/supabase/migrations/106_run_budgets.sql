@@ -42,8 +42,9 @@
 --
 -- And `provider_spend.stage`: which stage of a first look bought the row
 -- (voice, profile, discovery, buyer_fit, results_pages, judge,
--- related_keywords, draft). Null outside a first look. A first look's rows,
--- the draft's included, carry the onboarding run's id in `run_id`.
+-- related_keywords, questions, draft; `other` when untagged). Null outside
+-- a first look. A first look's rows, the draft's included, carry the
+-- onboarding run's id in `run_id`.
 --
 -- Idempotent: `if not exists` throughout and `create or replace` for the
 -- functions. Rollback in RUNBOOK.md.
@@ -51,7 +52,7 @@
 alter table public.provider_spend add column if not exists stage text;
 
 comment on column public.provider_spend.stage is
-  'Which stage of a first look bought this call (voice, profile, discovery, buyer_fit, results_pages, judge, related_keywords, draft). Null outside a first look (migration 106).';
+  'Which stage of a first look bought this call (voice, profile, discovery, buyer_fit, results_pages, judge, related_keywords, questions, draft; other when untagged). Null outside a first look (migration 106).';
 comment on column public.provider_spend.run_id is
   'Groups the calls of one piece of work: the onboarding run for every row of a first look, the draft included; the generation job otherwise.';
 

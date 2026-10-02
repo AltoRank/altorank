@@ -19,6 +19,8 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicModel, replyText } from "@/lib/ai/models";
+import { createMetered } from "@/lib/ai/metered";
+import { isBudgetRefusal, withStage } from "@/lib/billing/spend-scope";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 
 export interface QualityQuestion {
@@ -145,7 +147,9 @@ export async function generateQualityQuestionsBatch(
   for (let i = 0; i < unique.length; i += QUESTION_BATCH_SIZE) {
     const batch = unique.slice(i, i + QUESTION_BATCH_SIZE);
     try {
-      const response = await client.messages.create({
+      // Metered (lib/ai/metered.ts): written to spend, and under a first
+      // look's budget claimed before it is sent, as the `questions` stage.
+      const response = await withStage("questions", () => createMetered(client, {
         model: anthropicModel("structured"),
         max_tokens: 4000,
         messages: [
@@ -154,11 +158,14 @@ export async function generateQualityQuestionsBatch(
             content: [PROMPT, about, "KEYWORDS:", ...batch.map((t) => `- ${t}`)].filter(Boolean).join("\n\n"),
           },
         ],
-      });
+      }, "keywords/questions"));
       const raw = replyText(response.content) ?? "";
       for (const [term, qs] of parseQuestionBatch(raw, batch)) out.set(term, qs);
     } catch (err) {
       console.warn("[questions] generation failed for a batch:", err instanceof Error ? err.message : err);
+      // The budget will not cover the next batch either: the rest stay
+      // without questions, which the card already offers to fill later.
+      if (isBudgetRefusal(err)) break;
     }
   }
   return out;

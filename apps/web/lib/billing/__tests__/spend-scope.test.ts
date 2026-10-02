@@ -28,6 +28,7 @@ import { BudgetRefusedError, claimSpend, currentSpendScope, withSpendScope, with
 import { post } from "@/lib/seo/client";
 import { askStructured } from "@/lib/keyword-research/buyer-model";
 import { qualifyOpportunities } from "@/lib/keyword-research/opportunity";
+import { generateQualityQuestionsBatch } from "@/lib/keywords/questions";
 
 /** Migration 106's rules, in memory: reserves held for their own stage, claims never past the ceiling. */
 function memoryBudget(runId: string, ceilingUsd: number, reserves: Partial<Record<SpendStage, number>> = {}, opts: { keepEstimates?: boolean } = {}) {
@@ -262,5 +263,42 @@ describe("a first look that runs out of budget", () => {
     expect(keywordWrites).toEqual([]);
     expect(create).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("the plan's questions under a first look's budget", () => {
+  const terms = ["acme booking cost", "acme booking setup"];
+  const answer = JSON.stringify(Object.fromEntries(terms.map((t) => [t, ["What did your first setup cost you?", "Which step took you longest?"]])));
+
+  it("are claimed and billed as their own stage", async () => {
+    create.mockResolvedValue(reply(answer));
+    const { db, spend } = memoryDb();
+    const run = memoryBudget("run-q", 1);
+    const out = await withSpendScope({ workspaceId: "ws-q", budget: run.budget, db }, () => generateQualityQuestionsBatch(terms, null));
+    expect(out.size).toBe(2);
+    expect(run.claims.map((c) => [c.stage, c.granted !== null])).toEqual([["questions", true]]);
+    await vi.waitFor(() => expect(spend).toHaveLength(1));
+    expect(spend[0]).toMatchObject({ provider: "anthropic", operation: "keywords/questions", workspace_id: "ws-q", run_id: "run-q", stage: "questions" });
+  });
+
+  it("are not asked when the budget refuses: no call, no questions, no failure", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { db, spend } = memoryDb();
+    const run = memoryBudget("run-q2", 0.0001);
+    const out = await withSpendScope({ workspaceId: "ws-q", budget: run.budget, db }, () => generateQualityQuestionsBatch(terms, null));
+    expect(out.size).toBe(0);
+    expect(create).not.toHaveBeenCalled();
+    expect(run.claims).toEqual([expect.objectContaining({ stage: "questions", granted: null })]);
+    expect(spend).toEqual([]);
+    warn.mockRestore();
+  });
+
+  it("carry no stage outside a first look: the tag is a budget's", async () => {
+    create.mockResolvedValue(reply(answer));
+    const { db, spend } = memoryDb();
+    await withSpendScope({ workspaceId: "ws-q", db }, () => generateQualityQuestionsBatch(terms, null));
+    await vi.waitFor(() => expect(spend).toHaveLength(1));
+    expect(spend[0]).toMatchObject({ workspace_id: "ws-q", operation: "keywords/questions" });
+    expect(spend[0].stage).toBeUndefined();
   });
 });
