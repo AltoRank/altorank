@@ -42,6 +42,8 @@ export type ArticleShape = "comparison" | "listicle" | "howTo" | "explainer" | "
 export const ARTICLE_SHAPES: readonly ArticleShape[] = ["comparison", "listicle", "howTo", "explainer", "reference"];
 
 export interface Opportunity {
+  /** The separate first-article decision; never inferred from a broad buyer-fit pass. */
+  firstArticle?: import("@/lib/onboarding/first-look-selection").FirstArticleEvidence;
   version: number;
   context: string;
   checkedAt: string;
@@ -98,6 +100,8 @@ export interface Opportunity {
  * the ceiling less what the first draft needs.
  */
 export interface FirstLook {
+  /** Strict automatic first article: an unanswered second read cannot approve it. */
+  requireAgreement?: boolean;
   /** When the run started: its spend is what provider_spend holds for the site since. */
   since: string;
   /** The founder's per-first-look ceiling (2026-09-29). */
@@ -325,7 +329,7 @@ export async function qualifyOpportunities(
         // that returned nothing usable says nothing either way.
         if (firstLook && result.status === "qualified") {
           const second = await judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend });
-          if (second.status === "rejected") {
+          if (second.status === "rejected" || (firstLook.requireAgreement && (second.status !== "qualified" || second.funnel !== "buyer"))) {
             const first = result.reason;
             for (const key of Object.keys(result) as Array<keyof Opportunity>) delete result[key];
             Object.assign(result, second, {

@@ -65,6 +65,14 @@ export function FirstArticleCardView({
         {verdict && <span className={`shrink-0 text-[11.5px] ${VERDICT[verdict].className}`}>{VERDICT[verdict].text}</span>}
       </div>
       <h2 className="m-0 text-[16px] font-semibold leading-snug text-ink">{title}</h2>
+      {article?.selection && (
+        <details className="mt-3 rounded-lg border border-line p-3 text-[13px] leading-relaxed text-ink-2">
+          <summary className="cursor-pointer font-medium text-ink">Why this article?</summary>
+          <p className="mb-1">Based on your service: <strong>{article.selection.offering}</strong>.</p>
+          <p className="my-1">{article.selection.buyerDecision}</p>
+          <p className="mb-0 mt-1">{article.selection.rationale}</p>
+        </details>
+      )}
       {article && article.labels.length > 0 && (
         <ul className="m-0 mt-2 list-none p-0">
           {article.labels.map((l) => (
