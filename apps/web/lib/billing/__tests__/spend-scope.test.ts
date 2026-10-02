@@ -28,7 +28,7 @@ import { BudgetRefusedError, claimSpend, currentSpendScope, withSpendScope, with
 import { post } from "@/lib/seo/client";
 import { askStructured } from "@/lib/keyword-research/buyer-model";
 import { qualifyOpportunities } from "@/lib/keyword-research/opportunity";
-import { generateQualityQuestionsBatch } from "@/lib/keywords/questions";
+import { generateQualityQuestionsBatch } from "@/lib/keywords/questions-generate";
 
 /** Migration 106's rules, in memory: reserves held for their own stage, claims never past the ceiling. */
 function memoryBudget(runId: string, ceilingUsd: number, reserves: Partial<Record<SpendStage, number>> = {}, opts: { keepEstimates?: boolean } = {}) {

@@ -59,7 +59,6 @@ vi.mock("@/lib/linking/targets", async (importOriginal) => ({
 const { writerClaims } = vi.hoisted(() => ({ writerClaims: { count: 0 } }));
 vi.mock("@/lib/ai/provider", () => ({
   resolveProvider: () => ({
-    // eslint-disable-next-line require-yield
     async *streamArticle() {
       writerClaims.count++;
       // What ClaudeProvider does when the budget will not cover its floor.
