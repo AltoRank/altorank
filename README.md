@@ -23,6 +23,8 @@ against your own Supabase and your own API keys. Research, drafting, scoring,
 fact-checking, audits, rank tracking and Search Console / Bing sync run today;
 the table below has the detail. What is not finished yet:
 
+- **No paying customers, no case studies.** Nothing here has a growth figure
+  attached to it, and that is on purpose.
 - **CMS publishing is built but not yet verified end to end.** The thirteen
   adapters are in `apps/web/lib/cms/` and the connection form covers all of
   them, but none has been watched publishing to a live site yet, so the
