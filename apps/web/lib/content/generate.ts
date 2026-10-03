@@ -55,6 +55,8 @@ import {
 } from "@/lib/seo/link-resolver";
 import { verifyOutboundLinks, type LinkCheck } from "@/lib/seo/link-check";
 import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research";
+import { rivalsOf, scrubBlockedLinks, sourceReviewNotes } from "@/lib/seo/source-classes";
+import type { SourceOwner } from "@/lib/seo/source-classify";
 import type { RelatedKeyword } from "@/lib/seo/brief-data";
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -742,6 +744,16 @@ export async function generateArticle(
       supabase,
       workspaceId,
       relatedKeywords: options.relatedKeywords,
+      // Whose article it is, so the sites research reads are classified
+      // before any figure is offered: one structured call, billed here.
+      sources: {
+        owner: {
+          ownDomain: workspace.domain ?? null,
+          rivals: rivalsOf(workspace.business_profile),
+          business: (workspace.business_profile as SourceOwner["business"]) ?? null,
+        },
+        spend: { supabase: spendDb, workspaceId },
+      },
     });
     const siteFacts = siteFactsPending ? await siteFactsPending : null;
     // Saved with the research, so the reviewer sees what the writer was told
@@ -1038,15 +1050,33 @@ export async function generateArticle(
       runId: job.id,
     });
 
+    // No link to a business that sells what this one sells survives, whatever
+    // the writer was told: the anchor text stays, the link goes, and the
+    // removal is saved with the research for the reviewer and for the fact
+    // check below, which reads a sentence still carrying it as the rival's.
+    // Last of the HTML steps, so nothing after it can add one back.
+    if (research.sourceReview) {
+      const review = research.sourceReview;
+      const scrubbed = scrubBlockedLinks(processedHtml, review);
+      processedHtml = scrubbed.html;
+      review.removedLinks = scrubbed.removed;
+      review.unclassifiedLinks = scrubbed.unclassified;
+      if (scrubbed.removed.length) {
+        console.warn(`[generate] removed ${scrubbed.removed.length} link(s) to same-service sites: ${scrubbed.removed.map((r) => r.host).join(", ")}`);
+      }
+    }
+
     // Two passes: the first asks whether each figure is attributed, the second
     // opens the pages the attributions point at. The second is what catches a
     // real citation carrying a wrong number, which the first cannot see.
-    const factCheck = await verifyCitedFigures(factCheckArticle(processedHtml, research, workspace.language));
+    const factCheck = await verifyCitedFigures(factCheckArticle(processedHtml, research, workspace.language), {
+      sourceReview: research.sourceReview,
+    });
 
     // What the reviewer has to know or do before publishing, said once at the
     // top of the research panel rather than left for them to infer from a
     // failing check. Saved with the research below.
-    const reviewNotes: string[] = [...(trust?.notes ?? [])];
+    const reviewNotes: string[] = [...(trust?.notes ?? []), ...sourceReviewNotes(research.sourceReview)];
     const figureNote = figureReviewNote(research.sourceFigures, processedHtml, workspace.language);
     if (figureNote) reviewNotes.push(figureNote);
     const linkNote = topicLinkNote(topicPages, processedHtml);

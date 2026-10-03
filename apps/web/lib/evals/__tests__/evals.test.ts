@@ -216,6 +216,7 @@ describe("scoring", () => {
     expect(claimOutcome("contradicted")).toBe("unsupported");
     expect(claimOutcome("unsupported")).toBe("unsupported");
     expect(claimOutcome("needs_verification")).toBe("unverified");
+    expect(claimOutcome("rival_source")).toBe("misattributed");
     expect(claimOutcome(null)).toBe("not_extracted");
   });
 

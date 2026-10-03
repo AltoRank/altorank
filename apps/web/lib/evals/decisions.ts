@@ -114,6 +114,9 @@ export function claimOutcome(status: ClaimStatus | null): string {
   if (!status) return "not_extracted";
   if (status === "verified") return "supported";
   if (status === "contradicted" || status === "unsupported") return "unsupported";
+  // Credited to a business that sells the same service: whatever the page
+  // says, the sentence names the wrong kind of source.
+  if (status === "rival_source") return "misattributed";
   return "unverified";
 }
 
@@ -126,13 +129,14 @@ export async function runFactCheck(c: ClaimCase, readPage: (relative: string) =>
   const research = {
     competitors: [],
     trust: { sensitive: c.sensitive ? { kind: "health", evidence: "set by the eval case" } : null },
+    ...(c.sourceReview ? { sourceReview: c.sourceReview } : {}),
   } as unknown as ArticleResearch;
   const fetcher: PageFetcher = async (url) => {
     const relative = c.pages[url];
     const body = relative ? readPage(relative) : null;
     return body === null ? { status: 404, body: "" } : { status: 200, body };
   };
-  const report = await verifyCitedFigures(factCheckArticle(c.html, research, c.language), { fetcher });
+  const report = await verifyCitedFigures(factCheckArticle(c.html, research, c.language), { fetcher, sourceReview: c.sourceReview });
   return c.expect.map((e) => {
     const needle = e.match.toLowerCase();
     const claim = report.claims.find((x) => x.sentence.toLowerCase().includes(needle) || x.figures.some((f) => f.toLowerCase() === needle));

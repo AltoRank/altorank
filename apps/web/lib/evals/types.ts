@@ -87,6 +87,12 @@ export interface ClaimCase {
   /** Cited URL to a stored copy of the page, relative to the claims file. */
   pages: Record<string, string>;
   expect: Array<{ id: string; match: string; label: ClaimLabel; note?: string }>;
+  /**
+   * What research decided about the cited sites (`ArticleResearch.sourceReview`),
+   * as the product's classifier recorded it for this article. Without it no
+   * claim can be read as sourced from a business selling the same service.
+   */
+  sourceReview?: import("@/lib/seo/source-classes").SourceReview;
 }
 
 export type DecisionName = "buyer-fit" | "qualification" | "pipeline" | "fact-check";
