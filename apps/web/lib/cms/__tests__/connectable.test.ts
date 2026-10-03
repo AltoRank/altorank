@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CONNECTABLE_CMS, isRequestable } from "../connectable";
+import { CONNECTABLE_CMS, cmsTileAction, isRequestable } from "../connectable";
 import { resolveCMSAdapter } from "../adapter";
 
 /**
@@ -58,6 +58,17 @@ describe("connectable", () => {
     for (const id of CONNECTABLE_CMS) expect(isRequestable(id, false)).toBe(false);
     // Google and Bing render their own buttons; the page passes hasOwnFlow.
     for (const id of ["gsc", "ga4", "bing"]) expect(isRequestable(id, true)).toBe(false);
+  });
+
+  it("keeps Test and Reconnect on a tile that is already connected", () => {
+    // The tile used to need both a connection and a place in CONNECTABLE_CMS,
+    // so emptying the set took the controls off live connections.
+    for (const id of dialogCmsTypes()) expect(cmsTileAction(id, true)).toBe("manage");
+  });
+
+  it("asks for a request on an unconnected tile while nothing is connectable", () => {
+    for (const id of dialogCmsTypes()) expect(cmsTileAction(id, false)).toBe("request");
+    for (const id of CONNECTABLE_CMS) expect(cmsTileAction(id, false)).toBe("connect");
   });
 
   it("defaults an unknown integration to a request rather than a dead button", () => {

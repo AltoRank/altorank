@@ -11,7 +11,7 @@ import { GoogleConnectButton } from "@/components/dashboard/google-connect-butto
 import { BingConnectButton } from "@/components/dashboard/bing-connect-button";
 import { CmsConnectionActions } from "./cms-connection-actions";
 import { RequestIntegrationButton } from "@/components/dashboard/request-integration-button";
-import { CONNECTABLE_CMS } from "@/lib/cms/connectable";
+import { cmsTileAction } from "@/lib/cms/connectable";
 import { HowItWorks } from "@/components/dashboard/how-it-works";
 import { integrationsExplainer } from "@/lib/explainers";
 import type { PublishingCadence } from "@/lib/types";
@@ -154,13 +154,13 @@ export default async function IntegrationsPage({
                       />
                     ) : i.id === "bing" ? (
                       <BingConnectButton connected={connectedIds.has(i.id)} />
-                    ) : CONNECTABLE_CMS.has(i.id) && connectionRowIds.has(i.id) ? (
+                    ) : cmsTileAction(i.id, connectionRowIds.has(i.id)) === "manage" ? (
                       <CmsConnectionActions
                         integrationId={i.id}
                         workspaceIntegrationId={connectionRowIds.get(i.id)!}
                         name={i.name}
                       />
-                    ) : CONNECTABLE_CMS.has(i.id) ? (
+                    ) : cmsTileAction(i.id, false) === "connect" ? (
                       <Link href={`/connect?connect=${i.id}`} className="block">
                         <Button size="sm" className="w-full justify-center">
                           Connect
