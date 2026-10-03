@@ -325,6 +325,30 @@ describe("page-type decisions", () => {
     expect(out).toMatchObject({ status: "rejected", cause: "not_editorial" });
     expect(out?.floor).toBeUndefined();
   });
+  it("reads providers' home, service and booking pages as what they are, whatever the judge called them, and keeps the counts on the row", async () => {
+    fetchSerp.mockResolvedValue(serpOf([
+      { url: "https://clinic-one.test/", title: "Clinic One" },
+      { url: "https://clinic-two.test/services/booking-website", title: "Booking websites" },
+      { url: "https://clinic-three.test/book-online", title: "Book online" },
+      { url: "https://clinic-four.test/", title: "Clinic Four" },
+      { url: "https://clinic-five.test/contact", title: "Contact" },
+      { url: "https://clinic-six.test/pricing", title: "Pricing" },
+      { url: "https://clinic-seven.test/blog/clinic-booking-website-costs", title: "What a clinic booking website costs" },
+      { url: "https://clinic-eight.test/blog/booking-website-cost-guide", title: "Booking website cost guide" },
+    ]));
+    answerWith("article");
+    const out = await run();
+    expect(out).toMatchObject({ status: "rejected", cause: "needs_page", overruled: "editorial", pagesReadByCode: 6 });
+    expect(out.pageKinds).toEqual({ service_or_local: 6, article: 2 });
+    expect(out.reason).toContain("6 providers' own pages");
+  });
+  it("keeps a provider's blog posts articles: an approval records its page counts and no overrule", async () => {
+    fetchSerp.mockResolvedValue(serpOf([1, 2, 3, 4].map((i) => ({ url: `https://clinic-${i}.test/blog/clinic-booking-website-costs`, title: "Clinic booking website costs" }))));
+    answerWith("service");
+    const out = await run();
+    expect(out).toMatchObject({ status: "qualified", pageKinds: { article: 4 } });
+    expect(out.overruled).toBe("service");
+  });
   it("sends a searcher ready to hire to a landing page when providers' pages crowd the results", async () => {
     fetchSerp.mockResolvedValue(serpOf([...urls.map((url) => ({ url, title: "Clinic booking website cost guide" })), ...productPages.organic]));
     answerWith([...Array(4).fill("article"), ...Array(4).fill("product")], { stage: "hiring" });

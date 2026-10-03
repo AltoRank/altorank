@@ -7,7 +7,7 @@ import { askStructured, describeBusiness, extractJson, modelAvailable, type AskM
 export type { AskModel };
 import { profileUsable } from "./business-context";
 import { funnelOfStage, judgeBuyerFit, readStage, savedFitFor, SEARCH_STAGES, STAGE_KEEP, STAGE_RULES, STAGE_WORDS, type FitJudgement, type FitProfile, type FitVerdict, type Funnel, type SearchStage } from "./buyer-fit";
-import { JUDGE_KIND, JUDGE_KINDS, LEXICON_LANGUAGES, namedIn, readResultsPage, rivalNamed, type JudgeKind, type ResultKind, type ResultsPageReading } from "./results-page";
+import { JUDGE_KINDS, LEXICON_LANGUAGES, namedIn, readResultsPage, rivalNamed, type JudgeKind, type PageKind, type ResultsPageReading } from "./results-page";
 import { e2eStubsEnabled, isReservedTestDomain } from "@/lib/e2e/stubs";
 import { getLocale } from "@/lib/seo/locales";
 import { canonicalPage, describeMatch, intentMatcher, type IntentBasis, type IntentMatch } from "./intent";
@@ -91,6 +91,21 @@ export interface Opportunity {
    * cause (lib/keyword-research/queue.ts), because a coin flip is not a "no".
    */
   contested?: true;
+  /**
+   * The top results counted by what each page is (lib/keyword-research/
+   * results-page.ts `PageKind`), on every verdict that read a results page:
+   * the numbers the page-type rule decided on, kept on the keyword row so a
+   * wrong call can be read and argued with.
+   */
+  pageKinds?: Partial<Record<PageKind, number>>;
+  /** How many of those results the page itself decided (a home page, a /services/ path, a listing, a /blog/ post), whatever the judge said. */
+  pagesReadByCode?: number;
+  /**
+   * The page type the judge's reading alone gave, when the page-type rule
+   * (per-page kinds read from the pages, and its thresholds) changed it.
+   * Absent when the rule agreed with the judge.
+   */
+  overruled?: string;
 }
 /**
  * A first look's qualification (lib/onboarding/pipeline.ts): approvals are
@@ -468,16 +483,39 @@ function evidenceOf(reading: ResultsPageReading): string[] {
   return [...reading.editorialUrls, ...rest].slice(0, 5);
 }
 
-/** The judge's kinds, folded, when it named one known kind per result; null otherwise. */
-export function readJudgeKinds(raw: unknown, count: number): ResultKind[] | null {
+/** The judge's kinds, when it named one known kind per result; null otherwise. */
+export function readJudgeKinds(raw: unknown, count: number): JudgeKind[] | null {
   if (!Array.isArray(raw) || raw.length !== count) return null;
-  const out: ResultKind[] = [];
+  const known = new Set<string>(JUDGE_KINDS);
+  const out: JudgeKind[] = [];
   for (const k of raw) {
     const word = typeof k === "string" ? k.trim().toLowerCase() : "";
-    if (!(word in JUDGE_KIND)) return null;
-    out.push(JUDGE_KIND[word as JudgeKind]);
+    if (!known.has(word)) return null;
+    out.push(word as JudgeKind);
   }
   return out;
+}
+
+/** The results a verdict reads: real pages, the first ten. */
+export function judgedResults<T extends { url: string }>(organic: ReadonlyArray<T>): T[] {
+  return organic.filter((r) => canonicalPage(r.url)).slice(0, 10);
+}
+
+/** The site's own page that targets the search: the page the term came from, or one ranking in the results. */
+export function existingPageIn(organic: ReadonlyArray<{ url: string }>, sourceUrl: string | null | undefined, domain: string): string | undefined {
+  return ownPage(sourceUrl, domain) ? sourceUrl! : organic.find((r) => ownPage(r.url, domain))?.url;
+}
+
+/**
+ * The results judge's raw answer for a results page (`judgedResults`), asked
+ * exactly as qualification asks it, so the decision evals replay the same
+ * stored answer (lib/evals, the `page-type` decision).
+ */
+export function askResultsJudge(
+  input: { term: string; context: OpportunityContext; verdict: Extract<FitVerdict, { keep: true }>; organic: ReadonlyArray<ResultsPageEntry> },
+  options: { spend?: SpendSink | null; ask?: AskModel; today?: string } = {},
+): Promise<string | null> {
+  return (options.ask ?? askStructured)("keyword-research/opportunity", opportunityPrompt({ ...input, today: options.today }), { maxTokens: OPPORTUNITY_MAX_TOKENS, spend: options.spend ?? null, tier: "decision", schema: opportunitySchema() });
 }
 
 /**
@@ -516,9 +554,9 @@ export async function judgeOnResults(
   options: { spend?: SpendSink | null; ask?: AskModel; today?: string } = {},
 ): Promise<Opportunity> {
   const { context, verdict } = input;
-  const organic = input.organic.filter((r) => canonicalPage(r.url)).slice(0, 10);
+  const organic = judgedResults(input.organic);
   result.organicUrls = organic.map((r) => r.url);
-  const existing = ownPage(input.sourceUrl, context.domain) ? input.sourceUrl : organic.find((r) => ownPage(r.url, context.domain))?.url;
+  const existing = existingPageIn(organic, input.sourceUrl, context.domain);
   if (existing) {
     result.status = "rejected";
     result.cause = "existing_page";
@@ -542,7 +580,7 @@ export async function judgeOnResults(
 
   result.cause = "judge_incomplete";
   result.reason = "The qualification model returned an unusable answer. It is asked again on the next run.";
-  const raw = await (options.ask ?? askStructured)("keyword-research/opportunity", opportunityPrompt({ term: input.term, context, verdict, organic, today: options.today }), { maxTokens: OPPORTUNITY_MAX_TOKENS, spend: options.spend ?? null, tier: "decision", schema: opportunitySchema() });
+  const raw = await askResultsJudge({ term: input.term, context, verdict, organic }, options);
   const parsed = extractJson<Record<string, unknown>>(raw, "{", "}");
   const stage: SearchStage | null = parsed ? readStage(parsed.stage) : null;
   if (!parsed || !stage) return result;
@@ -559,7 +597,13 @@ export async function judgeOnResults(
     result.reason = "The qualification model did not name every result, and this language has no word lists to read them from. It is asked again on the next run.";
     return result;
   }
-  const page = readResultsPage(organic, { term: input.term, named, ...(kinds ? { kinds } : {}) });
+  const page = readResultsPage(organic, { term: input.term, named, domain: context.domain, ...(kinds ? { judged: kinds } : {}) });
+  // What the judge's reading alone came to, so the row says when the rule
+  // decided against it (the page-type log, lib/onboarding/funnel-event.ts).
+  const readerOnly = readResultsPage(organic, { term: input.term, named, domain: context.domain, pageRule: false, ...(kinds ? { judged: kinds } : {}) });
+  result.pageKinds = Object.fromEntries(Object.entries(page.pages).filter(([, n]) => n > 0));
+  result.pagesReadByCode = page.decidedByCode;
+  if (readerOnly.type !== page.type) result.overruled = readerOnly.type;
   const basis = page.basis === "urls" ? " (Result types read from URLs and titles: the judge did not name them.)" : "";
   const fields = ["audience", "buyingJob", "offering", "angle", "conversionPath"] as const;
   if (page.type === "navigational") {
