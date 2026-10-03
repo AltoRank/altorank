@@ -66,6 +66,7 @@ export const integrationsExplainer: Explainer = {
     },
   ],
   cannotYet: [
+    "Connect a CMS from its tile yourself. None of the adapters above has been watched publishing to a live site yet, so each tile asks you to request the integration and we set the first connection up with you. Existing connections keep Test and Reconnect.",
     "Update a live post through a credential connection. The adapter interface is publish, unpublish and test; publishing again creates a new post. The WordPress plugin is the one destination that edits in place.",
     "Two-way sync. An edit made in the CMS after publishing does not come back into the editor.",
     "Publish to GitLab or Bitbucket. Git means GitHub.",
