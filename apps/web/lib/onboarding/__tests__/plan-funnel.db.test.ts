@@ -85,6 +85,8 @@ describe.skipIf(!STACK)("the planner's funnel on the local database", () => {
             organicUrls: [`https://a.example/${c.id}`, `https://b.example/${c.id}`, `https://c.example/${c.id}`],
             evidenceUrls: [`https://a.example/${c.id}`, `https://b.example/${c.id}`],
             audience: "commuter cyclists", buyingJob: "choosing a workshop", offering: "bike repair", angle: c.term, format: "article",
+            // Graded as the reader grades: one of the workshop's services (value-tiers.ts).
+            value: 3, service: "bike repair",
           } : {}) };
         const { error } = await s.from("keywords").update({ opportunity: o }).eq("id", c.id).eq("workspace_id", w);
         if (error) throw new Error(error.message);
@@ -122,6 +124,7 @@ describe.skipIf(!STACK)("the planner's funnel on the local database", () => {
     expect(entries ?? []).toHaveLength(plan.length);
     expect(plan.length).toBeGreaterThan(0);
     expect(f.notPlanned).toEqual(plan.length === 2 ? {} : { no_room: 2 - plan.length });
+    expect(f.plannedTiers).toEqual({ t1: plan.length });
 
     // Every refusal the judge gave is parked with its cause, and nothing else is.
     const { data: parked } = await db.from("keywords").select("term, opportunity").eq("workspace_id", workspaceId).not("plan_excluded_at", "is", null);

@@ -7,12 +7,13 @@ import { askStructured, describeBusiness, extractJson, modelAvailable, type AskM
 export type { AskModel };
 import { profileUsable } from "./business-context";
 import { funnelOfStage, judgeBuyerFit, readStage, savedFitFor, SEARCH_STAGES, STAGE_KEEP, STAGE_RULES, STAGE_WORDS, type FitJudgement, type FitProfile, type FitVerdict, type Funnel, type SearchStage } from "./buyer-fit";
-import { JUDGE_KIND, JUDGE_KINDS, LEXICON_LANGUAGES, namedIn, readResultsPage, rivalNamed, type JudgeKind, type ResultKind, type ResultsPageReading } from "./results-page";
+import { JUDGE_KIND, JUDGE_KINDS, LEXICON_LANGUAGES, namedIn, readResultsPage, type JudgeKind, type ResultKind, type ResultsPageReading } from "./results-page";
 import { e2eStubsEnabled, isReservedTestDomain } from "@/lib/e2e/stubs";
 import { getLocale } from "@/lib/seo/locales";
 import { canonicalPage, describeMatch, intentMatcher, type IntentBasis, type IntentMatch } from "./intent";
 import { readIntentLeaders, stageWords, type IntentLeader, type OnCalendar } from "./intent-leaders";
 import { canSpendOnSite, SpendRefusedError } from "@/lib/billing/spend-gate";
+import { capValue, readMatch, readValue, serviceList, SERVICE_MATCHES, type BusinessValue, type PlannedTier, type ServiceMatch, type ValueCap } from "./value-tiers";
 
 export { canonicalPage };
 
@@ -35,6 +36,7 @@ export type OpportunityCause =
   | "existing_page"
   | "not_editorial"
   | "needs_page"
+  | "no_value"
   | "duplicate";
 
 /** The shape of the editorial results a query is won by, in the planner's taxonomy. */
@@ -68,14 +70,33 @@ export interface Opportunity {
   /** Cause "duplicate": whether the results pages or only the words were compared. */
   intentBasis?: IntentBasis;
   /**
-   * A not_editorial verdict on a searcher the business serves, with a
-   * complete brief and at least one observed article: what the planner's
-   * floor may promote when fewer than `PLAN_FLOOR` topics qualify.
+   * Business value, 0-3, after code's cap (lib/keyword-research/value-tiers.ts):
+   * 3 the answer is one of the owner's services, 2 a problem a service solves
+   * asked by a likely customer, 1 general interest in the field, 0 no path to
+   * the business (a veto: cause "no_value"). The reader grades it, names
+   * the service and says how the search reaches it; code caps the grade when
+   * those do not hold it up (`capValue`). Absent on a verdict from before
+   * the grade existed, which the planner reads as 1.
    */
-  floor?: boolean;
+  value?: BusinessValue;
+  /** The owner's service the topic leads to, exactly as `business.offerings` names it. */
+  service?: string;
+  /** How the search reaches that service, as the reader said (value-tiers.ts `ServiceMatch`). */
+  serviceMatch?: ServiceMatch;
+  /** Code lowered the reader's grade (value-tiers.ts `capValue`); `valueCap` says why. */
+  valueCapped?: true;
+  valueCap?: ValueCap;
+  /** The profile lists no services: the grade stands as the reader gave it, flagged. */
+  valueUnlisted?: true;
   /**
-   * "lower": planned by the floor (lib/seo/recommendations.ts), not by the
-   * bar. Said on the calendar, the first-article card and the run's funnel.
+   * The planner's tier when this topic was put on the calendar
+   * (lib/keyword-research/value-tiers.ts): what the screen labels it by.
+   */
+  tier?: PlannedTier;
+  /**
+   * "lower": planned by relaxing a plan rule (value-tiers.ts `selectPlan`),
+   * or, on a verdict saved before 2026-10, by the #263 floor. Said on the
+   * calendar, the first-article card and the run's funnel.
    */
   confidence?: "lower";
   /**
@@ -240,7 +261,8 @@ export async function qualifyOpportunities(
       const urls = [1, 2, 3].map((n) => `https://source-${n}.example/${encodeURIComponent(c.term)}`);
       const fixture: Opportunity = { version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString(), status: "qualified",
         reason: "E2E fixture: editorial buyer opportunity", audience: "Fixture reader", buyingJob: c.term,
-        offering: "Fixture offering", angle: c.term, format: "article", conversionPath: `https://${context.domain}`, evidenceUrls: urls, organicUrls: urls };
+        offering: "Fixture offering", angle: c.term, format: "article", conversionPath: `https://${context.domain}`, evidenceUrls: urls, organicUrls: urls,
+        value: 3, ...(serviceList(context.business)[0] ? { service: serviceList(context.business)[0] } : {}) };
       const { error } = await supabase.from("keywords").update({ opportunity: fixture }).eq("workspace_id", workspaceId).eq("id", c.id);
       if (error) throw new Error(error.message);
       out.set(c.id, fixture);
@@ -408,8 +430,8 @@ export function opportunityPrompt(input: { term: string; context: OpportunityCon
     STAGE_RULES,
     "",
     "2. kinds: name EVERY result, in order, one word each, from its title, URL and snippet:",
-    "  article = a standalone piece written to inform about the subject: a guide, how-to, explainer, symptom or condition page, exercise or recovery program, 'what is', a cost guide that explains what drives prices in general, a ranked or counted list of options or companies ('best X', 'top 10 X companies'), a comparison, a review, a news story, an encyclopedia entry. Whoever publishes it: an agency's post ranking agencies, a vendor's 'best X software' post, a hospital's patient-education page are articles.",
-    "  service = one business's page about the service it sells or books, even when it explains things, carries a date or sits on its blog: its service or treatment page, a service plus a city, its FAQ, its prices, insurance, direct-billing or first-visit page, 'what we offer', 'why choose us', 'why you need <the service it sells>', an agency's service page, a turnkey offer.",
+    "  article = a standalone piece written to inform about the subject: a guide, how-to, explainer, condition or problem page, step-by-step program, 'what is', a cost guide that explains what drives prices in general, a ranked or counted list of options or companies ('best X', 'top 10 X companies'), a comparison, a review, a news story, an encyclopedia entry. Whoever publishes it: an agency's post ranking agencies, a vendor's 'best X software' post, a hospital's patient-education page are articles.",
+    "  service = one business's page about the service it sells or books, even when it explains things, carries a date or sits on its blog: its service page, a service plus a city, its FAQ, its prices or payment options, how it charges or which insurance it accepts, its booking page, 'what we offer', 'why choose us', 'why you need <the service it sells>', an agency's service page, a turnkey offer.",
     "  product = a page that sells a product: a product page, a shop's category or listing page, a kit, a price list, a pricing page, an app-store page.",
     "  local = one business's location, map or contact page.",
     "  directory = a platform whose job is listing providers: profiles, reviews and filters, marketplaces, 'find a X near you'. A written post that ranks companies is an article, not a directory.",
@@ -417,30 +439,43 @@ export function opportunityPrompt(input: { term: string; context: OpportunityCon
     "  forum = a forum, Q&A or social thread. video = a video page. paper = a research paper or journal.",
     "  offtopic = a result that is not about this search at all (another meaning of the words, another subject).",
     "",
-    "3. When the stage is problem, solution, comparing, hiring or professional, write the brief for one article answering this search:",
+    "3. value, for every stage: how much an article on this search would bring this business customers. Grade it against `services`, the list in the data below. A 2 or a 3 has to be earned: between two grades, give the lower.",
+    "  3 = the search asks about one of those services itself: what it involves or costs, whether it is worth it, it against an alternative, who provides it (\"[service] vs [alternative]\", \"is [service] worth it for [situation]\", \"[service] cost\").",
+    "  2 = a problem or situation one of those services solves for a customer, asked by someone likely to need it (\"[problem]: when to call a [professional]\", a condition or fault the service treats or fixes).",
+    "  1 = general interest in the field: a listed service would only get a passing mention. Always 1 when the phrase is a bare head term for the field, a product or a component that is not itself a listed service (the searcher could want a definition, a shop or the news); when it asks what a term means and that term is not a listed service; when it looks up a specification, size, rating or figure; when it is a tutorial, course or career search; and when the searcher wants a technique, product, software or specialty the business does not list, even one a listed service could supply, build or mention.",
+    "  0 = no credible path from this search to the business.",
+    "- service: the one entry of `services` the article would lead its reader to, copied exactly, or \"none\" when no listed service fits. A service the business does not list is \"none\". When `services` is empty, grade against the business description and answer \"none\".",
+    "- match: how the search reaches that service. named = its words name the service itself or what it delivers (a plain synonym or translation counts); implied = its words name a problem or situation the service solves, not the service; adjacent = the searcher wants something else that the service is only related to. Answer adjacent when service is \"none\".",
+    "  Value 3 needs match named, value 2 needs named or implied, and an adjacent match is value 1 at most.",
+    "",
+    "4. When the stage is problem, solution, comparing, hiring or professional, write the brief for one article answering this search:",
     "- audience: the searcher, named plainly. buyingJob: what they are trying to do or understand (for problem, the problem they are working on; for professional, the professional task, not a purchase).",
     "- offering: the part of this business this reader would later use, stated plainly, without claiming it answers the query. Use only the supplied business description; do not invent features or claims.",
-    `- angle: a specific publishable headline in ${getLocale(context.languageCode).label} (${context.languageCode}), at most 140 characters, about 60 where possible. Keep the query's task: an exercises query gets the exercises, a what-is query the explanation, a companies query the options and how to choose, a cost query the figures and what drives them. It is an article for the reader, not about the publisher. Keep brand names unchanged.`,
+    `- angle: a specific publishable headline in ${getLocale(context.languageCode).label} (${context.languageCode}), at most 140 characters, about 60 where possible. Keep the query's task: a how-to query gets the steps, a what-is query the explanation, a companies query the options and how to choose, a cost query the figures and what drives them. It is an article for the reader, not about the publisher. Keep brand names unchanged.`,
     `- Today is ${today ?? new Date().toISOString().slice(0, 10)}. Keep the headline evergreen: include a calendar year only when that exact year appears in the query.`,
-    "- shape: what the article results are shaped like, from their titles: comparison (one option against others, alternatives), listicle (a ranked or counted list of options), howTo (steps or exercises), explainer (what or why), reference (figures, rules, a checklist).",
+    "- shape: what the article results are shaped like, from their titles: comparison (one option against others, alternatives), listicle (a ranked or counted list of options), howTo (steps or drills), explainer (what or why), reference (figures, rules, a checklist).",
     "- conversionPath: a URL from the business description, or its homepage.",
     "Write reason, audience, buyingJob, offering and angle in the market language. Keep the reason under 240 characters: who the searcher is.",
-    'Return ONLY JSON: {"stage":"problem"|"solution"|"comparing"|"hiring"|"professional"|"navigation"|"elsewhere"|"not_offered"|"practitioner"|"unrelated","kinds":["article",...one per result, in order],"reason":string,"audience":string,"buyingJob":string,"offering":string,"angle":string,"shape":"comparison"|"listicle"|"howTo"|"explainer"|"reference","conversionPath":string}. Leave the brief fields empty strings for the other stages. Never estimate search volume.',
-    JSON.stringify({ business: describeBusiness(context.business ?? {}), domain: context.domain, market: { language: context.languageCode, location: context.locationCode }, query: term, buyerTest: verdict.reason, results }),
+    'Return ONLY JSON: {"stage":"problem"|"solution"|"comparing"|"hiring"|"professional"|"navigation"|"elsewhere"|"not_offered"|"practitioner"|"unrelated","kinds":["article",...one per result, in order],"value":0|1|2|3,"service":<one of services>|"none","match":"named"|"implied"|"adjacent","reason":string,"audience":string,"buyingJob":string,"offering":string,"angle":string,"shape":"comparison"|"listicle"|"howTo"|"explainer"|"reference","conversionPath":string}. Leave the brief fields empty strings for the other stages. Never estimate search volume.',
+    JSON.stringify({ business: describeBusiness(context.business ?? {}), services: serviceList(context.business), domain: context.domain, market: { language: context.languageCode, location: context.locationCode }, query: term, buyerTest: verdict.reason, results }),
   ].join("\n");
 }
 
 /**
  * The results judge's reply shape, sent as a structured-output schema
- * (DECISION_CALL, lib/ai/models.ts). Built on first use, not at import.
+ * (DECISION_CALL, lib/ai/models.ts). The service is an enum of the site's
+ * own services (`serviceList`) plus "none", so the model cannot name one the
+ * business does not list.
  */
-let schemaMemo: Record<string, unknown> | null = null;
-export function opportunitySchema(): Record<string, unknown> {
-  return (schemaMemo ??= {
+export function opportunitySchema(services: readonly string[] = []): Record<string, unknown> {
+  return {
     type: "object",
     properties: {
       stage: { type: "string", enum: [...SEARCH_STAGES] },
       kinds: { type: "array", items: { type: "string", enum: [...JUDGE_KINDS] } },
+      value: { type: "integer", enum: [0, 1, 2, 3] },
+      service: { type: "string", enum: [...services, "none"] },
+      match: { type: "string", enum: [...SERVICE_MATCHES] },
       reason: { type: "string" },
       audience: { type: "string" },
       buyingJob: { type: "string" },
@@ -449,9 +484,9 @@ export function opportunitySchema(): Record<string, unknown> {
       shape: { type: "string", enum: [...ARTICLE_SHAPES] },
       conversionPath: { type: "string" },
     },
-    required: ["stage", "kinds", "reason", "audience", "buyingJob", "offering", "angle", "shape", "conversionPath"],
+    required: ["stage", "kinds", "value", "service", "match", "reason", "audience", "buyingJob", "offering", "angle", "shape", "conversionPath"],
     additionalProperties: false,
-  });
+  };
 }
 
 /** Output room for the judge: ten kinds, a reason and a brief. */
@@ -493,6 +528,8 @@ export function readJudgeKinds(raw: unknown, count: number): ResultKind[] | null
  *   a known rival's name, plus only navigation words  rejected: buyer_mismatch (code)
  *   the judge's answer has no stage                   pending: judge_incomplete
  *   the searcher is not served (stage)                rejected: buyer_mismatch
+ *   no value grade                                    pending: judge_incomplete
+ *   value 0: no path to the business                  rejected: no_value
  *   no kinds, in a language with no word lists        pending: judge_incomplete
  *   one business's own pages hold it                  rejected: buyer_mismatch
  *   more than half business-built pages               rejected: needs_page
@@ -504,11 +541,15 @@ export function readJudgeKinds(raw: unknown, count: number): ResultKind[] | null
  * judge that named none leaves the URL-and-title word lists to read them in
  * the languages they were written for, and says so in the reason. Either
  * way, an article or thread that carries none of the phrase's subject words
- * counts as off-topic. A not_editorial searcher the business serves, on a
- * page only short of articles (not one mostly off-topic or of tools), with
- * at least one article observed and no rival named, keeps its brief: the
- * planner's floor may take it, labelled lower confidence
- * (lib/seo/recommendations.ts).
+ * counts as off-topic. A needs_page or not_editorial verdict never reaches
+ * the blog plan, however short the plan: the planner relaxes its value
+ * tiers instead (lib/keyword-research/value-tiers.ts).
+ *
+ * The value grade (0-3), the service it names and how the search reaches
+ * that service are read from the same answer and saved on every verdict
+ * past the stage check, so the planner can order by them. Code caps the
+ * grade (`capValue`): no listed service or only an adjacent one caps it at
+ * 1, a service the search does not name caps it at 2.
  */
 export async function judgeOnResults(
   result: Opportunity,
@@ -542,16 +583,45 @@ export async function judgeOnResults(
 
   result.cause = "judge_incomplete";
   result.reason = "The qualification model returned an unusable answer. It is asked again on the next run.";
-  const raw = await (options.ask ?? askStructured)("keyword-research/opportunity", opportunityPrompt({ term: input.term, context, verdict, organic, today: options.today }), { maxTokens: OPPORTUNITY_MAX_TOKENS, spend: options.spend ?? null, tier: "decision", schema: opportunitySchema() });
+  const services = serviceList(context.business);
+  const raw = await (options.ask ?? askStructured)("keyword-research/opportunity", opportunityPrompt({ term: input.term, context, verdict, organic, today: options.today }), { maxTokens: OPPORTUNITY_MAX_TOKENS, spend: options.spend ?? null, tier: "decision", schema: opportunitySchema(services) });
   const parsed = extractJson<Record<string, unknown>>(raw, "{", "}");
   const stage: SearchStage | null = parsed ? readStage(parsed.stage) : null;
   if (!parsed || !stage) return result;
   const said = typeof parsed.reason === "string" ? parsed.reason.trim() : "";
+  // The grade, capped by code when no listed service was named. Saved on
+  // every outcome from here, refusals included: the eval and the planner
+  // read it, and a refusal's grade is what an operator asks about first.
+  const graded = readValue(parsed.value);
+  delete result.service; delete result.serviceMatch; delete result.valueCapped; delete result.valueCap; delete result.valueUnlisted;
+  if (graded !== null) {
+    const match = readMatch(parsed.match);
+    const kept = capValue(graded, parsed.service, services, match);
+    result.value = kept.value;
+    if (kept.service) result.service = kept.service;
+    if (match) result.serviceMatch = match;
+    if (kept.capped) { result.valueCapped = true; if (kept.cap) result.valueCap = kept.cap; }
+    if (kept.unlisted) result.valueUnlisted = true;
+  }
   // Whoever the page belongs to, a searcher the business does not serve is
   // not planned: the stage alone decides it.
   if (!STAGE_KEEP.has(stage)) {
     result.status = "rejected"; result.cause = "buyer_mismatch";
     result.reason = `The searcher is ${STAGE_WORDS[stage]}. ${said}`.trim().slice(0, 400);
+    return result;
+  }
+  // A served searcher is ordered by the grade: without one there is no
+  // answer to plan from.
+  if (graded === null) {
+    result.reason = "The qualification model returned no business value grade. It is asked again on the next run.";
+    return result;
+  }
+  const value = result.value!;
+  const capped = result.valueCapped === true;
+  // A veto, like a brand search: no path from this search to the business.
+  if (value === 0) {
+    result.status = "rejected"; result.cause = "no_value";
+    result.reason = `No path from this search to what the business sells (business value 0). ${said}`.trim().slice(0, 400);
     return result;
   }
   const kinds = readJudgeKinds(parsed.kinds, organic.length);
@@ -590,19 +660,6 @@ export async function judgeOnResults(
   if (page.type === "other") {
     result.status = "rejected"; result.cause = "not_editorial";
     result.reason = `Too few results are articles about this search for an article to win it. ${page.summary}${basis}`.slice(0, 400);
-    // The searcher is served, an article exists, and the page is only short
-    // of articles: what the planner's floor may take, labelled lower
-    // confidence, when nothing better qualified. Not a page mostly about
-    // something else, nor one of tools and portals, and never a phrase
-    // naming a rival (a comparison ask skips the navigation check above, and
-    // "<rival> alternatives" on a page of unrelated results is exactly the
-    // search nobody writes about).
-    const observed = evidenceOf(page);
-    if (complete && page.why === "few_articles" && !rivalNamed(input.term, named) && page.counts.editorial >= 1 && observed.length >= 1) {
-      brief();
-      result.evidenceUrls = observed;
-      result.floor = true;
-    }
     return result;
   }
   const evidence = evidenceOf(page);
@@ -612,7 +669,8 @@ export async function judgeOnResults(
   }
   result.status = "qualified";
   delete result.cause;
-  result.reason = `${said} ${page.summary}${basis}`.slice(0, 400);
+  const valueNote = capped ? ` Business value capped at ${value}: ${VALUE_CAP_WORDS[result.valueCap ?? "no_service"]}.` : "";
+  result.reason = `${said} ${page.summary}${basis}${valueNote}`.slice(0, 400);
   brief();
   result.format = page.type === "mixed" ? "mixed" : "article";
   result.evidenceUrls = evidence;
@@ -653,6 +711,12 @@ export function causeLabel(cause: OpportunityCause | string | undefined): string
   return (cause && CAUSE_LABEL[cause as OpportunityCause]) || (cause ?? "unspecified");
 }
 
+const VALUE_CAP_WORDS: Record<ValueCap, string> = {
+  no_service: "the reader named no service the business lists",
+  adjacent: "the searcher wants something a listed service is only related to",
+  implied: "the search names a problem the service solves, not the service itself",
+};
+
 const CAUSE_LABEL: Record<OpportunityCause, string> = {
   unjudged: "stored before qualification existed",
   no_profile: "no business profile",
@@ -664,5 +728,6 @@ const CAUSE_LABEL: Record<OpportunityCause, string> = {
   existing_page: "an existing page already targets it",
   not_editorial: "the results are not articles",
   needs_page: "wants a landing page, not an article",
+  no_value: "no path to what the business sells (value 0)",
   duplicate: "same search as a topic already live, drafted or scheduled",
 };

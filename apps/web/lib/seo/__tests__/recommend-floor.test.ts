@@ -2,10 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * The planner always returns something it can stand behind: the floor and
- * the unmeasured path, on the recommender's real code. Only the paid edges
- * are faked (the business profile read and the qualification verdicts);
- * scoring, the free gates, the duplicate pass, the refill and the floor run.
+ * What the recommender offers the planner: the unmeasured path, and no
+ * floor - a page type no article wins is never promoted into the plan, on
+ * the recommender's real code. Only the paid edges are faked (the business
+ * profile read and the qualification verdicts); scoring, the free gates, the
+ * duplicate pass and the refill run.
  */
 
 const ensure = vi.fn();
@@ -16,10 +17,10 @@ vi.mock("@/lib/keyword-research/opportunity", async () => {
   return { ...real, qualifyOpportunities: (...a: unknown[]) => qualify(...a) };
 });
 
-import { demandFirst, floorVerdict, isFloorable, PLAN_FLOOR, recommendKeywords } from "../recommendations";
+import { demandFirst, pickNextKeyword, recommendKeywords } from "../recommendations";
 import { buildTopicalProfile } from "../topical-profile";
 import { describeFunnel, funnelDiscrepancy, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
-import { contextKey, readOpportunity, type Opportunity } from "@/lib/keyword-research/opportunity";
+import { contextKey, type Opportunity } from "@/lib/keyword-research/opportunity";
 import type { CrawlResult } from "@/lib/audit/crawler";
 
 const page = (over: Partial<CrawlResult>): CrawlResult => ({
@@ -65,7 +66,7 @@ const approved = (angle: string): Opportunity => ({
 const thin = (angle: string, extra: Partial<Opportunity> = {}): Opportunity => ({
   version: 2, context: "ctx", checkedAt: now(), status: "rejected", cause: "not_editorial", reason: "Too few results are articles.",
   audience: "cyclists", buyingJob: "fix a bike", offering: "bike repair", angle, conversionPath: "https://acme-cycles.example",
-  organicUrls: ORGANIC.map((u) => `${u}/${angle}`), evidenceUrls: [`${ORGANIC[0]}/${angle}`], floor: true, ...extra,
+  organicUrls: ORGANIC.map((u) => `${u}/${angle}`), evidenceUrls: [`${ORGANIC[0]}/${angle}`], ...extra,
 });
 const rejected = (cause: Opportunity["cause"]): Opportunity => ({ version: 2, context: "ctx", checkedAt: now(), status: "rejected", cause, reason: String(cause) });
 
@@ -133,8 +134,8 @@ describe("unmeasured buyer-kept terms", () => {
   });
 });
 
-describe("the floor", () => {
-  it("fills up to three from served searches whose results hold too few articles, labelled lower confidence, planned last", async () => {
+describe("no floor: the page type never relaxes", () => {
+  it("offers only what cleared the bar on a first look short of three approvals", async () => {
     verdicts = { good: approved("tubeless"), t1: thin("chain wear"), t2: thin("hanger"), t3: thin("spokes") };
     const { recs, funnel } = await recommend([
       row("good", "gravel tubeless setup", { volume: 30 }),
@@ -142,60 +143,87 @@ describe("the floor", () => {
       row("t2", "derailleur hanger alignment", { volume: 800 }),
       row("t3", "spoke tension chart", { volume: 700 }),
     ]);
-    const writable = recs.filter((r) => r.action === "write");
-    expect(writable).toHaveLength(PLAN_FLOOR);
-    // The one that cleared the bar leads, whatever the volumes.
-    expect(writable[0].keywordId).toBe("good");
-    expect(writable.slice(1).map((r) => r.opportunity?.confidence)).toEqual(["lower", "lower"]);
-    expect(writable.slice(1).map((r) => r.keywordId)).toEqual(["t1", "t2"]);
-    expect(writable[1].reasons[0]).toMatch(/^Lower confidence/);
-    expect(recs.find((r) => r.keywordId === "t3")?.action).toBe("skip");
-    // Saved and back in the queue, as a verdict the writer accepts.
-    const saved = updates.filter((u) => u.patch.opportunity && (u.patch.opportunity as Opportunity).confidence === "lower");
-    expect(saved.map((u) => u.id)).toEqual(["t1", "t2"]);
-    expect(saved[0].patch).toMatchObject({ status: "new", plan_excluded_at: null });
-    expect(funnel).toMatchObject({ qualified: 3, lowerConfidence: 2 });
-    expect(describeFunnel(funnel)).toContain("3 qualified (2 lower confidence)");
+    expect(recs.filter((r) => r.action === "write").map((r) => r.keywordId)).toEqual(["good"]);
+    for (const id of ["t1", "t2", "t3"]) expect(recs.find((r) => r.keywordId === id)).toMatchObject({ action: "skip", opportunity: { status: "rejected", cause: "not_editorial" } });
+    // Nothing is saved as a lower-confidence approval.
+    expect(updates.filter((u) => (u.patch.opportunity as Opportunity | undefined)?.confidence === "lower")).toHaveLength(0);
+    expect(funnel).toMatchObject({ qualified: 1, removed: { not_editorial: 3 } });
+    expect(funnel.lowerConfidence).toBeUndefined();
     expect(funnelDiscrepancy(funnel)).toBeNull();
   });
-  it("never reaches for a refused searcher, a landing-page search or a thin page with no article", async () => {
-    verdicts = {
-      nav: rejected("buyer_mismatch"), np: rejected("needs_page"),
-      bare: thin("bare", { floor: undefined }), noart: thin("noart", { evidenceUrls: [] }),
-    };
+  it("never reaches for a refused searcher, a landing-page search or a value-0 topic", async () => {
+    verdicts = { nav: rejected("buyer_mismatch"), np: rejected("needs_page"), zero: rejected("no_value"), thin: thin("bare") };
     const { recs, funnel } = await recommend([
       row("nav", "acme cycles opening hours"), row("np", "bike repair shop open weekends"),
-      row("bare", "bike repair open sundays"), row("noart", "wheel truing stand"),
+      row("zero", "bike stand rental"), row("thin", "bike repair open sundays"),
     ]);
     expect(recs.filter((r) => r.action === "write")).toHaveLength(0);
-    expect(updates.filter((u) => (u.patch.opportunity as Opportunity | undefined)?.confidence === "lower")).toHaveLength(0);
-    // Nothing planned, and the funnel says where each one went.
-    expect(funnel).toMatchObject({ qualified: 0, removed: { buyer_fit: 1, needs_page: 1, not_editorial: 2 } });
+    expect(funnel).toMatchObject({ qualified: 0, removed: { buyer_fit: 1, needs_page: 1, no_value: 1, not_editorial: 1 } });
+    expect(describeFunnel(funnel)).toContain("1 value 0");
   });
-  it("steps in on a first look only: a nightly pass plans what cleared the bar and nothing else", async () => {
-    verdicts = { good: approved("tubeless"), t1: thin("chain wear") };
-    const { recs } = await recommend([row("good", "gravel tubeless setup", { volume: 30 }), row("t1", "chain wear checker", { volume: 900 })], { firstLook: false });
-    expect(recs.filter((r) => r.action === "write").map((r) => r.keywordId)).toEqual(["good"]);
-    expect(updates.filter((u) => (u.patch.opportunity as Opportunity | undefined)?.confidence === "lower")).toHaveLength(0);
+  it("does not take an approval the retired floor wrote", async () => {
+    const fingerprint = contextKey(CONTEXT);
+    const floorPick: Opportunity = { ...approved("chain wear"), context: fingerprint, confidence: "lower", reason: "Lower confidence: fewer articles hold this search than the bar asks for, and it is planned because fewer than 3 topics cleared it." };
+    verdicts = {};
+    const { recs } = await recommend([row("old", "chain wear checker", { opportunity: floorPick })]);
+    expect(recs.find((r) => r.keywordId === "old")).toMatchObject({ action: "skip" });
+    expect(recs.find((r) => r.keywordId === "old")?.reasons[0]).toMatch(/^Planned by the retired floor/);
   });
-  it("does not step in when three topics cleared the bar", async () => {
-    verdicts = { a: approved("a"), b: approved("b"), c: approved("c"), t: thin("t") };
-    const { recs } = await recommend([row("a", "gravel tubeless setup"), row("b", "disc brake bleeding"), row("c", "wheel building cost"), row("t", "chain wear checker", { volume: 5000 })]);
-    expect(recs.filter((r) => r.action === "write").map((r) => r.keywordId).sort()).toEqual(["a", "b", "c"]);
-  });
-  it("takes a verdict saved by an earlier run, parked, and unparks it", async () => {
+  it("does not unpark a not_editorial verdict an earlier run saved", async () => {
     const fingerprint = contextKey(CONTEXT);
     const parked = { ...thin("chain wear"), context: fingerprint };
     verdicts = {};
     const { recs } = await recommend([row("old", "chain wear checker", { status: "stored", plan_excluded_at: now(), opportunity: parked })]);
-    expect(recs.find((r) => r.keywordId === "old")).toMatchObject({ action: "write", opportunity: { confidence: "lower", status: "qualified" } });
+    expect(recs.find((r) => r.keywordId === "old")?.action).toBe("skip");
   });
-  it("writes a verdict the rest of the product reads as qualified, on one observed article", () => {
-    const promoted = floorVerdict({ ...thin("x"), context: "c" });
-    expect(isFloorable(thin("x"))).toBe(true);
-    expect(promoted).toMatchObject({ status: "qualified", confidence: "lower", format: "article" });
-    expect(promoted.cause).toBeUndefined();
-    expect(readOpportunity(promoted, "c")).not.toBeNull();
-    expect(readOpportunity({ ...promoted, confidence: undefined }, "c")).toBeNull();
+});
+
+describe("value tiers order the approvals", () => {
+  const graded = (angle: string, value: 0 | 1 | 2 | 3, service?: string): Opportunity => ({ ...approved(angle), value, ...(service ? { service } : {}) });
+  it("puts value first, then winnability, and leaves volume to break ties; the cron writes the first", async () => {
+    verdicts = {
+      gen: graded("commuting", 1),
+      svc: graded("tubeless cost", 3, "bike repair"),
+      prob: graded("brake rub", 2, "bike repair"),
+      hardsvc: graded("wheel build cost", 3, "bike repair"),
+      hardprob: graded("disc squeal", 2, "bike repair"),
+    };
+    const { recs } = await recommend([
+      row("gen", "bike commuting tips", { volume: 9000, difficulty: 5 }),
+      row("svc", "tubeless conversion cost", { volume: 20, difficulty: 10 }),
+      row("prob", "brake rub fix", { volume: 400, difficulty: 10 }),
+      row("hardsvc", "wheel building cost", { volume: 300, difficulty: 35 }),
+      row("hardprob", "disc brake squeal", { volume: 800, difficulty: 35 }),
+    ]);
+    const writable = recs.filter((r) => r.action === "write");
+    // Value 3 before value 2 inside T1, whatever the volume.
+    expect(writable.map((r) => `${r.keywordId}:${r.tier}`)).toEqual(["svc:t1", "prob:t1", "hardsvc:t2", "gen:t3", "hardprob:inventory"]);
+    expect(writable[1].reasons[1]).toBe("Business value 2 (bike repair): about a service you sell, and within reach");
+    expect(pickNextKeyword(recs)?.keywordId).toBe("svc");
+    // Inventory is written only when nothing in a tier is left, and never
+    // counts as "something left" to the pool refill.
+    const onlyInventory = recs.filter((r) => r.keywordId === "hardprob");
+    expect(pickNextKeyword(onlyInventory)?.keywordId).toBe("hardprob");
+    expect(pickNextKeyword(onlyInventory, { inventory: false })).toBeNull();
+    expect(pickNextKeyword(recs, { inventory: false })?.keywordId).toBe("svc");
+  });
+  it("keeps the phrasing closer to a service when two phrasings are one search, whatever their volumes", async () => {
+    const shared = ["https://p.test/a", "https://p.test/b", "https://p.test/c", "https://p.test/d"];
+    verdicts = {
+      loud: { ...graded("x", 1), organicUrls: shared, evidenceUrls: shared.slice(0, 2) },
+      close: { ...graded("y", 3, "bike repair"), organicUrls: shared, evidenceUrls: shared.slice(0, 2) },
+    };
+    const { recs, funnel } = await recommend([
+      row("loud", "bike brake adjustment", { volume: 5000 }),
+      row("close", "brake adjustment service cost", { volume: 30 }),
+    ]);
+    expect(recs.filter((r) => r.action === "write").map((r) => r.keywordId)).toEqual(["close"]);
+    expect(recs.find((r) => r.keywordId === "loud")?.skippedBy).toBe("duplicate");
+    expect(funnelDiscrepancy(funnel)).toBeNull();
+  });
+  it("reads a verdict saved before the grade existed as value 1: planned only as top of funnel", async () => {
+    verdicts = { old: approved("legacy") };
+    const { recs } = await recommend([row("old", "gravel tubeless setup", { volume: 50, difficulty: 5 })]);
+    expect(recs.find((r) => r.keywordId === "old")?.tier).toBe("t3");
   });
 });

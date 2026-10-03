@@ -40,7 +40,10 @@ import { duePlannedKeyword, previewPlan, schedulePlan, scheduleKeywords } from "
 import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
 
 const FROM = new Date("2026-09-24T09:00:00.000Z");
-const rec = (i: number) => ({ keywordId: `k${i}`, term: `topic ${i}`, action: "write", quality: "ok", intent: "commercial" });
+const rec = (i: number) => ({
+  keywordId: `k${i}`, term: `topic ${i}`, action: "write", quality: "ok", intent: "commercial", volume: 100 - i, winnability: 0.9, tier: "t1",
+  opportunity: { status: "qualified", format: "article", value: 2, organicUrls: [`https://a${i}.example/`, `https://b${i}.example/`] },
+});
 
 function db(entries: Array<Record<string, unknown>> = []) {
   return new FakeDb({

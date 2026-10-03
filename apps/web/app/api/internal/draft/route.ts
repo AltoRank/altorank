@@ -58,7 +58,7 @@ interface Body {
   /** The planned entry a resumed week claimed, and the claim it holds. */
   entryId?: string;
   claim?: string;
-  selection?: { reasons: string[]; score: number; difficulty: number | null; volume: number | null };
+  selection?: { reasons: string[]; score: number; difficulty: number | null; volume: number | null; reviewNotes?: string[] };
   /**
    * This draft's share of the run's one related-keyword lookup, when the
    * dispatcher bought the week in a single task (lib/content/fan-out.ts).

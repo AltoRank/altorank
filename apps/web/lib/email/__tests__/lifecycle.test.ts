@@ -461,6 +461,14 @@ describe("a first look planned nothing: the operators' email", () => {
     expect(e.footerNote).toContain("ADMIN_EMAILS");
   });
 
+  it("says a person picks the first topic when a first look planned topics and wrote no first article", () => {
+    const e = renderNothingPlannedOps({ runId: "run-2", domain: "acme-clinic.example", contacts: ["owner@acme-clinic.example"], pool: null, preTrial: false, plannedTopics: 3 });
+    expect(e.subject).toBe("No first article for acme-clinic.example");
+    expect(e.html).toContain("planned 3 topics, and none passed the first-article rule");
+    expect(e.html).toContain("owner@acme-clinic.example");
+    expect(e.html).toContain("run-2");
+  });
+
   it("says no reply was promised to an account that never saw the trial step", () => {
     const e = renderNothingPlannedOps({ runId: "run-1", domain: "acme-clinic.example", contacts: [], pool, preTrial: false });
     expect(e.subject).toBe("Nothing planned for acme-clinic.example");

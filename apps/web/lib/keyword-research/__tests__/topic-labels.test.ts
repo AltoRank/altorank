@@ -12,6 +12,12 @@ describe("the labels a planned topic carries to the screen", () => {
     expect(topicLabels({ status: "qualified", funnel: "audience" }).map((l) => l.label)).toEqual(["Top of funnel"]);
     expect(topicLabels({ status: "qualified", funnel: "buyer" })).toEqual([]);
   });
+  it("says top of funnel for a general-interest topic the value tiers planned (T3), once, and lower confidence when a rule was relaxed for it", () => {
+    const t3 = topicLabels({ status: "qualified", funnel: "audience", tier: "t3", confidence: "lower" });
+    expect(t3.map((l) => l.label)).toEqual(["Top of funnel", "Lower confidence"]);
+    expect(t3[0].explain).toContain("General interest in your field");
+    expect(topicLabels({ status: "qualified", funnel: "buyer", tier: "t1" })).toEqual([]);
+  });
   it("drops 'unmeasured' once the row has a volume of its own", () => {
     const verdict = { status: "qualified", demand: "unmeasured" };
     expect(topicLabels(verdict, { volume: null }).map((l) => l.label)).toEqual(["Unmeasured"]);
@@ -24,6 +30,6 @@ describe("the labels a planned topic carries to the screen", () => {
       { domain: "site.test", scheduledDate: null, more: 0, verdict: { status: "qualified", confidence: "lower" } },
     );
     expect(card.labels.map((l) => l.label)).toEqual(["Lower confidence"]);
-    expect(card.labels[0].explain).toContain("fewer than three topics cleared the bar");
+    expect(card.labels[0].explain).toContain("fewer than three were both about a service you sell and within reach");
   });
 });

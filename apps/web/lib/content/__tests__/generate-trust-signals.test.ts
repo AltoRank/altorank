@@ -177,4 +177,13 @@ describe("the clinic's first article, through the whole generation path", () => 
     expect(notes.join("\n")).toMatch(/Title shortened from 77 to 33 characters/);
     expect(notes.join("\n")).toMatch(/No FAQ section, although the search results show 3 questions/);
   });
+
+  it("puts the picker's request for the owner's input at the top of the review notes", async () => {
+    const ask = "Needs your input before publishing: check each clinical statement.";
+    const result = await generateArticle({
+      supabase: client(), workspaceId: "ws1", keyword: "acme-service vs acme-alternative", callerEmail: null,
+      selection: { reasons: ["r"], score: 1, difficulty: null, volume: null, reviewNotes: [ask] },
+    });
+    expect(result.research.reviewNotes?.[0]).toBe(ask);
+  });
 });

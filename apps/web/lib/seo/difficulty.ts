@@ -145,3 +145,53 @@ export function isOutOfReach(
   if (isHopeless(difficulty)) return true;
   return relativeDifficulty(difficulty, authority).band === "unrealistic";
 }
+
+/** Volume on a log scale: a 200,000/mo head term is not a hundred times a 2,000/mo one. */
+export function volumeScore(volume: number): number {
+  if (volume <= 0) return 0;
+  return Math.log10(volume + 1) * 10;
+}
+
+/**
+ * What an out-of-reach keyword keeps, rather than zero.
+ *
+ * `relativeDifficulty` saturates: at authority 0 every KD from 45 to 100 maps
+ * to relative 100, so `1 - relative/100` was exactly 0 and multiplied the
+ * whole score away. Twelve of qasimcode.com's twenty keywords scored 0.0 and
+ * were therefore in arbitrary order - insertion order, since the sort is
+ * stable - so the plan picked among KD 56, KD 86 and KD 100 by whichever row
+ * the provider had returned first. Order has to survive even when the answer
+ * is "none of these".
+ */
+const UNWINNABLE_FLOOR = 0.02;
+
+/**
+ * Difficulty as a 0-1 multiplier: how likely this site is to win the term.
+ *
+ * Unknown difficulty resolves to 0.6 rather than 1.0. Treating "we do not know"
+ * as "easy" would float every unmeasured keyword to the top, which is the same
+ * failure as rendering a null difficulty as a green zero. The recommender's
+ * score multiplies by it, and the value tiers read it as "winnable" or not
+ * (lib/keyword-research/value-tiers.ts).
+ */
+export function winnability(difficulty: number | null, volume = 0, authority?: number | null): number {
+  if (difficulty === null) return 0.6;
+  // Judged against this site when we know its authority. KD is absolute - it
+  // describes the SERP, not the contender - so KD 40 is a rounding error at
+  // DR 80 and unreachable at DR 0.2, and ranking both the same way is how a
+  // new site gets a content plan it cannot execute. Both numbers are fetched
+  // in the same analyseDomain run and were never compared.
+  if (typeof authority === "number" && Number.isFinite(authority)) {
+    const { relative } = relativeDifficulty(difficulty, authority);
+    if (relative !== null) {
+      if (difficulty === 0 && volume >= 1000) return 0.6;
+      return Math.max(UNWINNABLE_FLOOR, 1 - relative / 100);
+    }
+  }
+  // Difficulty 0 on a term with real volume is the provider saying "not
+  // computed", not "free". Treated as easy it multiplies by 1.0 and floats a
+  // fragment like "no keywords" (27,100/mo, KD 0) to the top of the queue.
+  if (difficulty === 0 && volume >= 1000) return 0.6;
+  const d = Math.min(Math.max(difficulty, 0), 100);
+  return 1 - d / 100;
+}

@@ -929,6 +929,12 @@ export type NothingPlannedOpsEmail = {
    * Null when the hold could not be read.
    */
   preTrial: boolean | null;
+  /**
+   * Set when the first look did plan topics and none of them passed the
+   * first-article rule (lib/keyword-research/value-tiers.ts): the calendar
+   * holds this many, and no first article was written. A person picks it.
+   */
+  plannedTopics?: number;
 };
 
 /** What the customer was told, in the operator's words. */
@@ -960,6 +966,27 @@ export function renderNothingPlannedOps(a: NothingPlannedOpsEmail): RenderedEmai
         `${pool.keywords} keyword rows, ${pool.qualified} qualified.`,
       ]
     : ["The run did not record which stage emptied the pool."];
+  if (a.plannedTopics) {
+    const n = a.plannedTopics;
+    return {
+      subject: `No first article for ${site}`,
+      preheader: `${n} topic${n === 1 ? "" : "s"} planned; none passed the first-article rule.`,
+      footerNote: `Sent because this address is in ADMIN_EMAILS.`,
+      html:
+        eyebrow(site) +
+        heading("A first look planned topics but wrote no first article") +
+        emailParagraph(
+          `Setup for ${esc(site)} planned ${n} topic${n === 1 ? "" : "s"}, and none passed the first-article rule (business value 2 or more, on an editorial results page), so no draft was written. Pick the first topic with the customer.`,
+        ) +
+        emailParagraph(
+          a.contacts.length
+            ? `Write to: ${a.contacts.map(esc).join(", ")}.`
+            : `No member address was found for this account.`,
+        ) +
+        emailParagraph(`Run id: ${esc(a.runId)}.`) +
+        emailButton(appLink("/admin/events"), "Open the event log"),
+    };
+  }
   return {
     subject: a.preTrial === true ? `Follow up within 24 hours: nothing planned for ${site}` : `Nothing planned for ${site}`,
     preheader: pool?.summary ?? "A first look finished with nothing to plan.",

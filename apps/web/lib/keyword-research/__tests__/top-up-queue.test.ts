@@ -48,7 +48,7 @@ describe("topUpKeywords and the queue", () => {
   it("does nothing when the queue already holds what the pace needs", async () => {
     countReady.mockResolvedValue(10);
     const out = await topUpKeywords(db, "ws");
-    expect(out.reason).toBe("the queue holds 10 qualified topics; nothing new is needed until it drops under 10");
+    expect(out.reason).toBe("the queue holds 10 topics ready to plan; nothing new is needed until it drops under 10");
     expect(price).not.toHaveBeenCalled();
     expect(inserted).toEqual([]);
   });
