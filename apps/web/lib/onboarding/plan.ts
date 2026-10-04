@@ -27,7 +27,8 @@ import { TRIAL_HOLD_MESSAGE } from "@/lib/billing/trial-refusal";
 import { recommendKeywords, type KeywordRecommendation } from "@/lib/seo/recommendations";
 import type { FirstLook } from "@/lib/keyword-research/opportunity";
 import { classifyKeyword, type KeywordTaxonomy } from "@/lib/keywords/taxonomy";
-import { generateQualityQuestionsBatch, parseStoredQuestions, toQualityQuestions } from "@/lib/keywords/questions";
+import { parseStoredQuestions, toQualityQuestions } from "@/lib/keywords/questions";
+import { generateQualityQuestionsBatch } from "@/lib/keywords/questions-generate";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import type { KeywordIntent } from "@/lib/types";
 

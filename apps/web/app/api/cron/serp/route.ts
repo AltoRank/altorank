@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
-import { setSpendReporter } from "@/lib/seo/client";
+import { withSpendScope } from "@/lib/billing/spend-scope";
 import { getQuota, entitledToScheduledWork } from "@/lib/billing/quota";
 import { syncBacklinks } from "@/lib/seo/backlinks";
-import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
 import { postRankingTasks } from "@/lib/seo/serp";
 import type { Workspace, Keyword } from "@/lib/types";
@@ -27,9 +26,7 @@ export const maxDuration = 300;
 
 async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
-    setSpendReporter(null);
-
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   /**
@@ -90,136 +87,131 @@ async function run(request: Request) {
       continue;
     }
 
-    setSpendReporter(({ operation, costUsd }) => {
-      void recordSpend(supabase, {
-        provider: "dataforseo",
-        operation,
-        costUsd,
-        workspaceId: ws.id,
-      });
-    });
-
-    // Weekly backlink pass, folded into the daily rank cron: one DataForSEO
-    // call per workspace per week (~$0.05). Newest discovered_at older than
-    // seven days, or none at all, means it is due.
-    try {
-      const { data: newest } = await supabase
-        .from("backlinks")
-        .select("discovered_at")
-        .eq("workspace_id", ws.id)
-        .order("discovered_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const due = !newest || Date.now() - new Date(newest.discovered_at).getTime() > 7 * 24 * 3600 * 1000;
-      if (due) await syncBacklinks(supabase, ws.id, ws.domain);
-    } catch (err) {
-      console.error(`[cron/serp] backlinks for ${ws.domain}:`, err instanceof Error ? err.message : err);
-    }
-
-    try {
-      /**
-       * Track what someone chose, not everything discovery ever found.
-       *
-       * This selected every keyword in the workspace, and discovery writes a
-       * thousand rows per domain. A thousand daily SERP checks is roughly
-       * $2-3/day - $60-90 a month against a €69 plan, spent mostly on terms
-       * nobody is targeting. Planned and shipped are the terms a person
-       * picked; the article keywords are the ones the product wrote for.
-       * The cap is a backstop, newest first, and is logged when it bites.
-       */
-      const { data: articleKw } = await supabase
-        .from("articles")
-        .select("keyword")
-        .eq("workspace_id", ws.id);
-      const articleTerms = new Set(
-        (articleKw ?? []).map((a) => (a.keyword as string).toLowerCase()),
-      );
-
-      const TRACK_CAP = 200;
-      const { data: kwData, error: kwError } = await supabase
-        .from("keywords")
-        .select("*")
-        .eq("workspace_id", ws.id)
-        .in("status", ["planned", "shipped"])
-        // A term Search Console put in the pool gets its position from
-        // Search Console, refreshed nightly by lib/gsc/seed.ts for free and
-        // for the site's real audience rather than one SERP locale. Buying a
-        // SERP for it would pay to know less.
-        .neq("source", "gsc")
-        .order("created_at", { ascending: false })
-        .limit(TRACK_CAP);
-
-      if (kwError) {
-        results.push({
-          workspaceId: ws.id,
-          domain: ws.domain,
-          checked: 0,
-          error: kwError.message,
-        });
-        continue;
+    // Billed to this workspace through a spend scope (lib/billing/spend-scope.ts),
+    // not the process-global reporter that whatever else ran armed over.
+    await withSpendScope({ workspaceId: ws.id, db: supabase }, async () => {
+      // Weekly backlink pass, folded into the daily rank cron: one DataForSEO
+      // call per workspace per week (~$0.05). Newest discovered_at older than
+      // seven days, or none at all, means it is due.
+      try {
+        const { data: newest } = await supabase
+          .from("backlinks")
+          .select("discovered_at")
+          .eq("workspace_id", ws.id)
+          .order("discovered_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const due = !newest || Date.now() - new Date(newest.discovered_at).getTime() > 7 * 24 * 3600 * 1000;
+        if (due) await syncBacklinks(supabase, ws.id, ws.domain);
+      } catch (err) {
+        console.error(`[cron/serp] backlinks for ${ws.domain}:`, err instanceof Error ? err.message : err);
       }
 
-      // Article keywords that never got a keyword row still deserve tracking:
-      // the product wrote a page for them.
-      let keywords = (kwData ?? []) as Keyword[];
-      const known = new Set(keywords.map((k) => k.term.toLowerCase()));
-      if (keywords.length < TRACK_CAP && articleTerms.size > 0) {
-        const missing = [...articleTerms].filter((t) => !known.has(t));
-        if (missing.length > 0) {
-          const { data: extra } = await supabase
-            .from("keywords")
-            .select("*")
-            .eq("workspace_id", ws.id)
-            .in("term", missing)
-            .limit(TRACK_CAP - keywords.length);
-          keywords = keywords.concat((extra ?? []) as Keyword[]);
+      try {
+        /**
+         * Track what someone chose, not everything discovery ever found.
+         *
+         * This selected every keyword in the workspace, and discovery writes a
+         * thousand rows per domain. A thousand daily SERP checks is roughly
+         * $2-3/day - $60-90 a month against a €69 plan, spent mostly on terms
+         * nobody is targeting. Planned and shipped are the terms a person
+         * picked; the article keywords are the ones the product wrote for.
+         * The cap is a backstop, newest first, and is logged when it bites.
+         */
+        const { data: articleKw } = await supabase
+          .from("articles")
+          .select("keyword")
+          .eq("workspace_id", ws.id);
+        const articleTerms = new Set(
+          (articleKw ?? []).map((a) => (a.keyword as string).toLowerCase()),
+        );
+
+        const TRACK_CAP = 200;
+        const { data: kwData, error: kwError } = await supabase
+          .from("keywords")
+          .select("*")
+          .eq("workspace_id", ws.id)
+          .in("status", ["planned", "shipped"])
+          // A term Search Console put in the pool gets its position from
+          // Search Console, refreshed nightly by lib/gsc/seed.ts for free and
+          // for the site's real audience rather than one SERP locale. Buying a
+          // SERP for it would pay to know less.
+          .neq("source", "gsc")
+          .order("created_at", { ascending: false })
+          .limit(TRACK_CAP);
+
+        if (kwError) {
+          results.push({
+            workspaceId: ws.id,
+            domain: ws.domain,
+            checked: 0,
+            error: kwError.message,
+          });
+          return;
         }
-      }
-      if (keywords.length === TRACK_CAP) {
-        console.warn(`[serp] workspace ${ws.domain}: tracking capped at ${TRACK_CAP} keywords`);
-      }
-      if (keywords.length === 0) {
+
+        // Article keywords that never got a keyword row still deserve tracking:
+        // the product wrote a page for them.
+        let keywords = (kwData ?? []) as Keyword[];
+        const known = new Set(keywords.map((k) => k.term.toLowerCase()));
+        if (keywords.length < TRACK_CAP && articleTerms.size > 0) {
+          const missing = [...articleTerms].filter((t) => !known.has(t));
+          if (missing.length > 0) {
+            const { data: extra } = await supabase
+              .from("keywords")
+              .select("*")
+              .eq("workspace_id", ws.id)
+              .in("term", missing)
+              .limit(TRACK_CAP - keywords.length);
+            keywords = keywords.concat((extra ?? []) as Keyword[]);
+          }
+        }
+        if (keywords.length === TRACK_CAP) {
+          console.warn(`[serp] workspace ${ws.domain}: tracking capped at ${TRACK_CAP} keywords`);
+        }
+        if (keywords.length === 0) {
+          results.push({
+            workspaceId: ws.id,
+            domain: ws.domain,
+            checked: 0,
+          });
+          return;
+        }
+
+        /**
+         * Post, don't wait. This used to call the live SERP endpoint for every
+         * keyword and process the answers here - $0.002 a keyword for a
+         * six-second turnaround that nothing at three in the morning needs.
+         * The standard queue is $0.0006 for the same SERP; cron/serp-collect
+         * picks the results up twenty minutes later. See lib/seo/serp.ts.
+         */
+        const { posted, failed } = await postRankingTasks(
+          ws.id,
+          keywords.map((k) => ({ keywordId: k.id, term: k.term })),
+          {
+            languageCode: (ws as { language?: string }).language ?? "en",
+            locationCode: (ws as { location_code?: number }).location_code ?? 2840,
+          },
+        );
+        if (failed > 0) {
+          console.warn(`[serp] workspace ${ws.domain}: ${failed} task(s) refused by DataForSEO`);
+        }
+        const rankingRows = { length: posted };
+
+        results.push({
+          workspaceId: ws.id,
+          domain: ws.domain,
+          checked: rankingRows.length,
+        });
+      } catch (err) {
         results.push({
           workspaceId: ws.id,
           domain: ws.domain,
           checked: 0,
+          error: err instanceof Error ? err.message : "Unknown error",
         });
-        continue;
       }
-
-      /**
-       * Post, don't wait. This used to call the live SERP endpoint for every
-       * keyword and process the answers here - $0.002 a keyword for a
-       * six-second turnaround that nothing at three in the morning needs.
-       * The standard queue is $0.0006 for the same SERP; cron/serp-collect
-       * picks the results up twenty minutes later. See lib/seo/serp.ts.
-       */
-      const { posted, failed } = await postRankingTasks(
-        ws.id,
-        keywords.map((k) => ({ keywordId: k.id, term: k.term })),
-        {
-          languageCode: (ws as { language?: string }).language ?? "en",
-          locationCode: (ws as { location_code?: number }).location_code ?? 2840,
-        },
-      );
-      if (failed > 0) {
-        console.warn(`[serp] workspace ${ws.domain}: ${failed} task(s) refused by DataForSEO`);
-      }
-      const rankingRows = { length: posted };
-
-      results.push({
-        workspaceId: ws.id,
-        domain: ws.domain,
-        checked: rankingRows.length,
-      });
-    } catch (err) {
-      results.push({
-        workspaceId: ws.id,
-        domain: ws.domain,
-        checked: 0,
-        error: err instanceof Error ? err.message : "Unknown error",
-      });
-    }
+    });
   }
 
   const totalChecked = results.reduce((sum, r) => sum + r.checked, 0);

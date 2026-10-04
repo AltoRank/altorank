@@ -5,8 +5,9 @@ vi.mock("../buyer-fit", async (original) => ({ ...await original<object>(), judg
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: available }));
 vi.mock("@/lib/seo/brief-data", () => ({ fetchAdvancedSerp: fetchSerp }));
 import { askedKey } from "../buyer-fit";
-import { FIRST_LOOK_CEILING_USD, FIRST_LOOK_DRAFT_RESERVE_USD, opportunitySchema, qualifyOpportunities, readOpportunity, contextKey, validArticleAngle, assertAutonomousTopic, summarizeQualification, type Opportunity } from "../opportunity";
+import { firstLookTermUsd, opportunitySchema, qualifyOpportunities, readOpportunity, contextKey, validArticleAngle, assertAutonomousTopic, summarizeQualification, type Opportunity } from "../opportunity";
 import { sameIntent, sharedResults } from "../intent";
+import { claimSpend, withSpendScope, type RunBudget } from "@/lib/billing/spend-scope";
 import { balanceSources, diverseSeeds } from "../diversity";
 
 const context = { domain: "example.com", languageCode: "it", locationCode: 2380, business: { name: "Clinic Studio", description: "Clinic Studio builds booking websites for clinics and salons at a fixed price.", offerings: ["clinic booking websites"], audiences: ["clinic owners"] } };
@@ -335,7 +336,7 @@ describe("page-type decisions", () => {
 });
 
 describe("a first look", () => {
-  const firstLook = { since: "2026-09-30T00:00:00.000Z" };
+  const firstLook = { runId: "run-1" };
   const look = async (extra = {}) => (await qualifyOpportunities(db, "ws", [{ id: "k", term, ...extra }], context, { firstLook })).get("k");
   it("approves only when two reads of the results page agree", async () => {
     answerWith("article");
@@ -368,13 +369,55 @@ describe("a first look", () => {
     await run({ buyer_fit: { ...saved, asked: "fit1-other" } });
     expect(judge).toHaveBeenCalledTimes(1);
   });
-  it("stops buying before the run's spend reaches the ceiling less the first draft's share", async () => {
-    spendRows = [{ cost_usd: FIRST_LOOK_CEILING_USD - FIRST_LOOK_DRAFT_RESERVE_USD }];
-    expect(await look()).toBeUndefined();
-    expect(judge).not.toHaveBeenCalled();
-    expect(ask).not.toHaveBeenCalled();
-    spendRows = [{ cost_usd: 0.2 }, { cost_usd: null }];
-    answerWith("article");
-    expect(await look()).toMatchObject({ status: "qualified" });
+  describe("under the run's budget", () => {
+    // A budget that grants the first `grants` claims and refuses the rest.
+    // The mocked paid edges claim the way the real ones do (lib/seo/client.ts
+    // post, buyer-model askStructured): a results page throws the refusal, a
+    // model read answers null.
+    const budgetOf = (grants: number): RunBudget & { claims: string[] } => {
+      const claims: string[] = [];
+      return { runId: "run-1", claims, claim: async (stage) => { claims.push(stage); return claims.length <= grants ? 0.01 : null; }, settle: async () => {}, room: async () => null };
+    };
+    const lookIn = (budget: RunBudget) => withSpendScope({ budget }, () => look());
+    beforeEach(() => {
+      const page = { organic: urls.map((url, i) => ({ url, title: "Clinic booking website cost guide", description: "A buyer guide", rank: i + 1 })), peopleAlsoAsk: [], aiOverview: null };
+      fetchSerp.mockImplementation(async () => { await claimSpend("/serp/google/organic/live/advanced", 0.004); return page; });
+      const reply = JSON.stringify({ ...approval, kinds: Array(urls.length).fill("article") });
+      ask.mockImplementation(async () => (await claimSpend("keyword-research/opportunity", 0.02).then(() => reply, () => null)));
+      judge.mockImplementation(async () => { const ok = await claimSpend("keyword-research/buyer-fit", 0.05).then(() => true, () => false); return { basis: "model", verdicts: ok ? new Map([[term, { keep: true, reason: "specific buyer need" }]]) : new Map() }; });
+    });
+    it("judges as before while the budget covers every read, each tagged by its stage", async () => {
+      const budget = budgetOf(10);
+      expect(await lookIn(budget)).toMatchObject({ status: "qualified" });
+      expect(budget.claims).toEqual(["buyer_fit", "results_pages", "judge", "judge"]);
+    });
+    it("leaves a term not judged when its results page is refused: no verdict saved, nothing parked", async () => {
+      expect(await lookIn(budgetOf(1))).toBeUndefined();
+      expect(ask).not.toHaveBeenCalled();
+      expect(writes).toEqual([]);
+    });
+    it("leaves a term not judged when the judge's read is refused, rather than saving 'unusable answer'", async () => {
+      expect(await lookIn(budgetOf(2))).toBeUndefined();
+      expect(writes).toEqual([]);
+    });
+    it("leaves the batch not judged when the buyer test is refused, rather than saving 'no decision'", async () => {
+      expect(await lookIn(budgetOf(0))).toBeUndefined();
+      expect(fetchSerp).not.toHaveBeenCalled();
+      expect(writes).toEqual([]);
+    });
+    it("leaves a first approval whose second read was refused not judged: one read is not what a first look plans on", async () => {
+      expect(await lookIn(budgetOf(3))).toBeUndefined();
+      expect(writes).toEqual([]);
+    });
+    it("buys no results page when the room left cannot judge the term", async () => {
+      const budget = { ...budgetOf(10), room: async () => firstLookTermUsd(true) / 2 };
+      expect(await lookIn(budget)).toBeUndefined();
+      expect(fetchSerp).not.toHaveBeenCalled();
+      expect(writes).toEqual([]);
+    });
+    it("judges the term when the room covers its page and both reads", async () => {
+      const budget = { ...budgetOf(10), room: async () => firstLookTermUsd(true) };
+      expect(await lookIn(budget)).toMatchObject({ status: "qualified" });
+    });
   });
 });

@@ -33,7 +33,7 @@ import { recordOverageArticle } from "@/lib/billing/overage";
 import { recordFreeDraftWritten } from "@/lib/billing/free-drafts";
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { spendClient } from "@/lib/billing/default-spend";
-import { setSpendReporter } from "@/lib/seo/client";
+import { isBudgetRefusal, withSpendScope, type SpendScope } from "@/lib/billing/spend-scope";
 import { fetchKnownPages } from "@/lib/linking/targets";
 import { loadSiteFacts } from "@/lib/content/site-facts";
 import { siteFactUrls } from "@/lib/ai/prompts";
@@ -284,6 +284,19 @@ export async function generateArticle(
 ): Promise<GenerateArticleResult | RefreshArticleResult> {
   // E2E_STUBS: a fixture draft through the same rows and the same review gate (lib/e2e/stubs.ts).
   if (e2eStubsEnabled()) return stubGenerateArticle(options);
+  // Every provider call this draft makes is billed to it through a spend
+  // scope (lib/billing/spend-scope.ts), filled in with the article and the
+  // job once they exist. It used to be a process-global reporter, armed here
+  // and cleared after: a draft and anything else running in the process
+  // billed each other's calls. Inside a first look the scope also carries the
+  // run's budget and the `draft` stage, and the writer's claim is sized to it.
+  return withSpendScope({ workspaceId: options.workspaceId }, (scope) => writeArticle(options, scope));
+}
+
+async function writeArticle(
+  options: GenerateArticleOptions,
+  scope: SpendScope,
+): Promise<GenerateArticleResult | RefreshArticleResult> {
   const { supabase, workspaceId, keyword, keywordId, title, autonomous, onChunk, onResearch,
     selection, articleId, billToAccountId, callerEmail, refreshOf,
   } = options;
@@ -714,19 +727,11 @@ export async function generateArticle(
     // caller's client stand in.
     const spendDb = spendClient() ?? supabase;
 
-    // Attribute every DataForSEO call this run makes to this article, then
-    // detach: the reporter is module-level, so leaving it set would bill a
-    // later run's calls to this article.
-    setSpendReporter(({ operation, costUsd }) => {
-      void recordSpend(spendDb, {
-        provider: "dataforseo",
-        operation,
-        costUsd,
-        workspaceId,
-        articleId: article.id,
-        runId: job.id,
-      });
-    });
+    // Every call from here on is this article's, in this job (a first look's
+    // run id wins over the job's on its rows).
+    scope.db = spendDb;
+    scope.articleId = article.id ?? null;
+    scope.runId = job.id;
 
     // What the business's own pages say, read off the pages the crawls
     // already fetched, with the conversion page checked again now. Started
@@ -1032,8 +1037,6 @@ export async function generateArticle(
       return enriched.html;
     });
 
-    setSpendReporter(null);
-
     const model = anthropicModel("content");
     await recordSpend(spendDb, {
       provider: "anthropic",
@@ -1323,7 +1326,22 @@ export async function generateArticle(
     // should not strand a good draft in a state the UI reads as broken. The
     // content is untouched either way, since it is only written on success.
     // A rewrite wrote no row and restores nothing.
-    if (!refreshOf && article.id) {
+    //
+    // A first look's budget that refused a claim part-way (the writer's,
+    // most likely) bought no article: the row this run created is empty and
+    // is removed, so the review queue does not show a broken draft for a
+    // draft that was skipped. The caller says why. If it cannot be removed it
+    // is marked errored like any other failure.
+    const removed = isBudgetRefusal(err) && !refreshOf && !articleId && article.id
+      // Counted, not assumed: a delete RLS filters out is no error and no row.
+      ? await supabase.from("articles").delete().eq("id", article.id).select("id")
+        .then((r) => !r.error && (r.data?.length ?? 0) > 0, () => false)
+      : false;
+    // Nor did it use the account's one pre-trial draft: the refusal was the
+    // first look's budget, which nothing a client does can cause, and the
+    // person who picks the first article up needs that draft to write it.
+    if (isBudgetRefusal(err) && claimedPreTrial) await releasePreTrialDraft(supabase, billedAccountId);
+    if (!refreshOf && article.id && !removed) {
       await supabase
         .from("articles")
         .update({
@@ -1339,11 +1357,6 @@ export async function generateArticle(
       .eq("id", job.id);
 
     throw err;
-  } finally {
-    // The reporter is module-level. Detached on success above, but a throw
-    // between arming and that line left it pointing at this article, so the
-    // next run's DataForSEO calls were billed here. Always detach.
-    setSpendReporter(null);
   }
 }
 

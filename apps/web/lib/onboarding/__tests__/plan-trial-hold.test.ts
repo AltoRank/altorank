@@ -26,8 +26,7 @@ vi.mock("@/lib/seo/recommendations", () => ({
     return recs;
   },
 }));
-vi.mock("@/lib/keywords/questions", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/keywords/questions")>()),
+vi.mock("@/lib/keywords/questions-generate", () => ({
   generateQualityQuestionsBatch: async () => new Map(),
 }));
 const { qualify } = vi.hoisted(() => ({ qualify: vi.fn() }));

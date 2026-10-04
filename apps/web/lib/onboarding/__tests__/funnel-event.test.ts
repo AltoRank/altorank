@@ -52,3 +52,53 @@ describe("planFunnelEvent", () => {
     expect(row.workspace_id).toBe(WS);
   });
 });
+
+describe("the first look's spend on the funnel event", () => {
+  const spend = {
+    ceilingUsd: 1,
+    committedUsd: 0.55,
+    refused: 2,
+    stages: {
+      discovery: { committed: 0.2, spent: 0.2, calls: 9, refused: 0 },
+      results_pages: { committed: 0.04, spent: 0.02, calls: 10, refused: 0 },
+      judge: { committed: 0.29, spent: 0.29, calls: 14, refused: 2 },
+      draft: { committed: 0, spent: 0, calls: 0, refused: 0 },
+    },
+  };
+
+  it("says the draft is included when it was written in the same invocation", () => {
+    const e = planFunnelEvent({ runId: "r", workspaceId: WS, funnel: { found: 4, removed: { buyer_fit: 2 }, qualified: 2, planned: 1 }, spend, draftIncluded: true });
+    expect(e.message).toContain("Spent $0.5100 of $1.00 with the draft");
+  });
+
+  it("carries spend per stage, the total and the refusals, and says them on the message line", () => {
+    const e = planFunnelEvent({ runId: "r", workspaceId: WS, funnel: { found: 4, removed: { buyer_fit: 2 }, qualified: 2, planned: 1 }, spend });
+    expect(e.message).toContain("Spent $0.5100 of $1.00 before the draft; 2 paid reads refused by the budget, left not judged");
+    expect((e.context as { spend: unknown }).spend).toEqual({
+      ceilingUsd: 1,
+      spentUsd: 0.51,
+      committedUsd: 0.55,
+      refused: 2,
+      byStage: {
+        discovery: { spentUsd: 0.2, calls: 9 },
+        results_pages: { spentUsd: 0.02, calls: 10 },
+        judge: { spentUsd: 0.29, calls: 14, refused: 2 },
+        draft: { spentUsd: 0, calls: 0 },
+      },
+    });
+  });
+
+  it("survives the event row's sanitiser, on a run the planner never read too", () => {
+    for (const funnel of [{ found: 4, removed: { buyer_fit: 2 }, qualified: 2, planned: 1 }, null]) {
+      const row = buildEventRow(planFunnelEvent({ runId: "r", workspaceId: WS, funnel, spend }));
+      expect((row.context as { spend: { byStage: Record<string, unknown> } }).spend.byStage.judge).toEqual({ spentUsd: 0.29, calls: 14, refused: 2 });
+    }
+  });
+
+  it("says nothing about spend for a run with no budget", () => {
+    const e = planFunnelEvent({ runId: "r", workspaceId: WS, funnel: { found: 1, removed: {}, qualified: 1, planned: 1 }, spend: null });
+    expect(e.message).not.toContain("Spent");
+    expect(e.context).not.toHaveProperty("spend");
+  });
+});
+

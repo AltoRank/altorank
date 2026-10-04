@@ -13,6 +13,10 @@ import { getLocale } from "@/lib/seo/locales";
 import { canonicalPage, describeMatch, intentMatcher, type IntentBasis, type IntentMatch } from "./intent";
 import { readIntentLeaders, stageWords, type IntentLeader, type OnCalendar } from "./intent-leaders";
 import { canSpendOnSite, SpendRefusedError } from "@/lib/billing/spend-gate";
+import { currentSpendScope, isBudgetRefusal, watchRefusals, withStage } from "@/lib/billing/spend-scope";
+import { anthropicEstimate } from "@/lib/billing/spend";
+import { anthropicModel } from "@/lib/ai/models";
+import { estimateDataForSEOUsd } from "@/lib/seo/dataforseo-cost";
 
 export { canonicalPage };
 
@@ -94,25 +98,16 @@ export interface Opportunity {
 }
 /**
  * A first look's qualification (lib/onboarding/pipeline.ts): approvals are
- * asked twice, and the run stops buying verdicts before its spend reaches
- * the ceiling less what the first draft needs.
+ * asked twice, and the floor may fill the plan. Its spend is bounded by the
+ * run's budget, which travels in the spend scope (lib/billing/run-budget.ts):
+ * every results page and model read claims its estimate first, and a term
+ * whose claim is refused is left not judged - no verdict saved, nothing
+ * parked - while the run goes on with what it has.
  */
 export interface FirstLook {
-  /** When the run started: its spend is what provider_spend holds for the site since. */
-  since: string;
-  /** The founder's per-first-look ceiling (2026-09-29). */
-  ceilingUsd?: number;
-  /** Kept back for the first draft, which is written after qualification. */
-  reserveUsd?: number;
+  /** The onboarding run, for the log; the budget itself is the scope's. */
+  runId?: string | null;
 }
-/** $1 a first look, the article included (founder decision 2026-09-29). */
-export const FIRST_LOOK_CEILING_USD = 1;
-/**
- * What the first draft is kept: an estimate (writing, research and the fact
- * check on the content tier), not a measurement; the run's spend rows say
- * what it was.
- */
-export const FIRST_LOOK_DRAFT_RESERVE_USD = 0.3;
 export interface OpportunityContext {
   domain: string;
   languageCode: string;
@@ -209,11 +204,22 @@ export interface QualifyOptions {
   firstLook?: FirstLook;
 }
 
-/** What the site's provider calls have cost since `since`, in USD. */
-export async function spentSince(supabase: SupabaseClient, workspaceId: string, since: string): Promise<number> {
-  const { data, error } = await supabase.from("provider_spend").select("cost_usd").eq("workspace_id", workspaceId).gte("created_at", since);
-  if (error) throw new Error(`Could not read this run's spend: ${error.message}`);
-  return (data ?? []).reduce((sum, row) => sum + (Number((row as { cost_usd?: unknown }).cost_usd) || 0), 0);
+/**
+ * The prompt a judge read is estimated at before its results page is bought:
+ * the instructions, the business and ten results (about 9,000 characters
+ * measured on the proof runs of 2026-10-01), rounded up.
+ */
+const JUDGE_PROMPT_CHARS = 12_000;
+
+/**
+ * What judging one kept term may cost at most: its results page and one
+ * judge read, two in a first look. A budgeted batch is cut to what the room
+ * covers before any page is bought.
+ */
+export function firstLookTermUsd(twoReads: boolean): number {
+  const page = estimateDataForSEOUsd("/serp/google/organic/live/advanced", [{}]);
+  const read = anthropicEstimate(anthropicModel("decision"), JUDGE_PROMPT_CHARS, OPPORTUNITY_MAX_TOKENS);
+  return page + read * (twoReads ? 2 : 1);
 }
 
 /** Paid work is bounded and cached. A missing response remains pending. */
@@ -282,15 +288,14 @@ export async function qualifyOpportunities(
     if (!gate.allowed) throw new SpendRefusedError(gate);
   }
   const spend = { supabase, workspaceId };
-  // A first look stops buying before its spend reaches the ceiling less the
-  // first draft's share; what it did not judge stays unjudged, not refused.
   const firstLook = options.firstLook;
-  const overBudget = async () => {
-    if (!firstLook) return false;
-    const cap = (firstLook.ceilingUsd ?? FIRST_LOOK_CEILING_USD) - (firstLook.reserveUsd ?? FIRST_LOOK_DRAFT_RESERVE_USD);
-    return (await spentSince(supabase, workspaceId, firstLook.since)) >= cap;
-  };
-  if (pending.length && await overBudget()) return out;
+  // Under a first look's budget every paid read below claims its estimate
+  // first (lib/billing/spend-scope.ts). A term whose read was refused is not
+  // judged: no verdict is saved for it and it is left out of `out`, so the
+  // refill stops there (lib/keyword-research/queue.ts) and the term keeps
+  // whatever it had. Never parked, never a failure: the plan is made from
+  // what was judged, the floor and the empty-plan rules as before.
+  let stopped = false;
   // The buyer test is asked only for terms whose saved verdict answers
   // another question (or none): discovery already asked the rest, with the
   // same business description (lib/audit/domain-analysis.ts).
@@ -301,12 +306,43 @@ export async function qualifyOpportunities(
     if (v) saved.set(c.term.trim().toLowerCase(), v);
   }
   const toAsk = pending.filter((c) => !saved.has(c.term.trim().toLowerCase()));
-  const fit = toAsk.length ? await judgeBuyerFitFor(context, toAsk.map((c) => c.term), { spend }) : { verdicts: new Map<string, FitVerdict>() };
+  const asked = toAsk.length
+    ? await watchRefusals(() => withStage("buyer_fit", () => judgeBuyerFitFor(context, toAsk.map((c) => c.term), { spend })))
+    : { value: { verdicts: new Map<string, FitVerdict>() }, refused: false };
+  const fit = asked.value;
   for (const [term, v] of saved) if (!fit.verdicts.has(term)) fit.verdicts.set(term, v);
-  for (let offset = 0; offset < pending.length; offset += 3) {
-    if (offset > 0 && await overBudget()) break;
-    await Promise.all(pending.slice(offset, offset + 3).map(async (c) => {
+  // Under a budget, each batch is cut to what the room left can judge before
+  // anything is bought: a results page bought for a term whose judge read is
+  // then refused paid for nothing (two such trios in one proof run). The
+  // claims are still what decide; this only stops buying a page early. A
+  // batch the room cannot fit whole is made smaller, not abandoned: the room
+  // comes back as each claim settles at what was charged.
+  const budget = firstLook ? currentSpendScope()?.budget ?? null : null;
+  const perTerm = budget ? firstLookTermUsd(true) : 0;
+  const paidRead = (c: OpportunityCandidate) => fit.verdicts.get(c.term.trim().toLowerCase())?.keep === true;
+  let cursor = 0;
+  while (cursor < pending.length && !stopped) {
+    let batch = pending.slice(cursor, cursor + 3);
+    if (budget) {
+      const room = await budget.room("judge").catch(() => null);
+      if (room !== null) {
+        let affordable = Math.floor(room / perTerm);
+        const fits: OpportunityCandidate[] = [];
+        for (const c of batch) {
+          if (paidRead(c) && affordable-- <= 0) break;
+          fits.push(c);
+        }
+        // Not even the next term: the rest are not judged.
+        if (!fits.length) { stopped = true; break; }
+        batch = fits;
+      }
+    }
+    cursor += batch.length;
+    await Promise.all(batch.map(async (c) => {
     const verdict = fit.verdicts.get(c.term.trim().toLowerCase());
+    // No buyer decision because the budget refused the batch's read: not
+    // judged, which is not the same as "the model returned none".
+    if (!verdict && asked.refused) { stopped = true; return; }
     const result: Opportunity = { ...stamp(), status: "pending", cause: "no_verdict",
       reason: "The buyer test returned no decision for this term. It is asked again on the next run." };
     if (verdict?.keep === false) {
@@ -314,17 +350,34 @@ export async function qualifyOpportunities(
       result.cause = "buyer_mismatch";
       result.reason = verdict.reason;
     } else if (verdict?.keep === true) {
+      const read = await watchRefusals(async (): Promise<ResultsJudgeInput | null> => {
+        try {
+          const serp = await withStage("results_pages", () => fetchAdvancedSerp(c.term, context));
+          const input: ResultsJudgeInput = { term: c.term, sourceUrl: c.source_url, context, verdict, organic: serp.organic };
+          await withStage("judge", () => judgeOnResults(result, input, { spend }));
+          return input;
+        } catch (err) {
+          // Refused before it was bought: counted by the watch, not an error.
+          if (isBudgetRefusal(err)) return null;
+          result.cause = "provider_error";
+          result.reason = `Qualification could not finish: ${err instanceof Error ? err.message.slice(0, 200) : "provider call failed"}. It is retried on the next run.`;
+          return null;
+        }
+      });
+      if (read.refused) { stopped = true; return; }
+      const input = read.value;
       try {
-        const serp = await fetchAdvancedSerp(c.term, context);
-        const input = { term: c.term, sourceUrl: c.source_url, context, verdict, organic: serp.organic };
-        await judgeOnResults(result, input, { spend });
         // A first look asks the judge a second time before it approves: the
         // same results page read twice gave needs_page, then qualified
         // (2026-09-30), and the first article goes out under the customer's
         // name. A refusing second read wins, marked contested; a second read
-        // that returned nothing usable says nothing either way.
-        if (firstLook && result.status === "qualified") {
-          const second = await judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend });
+        // that returned nothing usable says nothing either way. A second
+        // read the budget refused leaves the term not judged, as a refused
+        // first read does: one approval is not what a first look plans on.
+        if (firstLook && input && (result.status as Opportunity["status"]) === "qualified") {
+          const again = await watchRefusals(() => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend })));
+          if (again.refused) { stopped = true; return; }
+          const second = again.value;
           if (second.status === "rejected") {
             const first = result.reason;
             for (const key of Object.keys(result) as Array<keyof Opportunity>) delete result[key];
