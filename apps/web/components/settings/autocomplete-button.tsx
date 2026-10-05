@@ -13,6 +13,7 @@ const FIELD_LABEL: Record<keyof BusinessProfile, string> = {
   description: "description",
   audiences: "audiences",
   offerings: "offerings",
+  firstLookOffering: "first article focus",
   competitors: "competitors",
   searchRivals: "search rivals",
   buyingJobs: "buying goals", differentiators: "product differences", exclusions: "excluded needs", conversionUrl: "conversion page",

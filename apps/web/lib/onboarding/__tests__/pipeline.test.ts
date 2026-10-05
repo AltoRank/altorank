@@ -8,6 +8,8 @@ const quota = vi.fn();
 const recommend = vi.fn();
 const pick = vi.fn();
 const creds = vi.fn();
+const firstArticleResearch = vi.fn();
+vi.mock("../first-look-research", () => ({ researchFirstArticle: (...a: unknown[]) => firstArticleResearch(...a) }));
 
 // Reachability has its own tests; pipeline fixtures must not depend on public DNS.
 vi.mock("@/lib/domain/reachable", () => ({
@@ -133,6 +135,8 @@ const richClient = (existing: number) =>
   ({ from: (table: string) => (table === "articles" ? chain({ count: existing }) : chain({ data: [] })) }) as never;
 
 beforeEach(() => {
+  vi.stubEnv("AUTOMATIC_FIRST_LOOK_WORKSPACES", "");
+  firstArticleResearch.mockReset();
   for (const m of [scrape, voice, analyse, generate, quota, recommend, pick, creds, setSpendReporter, recordSpendByDefault]) m.mockReset();
   fanOut.mockReset();
   fanOut.mockReturnValue({ dispatched: 0, settled: Promise.resolve() });
@@ -159,6 +163,37 @@ beforeEach(() => {
   generate.mockResolvedValue({
     articleId: "a1", title: "What an SEO agent does", wordCount: 1200,
     factCheck: { verdict: "clean" },
+  });
+});
+
+describe("automatic first-look pipeline", () => {
+  const workspace = { ...WS, business_profile: { name: "Studio", description: "Builds mobile applications for business owners.", offerings: ["Mobile apps"] } };
+  it("uses the strict shortlist for both calendar and draft without broad discovery", async () => {
+    vi.stubEnv("AUTOMATIC_FIRST_LOOK_WORKSPACES", WS.id);
+    const selected = { ...NEXT, keywordId: "strict", term: "mobile app development cost" };
+    firstArticleResearch.mockResolvedValue([selected]);
+    plan.mockResolvedValue([{ term: selected.term, keywordId: "strict", date: "2026-10-02" }]);
+    const result = await runOnboarding(richClient(0), workspace, () => undefined, { firstDraft: "dispatch" });
+    expect(analyse).not.toHaveBeenCalled(); expect(recommend).not.toHaveBeenCalled(); expect(pick).not.toHaveBeenCalled();
+    expect(assess).toHaveBeenCalledTimes(1);
+    expect(assess.mock.invocationCallOrder[0]).toBeLessThan(firstArticleResearch.mock.invocationCallOrder[0]);
+    expect(plan.mock.calls[0][3]).toMatchObject({ firstArticleRecommendations: [selected], maxEntries: 1 });
+    expect(result.pendingDraft?.term).toBe(selected.term);
+  });
+  it("never falls back to the general keyword queue when nothing qualifies", async () => {
+    vi.stubEnv("AUTOMATIC_FIRST_LOOK_WORKSPACES", WS.id);
+    firstArticleResearch.mockResolvedValue([]);
+    const events: OnboardingEvent[] = [];
+    const result = await runOnboarding(richClient(0), workspace, (e) => events.push(e), { firstDraft: "dispatch" });
+    expect(result.pendingDraft).toBeNull(); expect(recommend).not.toHaveBeenCalled(); expect(pick).not.toHaveBeenCalled(); expect(generate).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({ phase: "planning", emptyPool: expect.objectContaining({ cause: "first_article" }) }));
+  });
+  it("does not draft an approved topic the planner could not schedule", async () => {
+    vi.stubEnv("AUTOMATIC_FIRST_LOOK_WORKSPACES", WS.id);
+    firstArticleResearch.mockResolvedValue([{ ...NEXT, keywordId: "strict" }]);
+    plan.mockResolvedValue([]);
+    const result = await runOnboarding(richClient(0), workspace, () => undefined, { firstDraft: "dispatch" });
+    expect(result.pendingDraft).toBeNull(); expect(pick).not.toHaveBeenCalled();
   });
 });
 

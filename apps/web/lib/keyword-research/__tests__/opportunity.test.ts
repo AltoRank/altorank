@@ -378,6 +378,18 @@ describe("a first look", () => {
     ask.mockImplementation(async (_op: string, prompt: string) => (calls++ === 0 ? JSON.stringify({ ...approval, kinds: Array(shown(prompt)).fill("article") }) : null));
     expect(await look()).toMatchObject({ status: "qualified" });
   });
+  it("holds the automatic first article when its second read is unanswered", async () => {
+    let calls = 0;
+    ask.mockImplementation(async (_op: string, prompt: string) => calls++ === 0 ? JSON.stringify({ ...approval, kinds: Array(shown(prompt)).fill("article") }) : null);
+    const out = (await qualifyOpportunities(db, "ws", [{ id: "k", term }], context, { firstLook: { ...firstLook, requireAgreement: true } })).get("k");
+    expect(out).toMatchObject({ status: "pending", contested: true });
+  });
+  it("does not retain a buyer approval when the strict second read finds only audience intent", async () => {
+    let calls = 0;
+    ask.mockImplementation(async (_op: string, prompt: string) => JSON.stringify({ ...approval, stage: calls++ === 0 ? "comparing" : "problem", kinds: Array(shown(prompt)).fill("article") }));
+    const out = (await qualifyOpportunities(db, "ws", [{ id: "k", term }], context, { firstLook: { ...firstLook, requireAgreement: true } })).get("k");
+    expect(out).toMatchObject({ funnel: "audience", contested: true });
+  });
   it("asks once outside a first look", async () => {
     answerWith("article");
     await run();
