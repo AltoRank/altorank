@@ -8,7 +8,7 @@ import { causeLabel } from "@/lib/keyword-research/opportunity";
 import { funnelOf, type FitVerdict, type Funnel } from "@/lib/keyword-research/buyer-fit";
 import { isJudgeable, isParked, isParkedForGood, isRequalifiable, parkKeywords, queueTarget, refillQualifiedQueue, RefillRefusedError, type QueueRow } from "@/lib/keyword-research/queue";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
-import { stageOfVerdict, tallyFunnel, type FunnelOutcome, type FunnelStage, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
+import { pageReadsOf, stageOfVerdict, tallyFunnel, type FunnelOutcome, type FunnelStage, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 // ---------------------------------------------------------------------------
 // What to write next
 // ---------------------------------------------------------------------------
@@ -1090,7 +1090,10 @@ export async function recommendKeywords(
       [...qualifiedIds].filter((id) => test(verdicts.get(id), recOf.get(id))).length;
     const lowerConfidence = labelled((o) => o?.confidence === "lower");
     const unmeasured = labelled((o, rec) => o?.demand === "unmeasured" || rec?.demand === "unmeasured");
+    // What each judged results page was, counts only (the page-type rule).
+    const pages = pageReadsOf(recommendations.flatMap((rec) => { const o = verdicts.get(rec.keywordId); return o ? [o] : []; }));
     options.onFunnel(tallyFunnel(outcomes.map((o) => o.outcome), {
+      ...pages,
       ...(judged === undefined ? {} : { judged }),
       ...(lowerConfidence ? { lowerConfidence } : {}),
       ...(unmeasured ? { unmeasured } : {}),

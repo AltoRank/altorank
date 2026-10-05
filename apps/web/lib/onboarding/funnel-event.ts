@@ -62,6 +62,9 @@ export function planFunnelEvent(input: PlanFunnelEventInput): SystemEvent {
       ...(f.lowerConfidence ? { lowerConfidence: f.lowerConfidence } : {}),
       ...(f.unmeasured ? { unmeasured: f.unmeasured } : {}),
       ...(f.plannedLowerConfidence ? { plannedLowerConfidence: f.plannedLowerConfidence } : {}),
+      // What each judged results page was, counts only (the page-type rule).
+      ...(f.pageReads?.length ? { pageReads: f.pageReads } : {}),
+      ...(f.overruled ? { overruled: f.overruled } : {}),
     },
   };
 }
