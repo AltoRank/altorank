@@ -43,6 +43,30 @@ export async function recordPublish(supabase: SupabaseClient, entry: PublishLogW
   if (error) console.error("publish_log insert failed:", error.message);
 }
 
+/**
+ * When this workspace last published through a connection, or null. What
+ * cron/publish's "already published today" reads.
+ *
+ * Pushes only. A page the customer published by hand and the nightly check
+ * found (source found_on_site, migration 105) is a success row too, and it
+ * must not skip the day's scheduled post. Throws when the log cannot be read.
+ */
+export async function lastSuccessfulPushAt(supabase: SupabaseClient, workspaceId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from("publish_log")
+    .select("created_at")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "success")
+    .eq("source", "push")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  // Throws rather than answering "never": a null here reads as "not
+  // published today", and cron/publish runs hourly, so an unreadable log
+  // (migration 105 not applied yet, a timeout) would publish every hour.
+  if (error) throw new Error(`could not read the publish log: ${error.message}`);
+  return (data?.[0]?.created_at as string | undefined) ?? null;
+}
+
 /** The columns a retry, a button or a pill needs from the most recent attempt. */
 export type LastPublish = {
   id: string;
@@ -55,7 +79,14 @@ export type LastPublish = {
 
 const LAST_PUBLISH_COLUMNS = "id, article_id, status, error, destination_id, publish_mode, created_at";
 
-/** The most recent attempt for one article, or null if it was never pushed. */
+/**
+ * The most recent attempt for one article, or null if it was never pushed.
+ *
+ * Pushes only (`source = 'push'`, migration 105). A find on the customer's own
+ * site is a publish_log row too, but it is not an attempt anything could
+ * retry: counting it would hide the Retry button on an article whose find a
+ * person then undid.
+ */
 export async function getLastPublish(
   supabase: SupabaseClient,
   workspaceId: string,
@@ -66,6 +97,7 @@ export async function getLastPublish(
     .select(LAST_PUBLISH_COLUMNS)
     .eq("workspace_id", workspaceId)
     .eq("article_id", articleId)
+    .eq("source", "push")
     .order("created_at", { ascending: false })
     .limit(1);
   return (data?.[0] as LastPublish | undefined) ?? null;
@@ -87,6 +119,7 @@ export async function getLastPublishes(
     .select(LAST_PUBLISH_COLUMNS)
     .in("workspace_id", workspaceIds)
     .in("article_id", articleIds)
+    .eq("source", "push")
     .order("created_at", { ascending: false });
   for (const row of (data ?? []) as (LastPublish & { article_id: string })[]) {
     if (!out.has(row.article_id)) out.set(row.article_id, row);

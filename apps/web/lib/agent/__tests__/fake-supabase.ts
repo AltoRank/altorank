@@ -20,7 +20,8 @@ type Filter =
   | { kind: "eq" | "neq" | "gte" | "lte" | "gt" | "lt" | "ilike"; col: string; value: unknown }
   | { kind: "in"; col: string; values: unknown[] }
   | { kind: "is"; col: string; value: unknown }
-  | { kind: "not-is"; col: string; value: unknown };
+  | { kind: "not-is"; col: string; value: unknown }
+  | { kind: "or"; col: "(or)"; any: Filter[] };
 
 export type Write = { table: string; op: "update" | "delete" | "insert"; patch?: Row; rows?: Row[]; filters: Filter[] };
 
@@ -39,6 +40,7 @@ function readCol(tables: Seed, row: Row, col: string): unknown {
 }
 
 function matches(tables: Seed, row: Row, f: Filter): boolean {
+  if (f.kind === "or") return f.any.some((g) => matches(tables, row, g));
   const v = readCol(tables, row, f.col);
   switch (f.kind) {
     case "eq":
@@ -182,6 +184,21 @@ export function fakeSupabase(seed: Seed) {
     });
     self.not = vi.fn((col: string, operator: string, value: unknown) => {
       if (operator === "is") filters.push({ kind: "not-is", col, value });
+      return self;
+    });
+    // `.or("a.is.null,a.neq.x")`: comma-separated `col.op.value` terms with
+    // eq, neq, lt, gt, lte, gte or is (null), and no nesting or quoting.
+    self.or = vi.fn((expr: string) => {
+      const any: Filter[] = expr.split(",").map((term) => {
+        const [col, operator, ...rest] = term.split(".");
+        const raw = rest.join(".");
+        if (operator === "is") return { kind: "is", col, value: raw === "null" ? null : raw };
+        if (operator === "eq" || operator === "neq" || operator === "lt" || operator === "gt" || operator === "lte" || operator === "gte") {
+          return { kind: operator, col, value: raw };
+        }
+        throw new Error(`fakeSupabase: .or() operator ${operator} is not supported`);
+      });
+      filters.push({ kind: "or", col: "(or)", any });
       return self;
     });
     self.order = vi.fn((col: string, opts?: { ascending?: boolean }) => {
