@@ -106,7 +106,7 @@ export function recommendedActions(state: DashboardState): RecommendedAction[] {
     out.push({
       id: "connect-cms",
       title: "No CMS connected",
-      consequence: "Without a connected CMS, approved articles stay drafts and never reach your site.",
+      consequence: "Without a connected CMS, an approved article reaches your site only if you copy it out as Markdown or HTML.",
       cta: "Connect",
       href: "/connect",
     });

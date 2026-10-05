@@ -57,7 +57,7 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     id: "generate-article",
     title: "Generate your first article",
     description:
-      "Each draft is written to the target keyword in your brand voice, then scored twice: on-page SEO, and citation readiness, which is whether an AI answer can lift a passage from it. Claims without a source get flagged. Nothing publishes until you approve it.",
+      "Each draft is written to the target keyword in your brand voice, then scored twice: on-page SEO, and citation readiness, which is whether an AI answer can lift a passage from it. Claims without a source get flagged. Nothing publishes until it is approved, by you or by a publishing rule someone on your account turns on.",
     actionLabel: 'Click "New article" to generate your first piece of content.',
     completionMessage: "Generation started. The draft lands in review when it is done.",
     route: "/articles",
@@ -68,9 +68,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
     id: "connect-cms",
     title: "Connect your CMS",
     description:
-      "Ten CMS integrations publish over their own API, and a site that builds from a repository publishes as a git commit instead. We read the platform off your domain first, so most connections come down to one field.",
-    actionLabel: 'Click "New connection" to set up your first CMS integration.',
-    completionMessage: "CMS connected. Approved drafts can publish straight to it.",
+      "There are publishing adapters for ten CMSs, plus a git commit for sites built from a repository. None has been verified on a live site yet, so we set up the first connection with you: request your platform from its tile. Until then every draft copies out as Markdown or HTML.",
+    actionLabel: 'Request your CMS from its tile, or click "New connection" if we have set one up with you.',
+    completionMessage: "CMS connected. Approved drafts publish through it; the first one is worth checking on your live site.",
     route: "/connect",
     targetSelector: '[data-onboarding="connect-cms"]',
     tooltipPosition: "bottom",

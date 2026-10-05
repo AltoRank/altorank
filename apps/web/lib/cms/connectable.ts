@@ -56,6 +56,24 @@ export const CONNECTABLE_CMS = new Set<string>([]);
  * That default is the point: the page cannot silently grow a button that does
  * nothing.
  */
+/**
+ * What a CMS tile on /connect offers, once Google and Bing have drawn their
+ * own buttons.
+ *
+ * An existing connection is checked first, and the connectable set never
+ * enters into it. The page used to require both, so when the set was emptied
+ * on 2026-09-07 every connected tile lost Test and Reconnect and offered
+ * "Request integration" for a platform the workspace was already publishing
+ * to - the opposite of the promise on CONNECTABLE_CMS above.
+ */
+export type CmsTileAction = "manage" | "connect" | "request";
+
+export function cmsTileAction(integrationId: string, hasConnection: boolean): CmsTileAction {
+  if (hasConnection) return "manage";
+  if (CONNECTABLE_CMS.has(integrationId)) return "connect";
+  return "request";
+}
+
 export function isRequestable(integrationId: string, hasOwnFlow: boolean): boolean {
   return !hasOwnFlow && !CONNECTABLE_CMS.has(integrationId);
 }

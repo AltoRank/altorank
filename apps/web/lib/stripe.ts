@@ -202,7 +202,7 @@ export const PLAN_FEATURES: Record<PlanTier, string[]> = {
     "No API keys needed, costs included",
     "Voice profile training",
     "Keyword research + rank tracking",
-    "All 10 CMS integrations",
+    "CMS connection set up with you (10 platforms, git, webhook)",
     "Email support",
   ],
   growth: [
