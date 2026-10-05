@@ -6,6 +6,8 @@ import {
   FUNNEL_STAGE_SHORT,
   funnelDiscrepancy,
   funnelTable,
+  pageReadsOf,
+  PAGE_READS_MAX,
   stageOfVerdict,
   tallyFunnel,
   totalRemoved,
@@ -116,5 +118,24 @@ describe("describing a funnel", () => {
       expect(PLANNER_STAGE_LABELS[s]).toBeTruthy();
       expect(PLANNER_STAGE_SHORT[s]).toBeTruthy();
     }
+  });
+});
+
+describe("page reads in the funnel", () => {
+  it("keeps one counts-only line per verdict that read a page, overruled ones first, capped", () => {
+    const out = pageReadsOf([
+      { status: "qualified", pageKinds: { article: 6, service_or_local: 2 } },
+      { status: "rejected", cause: "needs_page", pageKinds: { service_or_local: 6, article: 3 }, overruled: "mixed" },
+      { status: "rejected", cause: "buyer_mismatch" },
+    ]);
+    expect(out).toEqual({ pageReads: ["needs_page: service_or_local 6, article 3 (judge read mixed)", "qualified: article 6, service_or_local 2"], overruled: 1 });
+    const many = Array.from({ length: PAGE_READS_MAX + 5 }, () => ({ status: "qualified" as const, pageKinds: { article: 3 } }));
+    expect(pageReadsOf(many).pageReads).toHaveLength(PAGE_READS_MAX);
+    expect(pageReadsOf([{ status: "pending" }])).toEqual({});
+  });
+  it("is carried by tallyFunnel and does not touch the counts", () => {
+    const f = tallyFunnel(["qualified", "needs_page"], { pageReads: ["needs_page: service_or_local 6"], overruled: 1 });
+    expect(f).toMatchObject({ found: 2, qualified: 1, pageReads: ["needs_page: service_or_local 6"], overruled: 1 });
+    expect(funnelDiscrepancy(f)).toBeNull();
   });
 });

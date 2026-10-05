@@ -148,10 +148,32 @@ describe("gatherArticleResearch keeps the figures of the pages it read", () => {
     const html = `<html><body><main>${MARKDOWN.split("\n").map((l) => `<p>${l}</p>`).join("")}<p>${"More words about recovery. ".repeat(40)}</p></main></body></html>`;
     fetchSite.mockResolvedValue({ ok: true, status: 200, text: async () => html });
     const { gatherArticleResearch } = await import("../research");
-    const r = await gatherArticleResearch({ keyword: "physiotherapy vs athletic therapy", locale: "en" });
+    // The page's site is classified a public source (lib/seo/source-classify.ts):
+    // only then are its figures offered.
+    const ask = async () => JSON.stringify({ sources: [{ host: PAGE.domain, class: "information" }] });
+    const r = await gatherArticleResearch({
+      keyword: "physiotherapy vs athletic therapy",
+      locale: "en",
+      sources: { owner: { ownDomain: "acme-physio.example", rivals: [], business: { description: "A physiotherapy clinic." } }, ask },
+    });
     expect(fetchSite).toHaveBeenCalledTimes(1);
     expect(r.sourceFigures?.[0]).toMatchObject({ figures: ["62%"], url: PAGE.url });
     expect(r.layers.find((l) => l.id === "competitor_length")?.detail).toMatch(/3 sentences with a figure kept/);
+  });
+
+  it("offers no figure from a site nobody classified", async () => {
+    serp.mockResolvedValue({
+      organic: [{ rank: 1, title: "Guide", url: PAGE.url, domain: PAGE.domain, description: "", wordCount: null }],
+      peopleAlsoAsk: [],
+      aiOverview: null,
+    });
+    const html = `<html><body><main>${MARKDOWN.split("\n").map((l) => `<p>${l}</p>`).join("")}<p>${"More words about recovery. ".repeat(40)}</p></main></body></html>`;
+    fetchSite.mockResolvedValue({ ok: true, status: 200, text: async () => html });
+    const { gatherArticleResearch } = await import("../research");
+    const r = await gatherArticleResearch({ keyword: "physiotherapy vs athletic therapy", locale: "en" });
+    expect(r.sourceFigures).toEqual([]);
+    expect(r.sourceReview?.heldBack.map((f) => f.class)).toEqual(["unclassified", "unclassified", "unclassified"]);
+    expect(r.layers.find((l) => l.id === "sources")).toMatchObject({ status: "unavailable" });
   });
 
   it("leaves the list absent when no page could be read, so the note can say so", async () => {

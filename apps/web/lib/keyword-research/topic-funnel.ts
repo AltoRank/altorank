@@ -167,6 +167,36 @@ export interface TopicFunnel {
   unmeasured?: number;
   /** Of the planned, how many are lower confidence. Absent when none. */
   plannedLowerConfidence?: number;
+  /**
+   * What the results pages were, one line per verdict that read one (the
+   * page-type rule, ./results-page.ts), counts only - never the phrase:
+   * "needs_page: service_or_local 5, directory 2, article 3 (judge read mixed)".
+   * At most `PAGE_READS_MAX`. Absent when no verdict read a page.
+   */
+  pageReads?: string[];
+  /** Of those verdicts, how many the page-type rule decided against the judge's reading. */
+  overruled?: number;
+}
+
+/** The most page-read lines a funnel carries: the event row has a size cap. */
+export const PAGE_READS_MAX = 20;
+
+/**
+ * The page-type lines for a funnel (`TopicFunnel.pageReads`): each verdict
+ * that kept its page-kind counts, its outcome first. Refusals the rule
+ * overruled the judge on come first, so a capped list keeps them.
+ */
+export function pageReadsOf(verdicts: Iterable<Pick<Opportunity, "status" | "cause" | "pageKinds" | "overruled">>): Pick<TopicFunnel, "pageReads" | "overruled"> {
+  const lines: Array<{ line: string; overruled: boolean }> = [];
+  for (const v of verdicts) {
+    if (!v.pageKinds) continue;
+    const kinds = Object.entries(v.pageKinds).filter(([, n]) => (n ?? 0) > 0).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0)).map(([k, n]) => `${k} ${n}`).join(", ");
+    lines.push({ line: `${stageOfVerdict(v)}: ${kinds || "no results"}${v.overruled ? ` (judge read ${v.overruled})` : ""}`, overruled: Boolean(v.overruled) });
+  }
+  if (!lines.length) return {};
+  const overruled = lines.filter((l) => l.overruled).length;
+  const pageReads = [...lines.filter((l) => l.overruled), ...lines.filter((l) => !l.overruled)].slice(0, PAGE_READS_MAX).map((l) => l.line);
+  return { pageReads, ...(overruled ? { overruled } : {}) };
 }
 
 const CAUSE_STAGE: Record<OpportunityCause, FunnelStage> = {
@@ -194,7 +224,7 @@ export function stageOfVerdict(verdict: Pick<Opportunity, "status" | "cause">): 
 }
 
 /** Count outcomes, one per candidate. */
-export function tallyFunnel(outcomes: Iterable<FunnelOutcome>, extra: Pick<TopicFunnel, "judged" | "lowerConfidence" | "unmeasured"> = {}): TopicFunnel {
+export function tallyFunnel(outcomes: Iterable<FunnelOutcome>, extra: Pick<TopicFunnel, "judged" | "lowerConfidence" | "unmeasured" | "pageReads" | "overruled"> = {}): TopicFunnel {
   const removed: Partial<Record<FunnelStage, number>> = {};
   let found = 0;
   let qualified = 0;
@@ -208,6 +238,8 @@ export function tallyFunnel(outcomes: Iterable<FunnelOutcome>, extra: Pick<Topic
     ...(extra.judged !== undefined ? { judged: extra.judged } : {}),
     ...(extra.lowerConfidence ? { lowerConfidence: extra.lowerConfidence } : {}),
     ...(extra.unmeasured ? { unmeasured: extra.unmeasured } : {}),
+    ...(extra.pageReads?.length ? { pageReads: extra.pageReads } : {}),
+    ...(extra.overruled ? { overruled: extra.overruled } : {}),
   };
 }
 

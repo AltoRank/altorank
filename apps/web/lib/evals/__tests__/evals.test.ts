@@ -87,6 +87,15 @@ describe("recorder", () => {
   });
 });
 
+/** The sample's page-labelled terms, as the page-type rule reads their stored results pages. */
+const PAGE_TYPES = {
+  "best ai seo writing tools": "qualified",
+  "outrank alternatives": "qualified",
+  "seo content approval workflow": "qualified",
+  "ai seo software pricing plans": "needs_page",
+  "open source seo content tool": "existing_page",
+};
+
 describe("a run over the public sample", () => {
   it("prices a live run without calling anything", async () => {
     const plan = await planEvals({ dir, model, rate, maxUsd: 1 });
@@ -143,6 +152,28 @@ describe("a run over the public sample", () => {
     const md = renderMarkdown({ title: "t", scores: result.scores, items: result.items, meta: {}, funnels: result.funnels });
     expect(md).toContain("## funnel");
     expect(md).toContain("| **qualified** |");
+  });
+
+  it("scores the page-type rule on the stored pages for free: the judge's stored answers replayed, never bought", async () => {
+    scripted.mockClear();
+    const cold = await runEvals({ dir, mode: "live", model, rate, maxUsd: 1, client: scripted, only: ["page-type"] });
+    expect(scripted).not.toHaveBeenCalled();
+    expect(cold.items.filter((i) => i.basis).every((i) => i.basis === "urls")).toBe(true);
+    // Every judged term was read by the word lists, and the run says so apart from the paid decisions' misses.
+    expect(cold.pageTypeMisses).toBe(cold.items.filter((i) => i.basis === "urls").length);
+    expect(cold.pageTypeMisses).toBeGreaterThan(0);
+    await runEvals({ dir, mode: "live", model, rate, maxUsd: 1, client: scripted, only: ["qualification"] });
+    scripted.mockClear();
+    const warm = await runEvals({ dir, mode: "replay", model, rate, maxUsd: 0, only: ["page-type"] });
+    expect(scripted).not.toHaveBeenCalled();
+    const items = warm.items.filter((i) => i.decision === "page-type");
+    expect(items.filter((i) => i.basis).every((i) => i.basis === "judge")).toBe(true);
+    expect(Object.fromEntries(items.map((i) => [i.item, i.predicted]))).toEqual(PAGE_TYPES);
+    expect(warm.pageType).toMatchObject({ needsPage: { labelled: 1, after: 1 }, qualifiedLost: { labelled: 3, after: 0 }, qualifiedAtEdge: { terms: [] } });
+    expect(warm.pageTypeMisses).toBe(0);
+    const md = renderMarkdown({ title: "t", scores: warm.scores, items: warm.items, meta: {}, pageType: warm.pageType });
+    expect(md).toContain("| needs_page labels read needs_page |");
+    expect(md).toContain("one page short of the needs-page threshold");
   });
 
   it("reads the existing page from the results without asking the model", async () => {
@@ -216,6 +247,7 @@ describe("scoring", () => {
     expect(claimOutcome("contradicted")).toBe("unsupported");
     expect(claimOutcome("unsupported")).toBe("unsupported");
     expect(claimOutcome("needs_verification")).toBe("unverified");
+    expect(claimOutcome("rival_source")).toBe("misattributed");
     expect(claimOutcome(null)).toBe("not_extracted");
   });
 

@@ -15,7 +15,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import path from "node:path";
 import type { SerpData } from "@/lib/seo/brief-data";
 import type { PageFetcher } from "@/lib/seo/citation-check";
-import { pipelineOf, runBuyerFit, runFactCheck, runQualification } from "./decisions";
+import { pageTypeSummary, pipelineOf, runBuyerFit, runFactCheck, runPageType, runQualification, type PageTypeSummary } from "./decisions";
 import { Budget, BudgetExceededError, Recorder, type ModelClient, type RecorderMode } from "./recorder";
 import { scoreDecision, type DecisionScore } from "./score";
 import { caseFunnels, type CaseFunnel } from "./funnel";
@@ -61,6 +61,14 @@ export interface EvalResult {
   stoppedAt?: string;
   /** Per case, the pipeline items as the planner's funnel: labels and product side by side. */
   funnels: CaseFunnel[];
+  /** The page-type rule's proof numbers, when the page-type decision ran. */
+  pageType?: PageTypeSummary;
+  /**
+   * Page-type prompts with no stored judge answer, read by the word lists
+   * instead. Counted apart from `recorder.misses`: page type replays through
+   * its own recorder, never buying.
+   */
+  pageTypeMisses?: number;
 }
 
 export async function runEvals(options: EvalOptions): Promise<EvalResult> {
@@ -71,6 +79,8 @@ export async function runEvals(options: EvalOptions): Promise<EvalResult> {
   const fit: Scored[] = [];
   const qualification: Scored[] = [];
   const facts: Scored[] = [];
+  const pageTypes: Scored[] = [];
+  let pageTypeMisses: number | undefined;
   let stoppedAt: string | undefined;
   try {
     for (const c of cases) {
@@ -80,6 +90,15 @@ export async function runEvals(options: EvalOptions): Promise<EvalResult> {
   } catch (err) {
     if (!(err instanceof BudgetExceededError)) throw err;
     stoppedAt = err.message;
+  }
+  if (wanted("page-type")) {
+    // Free whatever the mode: the judge's word for each result is replayed
+    // from what is stored, never bought; a term with no stored answer is read
+    // by the word lists. Asked after the other decisions, so a live run's
+    // fresh answers are already on disk.
+    const replay = new Recorder({ dir: options.dir, mode: "replay", model: options.model, rate: options.rate, decisionModel: options.decisionModel, rates: options.rates, maxUsd: 0 });
+    for (const c of cases) pageTypes.push(...await runPageType(c, replay.ask));
+    pageTypeMisses = replay.misses;
   }
   if (wanted("fact-check")) {
     for (const { file, value } of claims) {
@@ -101,12 +120,20 @@ export async function runEvals(options: EvalOptions): Promise<EvalResult> {
   add("qualification", qualification);
   add("pipeline", pipelineOf(fit, qualification, cases));
   add("fact-check", facts);
-  return { items, scores, recorder, stoppedAt, funnels: caseFunnels(items) };
+  add("page-type", pageTypes);
+  return {
+    items, scores, recorder, stoppedAt, funnels: caseFunnels(items),
+    ...(wanted("page-type") && pageTypes.length ? { pageType: pageTypeSummary(pageTypes) } : {}),
+    ...(pageTypeMisses !== undefined ? { pageTypeMisses } : {}),
+  };
 }
 
 /** What a live run would buy, priced before anything is spent. */
 export async function planEvals(options: Omit<EvalOptions, "mode" | "client">): Promise<{ calls: number; upperUsd: number; typicalUsd: number }> {
-  const { recorder } = await runEvals({ ...options, mode: "plan", only: (options.only ?? []).filter((d) => d !== "fact-check") });
+  // Only the decisions that buy answers: the fact check and the page type are free.
+  const paid = (options.only?.length ? options.only : ["buyer-fit", "qualification", "pipeline"] as DecisionName[]).filter((d) => d !== "fact-check" && d !== "page-type");
+  if (!paid.length) return { calls: 0, upperUsd: 0, typicalUsd: 0 };
+  const { recorder } = await runEvals({ ...options, mode: "plan", only: paid });
   const planned = [...recorder.planned.values()];
   return {
     calls: planned.length,
