@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator) and **104** (onboarding nothing planned; 103 is taken by an open branch), each with its section at the end. **101 and 104 go in BEFORE their code is deployed; 097, 099 and 100 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **103** (public tool user runs) and **104** (onboarding nothing planned), each with its section at the end. **101, 103 and 104 go in BEFORE their code is deployed; 097, 099 and 100 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -154,6 +154,7 @@ m(file, applied) as (values
   ('099_trial_gate_server_writes',           not has_table_privilege('authenticated', 'public.api_keys', 'INSERT') and pg_get_functiondef('public.accounts_guard_privileged_columns'::regproc) like '%free_drafts_used%'),
   ('100_pre_trial_spend_bounds',             not has_table_privilege('authenticated', 'public.workspaces', 'INSERT') and exists (select 1 from pg_trigger where tgname = 'account_members_guard_own_row') and not has_column_privilege('authenticated', 'public.workspaces', 'first_analysed_at', 'UPDATE')),
   ('101_account_creator',                    exists (select 1 from col where t='accounts' and c='created_by') and not has_table_privilege('authenticated', 'public.account_members', 'INSERT')),
+  ('103_public_tool_user_runs',              to_regclass('public.public_tool_user_runs') is not null and to_regprocedure('public.reserve_public_tool_user_run(uuid,integer)') is not null and to_regprocedure('public.release_public_tool_user_run(uuid,date)') is not null),
   ('104_onboarding_nothing_planned',         exists (select 1 from col where t='onboarding_runs' and c='empty_pool') and exists (select 1 from chk where conname='onboarding_runs_status_check' and def like '%nothing_planned%'))
 )
 select file, applied from m order by file;
@@ -288,6 +289,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 094_found_on_site.sql   # BEFORE i
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 095_site_pages_extract.sql   # BEFORE its code is merged; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 098_fact_check_unchecked.sql   # BEFORE its code is merged; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 101_account_creator.sql   # BEFORE its code is deployed; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 103_public_tool_user_runs.sql   # BEFORE its code is deployed; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 104_onboarding_nothing_planned.sql   # BEFORE its code is deployed; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 097_article_body_server_only.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 099_trial_gate_server_writes.sql   # AFTER its code is live; see its section
@@ -364,6 +366,7 @@ no code in the repo references either).
 | 099_trial_gate_server_writes.sql | `fix/trial-gate-first-article` | 083, 086, the `api_keys` table; **its code deployed first** | yes | yes, see its section (the three holes it closes reopen) |
 | 100_pre_trial_spend_bounds.sql | `integration/root-causes-2026-09-25` | 076, 085, 053/072, 093; **its code deployed first** | yes | yes, see its section (the four holes it closes reopen) |
 | 101_account_creator.sql | `integration/root-causes-2026-09-25` | 085; **applied before its code is deployed** | yes | yes, see its section (an owner can again add any user as a member) |
+| 103_public_tool_user_runs.sql | `feat/tools-account-gate` | none (auth.users); **applied before its code is deployed** | yes | yes, `drop function public.release_public_tool_user_run(uuid,date); drop function public.reserve_public_tool_user_run(uuid,integer); drop table public.public_tool_user_runs;` (paid public tools then refuse to run) |
 | 104_onboarding_nothing_planned.sql | `fix/onboarding-no-empty-gate` | 076; **applied before its code is deployed** | yes | only after its code is reverted and no row holds `nothing_planned`: see its section |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
@@ -1196,6 +1199,29 @@ Smoke after applying:
 ```sql
 select pg_get_constraintdef(oid) from pg_constraint
  where conname = 'articles_fact_check_verdict_check';  -- lists 'unchecked'
+```
+
+## 103 — public tool user runs
+
+`public_tool_user_runs` (one row per account per UTC day),
+`reserve_public_tool_user_run(uuid, integer)` and
+`release_public_tool_user_run(uuid, date)`, for the per-account daily cap on
+the paid public tools (`lib/public-tools/user-runs.ts`). No dependencies beyond
+`auth.users`; idempotent (`if not exists`, `create or replace`). Same shape as
+091: RLS on, zero policies, service role only.
+
+**Apply before its code is deployed.** The code fails closed: without the RPC
+every paid public tool answers `daily_cap`. The six fetch-only tools do not
+use it and work either way.
+
+Smoke after applying (service role; any existing user id, then clean up):
+
+```sql
+select public.reserve_public_tool_user_run('<user-id>', 1);  -- {"ok": true, "day": ..., "remaining": 0}
+select public.reserve_public_tool_user_run('<user-id>', 1);  -- {"ok": false, ...}
+select public.release_public_tool_user_run('<user-id>', (now() at time zone 'utc')::date);
+select * from public.public_tool_user_runs where user_id = '<user-id>';  -- runs = 0
+delete from public.public_tool_user_runs where user_id = '<user-id>';
 ```
 
 ## 104 — a first look that planned nothing
