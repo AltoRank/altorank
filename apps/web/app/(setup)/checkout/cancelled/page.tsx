@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { cancelPendingCheckout } from "@/app/actions/cancel-checkout";
+import { TrackStep } from "@/components/onboarding/track-step";
 
 export default async function CheckoutCancelled() {
   const { role } = await requireAuth();
   return <main className="mx-auto max-w-xl px-6 py-16">
+    <TrackStep step="checkout_cancelled" />
     <h1 className="mb-4 text-2xl font-semibold">Your first article and plan are saved</h1>
     <p className="mb-6">You left checkout, and nothing was charged. Close it to choose another plan, or go back and start the same trial.</p>
     {role === "owner" && <form action={cancelPendingCheckout}><button className="mb-5 text-accent underline">Cancel checkout and return</button></form>}

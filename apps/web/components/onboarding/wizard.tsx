@@ -53,6 +53,7 @@ import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
 import { BusinessFields } from "@/components/settings/business-fields";
 import { AudienceList, OfferingList } from "@/components/settings/audience-fields";
 import { CompetitorStep } from "@/components/onboarding/competitor-step";
+import { trackStep } from "@/lib/onboarding/track-step";
 import type { CompetitorSuggestion, RivalSize } from "@/lib/onboarding/competitor-suggestions";
 import { SiteFields } from "@/components/settings/site-fields";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
@@ -193,13 +194,25 @@ export function OnboardingWizard({
   const [ownAuthority, setOwnAuthority] = useState<number | null>(null);
   const [rivalSizes, setRivalSizes] = useState<Record<string, RivalSize | null>>({});
 
+  // Where the signup got to (lib/onboarding/step-events.ts). Fired and
+  // forgotten; nothing on this screen waits for it.
+  useEffect(() => {
+    if (!running && !alreadyOnboarded) trackStep("wizard_opened", { workspaceId });
+  }, [running, alreadyOnboarded, workspaceId]);
+  useEffect(() => {
+    if (!reading && profile && !running && !alreadyOnboarded) trackStep("profile_shown", { workspaceId });
+  }, [reading, profile, running, alreadyOnboarded, workspaceId]);
+
   // Read the site. A failure is a normal outcome and is shown as one. Not
   // while a run is on screen: that page has already been through this.
   useEffect(() => {
     if (!reading || running || alreadyOnboarded) return;
     let cancelled = false;
+    const readStarted = Date.now();
+    trackStep("site_read_started", { workspaceId });
     proposeProfile(workspaceId)
       .then((r) => {
+        trackStep(r.profile ? "site_read_finished" : "site_read_failed", { workspaceId, ms: Date.now() - readStarted });
         if (cancelled) return;
         setProfile(r.profile ?? EMPTY_PROFILE);
         if (r.profile) lookUpRivals(r.profile);
@@ -209,6 +222,7 @@ export function OnboardingWizard({
         setReadFailureMessage(r.profile ? null : r.message ?? null);
       })
       .catch(() => {
+        trackStep("site_read_failed", { workspaceId, ms: Date.now() - readStarted });
         if (cancelled) return;
         setProfile(EMPTY_PROFILE);
         setReadFailure("model_failed");
@@ -276,6 +290,8 @@ export function OnboardingWizard({
       setError("Name at least one competitor. It is where your first article comes from.");
       return;
     }
+    if (profile) trackStep("competitor_step_done", { workspaceId, count: profile.competitors.length });
+    trackStep("plan_clicked", { workspaceId });
     start(async () => {
       try {
         if (profile) await saveProfile(workspaceId, profile);
@@ -409,6 +425,7 @@ export function OnboardingWizard({
               onChange={(competitors, sizes) => {
                 setRivalSizes(sizes);
                 patch({ competitors });
+                if (competitors.length) trackStep("competitor_step_done", { workspaceId, count: competitors.length });
               }}
               resolve={(entry) => resolveCompetitor(workspaceId, entry, ownAuthority)}
             />

@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { startRun } from "@/lib/onboarding/run-store";
 import { dispatchWorker } from "@/lib/onboarding/run-dispatch";
 import { canSpend } from "@/lib/billing/spend-gate";
+import { recordOnboardingStep } from "@/lib/onboarding/step-events";
 
 // ---------------------------------------------------------------------------
 // POST /api/onboard/start — begin (or find) the onboarding run for a workspace
@@ -85,7 +86,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: started.refused }, { status: 402 });
   }
   const { runId, created } = started;
-  if (created) after(() => dispatchWorker(runId));
+  if (created) {
+    after(() => dispatchWorker(runId));
+    // Where the signup got to (onboarding.step), after the response.
+    after(() => recordOnboardingStep(createServiceClient(), { workspaceId: workspace.id as string, accountId, userId: user.id, step: "run_started" }).then(() => undefined));
+  }
 
   return NextResponse.json({ runId, existing: !created });
 }

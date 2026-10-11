@@ -1,0 +1,76 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// POST /api/onboard/step: signed in, a member of the workspace's account, a
+// step it knows. The write itself is lib/onboarding/step-events.ts.
+
+const { user, workspace, member, record, scoped } = vi.hoisted(() => ({
+  user: { value: null as null | { id: string; created_at: string } },
+  workspace: { value: null as null | { id: string; account_id: string } },
+  member: { value: null as null | { id: string } },
+  record: vi.fn(async () => true),
+  scoped: { value: null as string | null },
+}));
+vi.mock("@/lib/supabase/server", () => ({
+  createClient: async () => ({
+    auth: { getUser: async () => ({ data: { user: user.value } }) },
+    from: (table: string) => {
+      const q: Record<string, unknown> = {};
+      q.select = () => q;
+      q.eq = () => q;
+      q.maybeSingle = async () => ({ data: table === "workspaces" ? workspace.value : member.value, error: null });
+      return q;
+    },
+  }),
+  createServiceClient: () => ({ service: true }),
+}));
+vi.mock("@/lib/workspace-scope", () => ({ getScopedWorkspaceId: async () => scoped.value }));
+vi.mock("@/lib/onboarding/step-events", () => ({ recordOnboardingStep: (...a: unknown[]) => record(...(a as [])) }));
+
+import { POST } from "../step/route";
+
+const post = (body: unknown) =>
+  POST(new Request("https://app.example/api/onboard/step", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }) as never);
+
+beforeEach(() => {
+  user.value = { id: "u1", created_at: new Date(Date.now() - 120_000).toISOString() };
+  workspace.value = { id: "ws1", account_id: "acc1" };
+  member.value = { id: "m1" };
+  scoped.value = "ws1";
+  record.mockClear();
+});
+
+describe("POST /api/onboard/step", () => {
+  it("refuses a caller who is not signed in", async () => {
+    user.value = null;
+    expect((await post({ step: "wizard_opened" })).status).toBe(401);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("refuses a step it does not know", async () => {
+    expect((await post({ step: "anything" })).status).toBe(400);
+  });
+
+  it("refuses a workspace the caller cannot see, or whose account they are not in", async () => {
+    workspace.value = null;
+    expect((await post({ step: "wizard_opened", workspaceId: "ws-other" })).status).toBe(404);
+    workspace.value = { id: "ws2", account_id: "acc2" };
+    member.value = null;
+    expect((await post({ step: "wizard_opened", workspaceId: "ws2" })).status).toBe(403);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("records the step for the scoped workspace, with the gate's seconds since signup worked out on the server", async () => {
+    expect((await post({ step: "gate_shown", ms: 5 })).status).toBe(204);
+    expect(record).toHaveBeenCalledWith({ service: true }, expect.objectContaining({ workspaceId: "ws1", accountId: "acc1", userId: "u1", step: "gate_shown" }));
+    const input = (record.mock.calls[0] as unknown as [unknown, { secondsSinceSignup: number }])[1];
+    expect(input.secondsSinceSignup).toBeGreaterThanOrEqual(119);
+    expect(input.secondsSinceSignup).toBeLessThan(200);
+  });
+
+  it("carries a timed step's milliseconds and nothing the browser makes up", async () => {
+    await post({ step: "site_read_finished", ms: 4200, workspaceId: "ws1", email: "someone@acme.example" });
+    const input = (record.mock.calls[0] as unknown as [unknown, Record<string, unknown>])[1];
+    expect(input).toMatchObject({ step: "site_read_finished", ms: 4200, secondsSinceSignup: null });
+    expect(JSON.stringify(input)).not.toContain("someone@");
+  });
+});
