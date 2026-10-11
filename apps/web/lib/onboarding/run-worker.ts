@@ -21,6 +21,7 @@ import { announceDraftBatch } from "@/lib/email/draft-batch";
 import { runOnboarding } from "./pipeline";
 import { RunRecorder, RUN_COLUMNS, stampRun } from "./run-store";
 import type { OnboardingRunRow } from "./events";
+import { RunClock, saveRunTimings } from "./timings";
 
 export type ExecuteOutcome =
   | "not-found"
@@ -151,18 +152,26 @@ export async function runClaimed(run: OnboardingRunRow, deps: ExecuteDeps = {}):
   }
 
   const canDispatch = (deps.canDispatch ?? canSelfInvoke)();
+  // The run's stopwatch, on the run's own axis (started_at), so the draft
+  // route's stages land on the same timeline when it merges its own.
+  const clock = new RunClock(run.started_at);
   let result: Awaited<ReturnType<typeof runOnboarding>>;
   try {
     result = await (deps.run ?? runOnboarding)(supabase, workspace, recorder.record, {
       firstDraft: canDispatch ? "dispatch" : "inline",
       runId,
+      clock,
     });
   } catch (err) {
     await recorder.fail(err instanceof Error ? err.message : "Onboarding failed.");
+    await saveRunTimings(supabase, runId, clock);
     return settled;
   }
   // Every phase is on the row before anything else may write to it.
   await recorder.flush();
+  // Where the worker's time went, before the draft route adds its own.
+  if (!result.pendingDraft) clock.mark("run_done");
+  await saveRunTimings(supabase, runId, clock);
 
   const announce = deps.announce ?? announceDraftBatch;
 

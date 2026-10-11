@@ -624,6 +624,7 @@ describe("runOnboarding: the topic funnel", () => {
       planningDetail: "No keyword clear enough to plan yet.",
       spend: { ceilingUsd: 1, committedUsd: 0.42, refused: 2, stages: { discovery: { spent: 0.3, calls: 5, committed: 0.3, refused: 0 }, judge: { spent: 0.12, calls: 4, refused: 2, committed: 0.12 } } },
       draftIncluded: false,
+      timings: null,
     });
   });
 

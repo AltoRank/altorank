@@ -49,6 +49,7 @@ import { countScheduled, heldTopics, schedulePlan, fulfilPlannedEntry, type Plan
 import { recordPlanFunnel } from "./funnel-event";
 import { withScreened, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 import type { FirstLook } from "@/lib/keyword-research/opportunity";
+import { timed, withRunClock, type RunClock } from "./timings";
 
 /** Pages the onboarding minute reads. The nightly pass reads up to forty. */
 const ONBOARDING_CRAWL_PAGES = 20;
@@ -65,6 +66,12 @@ export interface RunOnboardingOptions {
   firstDraft?: "inline" | "dispatch";
   /** The `onboarding_runs` row, named on the run's funnel event (./funnel-event.ts). */
   runId?: string;
+  /**
+   * The run's stopwatch (./timings.ts): every stage below reports to it, and
+   * the funnel event carries what it measured. The worker owns it and
+   * writes it to the row.
+   */
+  clock?: RunClock;
 }
 
 /** The first draft, chosen and gated but not yet written, for the caller to dispatch. */
@@ -128,9 +135,11 @@ export async function runOnboarding(
   const runId = options.runId ?? null;
   const db = spendClient() ?? supabase;
   const opened = runId ? await openFirstLookBudget(db, { runId, workspaceId: workspace.id }) : null;
-  return withSpendScope({ workspaceId: workspace.id, runId, budget: opened?.budget ?? null }, () =>
-    runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", runId, opened?.read ?? null),
+  const clock = options.clock;
+  const run = () => withSpendScope({ workspaceId: workspace.id, runId, budget: opened?.budget ?? null }, () =>
+    runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", runId, opened?.read ?? null, clock ?? null),
   );
+  return clock ? withRunClock(clock, run) : run();
 }
 
 async function runPhases(
@@ -141,6 +150,7 @@ async function runPhases(
   runId: string | null = null,
   /** The run's budget as it stands, for the funnel event; null when it has none. */
   readSpend: (() => Promise<RunBudgetState | null>) | null = null,
+  clock: RunClock | null = null,
 ): Promise<RunOnboardingResult> {
   const domain = workspace.domain;
   // Approvals asked twice and the floor allowed; the spend bound is the
@@ -158,7 +168,7 @@ async function runPhases(
   // one that is certain: there is no host. A site behind a WAF that refuses
   // our fetch still gets its full run (lib/domain/reachable.ts explains why).
   if (domain) {
-    const reach = await checkDomainReachable(domain);
+    const reach = await timed("reach", () => checkDomainReachable(domain));
     if (reach.verdict === "no-dns" || reach.verdict === "invalid") {
       emit({ phase: "scanning", status: "failed", detail: reach.reason });
       for (const phase of ["keywords", "pages", "planning", "drafting"] as const) {
@@ -189,10 +199,10 @@ async function runPhases(
       // Same reader as the wizard: homepage, then the blog when the homepage
       // is a JavaScript shell, then a rendered fetch. A voice learned from the
       // site's own articles is better than one learned from its landing page.
-      const read = await withStage("voice", () => readSiteText(domain));
+      const read = await timed("site_read", () => withStage("voice", () => readSiteText(domain)));
       const text = read.text;
       if (text && text.split(/\s+/).length > 50) {
-        await withStage("voice", () => trainVoiceProfile(supabase, workspace.id, text));
+        await timed("voice", () => withStage("voice", () => trainVoiceProfile(supabase, workspace.id, text)));
         emit({
           phase: "scanning",
           status: "done",
@@ -229,7 +239,7 @@ async function runPhases(
     try {
       // Watched for the budget's refusals: a buyer test the budget stopped
       // stores nothing, and "nothing rankable" would blame the site for it.
-      const { value: analysis, refused: discoveryRefused } = await watchRefusals(() => withStage("discovery", () => analyseDomain({
+      const { value: analysis, refused: discoveryRefused } = await watchRefusals(() => timed("analysis", () => withStage("discovery", () => analyseDomain({
         domain,
         supabase,
         workspaceId: workspace.id,
@@ -243,7 +253,7 @@ async function runPhases(
         // rest. Every page here is one request against a host that may be
         // counting them (packhub.io bans after ten in forty seconds).
         maxPages: ONBOARDING_CRAWL_PAGES,
-      })));
+      }))));
       keywordsFound = analysis.keywordsFound;
       screened = analysis.screened;
 
@@ -259,7 +269,7 @@ async function runPhases(
       // Database only, no provider call, and idempotent by term. Nothing here
       // can fail the phase: a workspace without the connection gets a
       // one-line "nothing synced" and the run carries on.
-      const consoleSeeds = await seedKeywordsFromSearchConsole(supabase, workspace);
+      const consoleSeeds = await timed("gsc_seed", () => seedKeywordsFromSearchConsole(supabase, workspace));
       keywordsFound += consoleSeeds.inserted;
       // "Nothing rankable found for this site yet" is only true when we were
       // able to look. When the site could not be read, `analyseDomain` stores
@@ -339,7 +349,7 @@ async function runPhases(
     emit({ phase: "pages", status: "skipped", detail: "No domain to read pages from." });
   } else {
     const startedAt = Date.now();
-    const pages = await assessExistingPages(supabase, workspace.id, domain);
+    const pages = await timed("pages", () => assessExistingPages(supabase, workspace.id, domain));
     // The number the budget is set against. Logged rather than shown: the
     // customer wants to know what was found, and whoever tunes ONBOARDING_CRAWL
     // wants to know how long it took on a real site.
@@ -366,7 +376,7 @@ async function runPhases(
   // internal links, not a failed onboarding.
   if (domain) {
     try {
-      const pool = await detectLinks(supabase, workspace.id);
+      const pool = await timed("link_pool", () => detectLinks(supabase, workspace.id));
       if (pool.added > 0) console.log(`[onboarding] link pool: ${pool.added} page(s) from the site's own sources`);
     } catch (err) {
       console.warn("[onboarding] link pool detection failed:", message(err));
@@ -404,12 +414,12 @@ async function runPhases(
       // operator, paying - gets the month as before.
       const hold = await planHold(supabase, workspace.id);
       const gated = hold !== "open";
-      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, {
+      plan = await timed("plan", () => schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, {
         maxEntries: 5,
         qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES,
         firstLook,
         onFunnel: (f) => { planFunnel = f; },
-      });
+      }));
       const held = gated && plan.length
         ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [] }))
         : { count: 0, dates: [] };
@@ -528,7 +538,7 @@ async function runPhases(
         // Not 25: the list is cut after scoring across every action, and a
         // site with 25 page-one rankings filled it with skips before any
         // writable term appeared (lib/onboarding/plan.ts has the same note).
-        const recs = await recommendKeywords(supabase, workspace.id, { limit: 1000, qualify: true, firstLook });
+        const recs = await timed("first_topic", () => recommendKeywords(supabase, workspace.id, { limit: 1000, qualify: true, firstLook }));
         // The first day of the plan is what the person just watched get
         // scheduled; writing anything else would contradict the calendar.
         const first = plan[0];
@@ -557,7 +567,7 @@ async function runPhases(
         const budget = currentSpendScope()?.budget ?? null;
         const budgetShort = next ? await draftBudgetShort(budget) : null;
         relatedByTerm = next && budgetShort === null && await draftCanBuyLookup(budget)
-          ? await withStage("draft", () => fetchWeeksRelatedKeywords(workspace, next.term, plan))
+          ? await timed("related_keywords", () => withStage("draft", () => fetchWeeksRelatedKeywords(workspace, next.term, plan)))
           : new Map();
         const relatedFor = (term: string): RelatedKeyword[] | undefined => relatedByTerm.get(term) ?? (budget ? [] : undefined);
 
@@ -632,7 +642,7 @@ async function runPhases(
   // after the drafting phase, whose own qualification buys reads too. In
   // dispatch mode the draft is still to come and its reserve is on the row.
   const spend = readSpend ? await readSpend() : null;
-  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail, spend, draftIncluded: firstDraft === "inline" });
+  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail, spend, draftIncluded: firstDraft === "inline", timings: clock?.toJSON() ?? null });
 
   // The rest of the week waits for a person.
   //

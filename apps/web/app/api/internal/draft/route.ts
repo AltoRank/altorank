@@ -48,6 +48,8 @@ import { isBudgetRefusal, withSpendScope } from "@/lib/billing/spend-scope";
 import type { OnboardingEvent } from "@/lib/onboarding/events";
 import type { RelatedKeyword } from "@/lib/seo/brief-data";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { RunClock, saveRunTimings, withRunClock } from "@/lib/onboarding/timings";
+import { recordRunTiming } from "@/lib/onboarding/funnel-event";
 
 export const maxDuration = 300;
 
@@ -178,8 +180,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: "skipped", reason: "budget" }, { status: 200 });
   }
 
+  // The run's stopwatch, on the run's own axis, so the draft's stages land
+  // on the worker's timeline (lib/onboarding/timings.ts).
+  const clock = runId ? await runClock(supabase, runId) : null;
+  const timedRun = <T,>(fn: () => Promise<T>): Promise<T> => (clock ? withRunClock(clock, fn) : fn());
+  const saveTimings = async (outcome: string) => {
+    if (!clock || !runId) return;
+    clock.mark("run_done");
+    const merged = await saveRunTimings(supabase, runId, clock);
+    await recordRunTiming({ runId, workspaceId, accountId: workspace.account_id as string, timings: merged ?? clock.toJSON(), outcome });
+  };
+
   try {
-    const result = await withSpendScope({ workspaceId, runId: runId ?? null, budget, stage: budget ? "draft" : null }, () => generateArticle({
+    const result = await timedRun(() => withSpendScope({ workspaceId, runId: runId ?? null, budget, stage: budget ? "draft" : null }, () => generateArticle({
       supabase,
       workspaceId,
       keyword,
@@ -201,7 +214,8 @@ export async function POST(request: NextRequest) {
                 ` and ${research.peopleAlsoAsk.length} question${research.peopleAlsoAsk.length === 1 ? "" : "s"} people ask. Writing now.`,
             })
         : undefined,
-    }));
+    })));
+    clock?.mark("body_done");
     if (entry) await fulfilPlannedEntry(supabase, entry.id as string, result.articleId);
     await stamp(
       {
@@ -225,6 +239,7 @@ export async function POST(request: NextRequest) {
     // start route closed as stale still has a real draft in review.
     // `announceDraftBatch` never throws.
     if (runId) await announceDraftBatch(supabase, workspaceId);
+    await saveTimings("written");
     next();
     return NextResponse.json(
       { status: "generated", articleId: result.articleId, wordCount: result.wordCount },
@@ -232,6 +247,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
+    await saveTimings(isBudgetRefusal(err) ? "budget" : "failed");
     if (isBudgetRefusal(err)) {
       await stamp({ phase: "drafting", status: "skipped", detail: `${detail} A person picks the first article up.` }, { finish: true });
       return NextResponse.json({ status: "skipped", reason: "budget" }, { status: 200 });
@@ -266,4 +282,11 @@ async function chainNext(supabase: SupabaseClient, workspaceId: string, by: stri
   } catch (err) {
     console.error(`[internal/draft] could not start the next draft for ${workspaceId}: ${err instanceof Error ? err.message : err}`);
   }
+}
+
+/** A clock on the run's own axis: its started_at, read once. Null when the run cannot be read. */
+async function runClock(supabase: SupabaseClient, runId: string): Promise<RunClock | null> {
+  const { data } = await supabase.from("onboarding_runs").select("started_at").eq("id", runId).maybeSingle();
+  const startedAt = (data as { started_at?: string } | null)?.started_at;
+  return startedAt ? new RunClock(startedAt) : null;
 }

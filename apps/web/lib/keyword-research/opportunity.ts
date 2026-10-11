@@ -17,6 +17,7 @@ import { currentSpendScope, isBudgetRefusal, watchRefusals, withStage } from "@/
 import { anthropicEstimate } from "@/lib/billing/spend";
 import { anthropicModel } from "@/lib/ai/models";
 import { estimateDataForSEOUsd } from "@/lib/seo/dataforseo-cost";
+import { timed } from "@/lib/onboarding/timings";
 
 export { canonicalPage };
 
@@ -322,7 +323,7 @@ export async function qualifyOpportunities(
   }
   const toAsk = pending.filter((c) => !saved.has(c.term.trim().toLowerCase()));
   const asked = toAsk.length
-    ? await watchRefusals(() => withStage("buyer_fit", () => judgeBuyerFitFor(context, toAsk.map((c) => c.term), { spend })))
+    ? await watchRefusals(() => timed("buyer_fit", () => withStage("buyer_fit", () => judgeBuyerFitFor(context, toAsk.map((c) => c.term), { spend }))))
     : { value: { verdicts: new Map<string, FitVerdict>() }, refused: false };
   const fit = asked.value;
   for (const [term, v] of saved) if (!fit.verdicts.has(term)) fit.verdicts.set(term, v);
@@ -367,9 +368,9 @@ export async function qualifyOpportunities(
     } else if (verdict?.keep === true) {
       const read = await watchRefusals(async (): Promise<ResultsJudgeInput | null> => {
         try {
-          const serp = await withStage("results_pages", () => fetchAdvancedSerp(c.term, context));
+          const serp = await timed("results_pages", () => withStage("results_pages", () => fetchAdvancedSerp(c.term, context)));
           const input: ResultsJudgeInput = { term: c.term, sourceUrl: c.source_url, context, verdict, organic: serp.organic };
-          await withStage("judge", () => judgeOnResults(result, input, { spend }));
+          await timed("judge", () => withStage("judge", () => judgeOnResults(result, input, { spend })));
           return input;
         } catch (err) {
           // Refused before it was bought: counted by the watch, not an error.
@@ -390,7 +391,7 @@ export async function qualifyOpportunities(
         // read the budget refused leaves the term not judged, as a refused
         // first read does: one approval is not what a first look plans on.
         if (firstLook && input && (result.status as Opportunity["status"]) === "qualified") {
-          const again = await watchRefusals(() => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend })));
+          const again = await watchRefusals(() => timed("judge", () => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend }))));
           if (again.refused) { stopped = true; return; }
           const second = again.value;
           if (second.status === "rejected") {

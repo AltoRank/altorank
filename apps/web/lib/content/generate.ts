@@ -66,6 +66,7 @@ import type { ArticleBrief, RefreshContext, SiteContext, VoiceRules } from "@/li
 import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
 import { e2eStubsEnabled, stubGenerateArticle } from "@/lib/e2e/stubs";
+import { timed } from "@/lib/onboarding/timings";
 
 export type KeywordFacts = { volume: number | null; difficulty: number | null; cpc: number | null };
 
@@ -742,7 +743,7 @@ async function writeArticle(
       ? null
       : loadSiteFacts(supabase, workspaceId, workspace.domain, workspace.business_profile);
 
-    const research = await gatherArticleResearch({
+    const research = await timed("draft_research", () => gatherArticleResearch({
       keyword,
       locale: workspace.language ?? "en",
       locationCode: workspace.location_code ?? undefined,
@@ -759,7 +760,7 @@ async function writeArticle(
         },
         spend: { supabase: spendDb, workspaceId },
       },
-    });
+    }));
     const siteFacts = siteFactsPending ? await siteFactsPending : null;
     // Saved with the research, so the reviewer sees what the writer was told
     // about the business and whether the conversion page checked out.
@@ -786,11 +787,11 @@ async function writeArticle(
         });
     if (trust) research.trust = trust;
 
-    const questionSelection = await selectArticleQuestions(research.peopleAlsoAsk, {
+    const questionSelection = await timed("draft_research", () => selectArticleQuestions(research.peopleAlsoAsk, {
       keyword, title: approvedTitle, language: workspace.language ?? "en",
       business: workspace.business_profile, brief: topicBrief,
       instructions: refreshOf?.brief ?? keywordRow?.instructions,
-    }, { spend: { supabase: spendDb, workspaceId } });
+    }, { spend: { supabase: spendDb, workspaceId } }));
     research.questionSelection = questionSelection;
     research.peopleAlsoAsk = questionSelection.kept;
     onResearch?.(research);
@@ -901,15 +902,13 @@ async function writeArticle(
         : undefined,
     });
 
-    let articleResult;
-    while (true) {
-      const next = await generator.next();
-      if (next.done) {
-        articleResult = next.value;
-        break;
+    let articleResult = await timed("draft", async () => {
+      while (true) {
+        const next = await generator.next();
+        if (next.done) return next.value;
+        onChunk?.(next.value);
       }
-      onChunk?.(next.value);
-    }
+    });
     if (!articleResult) throw new Error("Generator ended without returning a result");
 
     // The title fits a results line, and the body does not repeat it as an
@@ -1016,7 +1015,7 @@ async function writeArticle(
     // action and the review note (lib/content/topic-pages.ts).
     const topicPages = matchingOfferings(siteFacts?.facts, { keyword, title: articleResult.title });
 
-    await enhance("body enrichment", async (html) => {
+    await timed("enrich", () => enhance("body enrichment", async (html) => {
       const { enrichArticle } = await import("@/lib/content/enrich");
       const enriched = await enrichArticle(html, {
         supabase,
@@ -1035,7 +1034,7 @@ async function writeArticle(
         trust,
       });
       return enriched.html;
-    });
+    }));
 
     const model = anthropicModel("content");
     await recordSpend(spendDb, {
@@ -1072,9 +1071,9 @@ async function writeArticle(
     // Two passes: the first asks whether each figure is attributed, the second
     // opens the pages the attributions point at. The second is what catches a
     // real citation carrying a wrong number, which the first cannot see.
-    const factCheck = await verifyCitedFigures(factCheckArticle(processedHtml, research, workspace.language), {
+    const factCheck = await timed("fact_check", () => verifyCitedFigures(factCheckArticle(processedHtml, research, workspace.language), {
       sourceReview: research.sourceReview,
-    });
+    }));
 
     // What the reviewer has to know or do before publishing, said once at the
     // top of the research panel rather than left for them to infer from a
@@ -1144,12 +1143,12 @@ async function writeArticle(
         // In the site's featured preset: a title card, a body preset, or
         // whatever the body images use.
         const featured = resolveFeaturedImage(outputSettings);
-        const imageResult = await generateImage(
+        const imageResult = await timed("images", () => generateImage(
           articleResult.title,
           keyword,
           workspace.brand_style as Record<string, unknown> | undefined,
           { style: featured.style, titleCover: featured.titleCover, brandColor: outputSettings.brandColor },
-        );
+        ));
         // Never metered before: the section images wrote a row, the hero did
         // not. Cost stays null, as for the section images - the images
         // endpoint reports no price.
@@ -1207,7 +1206,7 @@ async function writeArticle(
       };
     }
 
-    const { error: saveError } = await supabase
+    const { error: saveError } = await timed("save", () => supabase
       .from("articles")
       .update({
         content: tiptapContent,
@@ -1251,7 +1250,7 @@ async function writeArticle(
         status: "review",
         updated_at: new Date().toISOString(),
       })
-      .eq("id", article.id);
+      .eq("id", article.id));
 
     // The most expensive write in the product: research, a full model call and
     // a fact check have already been paid for by the time we get here. This

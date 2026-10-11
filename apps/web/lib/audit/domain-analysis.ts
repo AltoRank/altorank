@@ -52,6 +52,7 @@ import { discoverUrls, recordLinkedPages } from "@/lib/seo/site-crawl";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { fetchDomainMetrics } from "@/lib/seo/domain-metrics";
 import { e2eStubsEnabled, stubAnalyseDomain } from "@/lib/e2e/stubs";
+import { timed } from "@/lib/onboarding/timings";
 
 export interface AnalysisLayer {
   id: "readiness" | "crawl" | "pagespeed" | "platform" | "keywords" | "ranked_keywords" | "backlinks" | "authority" | "category";
@@ -439,7 +440,7 @@ export async function analyseDomain(options: {
   const recorded = recordingFetcher();
   let readiness: ReadinessResult | null = null;
   try {
-    const result = await runAgentReadiness(domain, recorded);
+    const result = await timed("readiness", () => runAgentReadiness(domain, recorded));
     if (result.error) {
       layers.push({ id: "readiness", status: "failed", detail: result.error });
     } else {
@@ -473,7 +474,7 @@ export async function analyseDomain(options: {
     // The homepage's own account of itself, off the bytes already fetched.
     // Persisted with the audit for the onboarding report (page-facts.ts).
     if (seedHtml && home) homeFacts = pageFacts(seedHtml, home.headers, home.status);
-    const { fetched, attempts, rateLimited } = await crawlWithRetry(
+    const { fetched, attempts, rateLimited } = await timed("crawl", () => crawlWithRetry(
       baseUrl,
       depth === "quick" ? 1 : Math.min(options.maxPages ?? MAX_PAGES, MAX_PAGES),
       depth === "quick" ? 0 : MAX_DEPTH,
@@ -481,7 +482,7 @@ export async function analyseDomain(options: {
       options.crawlRetryDelaysMs ?? CRAWL_RETRY_DELAYS_MS,
       { seedHtml },
       depth === "quick" ? null : (options.rateBanWaitMs ?? RATE_BAN_WAIT_MS),
-    );
+    ));
     crawlAttempts = attempts;
     crawlRateLimited = rateLimited;
     const pages = usablePages(fetched);
@@ -499,7 +500,7 @@ export async function analyseDomain(options: {
     } else if (pages.length) {
       // Built here because this is the only point that holds the page content.
       // Recommendations need it on every run and must not re-crawl to get it.
-      profile = buildTopicalProfile(domain, pages);
+      profile = await timed("topical_profile", () => buildTopicalProfile(domain, pages));
       issues = runAuditChecks(pages) as unknown[];
       auditScore = calculateAuditScore(issues as never, pages.length);
       // The services, portfolio, about and contact pages this walk reached,
@@ -536,7 +537,7 @@ export async function analyseDomain(options: {
 
   // --- PageSpeed -----------------------------------------------------------
   let pagespeed: Record<string, unknown> = {};
-  const ps = depth === "full" ? await fetchPageSpeedDetailed(baseUrl) : { ok: false as const, kind: "unavailable" as const, detail: "not run on a quick look" };
+  const ps = depth === "full" ? await timed("pagespeed", () => fetchPageSpeedDetailed(baseUrl)) : { ok: false as const, kind: "unavailable" as const, detail: "not run on a quick look" };
   if (ps.ok) {
     // PageSpeedResult is a fixed shape; the column is jsonb, so it is stored
     // as a plain object rather than reshaped.
@@ -563,7 +564,7 @@ export async function analyseDomain(options: {
   // twelve, and the site can usually answer it itself.
   let detection: Detection | null = null;
   try {
-    detection = await detectPlatform(domain);
+    detection = await timed("platform", () => detectPlatform(domain));
     layers.push({
       id: "platform",
       status: detection ? "ok" : "unavailable",
@@ -602,7 +603,7 @@ export async function analyseDomain(options: {
     });
   } else {
     try {
-      ranked = await fetchRankedKeywords(domain, { languageCode: languageCodeOf(options.locale), locationCode: options.locationCode });
+      ranked = await timed("ranked", () => fetchRankedKeywords(domain, { languageCode: languageCodeOf(options.locale), locationCode: options.locationCode }));
       rankedLayerRan = true;
       rankedPages = groupByPage(ranked).size;
       const close = strikingDistance(ranked);
@@ -669,10 +670,10 @@ export async function analyseDomain(options: {
       // DataForSEO answered "Invalid Field: 'language_code'" - which reads
       // like the field is wrong rather than the combination. Traffic was
       // therefore null on every non-English workspace (2026-09-04).
-      const m = await fetchDomainMetrics(domain, {
+      const m = await timed("authority", () => fetchDomainMetrics(domain, {
         languageCode: languageCodeOf(options.locale),
         locationCode: options.locationCode,
-      });
+      }));
       authority = m.authority;
       traffic = m.traffic;
       referringDomains = m.referringDomains;
@@ -809,14 +810,14 @@ export async function analyseDomain(options: {
         const spend = supabase && workspaceId ? { supabase, workspaceId } : null;
         const discovered =
           depth === "full"
-            ? await discoverBuyerKeywords({
+            ? await timed("discovery", () => discoverBuyerKeywords({
                 domain,
                 business,
                 languageCode: languageCodeOf(options.locale),
                 locationCode: options.locationCode,
                 spend,
                 vocabulary: profile?.topTerms ?? [],
-              })
+              }))
             : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [], alternativeSeeds: [] as string[], competitorsUnresolved: [] as string[], competitorsFailed: [] as string[], serpRivals: [] as string[], serpRivalsKept: false, serpRivalsVetted: true, fromSerpRivals: 0, serpRivalSearchesFailed: [] as string[], screened: undefined };
         screened = discovered.screened;
         // Keep the rivals a fresh search found, so tomorrow reads the same
@@ -866,7 +867,7 @@ export async function analyseDomain(options: {
         // instead of buying each kept term's answer a second time.
         // Its own stage in a first look's spend (lib/billing/spend-scope.ts):
         // the buyer test is the dearest model pass of discovery.
-        const fit = await withStage("buyer_fit", () => judgeBuyerFit(business ? { ...business, language: languageCodeOf(options.locale) } : business, toJudge, { spend }));
+        const fit = await timed("buyer_fit", () => withStage("buyer_fit", () => judgeBuyerFit(business ? { ...business, language: languageCodeOf(options.locale) } : business, toJudge, { spend })));
         const refusedByBuyerTest = [...fit.verdicts.values()].filter((v) => !v.keep).length;
 
         // Collapse phrasings across ALL three sources, not just the seeded one.
@@ -1119,7 +1120,7 @@ export async function analyseDomain(options: {
   // domain" path does not need it and should not pay for it.
   if (depth === "full" && hasDataForSeo && supabase && workspaceId) {
     try {
-      const r = await syncBacklinks(supabase, workspaceId, domain);
+      const r = await timed("backlinks", () => syncBacklinks(supabase, workspaceId, domain));
       layers.push({
         id: "backlinks",
         status: "ok",
