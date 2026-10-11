@@ -667,6 +667,15 @@ function SignOutLine({ email, otherSites = [] }: { email?: string; otherSites?: 
  * says the failure was ours and what the trial does about it.
  */
 const FIRST_ARTICLE_FAILED_HEADING = "Your first article did not finish";
+
+/**
+ * The first article is outlined and its body is being written to that
+ * outline (lib/content/outline.ts): the gate opens on the shape, which is all
+ * it ever showed, instead of waiting two minutes for text it locks anyway.
+ */
+const OUTLINED_HEADING = "Your first article is planned and being written";
+const OUTLINED_LEDE =
+  `Here is its outline; the text is being written to it now. Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`;
 const FIRST_ARTICLE_FAILED_LEDE =
   `Setup started writing it and it failed on our side. It is written again once your ${TRIAL_DAYS}-day trial starts, along with the rest of this week's plan.`;
 
@@ -729,8 +738,9 @@ function TrialGateScreen({
   const fixable = report?.readiness?.findings.filter((f) => !f.passed && !f.inconclusive).length ?? 0;
   const pagesToFix = report?.existingPages?.withIssues ?? 0;
 
+  const outlined = firstArticle?.state === "outlined";
   const heading: Record<SetupEnding, string> = {
-    article: "Your first article is written",
+    article: outlined ? OUTLINED_HEADING : "Your first article is written",
     writing: "Your first article is being written",
     retry: "Setup did not finish",
     "first-failed": FIRST_ARTICLE_FAILED_HEADING,
@@ -738,7 +748,9 @@ function TrialGateScreen({
     "no-article": "No article was written in setup",
   };
   const lede: Record<SetupEnding, string> = {
-    article: `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`,
+    article: outlined
+      ? OUTLINED_LEDE
+      : `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`,
     writing: "It appears here when it is done, usually within a few minutes. The trial opens it, and the rest of the week.",
     retry: `Nothing was written for ${domain || "your site"}. Running setup again reads the site, plans the month and writes the first article.`,
     "first-failed": FIRST_ARTICLE_FAILED_LEDE,
@@ -998,6 +1010,8 @@ function RunScreen({
   // the workspace (lib/onboarding/first-article.ts); this only fills the gap.
   const runDraft = draft ?? drafts[0] ?? null;
   const hasArticle = firstArticle !== null || runDraft !== null;
+  // Outlined, its body still being written: the gate opens on the outline.
+  const cardOutlined = firstArticle ? firstArticle.state === "outlined" : runDraft?.outlined === true;
   // The last step of onboarding, for an account before its trial: the card,
   // whatever the run produced. With an article it shows the article; without
   // one it offers a retry only when the run fell short and nothing exists
@@ -1041,7 +1055,9 @@ function RunScreen({
           <h1 className="mb-1.5 text-[22px] font-semibold">
             {trialStep
               ? hasArticle
-                ? "Your first article is written"
+                ? cardOutlined
+                  ? OUTLINED_HEADING
+                  : "Your first article is written"
                 : failed
                   ? FIRST_ARTICLE_FAILED_HEADING
                   : nothingPlanned
@@ -1054,10 +1070,14 @@ function RunScreen({
           <p className="mx-auto max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
             {trialStep ? (
               hasArticle ? (
-                <>
-                  Start your {TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the
-                  week is written once the trial starts.
-                </>
+                cardOutlined ? (
+                  <>{OUTLINED_LEDE}</>
+                ) : (
+                  <>
+                    Start your {TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the
+                    week is written once the trial starts.
+                  </>
+                )
               ) : failed ? (
                 <>{FIRST_ARTICLE_FAILED_LEDE}</>
               ) : nothingPlanned ? (
@@ -1095,7 +1115,7 @@ function RunScreen({
             ending={ending}
             followUp={preTrialSetup.followUp}
             firstArticle={firstArticle}
-            pending={runDraft ? { title: runDraft.title, keyword: runDraft.keyword, wordCount: runDraft.wordCount, verdict: runDraft.verdict } : null}
+            pending={runDraft ? { title: runDraft.title, keyword: runDraft.keyword, wordCount: runDraft.wordCount, verdict: runDraft.verdict, outlined: runDraft.outlined === true } : null}
             retry={retry}
             onRetry={() => {
               setState(null);

@@ -20,6 +20,7 @@
 // per-keyword guard and by the daily generate cron; both are best effort.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isOwedBody } from "./owed-bodies";
 
 /** Same window the planner card uses before it says "stopped responding". */
 export const STALE_DRAFT_MS = 10 * 60_000;
@@ -39,11 +40,15 @@ export async function sweepStaleDrafts(
   const cutoff = new Date(now - STALE_DRAFT_MS).toISOString();
   const { data: drafts } = await supabase
     .from("articles")
-    .select("id")
+    .select("id, created_at, instructions_snapshot")
     .eq("workspace_id", workspaceId)
     .eq("status", "drafting")
     .lt("created_at", cutoff);
-  const ids = ((drafts ?? []) as Array<{ id: string }>).map((d) => d.id);
+  // A body owed to an outline the owner has seen is not abandoned: the owed
+  // sweep writes it (./owed-bodies.ts), and gives it up itself when it must.
+  const ids = ((drafts ?? []) as Array<{ id: string; created_at: string; instructions_snapshot?: unknown }>)
+    .filter((d) => !isOwedBody(d, now))
+    .map((d) => d.id);
   if (ids.length === 0) return { swept: [] };
 
   // A job still running - and recently touched - is a writer that is merely

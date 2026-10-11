@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeDb } from "@/lib/plan/__tests__/fake-postgrest";
 
 /**
@@ -207,5 +207,103 @@ describe("the onboarding run's first draft", () => {
     expect(await res.json()).toEqual({ status: "skipped", reason: "trial-hold" });
     expect(generateArticle).not.toHaveBeenCalled();
     expect(stampRun.mock.calls[0][2]).toMatchObject({ phase: "drafting", status: "skipped", detail: expect.stringMatching(/^Waiting for your trial to start\./) });
+  });
+});
+
+describe("a first look's draft, gated on its outline", () => {
+  const first = { workspaceId: "ws1", runId: "run-1", keyword: "crm for agencies", keywordId: "k1" };
+  const gated = (used: number) => ({ limit: 7, used, remaining: 7 - used, reason: "no-plan", plan: null, trialEligible: true });
+  const OUTLINE = {
+    version: 1, title: "CRM for agencies: what to look for", sections: ["Key takeaways", "What does a CRM do for an agency?", "How to choose one"],
+    closing: "Learn more about Acme", targetWordCount: 1400, sources: ["https://research.example/crm"], model: "test", createdAt: "2026-10-11T00:00:00.000Z",
+  };
+  const sent: Array<{ url: string; body: Record<string, unknown> }> = [];
+  afterEach(() => vi.unstubAllGlobals());
+
+  beforeEach(() => {
+    db.rows("calendar_entries")[0] = claimedEntry({ draft_claimed_by: null, draft_claimed_at: null });
+    process.env.NEXT_PUBLIC_APP_URL = "https://app.example";
+    sent.length = 0;
+    vi.stubGlobal("fetch", async (url: string, init: { body: string }) => {
+      sent.push({ url, body: JSON.parse(init.body) });
+      return new Response("{}", { status: 200 });
+    });
+  });
+
+  /** generateArticle as it behaves: outline stored, onReady awaited, then the body (or its failure). */
+  const outlinedThen = (body: () => Promise<unknown>) => async (opts: { outline?: { onReady?: (r: unknown) => Promise<void> } }) => {
+    order.push("outline");
+    await opts.outline?.onReady?.({ articleId: "art-9", outline: OUTLINE });
+    order.push("body");
+    return body();
+  };
+
+  it("ends the run at the outline before the body is written, and emails only when the body lands", async () => {
+    getQuota.mockResolvedValue(gated(0));
+    generateArticle.mockImplementation(outlinedThen(async () => ({ articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } })));
+    const res = await post(first);
+    expect(res.status).toBe(200);
+    // The gate opens (the run finishes) between the outline and the body;
+    // the body's sentence is laid over it after; then the one email.
+    expect(order).toEqual(["outline", "stamp:done", "body", "stamp:done", "email"]);
+    const [gate, written] = stampRun.mock.calls.map((c) => c[3] as { finish?: boolean; amend?: boolean; article?: Record<string, unknown> });
+    expect(gate).toMatchObject({ finish: true, article: { id: "art-9", title: OUTLINE.title, wordCount: 1400, outlined: true } });
+    expect(written).toMatchObject({ finish: true, amend: true });
+    // On the calendar at the gate, so the card has its day.
+    expect(db.rows("calendar_entries")[0]).toMatchObject({ article_id: "art-9" });
+    expect(generateArticle.mock.calls[0][0]).toMatchObject({ outline: { keepOnFailure: true } });
+  });
+
+  it("keeps a body that fails after the gate owed, tries again in its own invocation, and never says setup failed", async () => {
+    getQuota.mockResolvedValue(gated(0));
+    generateArticle.mockImplementation(outlinedThen(async () => { throw new Error("The model timed out."); }));
+    const res = await post(first);
+    expect(await res.json()).toMatchObject({ status: "owed", attempt: 1 });
+    expect(order).not.toContain("stamp:failed");
+    expect(announce).not.toHaveBeenCalled();
+    await runDeferred();
+    expect(sent).toHaveLength(1);
+    expect(sent[0].url).toBe("https://app.example/api/internal/draft");
+    expect(sent[0].body).toMatchObject({ workspaceId: "ws1", runId: "run-1", articleId: "art-9", resume: true, attempt: 2, keyword: "crm for agencies" });
+  });
+
+  it("writes the owed body into its outlined row, counting no second draft, and announces it", async () => {
+    // The claim already counted the row: used is 1, and the hold still lets it through.
+    getQuota.mockResolvedValue(gated(1));
+    stampRun.mockResolvedValue(false);
+    const res = await post({ ...first, articleId: "art-9", resume: true, attempt: 2 });
+    expect(res.status).toBe(200);
+    expect(generateArticle.mock.calls[0][0]).toMatchObject({ articleId: "art-9", resumeOutline: true });
+    expect(generateArticle.mock.calls[0][0]).not.toHaveProperty("outline");
+    expect(announce).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops chaining at the last attempt and leaves it to the nightly sweep", async () => {
+    getQuota.mockResolvedValue(gated(1));
+    generateArticle.mockRejectedValue(new Error("still down"));
+    const res = await post({ ...first, articleId: "art-9", resume: true, attempt: 3 });
+    expect(await res.json()).toMatchObject({ status: "owed", attempt: 3 });
+    await runDeferred();
+    expect(sent).toHaveLength(0);
+    expect(order).not.toContain("stamp:failed");
+  });
+
+  it("waits for the body on an account with no gate, as before: the outline is progress, not the end", async () => {
+    getQuota.mockResolvedValue({ limit: 100, used: 2, remaining: 98, reason: "plan", plan: "starter" });
+    generateArticle.mockImplementation(outlinedThen(async () => ({ articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } })));
+    await post(first);
+    expect(order).toEqual(["outline", "stamp:active", "body", "stamp:done", "email"]);
+    expect(stampRun.mock.calls[0][3]).toBeUndefined();
+    expect(generateArticle.mock.calls[0][0]).toMatchObject({ outline: { keepOnFailure: false } });
+  });
+
+  it("an ungated body that fails is the run's failure, as before", async () => {
+    getQuota.mockResolvedValue({ limit: 100, used: 2, remaining: 98, reason: "plan", plan: "starter" });
+    generateArticle.mockImplementation(outlinedThen(async () => { throw new Error("boom"); }));
+    const res = await post(first);
+    expect(res.status).toBe(500);
+    expect(order).toEqual(["outline", "stamp:active", "body", "stamp:failed"]);
+    await runDeferred();
+    expect(sent).toHaveLength(0);
   });
 });

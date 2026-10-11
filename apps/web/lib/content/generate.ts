@@ -57,7 +57,7 @@ import { verifyOutboundLinks, type LinkCheck } from "@/lib/seo/link-check";
 import { gatherArticleResearch, type ArticleResearch } from "@/lib/seo/research";
 import { rivalsOf, scrubBlockedLinks, sourceReviewNotes } from "@/lib/seo/source-classes";
 import type { SourceOwner } from "@/lib/seo/source-classify";
-import type { RelatedKeyword } from "@/lib/seo/brief-data";
+import { fetchRelatedKeywords, type RelatedKeyword } from "@/lib/seo/brief-data";
 import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { getLocale, LOCALES } from "@/lib/seo/locales";
@@ -67,6 +67,7 @@ import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
 import { e2eStubsEnabled, stubGenerateArticle } from "@/lib/e2e/stubs";
 import { timed } from "@/lib/onboarding/timings";
+import { conformToOutline, h2sOf, outlineHeadings, outlineOf, OutlineNotFollowedError, planOutline, type ArticleOutline } from "@/lib/content/outline";
 
 export type KeywordFacts = { volume: number | null; difficulty: number | null; cpc: number | null };
 
@@ -189,6 +190,25 @@ export interface GenerateArticleOptions {
    * spend are attributed to it; `url` is where the page lives either way.
    */
   refreshOf?: RefreshContext & { articleId?: string | null };
+  /**
+   * Decide the article's outline before its body (lib/content/outline.ts):
+   * once research is in, one structured call settles the title, every H2,
+   * the length and the sources; they are stored on the row and `onReady` is
+   * awaited before the writer starts. The body is then written to that
+   * outline and held to it. The first look's draft does this so its gate can
+   * open on the outline instead of waiting for the body.
+   *
+   * `keepOnFailure`: a body that fails after the outline is stored leaves the
+   * row `drafting` with its outline, for a retry (`resumeOutline`), instead of
+   * marking it errored - the gate is already showing it.
+   */
+  outline?: { onReady?: (ready: { articleId: string; outline: ArticleOutline }) => Promise<void> | void; keepOnFailure?: boolean };
+  /**
+   * With `articleId`: write the body of a row whose outline is already stored
+   * (a body that failed after the gate). Its research is reused, nothing is
+   * claimed again, and the outline is followed as stored.
+   */
+  resumeOutline?: boolean;
 }
 
 export interface GenerateArticleResult {
@@ -393,7 +413,30 @@ async function writeArticle(
   let claimedPreTrial = false;
   let regeneratingText = false;
   const gatedBeforeTrial = trialGateApplies(quota);
-  if (gatedBeforeTrial) {
+
+  // A body owed to an outline already stored: the row, its outline and the
+  // research it was planned on. Only a row this product outlined and nobody
+  // has written - `drafting`, no text - and, before the trial, only the
+  // account's own first draft, which its claim already counted.
+  let resumed: { outline: ArticleOutline; research: ArticleResearch | null } | null = null;
+  if (options.resumeOutline) {
+    if (!articleId || refreshOf) throw new Error("Only an outlined article can be resumed.");
+    const { data: row, error: rowError } = await supabase
+      .from("articles")
+      .select("id, status, instructions_snapshot, research")
+      .eq("id", articleId)
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    if (rowError) throw new Error(`Could not read the outlined article: ${rowError.message}`);
+    const outline = row ? outlineOf(row.instructions_snapshot) : null;
+    if (!row || row.status !== "drafting" || !outline || (await articleHasText(supabase, articleId))) {
+      throw new Error("This article has no outline waiting for its body.");
+    }
+    if (gatedBeforeTrial && !(await isFirstPreTrialDraft(supabase, billedAccountId, articleId))) throw new TrialHoldError();
+    const stored = row.research as ArticleResearch | null;
+    resumed = { outline, research: stored && Array.isArray(stored.competitors) ? stored : null };
+  }
+  if (gatedBeforeTrial && !resumed) {
     let adding = 1;
     if (articleId && !refreshOf) {
       const { data: target, error: targetError } = await supabase
@@ -511,7 +554,7 @@ async function writeArticle(
   // without spending (the hold, the quota, the topic), before the row is
   // written and before the research is bought. See claimPreTrialDraft - the
   // attempt is what counts, so a draft that fails from here on keeps it.
-  if (gatedBeforeTrial && !regeneratingText) {
+  if (gatedBeforeTrial && !regeneratingText && !resumed) {
     if (!(await claimPreTrialDraft(supabase, billedAccountId))) throw new TrialHoldError();
     claimedPreTrial = true;
   }
@@ -558,7 +601,8 @@ async function writeArticle(
       // article whose run died is tried again here. Recorded like the insert
       // path's (below), or a draft written this way was counted only while its
       // row was not `error` - which the account's own client can set.
-      if (quota.reason === "no-plan" && !claimedPreTrial && !(await articleHasText(supabase, existing.id as string))) {
+      // A resumed body before the trial is the draft its claim counted.
+      if (quota.reason === "no-plan" && !claimedPreTrial && !(resumed && gatedBeforeTrial) && !(await articleHasText(supabase, existing.id as string))) {
         recordFreeDraft = () => recordFreeDraftWritten(supabase, billedAccountId);
       }
 
@@ -678,6 +722,9 @@ async function writeArticle(
     throw err;
   }
 
+  // Set once the outline is on the row: from then a failure is a body owed
+  // to it, not a draft that never was (see `outline.keepOnFailure`).
+  let outlinedRow = false;
   const { data: job, error: jobError } = await supabase
     .from("generation_jobs")
     .insert({
@@ -743,13 +790,23 @@ async function writeArticle(
       ? null
       : loadSiteFacts(supabase, workspaceId, workspace.domain, workspace.business_profile);
 
-    const research = await timed("draft_research", () => gatherArticleResearch({
+    // In outline mode the related-keyword lookup is not on the way to the
+    // outline: it is started here and awaited only before the writer, which
+    // is the one step that reads it.
+    const outlineMode = Boolean(options.outline) && !refreshOf && !resumed;
+    const deferRelated = outlineMode && options.relatedKeywords === undefined && hasDataForSEOCredentials();
+    const loc0 = getLocale(workspace.language ?? "en");
+    const relatedPending: Promise<RelatedKeyword[] | Error> | null = deferRelated
+      ? timed("related_keywords", () => fetchRelatedKeywords(keyword, { languageCode: loc0.languageCode, locationCode: workspace.location_code ?? loc0.locationCode }))
+          .catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
+      : null;
+    const research = resumed?.research ?? await timed("draft_research", () => gatherArticleResearch({
       keyword,
       locale: workspace.language ?? "en",
       locationCode: workspace.location_code ?? undefined,
       supabase,
       workspaceId,
-      relatedKeywords: options.relatedKeywords,
+      relatedKeywords: deferRelated ? [] : options.relatedKeywords,
       // Whose article it is, so the sites research reads are classified
       // before any figure is offered: one structured call, billed here.
       sources: {
@@ -787,13 +844,16 @@ async function writeArticle(
         });
     if (trust) research.trust = trust;
 
-    const questionSelection = await timed("draft_research", () => selectArticleQuestions(research.peopleAlsoAsk, {
-      keyword, title: approvedTitle, language: workspace.language ?? "en",
-      business: workspace.business_profile, brief: topicBrief,
-      instructions: refreshOf?.brief ?? keywordRow?.instructions,
-    }, { spend: { supabase: spendDb, workspaceId } }));
-    research.questionSelection = questionSelection;
-    research.peopleAlsoAsk = questionSelection.kept;
+    // A resumed body's questions were picked when it was outlined.
+    if (!resumed?.research) {
+      const questionSelection = await timed("draft_research", () => selectArticleQuestions(research.peopleAlsoAsk, {
+        keyword, title: approvedTitle, language: workspace.language ?? "en",
+        business: workspace.business_profile, brief: topicBrief,
+        instructions: refreshOf?.brief ?? keywordRow?.instructions,
+      }, { spend: { supabase: spendDb, workspaceId } }));
+      research.questionSelection = questionSelection;
+      research.peopleAlsoAsk = questionSelection.kept;
+    }
     onResearch?.(research);
 
     /**
@@ -874,9 +934,75 @@ async function writeArticle(
     };
     const targetWordCount = targetWordCountFor(expectedLength, research.recommendedWordCount);
 
+    // The outline, before a word of the body (lib/content/outline.ts). Stored
+    // on the row with the research it was planned on, so a retry writes the
+    // same article; then the caller hears it is ready (the first look's gate
+    // opens on it) and only then is the writer started. No outline - the
+    // model gave nothing usable - is the old way: the shape is read off the
+    // body, and the caller is not told anything is ready.
+    let outline: ArticleOutline | null = resumed?.outline ?? null;
+    if (outlineMode && article.id) {
+      outline = await timed("outline", () => planOutline({
+        keyword,
+        angle: approvedTitle ?? null,
+        language: workspace.language,
+        research,
+        articleType: brief.articleType,
+        articleSubtype: brief.articleSubtype,
+        instructions: brief.instructions,
+        site,
+        targetWordCount: targetWordCount ?? research.recommendedWordCount,
+        domain: workspace.domain,
+        callToAction: outputSettings.callToAction,
+      }, { spend: { supabase: spendDb, workspaceId } }));
+      if (outline) {
+        const { error: outlineError } = await supabase
+          .from("articles")
+          .update({
+            title: outline.title,
+            keyword_id: keywordRow?.id ?? null,
+            article_type: shape.article_type,
+            article_subtype: shape.article_subtype,
+            expected_length: expectedLength,
+            search_intent: research.intent.intent,
+            research,
+            instructions_snapshot: {
+              instructions: brief.instructions,
+              answers: brief.answers,
+              targetWordCount: targetWordCount ?? null,
+              outline,
+              capturedAt: new Date().toISOString(),
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", article.id);
+        if (outlineError) {
+          // Not stored is not shown: write the body the old way.
+          console.warn(`[generate] outline not stored, writing without one: ${outlineError.message}`);
+          outline = null;
+        } else {
+          outlinedRow = true;
+          await options.outline?.onReady?.({ articleId: article.id, outline });
+        }
+      }
+    }
+    if (resumed) outlinedRow = true;
+
+    // The related keywords, now that the writer is next.
+    if (relatedPending) {
+      const got = await relatedPending;
+      const layer = research.layers.find((l) => l.id === "related_keywords");
+      if (got instanceof Error) {
+        if (layer) { layer.status = "failed"; layer.detail = got.message.slice(0, 300); }
+      } else {
+        research.relatedKeywords = got;
+        if (layer) { layer.status = "ok"; layer.detail = `${got.length} related keywords`; }
+      }
+    }
+
     const generator = provider.streamArticle({
       keyword,
-      title: approvedTitle,
+      title: outline?.title ?? approvedTitle,
       voiceRules,
       // The name the writer is told to write in. `getLocale` answers English
       // for a code it does not list, which would switch the article's
@@ -891,6 +1017,7 @@ async function writeArticle(
       site,
       siteFacts: siteFacts?.facts,
       sensitive: trust?.sensitive ?? null,
+      ...(outline ? { outline } : {}),
       refreshOf: refreshOf
         ? {
             existingHtml: refreshOf.existingHtml,
@@ -919,7 +1046,9 @@ async function writeArticle(
     // A title the caller gave - a person in the editor, or an agent through
     // the API - and the writer used is theirs: it is kept as given, and the
     // review note says when it is long. Only the writer's own title is cut.
-    const keptGiven = givenTitleKept(title, articleResult.title);
+    // An outline's title was shown to the owner and fitted when it was made:
+    // it is the title, whatever the writer's <h1> said.
+    const keptGiven = outline ? { title: outline.title, original: articleResult.title, rule: "given" as const } : givenTitleKept(title, articleResult.title);
     const fittedTitle = keptGiven ?? fitTitle(articleResult.title, keyword, workspace.language);
     if (!refreshOf) articleResult = { ...articleResult, title: fittedTitle.title };
 
@@ -927,6 +1056,16 @@ async function writeArticle(
     // anyway, so the ban is enforced here where it cannot be ignored.
     let processedHtml = stripAiTypography(articleResult.html);
     if (!refreshOf) processedHtml = removeTitleHeading(processedHtml).html;
+
+    // Held to the outline the owner saw: its headings, its wording, no
+    // other H2. A body missing a section of it is not this article, and is
+    // written again rather than saved (lib/content/outline.ts).
+    if (outline) {
+      const held = conformToOutline(processedHtml, outline.sections);
+      if (held.missing.length) throw new OutlineNotFollowedError(held.missing);
+      if (held.renamed || held.demoted) console.warn(`[generate] held the draft to its outline: ${held.renamed} heading(s) reworded back, ${held.demoted} extra H2(s) made H3`);
+      processedHtml = held.html;
+    }
 
     /**
      * Apply an optional enhancement, and keep the original unless the result is
@@ -1206,6 +1345,15 @@ async function writeArticle(
       };
     }
 
+    // What the gate showed against what is saved. The closing heading is the
+    // one prediction here (the call to action enrichment adds); said when it
+    // missed, so the card and the article are known to differ.
+    if (outline) {
+      const saved = h2sOf(processedHtml);
+      const shown = outlineHeadings(outline);
+      if (saved.join("\n") !== shown.join("\n")) console.warn(`[generate] the saved H2s differ from the outline shown: ${saved.length} saved, ${shown.length} shown`);
+    }
+
     const { error: saveError } = await timed("save", () => supabase
       .from("articles")
       .update({
@@ -1237,6 +1385,7 @@ async function writeArticle(
           instructions: brief.instructions,
           answers: brief.answers,
           targetWordCount: targetWordCount ?? null,
+          ...(outline ? { outline } : {}),
           capturedAt: new Date().toISOString(),
         },
         // Deliberately not `?? 0`. Unmeasured difficulty is not zero difficulty.
@@ -1331,6 +1480,18 @@ async function writeArticle(
     // is removed, so the review queue does not show a broken draft for a
     // draft that was skipped. The caller says why. If it cannot be removed it
     // is marked errored like any other failure.
+    // A body owed to an outline the gate is already showing stays owed: the
+    // row keeps its outline and `drafting`, the claim stands, and a retry
+    // writes it (`resumeOutline`). Never deleted, never errored here.
+    const keepOutlined = outlinedRow && (options.outline?.keepOnFailure === true || Boolean(resumed));
+    if (keepOutlined && article.id) {
+      await supabase.from("articles").update({ status: "drafting", updated_at: new Date().toISOString() }).eq("id", article.id);
+      await supabase
+        .from("generation_jobs")
+        .update({ status: "failed", error: message, completed_at: new Date().toISOString() })
+        .eq("id", job.id);
+      throw err;
+    }
     const removed = isBudgetRefusal(err) && !refreshOf && !articleId && article.id
       // Counted, not assumed: a delete RLS filters out is no error and no row.
       ? await supabase.from("articles").delete().eq("id", article.id).select("id")

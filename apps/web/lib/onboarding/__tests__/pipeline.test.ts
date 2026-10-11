@@ -272,14 +272,15 @@ describe("runOnboarding", () => {
     expect(events.at(-1)).toEqual({ phase: "ready" });
   });
 
-  it("hands the draft an empty related list, and buys none, when the lookup does not fit above the writer's floor", async () => {
+  it("buys no related list in the worker for a dispatched draft, whatever the room: the draft route decides from its own", async () => {
     const base = richClient(0) as unknown as { from: (t: string) => unknown };
     const budgetTable = { upsert: async () => ({ error: null }), select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
     const db = { from: (t: string) => (t === "run_budgets" ? budgetTable : base.from(t)), rpc: async () => ({ data: FIRST_DRAFT_MIN_USD + 0.01, error: null }) } as never;
     plan.mockResolvedValue([{ term: NEXT.term }]);
     const result = await runOnboarding(db, WS, () => undefined, { firstDraft: "dispatch", runId: "run-8" });
     expect(relatedBatch).not.toHaveBeenCalled();
-    expect(result.pendingDraft).toMatchObject({ term: NEXT.term, relatedKeywords: [] });
+    expect(result.pendingDraft).toMatchObject({ term: NEXT.term });
+    expect(result.pendingDraft?.relatedKeywords).toBeUndefined();
   });
 
   it("blames the budget, not the site, when discovery's buyer test was refused and nothing was stored", async () => {
@@ -481,7 +482,7 @@ describe("runOnboarding", () => {
      * (round4 §4, W2), so the run buys the week once and carries each draft's
      * share to the invocation that writes it.
      */
-    it("buys related keywords for the one draft it writes, not for the week", async () => {
+    it("leaves the related keywords to the draft, off the way to its gate", async () => {
       plan.mockResolvedValue([
         { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
         { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
@@ -489,9 +490,8 @@ describe("runOnboarding", () => {
       recommend.mockResolvedValue([{ ...NEXT, keywordId: "k1" }]);
       relatedBatch.mockResolvedValue(new Map([["seo agent", [{ keyword: "seo agents", searchVolume: 100, competition: null }]]]));
       const { result } = await collectDispatch();
-      expect(relatedBatch).toHaveBeenCalledTimes(1);
-      expect(relatedBatch.mock.calls[0][0]).toEqual(["seo agent"]);
-      expect(result.pendingDraft?.relatedKeywords).toEqual([{ keyword: "seo agents", searchVolume: 100, competition: null }]);
+      expect(relatedBatch).not.toHaveBeenCalled();
+      expect(result.pendingDraft?.relatedKeywords).toBeUndefined();
       expect(fanOut).not.toHaveBeenCalled();
     });
 

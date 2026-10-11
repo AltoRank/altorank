@@ -15,6 +15,7 @@ import { billingEnabled, getStripe } from "@/lib/stripe";
 import { trialGateApplies } from "@/lib/billing/trial";
 import { generateArticle, ConcurrentGenerationError } from "@/lib/content/generate";
 import { sweepStaleDrafts } from "@/lib/content/stale-drafts";
+import { resumeOwedBodies } from "@/lib/content/owed-bodies";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { readFrozenEntries } from "@/lib/plan/frozen";
@@ -600,6 +601,11 @@ async function run(request: Request) {
   // which is the normal case, because the loop above announces its own.
   const unannounced = await sweepUnannouncedDrafts(supabase);
 
+  // First articles whose outline the owner was shown and whose body never
+  // landed: handed back to the draft route, one try a day (lib/content/owed-bodies.ts).
+  const owed = await resumeOwedBodies(supabase);
+  if (owed.dispatched.length) after(() => owed.settled);
+
   return NextResponse.json({
     checked: workspaces?.length ?? 0,
     pausesResumed: resumed,
@@ -608,6 +614,7 @@ async function run(request: Request) {
     pausedNotices,
     setupNotices,
     unannounced,
+    owedBodies: { dispatched: owed.dispatched.length, gaveUp: owed.gaveUp.length },
     generated: results.filter((r) => r.status === "generated").length,
     skipped: results.filter((r) => r.status === "skipped").length,
     errors: results.filter((r) => r.status === "error").length,

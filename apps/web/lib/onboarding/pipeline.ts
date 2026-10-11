@@ -564,9 +564,13 @@ async function runPhases(
         // draft is handed a list - empty when it was not bought - and does
         // not buy it again. Nothing is bought for a draft the budget cannot
         // write: the same pre-check the draft route makes, made first.
+        //
+        // A dispatched draft buys it itself, beside its outline and off the
+        // way to the gate (lib/content/generate.ts): bought here it was ten
+        // seconds of the worker's critical path before the draft could start.
         const budget = currentSpendScope()?.budget ?? null;
         const budgetShort = next ? await draftBudgetShort(budget) : null;
-        relatedByTerm = next && budgetShort === null && await draftCanBuyLookup(budget)
+        relatedByTerm = next && budgetShort === null && firstDraft === "inline" && await draftCanBuyLookup(budget)
           ? await timed("related_keywords", () => withStage("draft", () => fetchWeeksRelatedKeywords(workspace, next.term, plan)))
           : new Map();
         const relatedFor = (term: string): RelatedKeyword[] | undefined => relatedByTerm.get(term) ?? (budget ? [] : undefined);
@@ -584,7 +588,8 @@ async function runPhases(
             term: next.term,
             keywordId: next.keywordId ?? null,
             selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
-            relatedKeywords: relatedFor(next.term),
+            // Not bought here: the draft route decides from its own room.
+            relatedKeywords: undefined,
           };
           settle("active", `Writing "${next.term}" now. It lands in your review queue when it is done.`);
         } else {
