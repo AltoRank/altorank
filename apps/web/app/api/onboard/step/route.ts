@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { recordOnboardingStep } from "@/lib/onboarding/step-events";
-import { isOnboardingStep } from "@/lib/onboarding/step-names";
+import { isClientStep } from "@/lib/onboarding/step-names";
 
 // ---------------------------------------------------------------------------
 // POST /api/onboard/step — the browser says which onboarding step it reached
@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  if (!isOnboardingStep(body.step)) return NextResponse.json({ error: "Unknown step" }, { status: 400 });
+  // `run_started` is the server's own (lib/onboarding/step-names.ts).
+  if (!isClientStep(body.step)) return NextResponse.json({ error: "Unknown step" }, { status: 400 });
 
   const workspaceId = typeof body.workspaceId === "string" && body.workspaceId ? body.workspaceId : await getScopedWorkspaceId();
   if (!workspaceId) return new NextResponse(null, { status: 204 });
@@ -39,6 +40,21 @@ export async function POST(request: NextRequest) {
     .eq("user_id", user.id)
     .maybeSingle();
   if (!member) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  // The gate is shown only once a run has reached it: its time since signup
+  // is the funnel's headline number, so a browser that says it earlier is
+  // not believed. The run row is the server's (076: no client write).
+  if (body.step === "gate_shown") {
+    const { data: run } = await supabase
+      .from("onboarding_runs")
+      .select("status")
+      .eq("workspace_id", workspace.id)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const status = (run as { status?: string } | null)?.status;
+    if (!status || status === "running") return new NextResponse(null, { status: 204 });
+  }
 
   const signedUp = Date.parse(user.created_at ?? "");
   await recordOnboardingStep(createServiceClient(), {

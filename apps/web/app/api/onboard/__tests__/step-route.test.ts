@@ -3,12 +3,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // POST /api/onboard/step: signed in, a member of the workspace's account, a
 // step it knows. The write itself is lib/onboarding/step-events.ts.
 
-const { user, workspace, member, record, scoped } = vi.hoisted(() => ({
+const { user, workspace, member, record, scoped, run } = vi.hoisted(() => ({
   user: { value: null as null | { id: string; created_at: string } },
   workspace: { value: null as null | { id: string; account_id: string } },
   member: { value: null as null | { id: string } },
   record: vi.fn(async () => true),
   scoped: { value: null as string | null },
+  run: { value: null as null | { status: string } },
 }));
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
@@ -17,7 +18,9 @@ vi.mock("@/lib/supabase/server", () => ({
       const q: Record<string, unknown> = {};
       q.select = () => q;
       q.eq = () => q;
-      q.maybeSingle = async () => ({ data: table === "workspaces" ? workspace.value : member.value, error: null });
+      q.order = () => q;
+      q.limit = () => q;
+      q.maybeSingle = async () => ({ data: table === "workspaces" ? workspace.value : table === "onboarding_runs" ? run.value : member.value, error: null });
       return q;
     },
   }),
@@ -36,6 +39,7 @@ beforeEach(() => {
   workspace.value = { id: "ws1", account_id: "acc1" };
   member.value = { id: "m1" };
   scoped.value = "ws1";
+  run.value = { status: "done" };
   record.mockClear();
 });
 
@@ -65,6 +69,18 @@ describe("POST /api/onboard/step", () => {
     const input = (record.mock.calls[0] as unknown as [unknown, { secondsSinceSignup: number }])[1];
     expect(input.secondsSinceSignup).toBeGreaterThanOrEqual(119);
     expect(input.secondsSinceSignup).toBeLessThan(200);
+  });
+
+  it("never takes the server's own step from the browser, nor the gate before a run has reached it", async () => {
+    expect((await post({ step: "run_started" })).status).toBe(400);
+    run.value = { status: "running" };
+    expect((await post({ step: "gate_shown" })).status).toBe(204);
+    run.value = null;
+    expect((await post({ step: "gate_shown" })).status).toBe(204);
+    expect(record).not.toHaveBeenCalled();
+    // Other steps are not held to the run.
+    await post({ step: "wizard_opened" });
+    expect(record).toHaveBeenCalledTimes(1);
   });
 
   it("carries a timed step's milliseconds and nothing the browser makes up", async () => {
