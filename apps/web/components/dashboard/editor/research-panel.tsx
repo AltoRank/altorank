@@ -35,6 +35,7 @@ function LayerRow({ layer }: { layer: ResearchLayer }) {
     gsc: "Search Console",
     competitor_length: "Competitor length",
     site_facts: "Your site",
+    sources: "Sources",
   };
 
   const tone =
@@ -200,6 +201,7 @@ const STATUS_LABEL: Record<ExtractedClaim["status"], string> = {
   verified: "Source checked",
   contradicted: "Not on cited page",
   unsupported: "Not named on cited page",
+  rival_source: "Competitor as source",
 };
 
 function ClaimRow({

@@ -26,6 +26,14 @@ describe("planFunnelEvent", () => {
     expect((buildEventRow(e).context as { notPlanned: unknown }).notPlanned).toEqual(notPlanned);
   });
 
+  it("carries what each judged results page was, counts only, through the sanitiser", () => {
+    const pageReads = ["needs_page: service_or_local 6, article 3 (judge read mixed)", "qualified: article 7, discussion 2"];
+    const e = planFunnelEvent({ workspaceId: WS, funnel: { found: 2, removed: { needs_page: 1 }, qualified: 1, planned: 1, pageReads, overruled: 1 } });
+    const context = buildEventRow(e).context as { pageReads: unknown; overruled: unknown };
+    expect(context.pageReads).toEqual(pageReads);
+    expect(context.overruled).toBe(1);
+  });
+
   it("warns when nothing was planned, which is the run someone has to explain", () => {
     const e = planFunnelEvent({ workspaceId: WS, funnel: { found: 3, removed: { not_editorial: 3 }, qualified: 0, planned: 0 } });
     expect(e.level).toBe("warn");

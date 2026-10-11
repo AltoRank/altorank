@@ -5,6 +5,7 @@
 import type { DecisionName, Scored } from "./types";
 import { funnelTable } from "@/lib/keyword-research/topic-funnel";
 import type { CaseFunnel } from "./funnel";
+import type { PageTypeSummary } from "./decisions";
 
 export interface LabelScore {
   label: string;
@@ -84,6 +85,8 @@ export function renderMarkdown(input: {
   worst?: number;
   /** The pipeline items as the planner's funnel, per case (./funnel.ts). */
   funnels?: readonly CaseFunnel[];
+  /** The page-type rule's proof numbers (./decisions.ts `pageTypeSummary`). */
+  pageType?: PageTypeSummary;
 }): string {
   const lines: string[] = [`# ${input.title}`, ""];
   for (const [k, v] of Object.entries(input.meta)) lines.push(`- ${k}: ${v}`);
@@ -91,6 +94,22 @@ export function renderMarkdown(input: {
   for (const s of input.scores) {
     lines.push(`## ${s.decision}`, "", `Agreement with the labels: **${s.agreed}/${s.n} (${pct(s.agreement)})**`);
     if (s.shape) lines.push(`Shape, where both said qualified: ${s.shape.agreed}/${s.shape.n}`);
+    const p = s.decision === "page-type" ? input.pageType : undefined;
+    if (p) {
+      lines.push(
+        "",
+        `Results read by the stored judge answer: ${p.byJudge}/${p.n} (the rest by the word lists).`,
+        "",
+        "| | before the rule | after the rule |",
+        "|---|---:|---:|",
+        `| agreement | ${p.agreement.before}/${p.n} | ${p.agreement.after}/${p.n} |`,
+        `| needs_page labels read needs_page | ${p.needsPage.before}/${p.needsPage.labelled} | ${p.needsPage.after}/${p.needsPage.labelled} |`,
+        `| qualified labels lost (needs_page / not_editorial) | ${p.qualifiedLost.before}/${p.qualifiedLost.labelled} | ${p.qualifiedLost.after}/${p.qualifiedLost.labelled} |`,
+        `| published topics still qualified | ${p.published.keptBefore}/${p.published.labelled} | ${p.published.keptAfter}/${p.published.labelled} |`,
+        "",
+        `Qualified labels one page short of the needs-page threshold (${p.qualifiedAtEdge.threshold}) because of the page's own reading: ${p.qualifiedAtEdge.terms.length}${p.qualifiedAtEdge.terms.length ? ` (${p.qualifiedAtEdge.terms.join("; ")})` : ""}.`,
+      );
+    }
     lines.push("");
     const predictedCols = [...new Set(Object.values(s.matrix).flatMap((row) => Object.keys(row)))].sort();
     lines.push(`| label \\ product | ${predictedCols.join(" | ")} |`, `|---|${predictedCols.map(() => "---:").join("|")}|`);
@@ -101,7 +120,7 @@ export function renderMarkdown(input: {
     const wrong = worstDisagreements(input.items.filter((i) => i.decision === s.decision), input.worst ?? 25);
     if (wrong.length) {
       lines.push(`### Disagreements (worst first, ${wrong.length} shown)`, "", "| case | item | label | product | product's reason | label note |", "|---|---|---|---|---|---|");
-      for (const w of wrong) lines.push(`| ${cell(w.caseId)} | ${cell(w.item)} | ${w.expected} | ${w.predicted} | ${cell(w.reason)} | ${cell(w.note)} |`);
+      for (const w of wrong) lines.push(`| ${cell(w.caseId)} | ${cell(w.item)} | ${w.expected} | ${w.predicted}${w.baseline && w.baseline !== w.predicted ? ` (was ${w.baseline})` : ""} | ${cell(w.reason)} | ${cell(w.note)} |`);
       lines.push("");
     }
   }

@@ -9,7 +9,11 @@
  *   npm run evals -- --fixtures=DIR --capture-serp  buy results pages for terms that have none (live)
  *   npm run evals -- --fixtures=DIR --capture-pages store copies of cited pages for claim cases
  *
- * Options: --only=buyer-fit,qualification,pipeline,fact-check  --case=ID[,ID]
+ * Options: --only=buyer-fit,qualification,pipeline,fact-check,page-type  --case=ID[,ID]
+ *          (page-type: the page-type rule on the stored results pages, the judge's
+ *          stored answers replayed; free and deterministic in every mode; a term
+ *          with no stored answer is read by the word lists, counted, and fails
+ *          --require-complete)
  *          --out=DIR (writes report.md + report.json)  --worst=N  --require-complete
  * DIR may also come from ALTORANK_EVAL_FIXTURES. Live mode reads ANTHROPIC_API_KEY
  * (and DATAFORSEO_* for --capture-serp) from the environment and nothing else.
@@ -91,21 +95,23 @@ async function main() {
     "stored answers used": result.recorder.hits,
     "answers bought this run": result.recorder.calls,
     "missing answers (prompt not recorded)": result.recorder.misses,
+    ...(result.pageTypeMisses !== undefined ? { "page-type judge answers missing (read by the word lists)": result.pageTypeMisses } : {}),
     "spent this run": `$${result.recorder.budget.spentUsd.toFixed(4)}`,
   };
   if (result.stoppedAt) meta["stopped"] = result.stoppedAt;
-  const markdown = renderMarkdown({ title: "Decision evals", scores: result.scores, items: result.items, meta, worst: Number(arg("worst") ?? 25), funnels: result.funnels });
+  const markdown = renderMarkdown({ title: "Decision evals", scores: result.scores, items: result.items, meta, worst: Number(arg("worst") ?? 25), funnels: result.funnels, pageType: result.pageType });
   const out = arg("out");
   if (out) {
     const target = path.resolve(out);
     mkdirSync(target, { recursive: true });
     writeFileSync(path.join(target, "report.md"), markdown);
-    writeFileSync(path.join(target, "report.json"), `${JSON.stringify({ meta, scores: result.scores, funnels: result.funnels, items: result.items }, null, 2)}\n`);
+    writeFileSync(path.join(target, "report.json"), `${JSON.stringify({ meta, scores: result.scores, funnels: result.funnels, pageType: result.pageType ?? null, items: result.items }, null, 2)}\n`);
     log(`Wrote ${path.join(target, "report.md")}`);
   }
   console.log(markdown);
-  if (arg("require-complete") && result.recorder.misses > 0) {
-    console.error(`${result.recorder.misses} prompts have no stored answer: the prompts changed since the last live run. Re-record with --live.`);
+  const missing = result.recorder.misses + (result.pageTypeMisses ?? 0);
+  if (arg("require-complete") && missing > 0) {
+    console.error(`${missing} prompts have no stored answer${result.pageTypeMisses ? ` (${result.pageTypeMisses} of them page type's judge, read by the word lists instead)` : ""}: the prompts changed since the last live run, or the case was never run live. Re-record with --live.`);
     process.exitCode = 1;
   }
   if (result.stoppedAt) process.exitCode = 2;

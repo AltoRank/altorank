@@ -100,6 +100,9 @@ export function planFunnelEvent(input: PlanFunnelEventInput): SystemEvent {
       ...(f.unmeasured ? { unmeasured: f.unmeasured } : {}),
       ...(f.plannedLowerConfidence ? { plannedLowerConfidence: f.plannedLowerConfidence } : {}),
       ...(spend ? { spend } : {}),
+      // What each judged results page was, counts only (the page-type rule).
+      ...(f.pageReads?.length ? { pageReads: f.pageReads } : {}),
+      ...(f.overruled ? { overruled: f.overruled } : {}),
     },
   };
 }

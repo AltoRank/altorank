@@ -5,6 +5,7 @@ import { LENGTH_BANDS, TAXONOMY_LABELS, targetWordCountFor } from "@/lib/keyword
 import { resolveLocale } from "@/lib/i18n/locale";
 import { matchingOfferings } from "@/lib/content/topic-pages";
 import { faqPlan } from "@/lib/content/on-page";
+import { BLOCKED_CLASSES, classOf } from "@/lib/seo/source-classes";
 
 // ---------------------------------------------------------------------------
 // Build the system prompt sent to the AI model for article generation.
@@ -23,6 +24,9 @@ import { faqPlan } from "@/lib/content/on-page";
  */
 export function buildResearchSection(research: ArticleResearch): string[] {
   const sections: string[] = [];
+  const review = research.sourceReview;
+  const blocked = (url: string) => Boolean(review) && BLOCKED_CLASSES.has(classOf(url, review));
+  const sellerMark = " [sells what this business sells: do not cite, quote or link]";
 
   // --- Intent ----------------------------------------------------------------
   const { intent, confidence, signals } = research.intent;
@@ -57,7 +61,7 @@ export function buildResearchSection(research: ArticleResearch): string[] {
       // Rank comes from the SERP, so number by it rather than by array order:
       // "the page at #1" is a different instruction from "the first one listed".
       const pos = typeof c.rank === "number" ? `#${c.rank}` : `${i + 1}.`;
-      lines.push(`${pos} "${c.title}" (${c.domain}${wc})`);
+      lines.push(`${pos} "${c.title}" (${c.domain}${wc})${blocked(c.url) ? sellerMark : ""}`);
       if (c.description) lines.push(`   ${c.description}`);
     });
     lines.push(
@@ -103,10 +107,29 @@ export function buildResearchSection(research: ArticleResearch): string[] {
         "",
         `Sources this AI Overview cites (${ao.citations.length}) — these are the ` +
           "pages to displace:",
-        ...ao.citations.slice(0, 10).map((c) => `- ${c.domain}: ${c.title}`),
+        ...ao.citations.slice(0, 10).map((c) => `- ${c.domain}: ${c.title}${blocked(c.url) ? sellerMark : ""}`),
       );
     }
     sections.push(lines.join("\n"));
+  }
+
+  // --- Sites that sell what the business sells -------------------------------
+  //
+  // Named, so the rule in WRITTEN TO BE QUOTED has hosts to hold to. Their
+  // figures were never offered (lib/seo/source-classes.ts), and a link to one
+  // is removed after writing either way.
+  const sellers = [
+    ...new Set(
+      [...(review?.classes ?? []).filter((c) => BLOCKED_CLASSES.has(c.class)).map((c) => c.host), ...(review?.rivals ?? [])],
+    ),
+  ];
+  if (sellers.length) {
+    sections.push(
+      [
+        "BUSINESSES THAT SELL WHAT THIS BUSINESS SELLS (never cite, quote, name as a source or link them, whatever they rank for):",
+        ...sellers.slice(0, 20).map((h) => `- ${h}`),
+      ].join("\n"),
+    );
   }
 
   // --- Figures the ranking pages state ---------------------------------------
@@ -885,6 +908,11 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "- Include one standalone definition of 20-70 words that starts with the",
       "  term and makes sense with nothing around it.",
       ...figureRules(research, { refresh: Boolean(prompt.refreshOf) }),
+      "- Never cite, quote or link a business that sells what this business sells, or",
+      "  a competitor of it, even when its page ranks for this search: the reader is",
+      "  this business's buyer. Cite public bodies, regulators, research, encyclopedias,",
+      "  professional associations and publishers instead. With no such source for a",
+      "  point, make it without the figure.",
       "- Cite external sources with real, working links: two at minimum, and about",
       "  one for every 500 words. Every link is fetched after you write; one that",
       '  does not resolve is removed. Never emit href="#" or a placeholder URL.',

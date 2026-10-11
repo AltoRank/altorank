@@ -42,6 +42,15 @@ import { stripTags } from "@/lib/audit/html-utils";
 import type { ArticleResearch } from "@/lib/seo/research";
 import type { SiteFacts } from "@/lib/ai/types";
 import {
+  BLOCKED_CLASSES,
+  bareHost,
+  classOf,
+  heldBackSource,
+  namedBlockedSource,
+  readButUnclassified,
+  removedAnchorIn,
+} from "@/lib/seo/source-classes";
+import {
   resolveLocale,
   notCheckedFor,
   escapeRegex,
@@ -73,7 +82,8 @@ export type ClaimStatus =
   | "corroborated"       // the figure also appears in a page ranking for this keyword
   | "verified"           // the cited page was opened and carries this figure
   | "contradicted"       // the cited page was opened and does not
-  | "unsupported";       // the cited page was opened and does not name the body this claim names
+  | "unsupported"        // the cited page was opened and does not name the body this claim names
+  | "rival_source";      // the claim is sourced from a business that sells what this business sells
 
 export type ClaimSeverity = "high" | "medium" | "low";
 
@@ -96,6 +106,12 @@ export interface ExtractedClaim {
   sourceUrl: string | null;
   /** What the reviewer should do about it. */
   note: string;
+  /**
+   * The cited site research read but could not classify, so nobody knows
+   * whether it sells what this business sells. A person decides: auto-approve
+   * refuses the draft (`autoApprovalBlocker`), a manual approval does not.
+   */
+  unclassifiedSource?: string;
 }
 
 export interface FactCheckReport {
@@ -420,12 +436,78 @@ function corroborate(text: string, research?: ArticleResearch): string | null {
   const needle = foldCase(text.trim());
   if (needle.length < 2) return null;
 
+  // A page of a business that sells the same service is the last resort:
+  // seen there, the figure is the rival's, and `rivalSourceOf` says so.
+  let seller: string | null = null;
   for (const c of research.competitors) {
     const haystack = foldCase(`${c.title} ${c.description}`);
-    if (haystack.includes(needle)) return c.domain;
+    if (!haystack.includes(needle)) continue;
+    if (research.sourceReview && BLOCKED_CLASSES.has(classOf(c.url, research.sourceReview))) seller ??= c.domain;
+    else return c.domain;
+  }
+  return seller;
+}
+
+/**
+ * The business that sells what this business sells which a claim is sourced
+ * from, or null.
+ *
+ * Explicit evidence first: the paragraph links one, or the sentence credits
+ * one by name. Then inference, only when nothing else explains the claim - no
+ * other site is linked and the business's own pages do not state the figure:
+ * the sentence is the one a link to a seller was removed from and still
+ * carries its words, every figure in it was read off a seller's page, or the
+ * only ranking page that shows the figure is a seller's. Local businesses
+ * share prices and round figures, so a coincidence with a seller's page
+ * never outranks the owner's own page or a linked source.
+ *
+ * A claim sourced from a rival is `high_risk` even when the figure is on that
+ * page: the article sends the reader to the competition, and the rival is not
+ * an authority on the market it sells into.
+ */
+function rivalSourceOf(
+  claim: {
+    sentence: string;
+    figures: string[];
+    attribution: string | null;
+    citationUrl: string | null;
+    corroboratedBy: string | null;
+    statedOn: string | null;
+  },
+  research?: ArticleResearch,
+): string | null {
+  const review = research?.sourceReview;
+  if (!review) return null;
+  if (claim.citationUrl && BLOCKED_CLASSES.has(classOf(claim.citationUrl, review))) return bareHost(claim.citationUrl);
+  const credited = namedBlockedSource(claim.attribution, review);
+  if (credited) return credited;
+  if (claim.citationUrl || claim.statedOn) return null;
+  const anchor = removedAnchorIn(claim.sentence, review);
+  if (anchor) return anchor.host;
+  if (claim.attribution) return null;
+  const held = heldBackSource(claim.figures, review);
+  if (held) return held;
+  if (claim.corroboratedBy) {
+    const page = research?.competitors.find((c) => c.domain === claim.corroboratedBy);
+    if (page && BLOCKED_CLASSES.has(classOf(page.url, review))) return claim.corroboratedBy;
   }
   return null;
 }
+
+/** True when the ranking page `domain` names is one of a business selling the same service. */
+function sellerPage(domain: string | null, research?: ArticleResearch): boolean {
+  if (!domain || !research?.sourceReview) return false;
+  const page = research.competitors.find((c) => c.domain === domain);
+  return Boolean(page && BLOCKED_CLASSES.has(classOf(page.url, research.sourceReview)));
+}
+
+/** What to say about a cited site research read and could not classify. */
+const unclassifiedNote = (host: string) =>
+  ` Research read ${host} but could not tell whether it sells what this business sells: check it is not a competitor.`;
+
+const rivalNote = (host: string) =>
+  `Sourced from ${host}, a business that sells what this business sells. Do not send the reader to a competitor ` +
+  `or quote it as an authority: replace the source with a public body, research or an association, or cut the claim.`;
 
 /**
  * The statements from the business's own pages that can carry a figure, for
@@ -558,8 +640,14 @@ export function factCheckArticle(
           let status: ClaimStatus;
           let severity: ClaimSeverity;
           let note: string;
+          const rival = rivalSourceOf({ sentence, figures, attribution, citationUrl, corroboratedBy, statedOn }, research);
+          const unclassifiedSource = !rival && citationUrl ? readButUnclassified(citationUrl, research?.sourceReview) : null;
 
-          if (attribution) {
+          if (rival) {
+            status = "rival_source";
+            severity = "high";
+            note = rivalNote(rival);
+          } else if (attribution) {
             status = "needs_verification";
             severity = "medium";
             note =
@@ -603,7 +691,8 @@ export function factCheckArticle(
             sentence: sentence.length > 400 ? `${sentence.slice(0, 397)}...` : sentence,
             attribution,
             sourceUrl: citationUrl ?? (attribution ? null : statedOn),
-            note,
+            note: unclassifiedSource ? note + unclassifiedNote(unclassifiedSource) : note,
+            ...(unclassifiedSource ? { unclassifiedSource } : {}),
           });
         }
       }
@@ -627,9 +716,17 @@ export function factCheckArticle(
             ? ` ${e.entity} reads as an association, and a professional association is usually a membership body, not the regulator.`
             : "";
         const corroboratedBy = e.entity ? corroborate(e.entity, research) : null;
+        // Who regulates or pays is not a seller's figure: a clinic's snippet
+        // naming the regulator is the regulator's name, not the clinic's
+        // claim. Only an explicit link or credit makes it the seller's.
+        const rival = rivalSourceOf({ sentence, figures: [], attribution, citationUrl, corroboratedBy: null, statedOn: null }, research);
+        const unclassifiedSource = !rival && citationUrl ? readButUnclassified(citationUrl, research?.sourceReview) : null;
         let status: ClaimStatus;
         let note: string;
-        if (attribution || hasCitationLink) {
+        if (rival) {
+          status = "rival_source";
+          note = rivalNote(rival);
+        } else if (attribution || hasCitationLink) {
           status = "needs_verification";
           note =
             `States ${what}${e.entity ? ` (${e.entity})` : ""}. Confirm the linked source says so, ` +
@@ -637,8 +734,9 @@ export function factCheckArticle(
         } else if (corroboratedBy) {
           status = "corroborated";
           note =
-            `States ${what}; ${e.entity} is also named on ${corroboratedBy}, which ranks for this keyword. ` +
-            `That is not the same as being right. Link the body's own page or cut the claim.${association}`;
+            `States ${what}; ${e.entity} is also named on ${corroboratedBy}, which ranks for this keyword` +
+            (sellerPage(corroboratedBy, research) ? ` and sells what this business sells, so it is not a source to cite` : "") +
+            `. That is not the same as being right. Link the body's own page or cut the claim.${association}`;
         } else {
           status = "unsourced";
           note =
@@ -650,12 +748,13 @@ export function factCheckArticle(
           kind: e.kind,
           figures: e.entity ? [e.entity] : [],
           status,
-          severity: "medium",
+          severity: status === "rival_source" ? "high" : "medium",
           text,
           sentence: sentence.length > 400 ? `${sentence.slice(0, 397)}...` : sentence,
           attribution,
           sourceUrl: citationUrl,
-          note,
+          note: unclassifiedSource ? note + unclassifiedNote(unclassifiedSource) : note,
+          ...(unclassifiedSource ? { unclassifiedSource } : {}),
         });
       }
     }
@@ -714,8 +813,10 @@ export function summarise(
 
   const wrong = claims.filter((c) => c.status === "contradicted").length;
   const bare = claims.filter((c) => c.status === "unsourced" && c.severity === "high").length;
+  const rivals = claims.filter((c) => c.status === "rival_source").length;
   const highRiskSummary = [
     wrong ? `${wrong} figure${wrong === 1 ? "" : "s"} the cited page does not contain` : "",
+    rivals ? `${rivals} claim${rivals === 1 ? "" : "s"} sourced from a business that sells the same service` : "",
     bare ? `${bare} unsourced claim${bare === 1 ? "" : "s"}` : "",
   ]
     .filter(Boolean)
@@ -778,6 +879,18 @@ export function approvalBlocker(report: FactCheckReport): string | null {
     );
   }
 
+  // A competitor as the source: the reader is sent to the competition, so
+  // it comes before an unsourced figure, which might still be true.
+  const rivals = report.claims.filter((c) => c.status === "rival_source");
+  if (rivals.length) {
+    const sample = rivals.slice(0, 3).map((c) => `"${c.text}"`).join(", ");
+    const n = rivals.length;
+    return (
+      `${n} ${n === 1 ? "claim is" : "claims are"} sourced from a business that sells what you sell ` +
+      `(${sample}${n > 3 ? ", …" : ""}). Replace each source with a public body, research or an association, or remove the claim, then approve.`
+    );
+  }
+
   const bare = report.claims.filter((c) => c.status === "unsourced" && c.severity === "high");
   const sample = bare.slice(0, 3).map((c) => `"${c.text}"`).join(", ");
   const n = bare.length;
@@ -796,6 +909,14 @@ export function approvalBlocker(report: FactCheckReport): string | null {
 export function autoApprovalBlocker(report: FactCheckReport): string | null {
   const blocker = approvalBlocker(report);
   if (blocker) return blocker;
+  // A cited site nobody could classify might be a competitor: research read
+  // it, the classifier gave no answer for it (it failed, was unavailable, or
+  // the site was past its cap). Not a reason to refuse a person, who can look;
+  // a reason not to publish unread.
+  const unknown = [...new Set(report.claims.map((c) => c.unclassifiedSource).filter((h): h is string => Boolean(h)))];
+  if (unknown.length) {
+    return `cites ${unknown.slice(0, 3).join(", ")}${unknown.length > 3 ? ", …" : ""}, which could not be classified: a person has to check it is not a competitor`;
+  }
   // Only the language case: a draft with nothing checkable in it has no
   // figure or named body to publish unread.
   if (report.verdict === "unchecked" && report.unchecked !== "nothing_to_check") {
