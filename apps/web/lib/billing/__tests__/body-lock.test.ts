@@ -107,6 +107,7 @@ function article(id: string, workspace_id: string): Row {
     link_checks: [{ url: "https://source.example/a" }],
     seo_checks: [{ name: "keyword", note: SECRET }],
     aeo_checks: [{ note: SECRET }],
+    body_stream: `<p>${SECRET}</p>`,
     seo_score: 70,
   };
 }

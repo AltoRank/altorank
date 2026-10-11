@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch) and **106** (run budgets; 105 is taken by an open branch), each with its section at the end. **101, 104 and 106 go in BEFORE their code is deployed; 097, 099 and 100 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **106** (run budgets; 105 is taken by an open branch) and **107** (first-look timings and the streamed first body; either order), each with its section at the end. **101, 104 and 106 go in BEFORE their code is deployed; 097, 099 and 100 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -155,7 +155,8 @@ m(file, applied) as (values
   ('100_pre_trial_spend_bounds',             not has_table_privilege('authenticated', 'public.workspaces', 'INSERT') and exists (select 1 from pg_trigger where tgname = 'account_members_guard_own_row') and not has_column_privilege('authenticated', 'public.workspaces', 'first_analysed_at', 'UPDATE')),
   ('101_account_creator',                    exists (select 1 from col where t='accounts' and c='created_by') and not has_table_privilege('authenticated', 'public.account_members', 'INSERT')),
   ('104_onboarding_nothing_planned',         exists (select 1 from col where t='onboarding_runs' and c='empty_pool') and exists (select 1 from chk where conname='onboarding_runs_status_check' and def like '%nothing_planned%')),
-  ('106_run_budgets',                        to_regclass('public.run_budgets') is not null and exists (select 1 from col where t='provider_spend' and c='stage') and to_regprocedure('public.run_budget_claim(uuid,text,numeric,numeric)') is not null)
+  ('106_run_budgets',                        to_regclass('public.run_budgets') is not null and exists (select 1 from col where t='provider_spend' and c='stage') and to_regprocedure('public.run_budget_claim(uuid,text,numeric,numeric)') is not null),
+  ('107_fast_first_look',                    exists (select 1 from col where t='onboarding_runs' and c='timings') and exists (select 1 from col where t='articles' and c='body_stream') and not has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT'))
 )
 select file, applied from m order by file;
 ```
@@ -367,6 +368,7 @@ no code in the repo references either).
 | 101_account_creator.sql | `integration/root-causes-2026-09-25` | 085; **applied before its code is deployed** | yes | yes, see its section (an owner can again add any user as a member) |
 | 104_onboarding_nothing_planned.sql | `fix/onboarding-no-empty-gate` | 076; **applied before its code is deployed** | yes | only after its code is reverted and no row holds `nothing_planned`: see its section |
 | 106_run_budgets.sql | `fix/first-look-spend-reserve` | 025, 076; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section |
+| 107_fast_first_look.sql | `feat/fast-first-look` | 076, 097; either order with its code | yes | yes: `alter table onboarding_runs drop column timings; alter table articles drop column body_stream;` (loses the timing tables and any body mid-stream) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1281,3 +1283,40 @@ Rollback, only after the code is reverted:
 
 Test: `lib/billing/__tests__/run-budget.db.test.ts` (db tier). Applied twice
 on the local stack 2026-10-01.
+
+## 107 — a first look's timings, and its first article's streamed body
+
+Two columns, neither on a path that fails without them:
+
+- `onboarding_runs.timings` (jsonb): every stage of a first look in
+  milliseconds since `started_at`, written by the worker and merged by the
+  draft route (`apps/web/lib/onboarding/timings.ts`). Written in an update of
+  its own and never selected by the polling screen, so a database without it
+  loses only the table (`[timings] ... could not write timings` in the log).
+- `articles.body_stream` (text): the first article's body as the writer
+  streams it, for the gate's reader when `PRETRIAL_FULL_ARTICLE=1`. A body
+  column: no client grant (097 granted the columns that existed then; a new
+  column has none), revoked again here to say so. Written only with the
+  switch on; cleared when the body is saved or fails.
+
+**Either order with its code.** Re-running is a no-op (`if not exists`).
+
+Post-flight (expect `t`, `t`, `f`):
+
+```sql
+select exists (select 1 from information_schema.columns where table_name = 'onboarding_runs' and column_name = 'timings'),
+       exists (select 1 from information_schema.columns where table_name = 'articles' and column_name = 'body_stream'),
+       has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT');
+```
+
+Where a first look's time went, once it has run:
+
+```sql
+select timings->'marks', timings->'stages' from onboarding_runs where id = '<onboarding run id>';
+```
+
+Rollback: `alter table onboarding_runs drop column timings; alter table articles drop column body_stream;`
+
+Test: `lib/onboarding/__tests__/first-look-gate.db.test.ts` (db tier: the
+column is refused to a client token, and the reader's checks). Applied twice
+on the local stack 2026-10-11.

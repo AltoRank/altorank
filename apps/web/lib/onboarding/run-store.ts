@@ -650,9 +650,12 @@ export async function stampRun(
   // body landing later rewrites that one phase's sentence and nothing else -
   // not the status, not the times, and nobody is announced to again.
   if (run.status !== "running") {
-    if (!opts.amend || run.status !== "done" || event.phase !== "drafting") return false;
+    // Only a run that ended on its first article (done, or partial with no
+    // plan beside it), and only that article's phase.
+    const endedOnArticle = (run.status === "done" || run.status === "partial") && Boolean(run.article_id);
+    if (!opts.amend || !endedOnArticle || event.phase !== "drafting") return false;
     const amended = reduceOnboarding({ ...initialOnboardingState(), steps: run.phases }, event).steps;
-    const { error: amendError } = await supabase.from("onboarding_runs").update({ phases: amended }).eq("id", runId).eq("status", "done");
+    const { error: amendError } = await supabase.from("onboarding_runs").update({ phases: amended }).eq("id", runId).eq("status", run.status);
     return !amendError;
   }
 

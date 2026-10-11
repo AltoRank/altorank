@@ -64,6 +64,10 @@ const SERVICE_READS: Record<string, { count: number; why: string }> = {
     count: 2,
     why: "the found-on-site check runs inside cron/site-pages on the service client: it filters drafts on having text, then compares that text with pages on the customer's site",
   },
+  "lib/onboarding/first-article-body.ts": {
+    count: 1,
+    why: "the gate's reader (PRETRIAL_FULL_ARTICLE): the owner's own first article, on the service client, only after the switch, the owner check through their own client and the run's first article have all answered",
+  },
   "lib/publishing/auto-approve.ts": {
     count: 1,
     why: "the auto-approve pass runs inside cron/publish on the service client and reads the text to run the same checks a person would",

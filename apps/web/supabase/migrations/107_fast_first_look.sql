@@ -20,3 +20,21 @@ alter table onboarding_runs add column if not exists timings jsonb;
 
 comment on column onboarding_runs.timings is
   'Per-stage timing of a first look, ms since started_at: {origin, stages, marks, entries}. Instrumentation only; null on runs before 107.';
+
+-- `articles.body_stream`   the first article's body as the writer streams it,
+--             before it is processed and saved to `content`: what the gate's
+--             reader shows while PRETRIAL_FULL_ARTICLE is on. Text of the
+--             article, so a body column: like those 097 lists it is withheld
+--             from `anon` and `authenticated` - a column added after 097 has
+--             no client grant to begin with, and the revoke below says so
+--             out loud - and read only by the server path that checks the
+--             owner, the run's first article and the switch
+--             (apps/web/app/api/onboard/first-article/route.ts). Cleared when
+--             the body is saved or fails. With the switch off nothing writes
+--             it. Applied before or after its code: the code writes it only
+--             with the switch on and ignores a failed write.
+alter table articles add column if not exists body_stream text;
+revoke select (body_stream) on public.articles from anon, authenticated;
+
+comment on column articles.body_stream is
+  'The first article''s body as it is being written (PRETRIAL_FULL_ARTICLE). Server only, like the other body columns (097); null once the body is saved.';

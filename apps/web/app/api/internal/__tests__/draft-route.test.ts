@@ -297,6 +297,31 @@ describe("a first look's draft, gated on its outline", () => {
     expect(generateArticle.mock.calls[0][0]).toMatchObject({ outline: { keepOnFailure: false } });
   });
 
+  it("keeps the body as it is written for the gate's reader only with PRETRIAL_FULL_ARTICLE on, and clears it when saved", async () => {
+    db.rows("articles").push({ id: "art-9", workspace_id: "ws1", body_stream: null });
+    getQuota.mockResolvedValue(gated(0));
+    const streamingBody = outlinedThen(async () => ({ articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } }));
+    generateArticle.mockImplementation(async (opts: { outline?: { onReady?: (r: unknown) => Promise<void> }; onChunk?: (c: string) => void }) => {
+      const run = streamingBody({ outline: { onReady: async (r) => { await opts.outline?.onReady?.(r); opts.onChunk?.("<p>first words</p>"); } } });
+      return run;
+    });
+    process.env.PRETRIAL_FULL_ARTICLE = "1";
+    try {
+      await post(first);
+    } finally {
+      delete process.env.PRETRIAL_FULL_ARTICLE;
+    }
+    const streams = db.updates.filter((u) => u.table === "articles" && "body_stream" in u.patch).map((u) => u.patch.body_stream);
+    expect(streams).toEqual(["<p>first words</p>", null]);
+
+    // Off: nothing is written, and the writer is not handed a chunk hook at all.
+    db.updates.length = 0;
+    generateArticle.mockReset().mockImplementation(outlinedThen(async () => ({ articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } })));
+    await post(first);
+    expect(db.updates.filter((u) => u.table === "articles" && "body_stream" in u.patch)).toEqual([]);
+    expect(generateArticle.mock.calls[0][0]).not.toHaveProperty("onChunk");
+  });
+
   it("an ungated body that fails is the run's failure, as before", async () => {
     getQuota.mockResolvedValue({ limit: 100, used: 2, remaining: 98, reason: "plan", plan: "starter" });
     generateArticle.mockImplementation(outlinedThen(async () => { throw new Error("boom"); }));

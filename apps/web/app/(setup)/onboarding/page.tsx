@@ -18,6 +18,7 @@ import { PRE_TRIAL_DRAFTS } from "@/lib/billing/trial-hold";
 import { OPEN_SETUP, type PreTrialSetup } from "@/lib/onboarding/setup-retry";
 import { followUpPromised } from "@/lib/auth/operators";
 import { TrackStep } from "@/components/onboarding/track-step";
+import { fullArticleOn } from "@/lib/onboarding/first-article-body";
 
 export const metadata: Metadata = { title: "Set up your site" };
 
@@ -162,6 +163,9 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       trialEligible={preTrial}
       firstArticle={firstArticle?.article ?? null}
       firstArticleWriting={firstArticle?.writing ?? false}
+      // The switch, and only for the owner: the reader's route checks both
+      // again, and the article, before it hands over a word.
+      fullArticle={preTrial && fullArticleOn() && auth.role === "owner"}
       preTrialSetup={preTrialSetup}
       initialProfile={(workspace.business_profile as BusinessProfile | null) ?? null}
       initialSite={{

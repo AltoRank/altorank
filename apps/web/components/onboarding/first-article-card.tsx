@@ -49,10 +49,13 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 export function FirstArticleCardView({
   article,
   pending = null,
+  readable = false,
 }: {
   article: FirstArticleCard | null;
   /** Shown while the page has not yet read the card for a draft the run just wrote. */
   pending?: PendingFirstArticle | null;
+  /** The full text is shown below it (PRETRIAL_FULL_ARTICLE): the lock line says what stays locked. */
+  readable?: boolean;
 }) {
   const title = article?.title || pending?.title || article?.keyword || pending?.keyword || "Untitled";
   const keyword = article?.keyword ?? pending?.keyword ?? "";
@@ -112,7 +115,11 @@ export function FirstArticleCardView({
 
       <p className="m-0 mt-4 flex items-center gap-1.5 text-[12.5px] text-ink-2">
         <Icons.lock size={12} />
-        {outlined ? "Being written to this outline now. The full text opens when your trial starts." : "The full text opens when your trial starts."}
+        {readable
+          ? "Read it below. Editing, approving and publishing open when your trial starts."
+          : outlined
+            ? "Being written to this outline now. The full text opens when your trial starts."
+            : "The full text opens when your trial starts."}
       </p>
       {article && article.more > 0 && (
         <p className="m-0 mt-1.5 text-[12px] text-ink-3">

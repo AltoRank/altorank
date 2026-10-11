@@ -52,6 +52,7 @@ import { outlineHeadings, type ArticleOutline } from "@/lib/content/outline";
 import { trialGateApplies } from "@/lib/billing/trial";
 import { authorised, selfInvocation, selfInvoke } from "@/lib/content/fan-out";
 import { recordEvent } from "@/lib/observability/record";
+import { fullArticleOn } from "@/lib/onboarding/first-article-body";
 import { recordRunTiming } from "@/lib/onboarding/funnel-event";
 
 export const maxDuration = 300;
@@ -239,6 +240,37 @@ export async function POST(request: NextRequest) {
     }
   };
 
+  // With PRETRIAL_FULL_ARTICLE on, the owner reads the first article on the
+  // gate as it is written: the writer's text so far is kept on the row
+  // (`body_stream`, server only, migration 107) every second and a half, and
+  // cleared once the body is saved or fails. Off, nothing is written.
+  const streaming = fullArticleOn() && gated && Boolean(runId || owed);
+  let streamed = "";
+  let streamWrite: Promise<unknown> = Promise.resolve();
+  let lastStreamAt = 0;
+  const writeStream = (final = false) => {
+    if (!outlinedId) return;
+    const id = outlinedId;
+    const text = final ? null : streamed;
+    streamWrite = streamWrite.then(() =>
+      supabase.from("articles").update({ body_stream: text }).eq("id", id).then(
+        (r) => { if (r.error) console.warn(`[internal/draft] body stream not written: ${r.error.message}`); },
+        () => undefined,
+      ),
+    );
+    return streamWrite;
+  };
+  const onChunk = streaming
+    ? (chunk: string) => {
+        streamed += chunk;
+        const now = Date.now();
+        if (now - lastStreamAt >= 1_500) {
+          lastStreamAt = now;
+          void writeStream();
+        }
+      }
+    : undefined;
+
   try {
     const result = await timedRun(() => withSpendScope({ workspaceId, runId: runId ?? null, budget, stage: budget ? "draft" : null }, () => generateArticle({
       supabase,
@@ -249,6 +281,7 @@ export async function POST(request: NextRequest) {
       selection,
       relatedKeywords,
       billToAccountId: workspace.account_id as string,
+      ...(onChunk ? { onChunk } : {}),
       ...(owed
         ? { articleId: owed.articleId, resumeOutline: true }
         : runId
@@ -269,6 +302,7 @@ export async function POST(request: NextRequest) {
         : undefined,
     })));
     clock?.mark("body_done");
+    if (streaming) await writeStream(true);
     if (entry && !entryFulfilled) await fulfilPlannedEntry(supabase, entry.id as string, result.articleId);
     await stamp(
       {
@@ -302,6 +336,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
+    if (streaming) await writeStream(true);
     await saveTimings(isBudgetRefusal(err) ? "budget" : "failed");
     // A body owed to an outline the gate is already showing: tried again in
     // its own invocation, and the nightly sweep after that. The run stays as
