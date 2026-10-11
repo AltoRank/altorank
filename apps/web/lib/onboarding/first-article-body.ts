@@ -26,6 +26,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
 import { tiptapToHtml } from "@/lib/cms/html";
+import { readableHtml } from "./readable-html";
 
 export const FULL_ARTICLE_SWITCH = "PRETRIAL_FULL_ARTICLE";
 
@@ -40,25 +41,10 @@ export type FirstArticleBody =
   | { ok: false; reason: "off" | "not-found" | "not-owner" | "no-first-article" };
 
 /**
- * Make model-written HTML safe to put in the page, and drop what the writer
- * emits that the article does not carry: its <h1> (the title is shown
- * above), the meta description tag, link placeholders. Not a general
- * sanitiser - the input is this product's own writer - but nothing that
- * runs, embeds or navigates on its own survives it. Pure.
+ * The article's HTML as the reader shows it: rebuilt from an allowlist, never
+ * passed through (./readable-html.ts). Re-exported for the reader's tests.
  */
-export function readableHtml(html: string): string {
-  return html
-    // The writer's meta description tag first: `<meta` below would take its opening half.
-    .replace(/<meta-description>[\s\S]*?(<\/meta-description>|$)/gi, "")
-    .replace(/<(script|style|iframe|object|embed|form|template|noscript)\b[\s\S]*?(<\/\1\s*>|$)/gi, "")
-    .replace(/<(script|style|iframe|object|embed|form|template|noscript|link|meta|base)\b[^>]*>/gi, "")
-    .replace(/^\s*```(?:html)?\s*/i, "")
-    .replace(/<h1\b[^>]*>[\s\S]*?(<\/h1>|$)/gi, "")
-    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/\s(href|src)\s*=\s*("|')\s*(javascript|data|vbscript):[^"']*\2/gi, "")
-    .replace(/\{\{\s*internal-link:\s*([^}]*)\}\}/gi, "$1")
-    .trim();
-}
+export { readableHtml };
 
 /**
  * The first article's body for the person asking, or why not. `client` is

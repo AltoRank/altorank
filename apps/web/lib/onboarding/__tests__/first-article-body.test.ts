@@ -24,7 +24,7 @@ describe("the gate's full-article reader", () => {
       "<p>Half a sentence still being writ",
     ].join("\n");
     const out = readableHtml(html);
-    expect(out).toContain("<p>Kept <a>link</a> and <a href=\"https://ok.example\">ok</a>.</p>");
+    expect(out).toContain("<p>Kept <a>link</a> and <a href=\"https://ok.example\" rel=\"nofollow noopener noreferrer\">ok</a>.</p>");
     expect(out).toContain("<h2>Section</h2><p>See pricing guide.</p>");
     expect(out).toContain("Half a sentence still being writ");
     for (const gone of ["<h1", "onclick", "javascript:", "<script", "<style", "<iframe", "meta-description", "```"]) expect(out).not.toContain(gone);
