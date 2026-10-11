@@ -45,7 +45,7 @@ import { continueFrom } from "@/lib/plan/resume-week";
 import { draftBudgetShort, draftCanBuyLookup, loadDraftBudget } from "@/lib/billing/run-budget";
 import { isBudgetRefusal, withSpendScope } from "@/lib/billing/spend-scope";
 import type { OnboardingEvent } from "@/lib/onboarding/events";
-import type { RelatedKeyword } from "@/lib/seo/brief-data";
+import type { RelatedKeyword, SerpData } from "@/lib/seo/brief-data";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { RunClock, saveRunTimings, withRunClock } from "@/lib/onboarding/timings";
 import { outlineHeadings, type ArticleOutline } from "@/lib/content/outline";
@@ -81,6 +81,8 @@ interface Body {
   articleId?: string;
   resume?: boolean;
   attempt?: number;
+  /** The results page the first look judged the keyword on, for the draft's research. */
+  serp?: SerpData;
 }
 
 /** A first look's body is tried this many times in a row before the nightly sweep takes it. */
@@ -282,6 +284,8 @@ export async function POST(request: NextRequest) {
       relatedKeywords,
       billToAccountId: workspace.account_id as string,
       ...(onChunk ? { onChunk } : {}),
+      // Read, not bought again: only a page shaped like one, for a first look's own draft.
+      ...(runId && body.serp && Array.isArray(body.serp.organic) && Array.isArray(body.serp.peopleAlsoAsk) ? { serp: body.serp } : {}),
       ...(owed
         ? { articleId: owed.articleId, resumeOutline: true }
         : runId

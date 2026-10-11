@@ -444,6 +444,42 @@ describe("a first look", () => {
       const budget = { ...budgetOf(10), room: async () => firstLookTermUsd(true) };
       expect(await lookIn(budget)).toMatchObject({ status: "qualified" });
     });
+    it("waits out a hold instead of losing an approval: a second read refused while another is in flight is asked again when it settles", async () => {
+      const terms = ["clinic booking website cost", "clinic booking website price"];
+      judge.mockImplementation(async (_b: unknown, asked: string[]) => {
+        const c = await claimSpend("keyword-research/buyer-fit", 0.01);
+        await c.settle(0.01);
+        return { basis: "model", verdicts: new Map(asked.map((t) => [t.toLowerCase(), { keep: true, reason: "specific buyer need" }])) };
+      });
+      const page = { organic: urls.map((url, i) => ({ url, title: "Clinic booking website cost guide", description: "A buyer guide", rank: i + 1 })), peopleAlsoAsk: [], aiOverview: null };
+      fetchSerp.mockImplementation(async () => { const c = await claimSpend("/serp/google/organic/live/advanced", 0.004); await c.settle(0.004); return page; });
+      // Each read holds 0.05 while it runs and costs 0.01: room for both first
+      // reads at once, but for only one second read until the other settles.
+      let reads = 0;
+      ask.mockImplementation(async (_op: string, prompt: string) => {
+        let claim;
+        try { claim = await claimSpend("keyword-research/opportunity", 0.05); } catch { return null; }
+        reads += 1;
+        await new Promise((r) => setTimeout(r, 5));
+        await claim.settle(0.01);
+        return JSON.stringify({ ...approval, kinds: Array(shown(prompt)).fill("article") });
+      });
+      // With the room readable, the pledges stagger the terms and nothing is
+      // refused; with it unreadable (the pre-check blind), the claims decide,
+      // and the refused second read is waited out rather than lost.
+      for (const blind of [false, true]) {
+        reads = 0;
+        const memory = memoryRunBudget("run-1", 0.12, {});
+        const budget = blind ? { ...memory, room: async () => null } : memory;
+        const out = await withSpendScope({ budget }, () =>
+          qualifyOpportunities(db, "ws", terms.map((t, i) => ({ id: `k${i}`, term: t })), context, { firstLook }));
+        expect(out.get("k0")?.status).toBe("qualified");
+        expect(out.get("k1")?.status).toBe("qualified");
+        expect(reads).toBe(4);
+        expect(memory.state().committedUsd).toBeLessThanOrEqual(0.12 + 1e-9);
+        if (blind) expect(memory.state().refused).toBeGreaterThan(0);
+      }
+    });
     it("judges a first look's whole batch side by side, and never commits past the run's ceiling", async () => {
       const terms = Array.from({ length: 12 }, (_, i) => `clinic booking website option ${i + 1}`);
       judge.mockImplementation(async (_b: unknown, asked: string[]) => {

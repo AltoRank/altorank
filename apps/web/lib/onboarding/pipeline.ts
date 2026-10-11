@@ -53,7 +53,7 @@ import { timed, withRunClock, type RunClock } from "./timings";
 
 /** Pages the onboarding minute reads. The nightly pass reads up to forty. */
 const ONBOARDING_CRAWL_PAGES = 20;
-import { fetchRelatedKeywordsBatch, type RelatedKeyword } from "@/lib/seo/brief-data";
+import { fetchRelatedKeywordsBatch, type RelatedKeyword, type SerpData } from "@/lib/seo/brief-data";
 import { getLocale } from "@/lib/seo/locales";
 import { detectLinks } from "@/lib/linking/detect";
 import { assessExistingPages } from "./site-assessment";
@@ -81,6 +81,8 @@ export interface PendingDraft {
   selection: { reasons: string[]; score: number; difficulty: number | null; volume: number | null };
   /** This draft's share of the run's one related-keyword lookup, when it ran. */
   relatedKeywords?: RelatedKeyword[];
+  /** The results page this run bought for the term when it judged it, for the draft's research. */
+  serp?: SerpData;
 }
 
 export interface RunOnboardingResult {
@@ -92,6 +94,12 @@ export interface RunOnboardingResult {
    * long enough for the requests to leave; nothing waits on it otherwise.
    */
   fanOutSettled: Promise<void>;
+  /**
+   * Work the run started and does not wait for - the speed test, whose
+   * result lands on the audit when it answers. A serverless caller keeps the
+   * instance alive for it with `after()`; no email or status waits on it.
+   */
+  tailSettled?: Promise<void>;
 }
 
 interface Workspace {
@@ -155,7 +163,7 @@ async function runPhases(
   const domain = workspace.domain;
   // Approvals asked twice and the floor allowed; the spend bound is the
   // scope's budget, which every paid call claims from.
-  const firstLook: FirstLook = { runId };
+  const firstLook: FirstLook = { runId, serps: new Map() };
 
   // --- Phase 0: is there a site here at all? -------------------------------
   //
@@ -174,7 +182,7 @@ async function runPhases(
       for (const phase of ["keywords", "pages", "planning", "drafting"] as const) {
         emit({ phase, status: "skipped", detail: "There is no site at this domain to work from." });
       }
-      return { pendingDraft: null, fanOutSettled: Promise.resolve() };
+      return { pendingDraft: null, fanOutSettled: Promise.resolve(), tailSettled: Promise.resolve() };
     }
   }
 
@@ -253,6 +261,10 @@ async function runPhases(
   let researchFoundNothing = false;
   // What discovery's hygiene dropped before storing anything, for the funnel.
   let screened: { generalRival: number; offProfile: number } | undefined;
+  // The deferred speed test, kept alive with the rest of the run's tail.
+  let speedSettled: Promise<void> = Promise.resolve();
+  // The planned topics' owner questions, written after the plan returns.
+  let questionsSettled: Promise<void> = Promise.resolve();
   if (!domain) {
     emit({ phase: "keywords", status: "skipped", detail: "No domain to analyse." });
   } else if (!hasDataForSEOCredentials()) {
@@ -276,9 +288,13 @@ async function runPhases(
         // counting them (packhub.io bans after ten in forty seconds).
         maxPages: ONBOARDING_CRAWL_PAGES,
         onRead: () => { void startPages(); },
+        // The speed test lands on the audit when it answers; nothing here
+        // waits for it (it was a minute of a production first look).
+        deferPageSpeed: true,
       }))));
       keywordsFound = analysis.keywordsFound;
       screened = analysis.screened;
+      if (analysis.pageSpeedSettled) speedSettled = analysis.pageSpeedSettled;
 
       // What Google has already measured for this site, before anything the
       // model or a provider guessed. A workspace that connected Search Console
@@ -394,6 +410,8 @@ async function runPhases(
         qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES,
         firstLook,
         onFunnel: (f) => { planFunnel = f; },
+        // Not on the way to the gate: kept alive with the run's tail.
+        questionsInBackground: (pending) => { questionsSettled = pending.then(() => undefined, () => undefined); },
       }));
       const held = gated && plan.length
         ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [] }))
@@ -565,6 +583,7 @@ async function runPhases(
             selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
             // Not bought here: the draft route decides from its own room.
             relatedKeywords: undefined,
+            ...(firstLook.serps?.get(next.term.trim().toLowerCase()) ? { serp: firstLook.serps.get(next.term.trim().toLowerCase())! } : {}),
           };
           settle("active", `Writing "${next.term}" now. It lands in your review queue when it is done.`);
         } else {
@@ -652,7 +671,7 @@ async function runPhases(
   // With a draft still to be written, the run is not over: the draft route
   // emits the equivalent of `ready` by settling the row when it lands.
   if (!pendingDraft) emit({ phase: "ready" });
-  return { pendingDraft, fanOutSettled };
+  return { pendingDraft, fanOutSettled, tailSettled: Promise.all([speedSettled, questionsSettled]).then(() => undefined, () => undefined) };
 }
 
 /**

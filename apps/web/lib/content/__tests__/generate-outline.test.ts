@@ -32,9 +32,19 @@ const RESEARCH: ArticleResearch = {
   layers: [],
   sourceFigures: [{ sentence: "Clinics pay 30 a month.", figures: ["30"], url: "https://stats.example/a", domain: "stats.example" }],
 };
+const { researchHooks } = vi.hoisted(() => ({ researchHooks: { early: false, release: null as null | (() => void) } }));
 vi.mock("@/lib/seo/research", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/seo/research")>()),
-  gatherArticleResearch: async () => structuredClone(RESEARCH),
+  gatherArticleResearch: async (o: { onSerp?: (s: unknown) => void; onQuestions?: (q: string[]) => void }) => {
+    if (researchHooks.early) {
+      // The results page is in; the ranking pages are still being read.
+      o.onSerp?.({ organic: RESEARCH.competitors.map((c) => ({ ...c })), peopleAlsoAsk: RESEARCH.peopleAlsoAsk, aiOverview: null });
+      o.onQuestions?.(RESEARCH.peopleAlsoAsk);
+      await new Promise<void>((r) => { researchHooks.release = r; setTimeout(r, 50); });
+      log.push("research-done");
+    }
+    return structuredClone(RESEARCH);
+  },
 }));
 vi.mock("@/lib/ai/article-questions", () => ({
   selectArticleQuestions: async (q: string[]) => ({ status: "qualified", kept: q, decisions: [] }),
@@ -190,6 +200,24 @@ describe("an article outlined before its body", () => {
       outline: { onReady: () => undefined, keepOnFailure: false },
     }).catch(() => null);
     expect(updates.some((u) => u.table === "articles" && u.row.status === "error")).toBe(true);
+  });
+
+  it("plans the outline beside the research when the results page arrives first, and gives it the research's sources after", async () => {
+    researchHooks.early = true;
+    try {
+      let announced: ArticleOutline | null = null;
+      await generateArticle({
+        supabase: client(), workspaceId: "ws1", keyword: "acme booking cost", callerEmail: null, relatedKeywords: [],
+        outline: { onReady: ({ outline }) => { announced = outline; }, keepOnFailure: true },
+      });
+      // Asked before the research finished, announced after it.
+      expect(log.indexOf("ask:content/outline")).toBeLessThan(log.indexOf("research-done"));
+      expect(log.indexOf("stored-outline")).toBeGreaterThan(log.indexOf("research-done"));
+      expect(announced!.sources).toEqual(["https://stats.example/a"]);
+      expect(announced!.targetWordCount).toBe(1200);
+    } finally {
+      researchHooks.early = false;
+    }
   });
 
   it("writes with no outline at all when not asked for one", async () => {

@@ -546,6 +546,24 @@ describe("runOnboarding", () => {
       expect(result.pendingDraft?.relatedKeywords).toBeUndefined();
     });
 
+    it("hands the draft the results page the plan judged its topic on, and keeps the planned topics' questions off the way to the gate", async () => {
+      const PAGE = { organic: [{ rank: 1, title: "A guide", url: "https://guide.example/a", description: "", domain: "guide.example", wordCount: null }], peopleAlsoAsk: [], aiOverview: null };
+      let questions: unknown = null;
+      plan.mockImplementation(async (...a: unknown[]) => {
+        const opts = a[3] as { firstLook: { serps: Map<string, unknown> }; questionsInBackground?: (p: Promise<unknown>) => void };
+        opts.firstLook.serps.set("seo agent", PAGE);
+        questions = opts.questionsInBackground;
+        opts.questionsInBackground?.(new Promise((r) => setTimeout(r, 5)));
+        return [{ term: "seo agent", date: "2026-09-07", keywordId: "k1" }];
+      });
+      recommend.mockResolvedValue([{ ...NEXT, keywordId: "k1" }]);
+      const { result } = await collectDispatch();
+      expect(result.pendingDraft?.serp).toEqual(PAGE);
+      expect(typeof questions).toBe("function");
+      // The questions are the run's tail, kept alive, not waited for.
+      await expect(result.tailSettled).resolves.toBeUndefined();
+    });
+
     it("dispatches exactly one draft, the first", async () => {
       plan.mockResolvedValue([
         { term: "seo agent", date: "2026-09-07", keywordId: "k1" },

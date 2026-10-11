@@ -23,7 +23,7 @@
  * `cron/generate` picks it up on its next pass, exactly as it did before.
  */
 import { isAuthorizedCron } from "@/lib/cron-auth";
-import type { RelatedKeyword } from "@/lib/seo/brief-data";
+import type { RelatedKeyword, SerpData } from "@/lib/seo/brief-data";
 
 /** One draft to write: the keyword, and the plan entry it belongs to. */
 export interface FanOutTarget {
@@ -148,6 +148,8 @@ export interface FirstDraftDispatch {
   selection?: { reasons: string[]; score: number; difficulty: number | null; volume: number | null };
   /** See FanOutTarget.relatedKeywords: the first draft gets its share too. */
   relatedKeywords?: RelatedKeyword[];
+  /** The results page the first look judged this term on, for the draft's research. */
+  serp?: SerpData;
 }
 
 /**

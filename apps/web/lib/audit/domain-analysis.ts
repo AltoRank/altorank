@@ -95,6 +95,12 @@ export interface DomainAnalysis {
    * for the read-only callers that pass neither.
    */
   firstLook?: FirstLookDecision;
+  /**
+   * With `deferPageSpeed`: settles once the speed test has answered and its
+   * result is on the audit row this run wrote. The caller keeps its
+   * invocation alive for it; nothing waits on it otherwise.
+   */
+  pageSpeedSettled?: Promise<void>;
 }
 
 /** A discovered keyword plus, for a gap row, the rival that holds it. */
@@ -125,6 +131,9 @@ const MAX_KEYWORDS_STORED = 100;
  * from it is the interesting case (see `rankedOnOwnPages`).
  */
 export const SITEMAP_TRUST_MIN = 100;
+
+/** What the audit says about speed while a deferred speed test is still running. */
+export const SPEED_PENDING = "The speed test is still running; its result is added to this audit when it answers.";
 
 function pathOf(url: string): string | null {
   try {
@@ -430,6 +439,13 @@ export async function analyseDomain(options: {
    * the buyer test, instead of after it. Its own errors are its own.
    */
   onRead?: (read: { ranked: RankedKeyword[] }) => void;
+  /**
+   * Do not wait for the speed test. Google's PageSpeed answers in up to a
+   * minute a try, twice, and nothing in the keyword work or the plan reads
+   * it: a first look stores the audit with the speed test pending, and the
+   * result lands on that row when it comes (`pageSpeedSettled`).
+   */
+  deferPageSpeed?: boolean;
 }): Promise<DomainAnalysis> {
   // E2E_STUBS: fixture keywords, no crawl, no provider, nothing measured (lib/e2e/stubs.ts).
   if (e2eStubsEnabled()) return stubAnalyseDomain(options);
@@ -553,8 +569,16 @@ export async function analyseDomain(options: {
   // --- PageSpeed -----------------------------------------------------------
   let pagespeed: Record<string, unknown> = {};
   const psLayers: AnalysisLayer[] = [];
-  const pagespeedDone = (async () => {
-    const ps = depth === "full" ? await timed("pagespeed", () => fetchPageSpeedDetailed(baseUrl)) : { ok: false as const, kind: "unavailable" as const, detail: "not run on a quick look" };
+  const deferSpeed = options.deferPageSpeed === true && depth === "full";
+  const speedTest = depth === "full"
+    ? timed("pagespeed", () => fetchPageSpeedDetailed(baseUrl))
+    : Promise.resolve({ ok: false as const, kind: "unavailable" as const, detail: "not run on a quick look" });
+  if (deferSpeed) {
+    pagespeed = { unavailable: SPEED_PENDING };
+    psLayers.push({ id: "pagespeed", status: "unavailable", detail: SPEED_PENDING });
+  }
+  const pagespeedDone = deferSpeed ? Promise.resolve() : (async () => {
+    const ps = await speedTest;
     if (ps.ok) {
       // PageSpeedResult is a fixed shape; the column is jsonb, so it is stored
       // as a plain object rather than reshaped.
@@ -1233,7 +1257,7 @@ export async function analyseDomain(options: {
   // --- Persist -------------------------------------------------------------
   if (supabase && workspaceId) {
     const now = new Date().toISOString();
-    await supabase.from("domain_audits").insert({
+    const auditInsert = supabase.from("domain_audits").insert({
       workspace_id: workspaceId,
       status: "completed",
       pages_crawled: pagesCrawled,
@@ -1252,6 +1276,22 @@ export async function analyseDomain(options: {
       started_at: now,
       completed_at: now,
     });
+    // Its id only when the speed test is still to land on it.
+    const auditRow = deferSpeed ? (await auditInsert.select("id").maybeSingle()).data : (await auditInsert, null);
+
+    // The speed test, when it was not waited for: onto the row it belongs to
+    // once it answers, as the result or the reason it has none.
+    if (deferSpeed) {
+      const auditId = (auditRow as { id?: string } | null)?.id ?? null;
+      analysis.pageSpeedSettled = speedTest
+        .then(async (ps) => {
+          if (!auditId) return;
+          const value = ps.ok ? { ...ps.result } : { unavailable: ps.detail };
+          const { error } = await supabase.from("domain_audits").update({ pagespeed: value }).eq("id", auditId);
+          if (error) console.warn(`[analyse] speed test result not stored: ${error.message}`);
+        })
+        .catch((err: unknown) => console.warn(`[analyse] speed test failed: ${err instanceof Error ? err.message : String(err)}`));
+    }
 
     // `first_analysed_at` means "we have looked". A crawl that got nothing for
     // a transient reason is not a look, and stamping it anyway is what made a
