@@ -33,7 +33,7 @@ import { recordOverageArticle } from "@/lib/billing/overage";
 import { recordFreeDraftWritten } from "@/lib/billing/free-drafts";
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { spendClient } from "@/lib/billing/default-spend";
-import { isBudgetRefusal, withSpendScope, type SpendScope } from "@/lib/billing/spend-scope";
+import { currentSpendScope, isBudgetRefusal, withSpendScope, type SpendScope } from "@/lib/billing/spend-scope";
 import { fetchKnownPages } from "@/lib/linking/targets";
 import { loadSiteFacts } from "@/lib/content/site-facts";
 import { siteFactUrls } from "@/lib/ai/prompts";
@@ -69,7 +69,9 @@ import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
 import { e2eStubsEnabled, stubGenerateArticle } from "@/lib/e2e/stubs";
 import { timed } from "@/lib/onboarding/timings";
-import { conformToOutline, h2sOf, offeredSources, outlineHeadings, outlineOf, OutlineNotFollowedError, planOutline, type ArticleOutline } from "@/lib/content/outline";
+import { jsonbSafe } from "@/lib/supabase/jsonb-safe";
+import { conformToOutline, h2sOf, offeredSources, outlineHeadings, OutlineNotFollowedError, OutlineNotOwedError, planOutline, type ArticleOutline } from "@/lib/content/outline";
+import { WRITER_FLOOR_USD } from "@/lib/billing/run-budget";
 
 export type KeywordFacts = { volume: number | null; difficulty: number | null; cpc: number | null };
 
@@ -212,11 +214,13 @@ export interface GenerateArticleOptions {
    */
   serp?: SerpData | null;
   /**
-   * With `articleId`: write the body of a row whose outline is already stored
-   * (a body that failed after the gate). Its research is reused, nothing is
-   * claimed again, and the outline is followed as stored.
+   * With `articleId`: write the body of a row whose outline the gate is
+   * showing (a body that failed after the gate). The outline is the one the
+   * server recorded when the gate opened (lib/content/owed-bodies.ts), never
+   * the row's own copy, which a client can write. Its research is reused,
+   * nothing is claimed again, and the outline is followed as given.
    */
-  resumeOutline?: boolean;
+  resumeOutline?: ArticleOutline;
 }
 
 export interface GenerateArticleResult {
@@ -431,18 +435,17 @@ async function writeArticle(
     if (!articleId || refreshOf) throw new Error("Only an outlined article can be resumed.");
     const { data: row, error: rowError } = await supabase
       .from("articles")
-      .select("id, status, instructions_snapshot, research")
+      .select("id, status, research")
       .eq("id", articleId)
       .eq("workspace_id", workspaceId)
       .maybeSingle();
     if (rowError) throw new Error(`Could not read the outlined article: ${rowError.message}`);
-    const outline = row ? outlineOf(row.instructions_snapshot) : null;
-    if (!row || row.status !== "drafting" || !outline || (await articleHasText(supabase, articleId))) {
-      throw new Error("This article has no outline waiting for its body.");
+    if (!row || row.status !== "drafting" || (await articleHasText(supabase, articleId))) throw new OutlineNotOwedError();
+    if (gatedBeforeTrial && !(await isFirstPreTrialDraft(supabase, billedAccountId, articleId))) {
+      throw new OutlineNotOwedError("Before the trial only the account's first draft is resumed.");
     }
-    if (gatedBeforeTrial && !(await isFirstPreTrialDraft(supabase, billedAccountId, articleId))) throw new TrialHoldError();
     const stored = row.research as ArticleResearch | null;
-    resumed = { outline, research: stored && Array.isArray(stored.competitors) ? stored : null };
+    resumed = { outline: options.resumeOutline, research: stored && Array.isArray(stored.competitors) ? stored : null };
   }
   if (gatedBeforeTrial && !resumed) {
     let adding = 1;
@@ -1017,10 +1020,25 @@ async function writeArticle(
         domain: workspace.domain,
         callToAction: outputSettings.callToAction,
       }, { spend: { supabase: spendDb, workspaceId } }));
+      // The gate opens on an outline only when the budget can still write
+      // its body: the outline and the questions came out of the draft's
+      // reserve, and a writer refused after the gate is showing would leave
+      // it on an outline nothing fills. Below the writer's floor the body is
+      // written the old way, and refused the old way.
       if (outline) {
+        const scope = currentSpendScope();
+        const room = scope?.budget ? await scope.budget.room(scope.stage ?? "draft").catch(() => null) : null;
+        if (room !== null && room < WRITER_FLOOR_USD) {
+          console.warn(`[generate] outline not shown: the budget has $${room.toFixed(2)} left, under the writer's $${WRITER_FLOOR_USD.toFixed(2)}`);
+          outline = null;
+        }
+      }
+      if (outline) {
+        // Storable first: one NUL in a results page's text failed this
+        // update, and the gate never opened (lib/supabase/jsonb-safe.ts).
         const { error: outlineError } = await supabase
           .from("articles")
-          .update({
+          .update(jsonbSafe({
             title: outline.title,
             keyword_id: keywordRow?.id ?? null,
             article_type: shape.article_type,
@@ -1036,7 +1054,7 @@ async function writeArticle(
               capturedAt: new Date().toISOString(),
             },
             updated_at: new Date().toISOString(),
-          })
+          }))
           .eq("id", article.id);
         if (outlineError) {
           // Not stored is not shown: write the body the old way.
@@ -1416,9 +1434,11 @@ async function writeArticle(
       if (saved.join("\n") !== shown.join("\n")) console.warn(`[generate] the saved H2s differ from the outline shown: ${saved.length} saved, ${shown.length} shown`);
     }
 
+    // Storable first, like the outline's update: a NUL anywhere in the
+    // research lost the whole article here (lib/supabase/jsonb-safe.ts).
     const { error: saveError } = await timed("save", () => supabase
       .from("articles")
-      .update({
+      .update(jsonbSafe({
         content: tiptapContent,
         title: articleResult.title,
         meta_description: articleResult.metaDescription,
@@ -1460,7 +1480,7 @@ async function writeArticle(
         // the point: a machine may write, a human decides whether it ships.
         status: "review",
         updated_at: new Date().toISOString(),
-      })
+      }))
       .eq("id", article.id));
 
     // The most expensive write in the product: research, a full model call and

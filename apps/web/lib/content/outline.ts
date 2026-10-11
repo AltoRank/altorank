@@ -276,6 +276,18 @@ export class OutlineNotFollowedError extends Error {
   }
 }
 
+/**
+ * A resume named an article that has no body owed: it is not being written,
+ * it already has text, or it is not the account's first draft before the
+ * trial. Nothing was bought, and trying again changes nothing.
+ */
+export class OutlineNotOwedError extends Error {
+  constructor(message = "This article has no outline waiting for its body.") {
+    super(message);
+    this.name = "OutlineNotOwedError";
+  }
+}
+
 export interface Conformed {
   html: string;
   /** Headings whose wording was put back to the outline's. */

@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **106** (run budgets; 105 is taken by an open branch) and **107** (first-look timings and the streamed first body; either order), each with its section at the end. **101, 104 and 106 go in BEFORE their code is deployed; 097, 099 and 100 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **106** (run budgets; 105 is taken by an open branch) and **107** (first-look timings, the streamed first body and the owed-body record), each with its section at the end. **101, 104, 106 and 107 go in BEFORE their code is deployed; 097, 099 and 100 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -156,7 +156,7 @@ m(file, applied) as (values
   ('101_account_creator',                    exists (select 1 from col where t='accounts' and c='created_by') and not has_table_privilege('authenticated', 'public.account_members', 'INSERT')),
   ('104_onboarding_nothing_planned',         exists (select 1 from col where t='onboarding_runs' and c='empty_pool') and exists (select 1 from chk where conname='onboarding_runs_status_check' and def like '%nothing_planned%')),
   ('106_run_budgets',                        to_regclass('public.run_budgets') is not null and exists (select 1 from col where t='provider_spend' and c='stage') and to_regprocedure('public.run_budget_claim(uuid,text,numeric,numeric)') is not null),
-  ('107_fast_first_look',                    exists (select 1 from col where t='onboarding_runs' and c='timings') and exists (select 1 from col where t='articles' and c='body_stream') and not has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT'))
+  ('107_fast_first_look',                    exists (select 1 from col where t='onboarding_runs' and c='timings') and exists (select 1 from col where t='articles' and c='body_stream') and not has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT') and to_regclass('public.owed_bodies') is not null and exists (select 1 from pg_trigger where tgname = 'articles_body_stream_server_only'))
 )
 select file, applied from m order by file;
 ```
@@ -368,7 +368,7 @@ no code in the repo references either).
 | 101_account_creator.sql | `integration/root-causes-2026-09-25` | 085; **applied before its code is deployed** | yes | yes, see its section (an owner can again add any user as a member) |
 | 104_onboarding_nothing_planned.sql | `fix/onboarding-no-empty-gate` | 076; **applied before its code is deployed** | yes | only after its code is reverted and no row holds `nothing_planned`: see its section |
 | 106_run_budgets.sql | `fix/first-look-spend-reserve` | 025, 076; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section |
-| 107_fast_first_look.sql | `feat/fast-first-look` | 076, 097; either order with its code | yes | yes: `alter table onboarding_runs drop column timings; alter table articles drop column body_stream;` (loses the timing tables and any body mid-stream) |
+| 107_fast_first_look.sql | `feat/fast-first-look` | 076, 097, 106; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section (loses the timing tables, any body mid-stream and the record of bodies owed) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1284,9 +1284,9 @@ Rollback, only after the code is reverted:
 Test: `lib/billing/__tests__/run-budget.db.test.ts` (db tier). Applied twice
 on the local stack 2026-10-01.
 
-## 107 — a first look's timings, and its first article's streamed body
+## 107 — a first look's timings, its first article's streamed body, and the bodies it owes
 
-Two columns, neither on a path that fails without them:
+Three things, all new, none read by old code:
 
 - `onboarding_runs.timings` (jsonb): every stage of a first look in
   milliseconds since `started_at`, written by the worker and merged by the
@@ -1296,17 +1296,32 @@ Two columns, neither on a path that fails without them:
 - `articles.body_stream` (text): the first article's body as the writer
   streams it, for the gate's reader when `PRETRIAL_FULL_ARTICLE=1`. A body
   column: no client grant (097 granted the columns that existed then; a new
-  column has none), revoked again here to say so. Written only with the
-  switch on; cleared when the body is saved or fails.
+  column has none), revoked again here to say so. Written by the server only:
+  097 left UPDATE on the whole table to clients, so the trigger
+  `articles_body_stream_server_only` refuses a client token (`anon`,
+  `authenticated`) that sets it. Written only with the switch on; cleared
+  when the body is saved or fails.
+- `owed_bodies` (table, server only: RLS on, no policy, client privileges
+  revoked): a first article whose outline the gate is showing and whose body
+  is still owed. Inserted by `/api/internal/draft` when the gate opens,
+  deleted when the body is saved or given up; the body's retries and the
+  nightly sweep (`apps/web/lib/content/owed-bodies.ts`) read only this, never
+  the article row, which a client can write.
 
-**Either order with its code.** Re-running is a no-op (`if not exists`).
+**Apply before its code is deployed.** Without `owed_bodies` a body that
+fails after the gate is not tried again, and the reader's column is missing.
+Re-running is a no-op (`if not exists`, `create or replace`, drop-then-create
+for the trigger).
 
-Post-flight (expect `t`, `t`, `f`):
+Post-flight (expect `t`, `t`, `f`, `t`, `t`, `f`):
 
 ```sql
 select exists (select 1 from information_schema.columns where table_name = 'onboarding_runs' and column_name = 'timings'),
        exists (select 1 from information_schema.columns where table_name = 'articles' and column_name = 'body_stream'),
-       has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT');
+       has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT'),
+       to_regclass('public.owed_bodies') is not null,
+       exists (select 1 from pg_trigger where tgname = 'articles_body_stream_server_only'),
+       has_table_privilege('authenticated', 'public.owed_bodies', 'SELECT');
 ```
 
 Where a first look's time went, once it has run:
@@ -1315,8 +1330,24 @@ Where a first look's time went, once it has run:
 select timings->'marks', timings->'stages' from onboarding_runs where id = '<onboarding run id>';
 ```
 
-Rollback: `alter table onboarding_runs drop column timings; alter table articles drop column body_stream;`
+What is owed right now:
 
-Test: `lib/onboarding/__tests__/first-look-gate.db.test.ts` (db tier: the
-column is refused to a client token, and the reader's checks). Applied twice
-on the local stack 2026-10-11.
+```sql
+select article_id, attempts, allowance_usd, owed_since, last_tried_at from owed_bodies order by owed_since;
+```
+
+Rollback, only after the code is reverted:
+
+```sql
+drop table if exists public.owed_bodies;
+drop trigger if exists articles_body_stream_server_only on public.articles;
+drop function if exists public.articles_body_stream_server_only();
+alter table public.onboarding_runs drop column if exists timings;
+alter table public.articles drop column if exists body_stream;
+```
+
+Tests: `lib/onboarding/__tests__/first-look-gate.db.test.ts` and
+`lib/content/__tests__/owed-bodies.db.test.ts` (db tier: the columns and the
+table refused to a client token, the trigger, the reader's checks, a re-armed
+article buying nothing, a try claimed once, the one top-up). Applied on the
+local stack 2026-10-11, and again with `owed_bodies` and the trigger.

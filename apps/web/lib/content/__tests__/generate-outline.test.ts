@@ -32,7 +32,7 @@ const RESEARCH: ArticleResearch = {
   layers: [],
   sourceFigures: [{ sentence: "Clinics pay 30 a month.", figures: ["30"], url: "https://stats.example/a", domain: "stats.example" }],
 };
-const { researchHooks } = vi.hoisted(() => ({ researchHooks: { early: false, release: null as null | (() => void) } }));
+const { researchHooks } = vi.hoisted(() => ({ researchHooks: { early: false, nul: false, release: null as null | (() => void) } }));
 vi.mock("@/lib/seo/research", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/seo/research")>()),
   gatherArticleResearch: async (o: { onSerp?: (s: unknown) => void; onQuestions?: (q: string[]) => void }) => {
@@ -43,7 +43,10 @@ vi.mock("@/lib/seo/research", async (importOriginal) => ({
       await new Promise<void>((r) => { researchHooks.release = r; setTimeout(r, 50); });
       log.push("research-done");
     }
-    return structuredClone(RESEARCH);
+    const out = structuredClone(RESEARCH);
+    // A results page's text with a NUL in it, as one site's did.
+    if (researchHooks.nul) out.competitors[0].description = "Prices\u0000 compared";
+    return out;
   },
 }));
 vi.mock("@/lib/ai/article-questions", () => ({
@@ -103,6 +106,8 @@ vi.mock("@/lib/ai/provider", () => ({
 }));
 
 import { generateArticle } from "../generate";
+import { withSpendScope } from "@/lib/billing/spend-scope";
+import { memoryRunBudget } from "@/lib/billing/run-budget";
 import { h2sOf, OutlineNotFollowedError, type ArticleOutline } from "../outline";
 
 const updates: Array<{ table: string; row: Record<string, unknown> }> = [];
@@ -223,5 +228,37 @@ describe("an article outlined before its body", () => {
   it("writes with no outline at all when not asked for one", async () => {
     await generateArticle({ supabase: client(), workspaceId: "ws1", keyword: "acme booking cost", callerEmail: null, relatedKeywords: [] });
     expect(log).toEqual(["writer:none"]);
+  });
+
+  it("stores the outline and the article when the research carries a NUL, without it", async () => {
+    researchHooks.nul = true;
+    try {
+      let ready = false;
+      await generateArticle({
+        supabase: client(), workspaceId: "ws1", keyword: "acme booking cost", callerEmail: null, relatedKeywords: [],
+        outline: { onReady: () => { ready = true; }, keepOnFailure: true },
+      });
+      expect(ready).toBe(true);
+      const writes = updates.filter((u) => u.table === "articles" && u.row.research);
+      expect(writes.length).toBeGreaterThanOrEqual(2);
+      for (const w of writes) {
+        expect(JSON.stringify(w.row)).not.toContain("\\u0000");
+        expect(JSON.stringify(w.row)).toContain("Prices compared");
+      }
+    } finally {
+      researchHooks.nul = false;
+    }
+  });
+
+  it("does not open the gate on an outline the budget can no longer write", async () => {
+    let ready = false;
+    const budget = memoryRunBudget("run-o", 0.2, {});
+    await withSpendScope({ budget, stage: "draft" }, () => generateArticle({
+      supabase: client(), workspaceId: "ws1", keyword: "acme booking cost", callerEmail: null, relatedKeywords: [],
+      outline: { onReady: () => { ready = true; }, keepOnFailure: true },
+    })).catch(() => null);
+    expect(ready).toBe(false);
+    expect(log).not.toContain("stored-outline");
+    expect(log).toContain("writer:none");
   });
 });

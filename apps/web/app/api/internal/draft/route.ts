@@ -42,13 +42,14 @@ import { stampRun } from "@/lib/onboarding/run-store";
 import { announceDraftBatch } from "@/lib/email/draft-batch";
 import { recordEntryFailure } from "@/lib/plan/draft-claim";
 import { continueFrom } from "@/lib/plan/resume-week";
-import { draftBudgetShort, draftCanBuyLookup, loadDraftBudget } from "@/lib/billing/run-budget";
+import { draftBudgetShort, draftCanBuyLookup, FIRST_DRAFT_MIN_USD, loadDraftBudget } from "@/lib/billing/run-budget";
 import { isBudgetRefusal, withSpendScope } from "@/lib/billing/spend-scope";
 import type { OnboardingEvent } from "@/lib/onboarding/events";
 import type { RelatedKeyword, SerpData } from "@/lib/seo/brief-data";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { RunClock, saveRunTimings, withRunClock } from "@/lib/onboarding/timings";
-import { outlineHeadings, type ArticleOutline } from "@/lib/content/outline";
+import { outlineHeadings, OutlineNotOwedError, type ArticleOutline } from "@/lib/content/outline";
+import { claimOwedAttempt, giveUpOwedBody, OWED_BODY_MAX_ATTEMPTS, recordOwedBody, settleOwedBody, topUpOwedBudget, type OwedBody } from "@/lib/content/owed-bodies";
 import { trialGateApplies } from "@/lib/billing/trial";
 import { authorised, selfInvocation, selfInvoke } from "@/lib/content/fan-out";
 import { recordEvent } from "@/lib/observability/record";
@@ -75,8 +76,11 @@ interface Body {
   relatedKeywords?: RelatedKeyword[];
   /**
    * With `resume`: the outlined article whose body is owed - a first look's
-   * body that failed after its gate opened on the outline. Written to the
-   * stored outline; `attempt` counts the tries (lib/content/outline.ts).
+   * body that failed after its gate opened on the outline. Only what the
+   * server recorded is owed (`owed_bodies`, lib/content/owed-bodies.ts): the
+   * keyword, the outline, the run and the count of tries come from that
+   * record, which this route claims a try on before anything is bought.
+   * `attempt` is informational.
    */
   articleId?: string;
   resume?: boolean;
@@ -100,12 +104,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { workspaceId, keyword, runId, selection } = body;
-  const keywordId = body.keywordId ?? null;
+  const { workspaceId, selection } = body;
+  // Replaced by the server's record of an owed body, below.
+  let { keyword, runId } = body;
+  let keywordId = body.keywordId ?? null;
   // A resumed entry is named by its id and its claim, both or neither.
   const claimed = body.entryId && body.claim ? { entryId: body.entryId, by: body.claim } : null;
   // A body owed to a stored outline, named by its article.
-  const owed = body.resume === true && typeof body.articleId === "string" && body.articleId ? { articleId: body.articleId, attempt: Math.max(1, Math.floor(Number(body.attempt) || 1)) } : null;
+  const owed = body.resume === true && typeof body.articleId === "string" && body.articleId ? { articleId: body.articleId } : null;
   // The fan-out always names a plan entry; the first draft of a run may not
   // have one (a keyword recommended but not planned) and is keyed by the run.
   if (!workspaceId || !keyword || (!keywordId && !runId && !claimed && !owed) || Boolean(body.entryId) !== Boolean(body.claim)) {
@@ -127,6 +133,31 @@ export async function POST(request: NextRequest) {
   if (!workspace) {
     await stamp({ phase: "drafting", status: "failed", detail: "The workspace no longer exists." }, { finish: true });
     return NextResponse.json({ error: "Workspace not found" }, { status: 404 });
+  }
+
+  // A body owed to an outline the gate is showing: only what the server
+  // recorded is owed, and this try is claimed there first - a duplicate, a
+  // try past the last one, or an article nobody owes writes nothing. The
+  // keyword, the outline and the run whose budget pays are the record's.
+  let owedBody: OwedBody | null = null;
+  if (owed) {
+    const claim = await claimOwedAttempt(supabase, owed.articleId, workspaceId).catch((err: unknown) => {
+      console.error(`[internal/draft] could not claim the owed body ${owed.articleId}: ${err instanceof Error ? err.message : err}`);
+      return null;
+    });
+    if (!claim || claim.kind === "none") return NextResponse.json({ status: "skipped", reason: "not-owed" }, { status: 200 });
+    if (claim.kind === "spent") {
+      await giveUpOwedBody(supabase, claim.body, "every try failed or three days passed");
+      return NextResponse.json({ status: "skipped", reason: "given-up" }, { status: 200 });
+    }
+    owedBody = claim.body;
+    if (!owedBody.runId) {
+      await giveUpOwedBody(supabase, owedBody, "its first look is gone, so nothing bounds the try");
+      return NextResponse.json({ status: "skipped", reason: "given-up" }, { status: 200 });
+    }
+    keyword = owedBody.keyword;
+    keywordId = owedBody.keywordId;
+    runId = owedBody.runId;
   }
 
   // Idempotence first, before any gate is asked: a request that does not hold
@@ -190,11 +221,24 @@ export async function POST(request: NextRequest) {
   // unbounded. The related keywords come in the body (the worker hands an
   // empty list when it did not buy them); with none, a budgeted draft buys
   // them only from room above what its writer needs.
+  //
+  // An owed body is paid from the same budget, every try of it. A body that
+  // failed after the writer was billed leaves the run below a writer's
+  // minimum; it gets one top-up to that minimum, once (owed-bodies.ts), and
+  // past that it is given up rather than written outside the budget.
   const budget = runId ? await loadDraftBudget(supabase, runId) : null;
-  const short = await draftBudgetShort(budget);
+  let short = await draftBudgetShort(budget);
+  if (short && owedBody && budget) {
+    const room = await budget.room("draft").catch(() => null);
+    if (room !== null && (await topUpOwedBudget(supabase, owedBody, room, FIRST_DRAFT_MIN_USD))) short = await draftBudgetShort(budget);
+  }
   const relatedKeywords = Array.isArray(body.relatedKeywords)
     ? body.relatedKeywords
     : budget && !(await draftCanBuyLookup(budget)) ? [] : undefined;
+  if (short && owedBody) {
+    await giveUpOwedBody(supabase, owedBody, short);
+    return NextResponse.json({ status: "skipped", reason: "budget" }, { status: 200 });
+  }
   if (short) {
     await stamp({ phase: "drafting", status: "skipped", detail: short }, { finish: true });
     return NextResponse.json({ status: "skipped", reason: "budget" }, { status: 200 });
@@ -220,6 +264,9 @@ export async function POST(request: NextRequest) {
   let entryFulfilled = false;
   const onOutline = async ({ articleId, outline }: { articleId: string; outline: ArticleOutline }) => {
     outlinedId = articleId;
+    // Owed from the moment the gate shows it: recorded by the server, so a
+    // retry and the nightly sweep read what was shown, not the row.
+    if (gated && runId && keyword) await recordOwedBody(supabase, { articleId, workspaceId, runId, keyword, keywordId, outline });
     // On the calendar now: the gate's card reads its day from the entry.
     if (entry) {
       await fulfilPlannedEntry(supabase, entry.id as string, articleId);
@@ -246,7 +293,7 @@ export async function POST(request: NextRequest) {
   // gate as it is written: the writer's text so far is kept on the row
   // (`body_stream`, server only, migration 107) every second and a half, and
   // cleared once the body is saved or fails. Off, nothing is written.
-  const streaming = fullArticleOn() && gated && Boolean(runId || owed);
+  const streaming = fullArticleOn() && gated && Boolean(runId || owedBody);
   let streamed = "";
   let streamWrite: Promise<unknown> = Promise.resolve();
   let lastStreamAt = 0;
@@ -286,8 +333,8 @@ export async function POST(request: NextRequest) {
       ...(onChunk ? { onChunk } : {}),
       // Read, not bought again: only a page shaped like one, for a first look's own draft.
       ...(runId && body.serp && Array.isArray(body.serp.organic) && Array.isArray(body.serp.peopleAlsoAsk) ? { serp: body.serp } : {}),
-      ...(owed
-        ? { articleId: owed.articleId, resumeOutline: true }
+      ...(owedBody
+        ? { articleId: owedBody.articleId, resumeOutline: owedBody.outline }
         : runId
           ? { outline: { onReady: onOutline, keepOnFailure: gated } }
           : {}),
@@ -307,6 +354,7 @@ export async function POST(request: NextRequest) {
     })));
     clock?.mark("body_done");
     if (streaming) await writeStream(true);
+    if (outlinedId) await settleOwedBody(supabase, outlinedId);
     if (entry && !entryFulfilled) await fulfilPlannedEntry(supabase, entry.id as string, result.articleId);
     await stamp(
       {
@@ -331,7 +379,7 @@ export async function POST(request: NextRequest) {
     // says so at the same moment. Whether or not the stamp took - a run the
     // start route closed as stale still has a real draft in review.
     // `announceDraftBatch` never throws.
-    if (runId || owed) await announceDraftBatch(supabase, workspaceId);
+    if (runId || owedBody) await announceDraftBatch(supabase, workspaceId);
     await saveTimings("written");
     next();
     return NextResponse.json(
@@ -345,8 +393,18 @@ export async function POST(request: NextRequest) {
     // A body owed to an outline the gate is already showing: tried again in
     // its own invocation, and the nightly sweep after that. The run stays as
     // it ended at the gate, and nobody is told setup failed: it did not.
-    if (outlinedId && (gated || owed)) {
-      const attempt = owed?.attempt ?? 1;
+    // Nothing is owed after all (the row was written meanwhile, or is not
+    // the account's first draft): the record goes, and nothing is retried.
+    if (owedBody && err instanceof OutlineNotOwedError) {
+      await settleOwedBody(supabase, owedBody.articleId);
+      return NextResponse.json({ status: "skipped", reason: "not-owed" }, { status: 200 });
+    }
+    if (outlinedId && (gated || owedBody)) {
+      const attempt = owedBody?.attempts ?? 1;
+      if (attempt >= OWED_BODY_MAX_ATTEMPTS) {
+        await giveUpOwedBody(supabase, { articleId: outlinedId, workspaceId, runId: runId ?? null, attempts: attempt }, detail.slice(0, 200));
+        return NextResponse.json({ status: "skipped", reason: "given-up", attempt }, { status: 200 });
+      }
       const again = attempt < MAX_BODY_ATTEMPTS && !isBudgetRefusal(err) ? selfInvocation() : null;
       await recordEvent({
         level: "warn",
