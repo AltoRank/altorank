@@ -12,18 +12,19 @@ const business = { name: "Acme Studio", description: "Acme Studio sells model ra
 const terms = Array.from({ length: MAX_JUDGED * 4 + 7 }, (_, i) => `acme phrase ${String(i).padStart(3, "0")}`);
 const phrasesIn = (prompt: string) => JSON.parse(prompt.slice(prompt.lastIndexOf("PHRASES") + "PHRASES".length).trim()) as string[];
 
-function asker(opts: { delayMs?: number; costUsd?: number } = {}) {
+function asker(opts: { delayMs?: number; costUsd?: number; chargedUsd?: number } = {}) {
   const asked: string[][] = [];
   let inFlight = 0;
   let peak = 0;
   const ask = async (_op: string, prompt: string) => {
-    if (opts.costUsd) await claimSpend("keyword-research/buyer-fit", opts.costUsd);
+    const claim = opts.costUsd ? await claimSpend("keyword-research/buyer-fit", opts.costUsd) : null;
     const phrases = phrasesIn(prompt);
     asked.push(phrases);
     inFlight += 1;
     peak = Math.max(peak, inFlight);
     await new Promise((r) => setTimeout(r, opts.delayMs ?? 2));
     inFlight -= 1;
+    if (claim && opts.chargedUsd !== undefined) await claim.settle(opts.chargedUsd);
     // A stage per phrase; every third one is not offered.
     return JSON.stringify({ verdicts: phrases.map((t, i) => ({ t, s: i % 3 === 0 ? "not_offered" : "solution", r: "test" })) });
   };
@@ -52,5 +53,24 @@ describe("judgeBuyerFit, batches side by side", () => {
     // The refused requests were never sent.
     expect(a.asked.length).toBeLessThanOrEqual(3);
     void out;
+  });
+
+  it("judges every phrase when the room fits only four of five claims at once: the fifth waits for one to settle", async () => {
+    // Claimed at the output ceiling, charged about a third of it, as live.
+    const a = asker({ costUsd: 0.088, chargedUsd: 0.026, delayMs: 5 });
+    const budget = memoryRunBudget("run-y", 0.4, {});
+    const out = await withSpendScope({ budget, stage: "buyer_fit" }, () => judgeBuyerFit(business, terms, { ask: a.ask }));
+    expect(out.verdicts.size).toBe(terms.length);
+    // The last batch alphabetically - the one that used to drop out - is in.
+    expect(out.verdicts.has(terms[terms.length - 1])).toBe(true);
+    expect(budget.state().committedUsd).toBeLessThanOrEqual(0.4 + 1e-9);
+  });
+
+  it("still stops at the budget's real end: refused with nobody else asking", async () => {
+    const a = asker({ costUsd: 0.088, chargedUsd: 0.088, delayMs: 2 });
+    const budget = memoryRunBudget("run-z", 0.2, {});
+    const out = await withSpendScope({ budget, stage: "buyer_fit" }, () => judgeBuyerFit(business, terms, { ask: a.ask }));
+    expect(a.asked.length).toBe(2);
+    expect(out.verdicts.size).toBe(MAX_JUDGED * 2);
   });
 });

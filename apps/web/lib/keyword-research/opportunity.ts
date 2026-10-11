@@ -439,6 +439,12 @@ export async function qualifyOpportunities(
       const input: ResultsJudgeInput | null = page.value ? { term: c.term, sourceUrl: c.source_url, context, verdict, organic: page.value.organic } : null;
       if (input && !failed) {
         const read = await patiently(() => watchRefusals(async () => {
+          // The read is about to claim its own estimate, which the room then
+          // counts: its share of the pledge goes now, not after the read, or
+          // the same read is counted twice for as long as it runs - which
+          // held the end of a first look's qualification to one term at a
+          // time (round-1 review: 39s of one site's gate).
+          release(0);
           // A refused read leaves its marks on `result`; each ask starts clean.
           for (const key of Object.keys(result) as Array<keyof Opportunity>) delete result[key];
           Object.assign(result, fresh);
@@ -632,8 +638,14 @@ export function opportunitySchema(): Record<string, unknown> {
   });
 }
 
-/** Output room for the judge: ten kinds, a reason and a brief. */
-export const OPPORTUNITY_MAX_TOKENS = 1500;
+/**
+ * Output room for the judge: ten kinds, a reason and a brief. A first look
+ * claims each read at this ceiling before it is made, so it is also the read's
+ * price until it settles: 1,500 priced a read at $0.025 against the $0.011 it
+ * cost, and the largest answer seen on the proof runs (2026-10-11) was 267
+ * tokens. 800 is three times that.
+ */
+export const OPPORTUNITY_MAX_TOKENS = 800;
 
 /** Business names the navigational rule should recognise in a phrase. */
 function namedBusinesses(business: FitProfile | null): string[] {
