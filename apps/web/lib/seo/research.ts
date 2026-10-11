@@ -454,6 +454,13 @@ export async function gatherArticleResearch(options: {
    * encyclopedia sites - and every other page's figures are held back.
    */
   sources?: { owner: SourceOwner; ask?: AskModel; spend?: SpendSink | null };
+  /**
+   * Called with the results page's questions as soon as it is in, before the
+   * ranking pages are fetched and classified: the question pick reads only
+   * these, so the caller can run it beside the rest of the research instead
+   * of after it. Not called when there is no results page.
+   */
+  onQuestions?: (peopleAlsoAsk: string[]) => void;
 }): Promise<ArticleResearch> {
   const { keyword, locale, supabase, workspaceId } = options;
   const loc = getLocale(locale ?? "en");
@@ -467,7 +474,10 @@ export async function gatherArticleResearch(options: {
 
   const [serpResult, keywordsResult, gscResult] = await Promise.allSettled([
     hasDataForSeo
-      ? fetchAdvancedSerp(keyword, localeParam)
+      ? fetchAdvancedSerp(keyword, localeParam).then((serp) => {
+          options.onQuestions?.(serp.peopleAlsoAsk ?? []);
+          return serp;
+        })
       : Promise.reject(new Error("DataForSEO credentials not configured")),
     prefetched
       ? Promise.resolve(prefetched)

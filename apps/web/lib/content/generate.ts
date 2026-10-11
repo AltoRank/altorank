@@ -800,6 +800,15 @@ async function writeArticle(
       ? timed("related_keywords", () => fetchRelatedKeywords(keyword, { languageCode: loc0.languageCode, locationCode: workspace.location_code ?? loc0.locationCode }))
           .catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))))
       : null;
+    // The question pick reads only the results page's questions, so it runs
+    // beside the rest of the research - the ranking pages' fetches and their
+    // classification - instead of after it.
+    const pickQuestions = (paa: string[]) => timed("draft_research", () => selectArticleQuestions(paa, {
+      keyword, title: approvedTitle, language: workspace.language ?? "en",
+      business: workspace.business_profile, brief: topicBrief,
+      instructions: refreshOf?.brief ?? keywordRow?.instructions,
+    }, { spend: { supabase: spendDb, workspaceId } }));
+    let questionsPending: ReturnType<typeof pickQuestions> | null = null;
     const research = resumed?.research ?? await timed("draft_research", () => gatherArticleResearch({
       keyword,
       locale: workspace.language ?? "en",
@@ -816,6 +825,11 @@ async function writeArticle(
           business: (workspace.business_profile as SourceOwner["business"]) ?? null,
         },
         spend: { supabase: spendDb, workspaceId },
+      },
+      onQuestions: (paa) => {
+        // Caught here and asked again below: a pick that fails early must
+        // not leave a rejection nobody is waiting on.
+        questionsPending ??= pickQuestions(paa).catch(() => pickQuestions(paa));
       },
     }));
     const siteFacts = siteFactsPending ? await siteFactsPending : null;
@@ -846,11 +860,7 @@ async function writeArticle(
 
     // A resumed body's questions were picked when it was outlined.
     if (!resumed?.research) {
-      const questionSelection = await timed("draft_research", () => selectArticleQuestions(research.peopleAlsoAsk, {
-        keyword, title: approvedTitle, language: workspace.language ?? "en",
-        business: workspace.business_profile, brief: topicBrief,
-        instructions: refreshOf?.brief ?? keywordRow?.instructions,
-      }, { spend: { supabase: spendDb, workspaceId } }));
+      const questionSelection = await (questionsPending ?? pickQuestions(research.peopleAlsoAsk));
       research.questionSelection = questionSelection;
       research.peopleAlsoAsk = questionSelection.kept;
     }

@@ -8,6 +8,7 @@ import { askedKey } from "../buyer-fit";
 import { firstLookTermUsd, opportunitySchema, qualifyOpportunities, readOpportunity, contextKey, validArticleAngle, assertAutonomousTopic, summarizeQualification, type Opportunity } from "../opportunity";
 import { sameIntent, sharedResults } from "../intent";
 import { claimSpend, withSpendScope, type RunBudget } from "@/lib/billing/spend-scope";
+import { memoryRunBudget } from "@/lib/billing/run-budget";
 import { balanceSources, diverseSeeds } from "../diversity";
 
 const context = { domain: "example.com", languageCode: "it", locationCode: 2380, business: { name: "Clinic Studio", description: "Clinic Studio builds booking websites for clinics and salons at a fixed price.", offerings: ["clinic booking websites"], audiences: ["clinic owners"] } };
@@ -442,6 +443,35 @@ describe("a first look", () => {
     it("judges the term when the room covers its page and both reads", async () => {
       const budget = { ...budgetOf(10), room: async () => firstLookTermUsd(true) };
       expect(await lookIn(budget)).toMatchObject({ status: "qualified" });
+    });
+    it("judges a first look's whole batch side by side, and never commits past the run's ceiling", async () => {
+      const terms = Array.from({ length: 12 }, (_, i) => `clinic booking website option ${i + 1}`);
+      judge.mockImplementation(async (_b: unknown, asked: string[]) => {
+        await claimSpend("keyword-research/buyer-fit", 0.01);
+        return { basis: "model", verdicts: new Map(asked.map((t) => [t.toLowerCase(), { keep: true, reason: "specific buyer need" }])) };
+      });
+      let inFlight = 0;
+      let peak = 0;
+      const page = { organic: urls.map((url, i) => ({ url, title: "Clinic booking website cost guide", description: "A buyer guide", rank: i + 1 })), peopleAlsoAsk: [], aiOverview: null };
+      fetchSerp.mockImplementation(async () => {
+        await claimSpend("/serp/google/organic/live/advanced", firstLookTermUsd(false) / 4);
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight -= 1;
+        return page;
+      });
+      // A ceiling that covers the buyer test and about five terms' reads.
+      const ceiling = 0.01 + firstLookTermUsd(true) * 5;
+      const budget = memoryRunBudget("run-1", ceiling, {});
+      const out = await withSpendScope({ budget }, () =>
+        qualifyOpportunities(db, "ws", terms.map((t, i) => ({ id: `k${i}`, term: t })), context, { firstLook }));
+      // More than the old round of three ran at once.
+      expect(peak).toBeGreaterThan(3);
+      // Concurrency does not buy past the dollar: what could not be paid for is not judged.
+      expect(budget.state().committedUsd).toBeLessThanOrEqual(ceiling + 1e-9);
+      expect(out.size).toBeGreaterThan(0);
+      expect(out.size).toBeLessThan(terms.length);
     });
   });
 });

@@ -191,7 +191,14 @@ async function runPhases(
   // `keywordsFound` stays 0, and phases 4 and 5 below already know what to do
   // with that - skip, and say why. Phase 0 stops the adjacent case, a domain
   // with no DNS at all.
+  //
+  // Side by side with the keyword phase below: the voice is read by the
+  // writer and by nothing the keyword work does, and the two used to run one
+  // after the other - twenty-two seconds of a production first look's
+  // critical path (2026-10-09) before any keyword work began. Awaited before
+  // the plan, so its outcome is on the row before anything reads it.
   emit({ phase: "scanning", status: "active" });
+  const scanning = (async () => {
   if (!domain) {
     emit({ phase: "scanning", status: "skipped", detail: "No domain on this workspace yet." });
   } else {
@@ -221,6 +228,21 @@ async function runPhases(
       emit({ phase: "scanning", status: "failed", detail: message(err) });
     }
   }
+  })();
+
+  // --- Phase 3, started early: read the pages they already have ------------
+  //
+  // Started the moment the keyword phase has read the site and its rankings
+  // (`onRead`), and run beside the buyer test, which is the long part of the
+  // keyword phase and needs none of it. It used to wait for the whole keyword
+  // phase. The plan still waits for it: the recommender reads the pages the
+  // site already has, so a topic one of them covers is not planned again.
+  let pagesStarted: Promise<void> | null = null;
+  const startPages = () => {
+    if (pagesStarted || !domain) return pagesStarted;
+    pagesStarted = readExistingPages(supabase, workspace.id, domain, emit);
+    return pagesStarted;
+  };
 
   // --- Phase 2: find what to write about ----------------------------------
   emit({ phase: "keywords", status: "active" });
@@ -253,6 +275,7 @@ async function runPhases(
         // rest. Every page here is one request against a host that may be
         // counting them (packhub.io bans after ten in forty seconds).
         maxPages: ONBOARDING_CRAWL_PAGES,
+        onRead: () => { void startPages(); },
       }))));
       keywordsFound = analysis.keywordsFound;
       screened = analysis.screened;
@@ -328,60 +351,12 @@ async function runPhases(
 
   // --- Phase 3: read the pages they already have ---------------------------
   //
-  // The wizard asks for the blog and says what it is for. Until now nothing
-  // read it: detectLinks below harvests its URLs, and the pages themselves
-  // were only ever fetched by cron/site-pages, which selects on
-  // `first_analysed_at` and does one workspace a night. So on day one
-  // `site_pages` was empty and nothing in the product knew what the customer
-  // had already published.
-  //
-  // Free and technical: a plain GET per page and the checks in
-  // lib/seo/tech-audit.ts, which read status codes, tag lengths, H1 counts,
-  // canonicals and robots directives. No model, no DataForSEO. Bounded by
-  // ONBOARDING_CRAWL so a 600-post blog cannot eat the worker's 300 seconds,
-  // and best-effort: `assessExistingPages` never throws.
-  emit({ phase: "pages", status: "active" });
-  if (domain && refusing(`https://${domain}/`)) {
-    // Eight more requests into a ban only extend it. The nightly pass reads
-    // the pages when the host is not counting.
-    emit({ phase: "pages", status: "skipped", detail: "The site is rate-limiting us right now; the nightly pass reads your existing pages." });
-  } else if (!domain) {
-    emit({ phase: "pages", status: "skipped", detail: "No domain to read pages from." });
-  } else {
-    const startedAt = Date.now();
-    const pages = await timed("pages", () => assessExistingPages(supabase, workspace.id, domain));
-    // The number the budget is set against. Logged rather than shown: the
-    // customer wants to know what was found, and whoever tunes ONBOARDING_CRAWL
-    // wants to know how long it took on a real site.
-    console.log(
-      `[onboarding] pages: ${pages.status} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s - ${pages.detail}`,
-    );
-    emit({ phase: "pages", status: pages.status, detail: pages.detail });
-  }
-
-  // --- The link pool, before anything is written ---------------------------
-  //
-  // The wizard asks for the sitemap and says what it is for: "Used to find
-  // your existing pages for internal links." Until now nothing read it until
-  // a person pressed Detect on /linking, or the site-pages cron ran - and
-  // that cron is on no schedule (vercel.json, .github/workflows). So the
-  // first draft, and every draft after it, was written against an empty
-  // pool: the prompt said "do not add any" internal links, on a site with a
-  // 200-post blog it had just been told about. Measured on altorank.co,
-  // 2026-09-06: 0 internal links on a first draft with 28 sitemap posts.
-  //
-  // detectLinks reads the sitemap and the blog root (two fetches, no API
-  // cost) into link_targets, which is the pool generateArticle offers the
-  // writer. Best effort: a sitemap that cannot be read is a draft without
-  // internal links, not a failed onboarding.
-  if (domain) {
-    try {
-      const pool = await timed("link_pool", () => detectLinks(supabase, workspace.id));
-      if (pool.added > 0) console.log(`[onboarding] link pool: ${pool.added} page(s) from the site's own sources`);
-    } catch (err) {
-      console.warn("[onboarding] link pool detection failed:", message(err));
-    }
-  }
+  // Started above, beside the buyer test, when the keyword phase got that far;
+  // started here when it did not (no keyword research on this install, a
+  // keyword phase that failed early). Either way the plan waits for it, and
+  // for the voice.
+  await (startPages() ?? readExistingPages(supabase, workspace.id, domain, emit));
+  await scanning;
 
   // --- Phase 4: schedule the month, then write the first draft ------------
   emit({ phase: "planning", status: "active" });
@@ -695,6 +670,46 @@ async function emptyPoolOrNull(supabase: SupabaseClient, workspaceId: string): P
   } catch (err) {
     console.error(`[onboarding] empty-pool report for ${workspaceId}: ${message(err)}`);
     return null;
+  }
+}
+
+/**
+ * Read the pages the site already published, then fill the link pool from
+ * its sitemap. Both best effort and both free; they are what the planner and
+ * the writer read, not anything the keyword research needs.
+ *
+ * The wizard asks for the blog and says what it is for. Until 2026-09-06
+ * nothing read it: the pages were only ever fetched by cron/site-pages, one
+ * workspace a night, so on day one `site_pages` was empty and nothing in the
+ * product knew what the customer had already published. A plain GET per page
+ * and the checks in lib/seo/tech-audit.ts - no model, no DataForSEO - bounded
+ * by ONBOARDING_CRAWL, and `assessExistingPages` never throws.
+ *
+ * Then the link pool: detectLinks reads the sitemap and the blog root (two
+ * fetches, no API cost) into link_targets, which is the pool generateArticle
+ * offers the writer. Measured on 2026-09-06 before it ran here: 0 internal
+ * links on a first draft with 28 sitemap posts.
+ */
+async function readExistingPages(supabase: SupabaseClient, workspaceId: string, domain: string | null, emit: Emit): Promise<void> {
+  emit({ phase: "pages", status: "active" });
+  if (domain && refusing(`https://${domain}/`)) {
+    // More requests into a ban only extend it. The nightly pass reads the
+    // pages when the host is not counting.
+    emit({ phase: "pages", status: "skipped", detail: "The site is rate-limiting us right now; the nightly pass reads your existing pages." });
+  } else if (!domain) {
+    emit({ phase: "pages", status: "skipped", detail: "No domain to read pages from." });
+  } else {
+    const startedAt = Date.now();
+    const pages = await timed("pages", () => assessExistingPages(supabase, workspaceId, domain));
+    console.log(`[onboarding] pages: ${pages.status} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s - ${pages.detail}`);
+    emit({ phase: "pages", status: pages.status, detail: pages.detail });
+  }
+  if (!domain) return;
+  try {
+    const pool = await timed("link_pool", () => detectLinks(supabase, workspaceId));
+    if (pool.added > 0) console.log(`[onboarding] link pool: ${pool.added} page(s) from the site's own sources`);
+  } catch (err) {
+    console.warn("[onboarding] link pool detection failed:", message(err));
   }
 }
 

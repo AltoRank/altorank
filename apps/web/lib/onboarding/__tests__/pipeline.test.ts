@@ -116,6 +116,18 @@ const phases = (events: OnboardingEvent[]) =>
   events.map((e) => ("status" in e ? `${e.phase}:${e.status}` : e.phase));
 
 /**
+ * The events phase by phase, each phase's own in the order it emitted them.
+ * The voice and the existing pages run beside the keyword phase, so the
+ * interleaving across phases is the scheduler's; within one it is the run's.
+ */
+const RANK = ["scanning", "keywords", "pages", "planning", "drafting", "ready", "error"];
+const byPhase = (events: OnboardingEvent[]) =>
+  phases(events)
+    .map((p, i) => ({ p, i, r: RANK.indexOf(p.split(":")[0]) }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .map((x) => x.p);
+
+/**
  * A client that answers the whole run, not just the "already has a draft?"
  * count: the fan-out reads calendar_entries too, and a thin mock made that
  * branch untestable.
@@ -200,7 +212,7 @@ describe("runOnboarding", () => {
 
   it("emits every boundary of a full run, in order, ending in ready", async () => {
     const events = await collect();
-    expect(phases(events)).toEqual([
+    expect(byPhase(events)).toEqual([
       "scanning:active", "scanning:done",
       "keywords:active", "keywords:done",
       "pages:active", "pages:done",
@@ -372,11 +384,41 @@ describe("runOnboarding", () => {
     expect(phases(events)).toContain("drafting:skipped");
   });
 
+  it("reads the voice beside the keyword phase, and the existing pages beside the buyer test, and plans only once both are in", async () => {
+    const order: string[] = [];
+    let release!: () => void;
+    const buyerTest = new Promise<void>((r) => { release = r; });
+    scrape.mockImplementation(async () => { order.push("voice:start"); await buyerTest; order.push("voice:end"); return "word ".repeat(80); });
+    assess.mockImplementation(async () => { order.push("pages"); return { status: "done", detail: "Read 3 pages.", summary: null }; });
+    analyse.mockImplementation(async (opts: { onRead?: (r: { ranked: unknown[] }) => void }) => {
+      order.push("keywords:start");
+      // The site is read: the pages may start while the buyer test runs.
+      opts.onRead?.({ ranked: [] });
+      await new Promise((r) => setTimeout(r, 5));
+      order.push("buyer-test");
+      release();
+      return { keywordsFound: 0, layers: [] };
+    });
+    plan.mockImplementation(async () => { order.push("plan"); return []; });
+    await collect();
+    // Both started before either finished.
+    expect(order.indexOf("keywords:start")).toBeLessThan(order.indexOf("voice:end"));
+    // The pages ran during the keyword phase, not after it.
+    expect(order.indexOf("pages")).toBeLessThan(order.indexOf("buyer-test"));
+    expect(assess).toHaveBeenCalledTimes(1);
+  });
+
+  it("still reads the existing pages, once, when the keyword phase never got as far as the site", async () => {
+    creds.mockReturnValue(false);
+    await collect();
+    expect(assess).toHaveBeenCalledTimes(1);
+  });
+
   /** One phase breaking must not cost the account the phases after it. */
   it("continues to the draft when keyword analysis throws", async () => {
     analyse.mockRejectedValue(new Error("DataForSEO 40101"));
     const events = await collect();
-    expect(phases(events)).toEqual([
+    expect(byPhase(events)).toEqual([
       "scanning:active", "scanning:done",
       "keywords:active", "keywords:failed",
       "pages:active", "pages:done",
@@ -391,7 +433,7 @@ describe("runOnboarding", () => {
     scrape.mockResolvedValue("just a few words");
     const events = await collect();
     expect(voice).not.toHaveBeenCalled();
-    expect(phases(events)[1]).toBe("scanning:skipped");
+    expect(byPhase(events)[1]).toBe("scanning:skipped");
     expect(events.at(-1)).toEqual({ phase: "ready" });
   });
 
@@ -416,7 +458,7 @@ describe("runOnboarding", () => {
     voice.mockImplementation(async () => { seen.push(currentSpendScope()); });
     analyse.mockImplementation(async () => { seen.push(currentSpendScope()); return { keywordsFound: 0, layers: [] }; });
     await collect();
-    expect(seen.map((s) => [s?.workspaceId, s?.stage])).toEqual([["ws1", "voice"], ["ws1", "voice"], ["ws1", "discovery"]]);
+    expect(seen.map((s) => `${s?.workspaceId}:${s?.stage}`).sort()).toEqual(["ws1:discovery", "ws1:voice", "ws1:voice"]);
     expect(currentSpendScope()).toBeUndefined();
   });
 
@@ -443,7 +485,7 @@ describe("runOnboarding", () => {
         keywordId: null,
         selection: { reasons: ["27,100 searches/mo"], score: 35.5, difficulty: 19, volume: 27100 },
       });
-      expect(phases(events)).toEqual([
+      expect(byPhase(events)).toEqual([
         "scanning:active", "scanning:done",
         "keywords:active", "keywords:done",
         "pages:active", "pages:done",

@@ -24,6 +24,17 @@ export { canonicalPage };
 export const OPPORTUNITY_VERSION = 2;
 export const QUALIFICATION_LIMIT = 15;
 /**
+ * Terms judged side by side in a round: their results page and their judge
+ * reads. Three everywhere but a first look, which judges its whole batch at
+ * once: thirteen rounds of one to four terms were a minute and three quarters
+ * of a production first look (2026-10-09). Which terms are judged does not
+ * change - the refill's stop rule works between batches, not rounds - and
+ * every read still claims its cost before it is bought, so the run's dollar
+ * holds whatever runs at once.
+ */
+export const JUDGE_ROUND = 3;
+export const FIRST_LOOK_JUDGE_ROUND = QUALIFICATION_LIMIT;
+/**
  * Why a verdict is not "qualified", as a code the cron can count. The
  * `reason` says it in words; this says it in a way a log line can add up,
  * so "12 pending" becomes "12 pending: no business profile" instead of six
@@ -337,8 +348,9 @@ export async function qualifyOpportunities(
   const perTerm = budget ? firstLookTermUsd(true) : 0;
   const paidRead = (c: OpportunityCandidate) => fit.verdicts.get(c.term.trim().toLowerCase())?.keep === true;
   let cursor = 0;
+  const round = firstLook ? FIRST_LOOK_JUDGE_ROUND : JUDGE_ROUND;
   while (cursor < pending.length && !stopped) {
-    let batch = pending.slice(cursor, cursor + 3);
+    let batch = pending.slice(cursor, cursor + round);
     if (budget) {
       const room = await budget.room("judge").catch(() => null);
       if (room !== null) {
