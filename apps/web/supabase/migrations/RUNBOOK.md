@@ -353,7 +353,7 @@ no code in the repo references either).
 | 079_auto_approve.sql | `feat/auto-approve` | 001, 003 | yes | yes, loses hold stamps and approval kinds |
 | 080_oauth_connectors.sql | `distribution/hosted-mcp` #158 | 001, **051** | yes | yes, disconnects connectors |
 | 085_agencies_to_accounts.sql | `rename/agencies-to-accounts` | 001, 016, 053, 072 | yes (every step guarded) | by renaming back; nothing is dropped |
-| 082_system_events.sql | `round5/observability` #172 | 001 | yes | yes, loses the event log only |
+| 082_system_events.sql | `round5/observability` #172 | 001 | yes | yes, loses the event log and every signup's recorded source (export them first, see 082 below) |
 | 084_analysis_attempts.sql | `fix/reanalyse-and-cms-gate` | 001 | yes | yes, but the backfill's re-queue is not undone |
 | 091_public_tool_usage.sql | `tools/public-api` | none | yes | yes, `drop function public.reserve_public_tool_spend(text,numeric,numeric); drop table public.public_tool_usage;` (paid public tools then refuse to run) |
 | 093_draft_claims.sql | `fix/trial-hold-and-resume` | 001, 049 | yes | yes, drop the eight columns and the two indexes; the code that reads them must go first |
@@ -707,13 +707,30 @@ renumbering after the branch was pushed would have been the riskier move —
 another session picking 082 in the meantime is a collision, a gap is only a
 gap. Nothing orders on the missing number and nothing waits for it.
 
-**Nothing reads this table to make a decision**, so it is safe to prune and
-safe to lose. There is no retention job yet; at eleven daily crons writing one
-row each plus failures, expect a few thousand rows a year. When it needs one:
-`delete from system_events where created_at < now() - interval '90 days';`
+**One kind of row is a record, not a log line: where each account came from.**
+The signup action writes one `level = 'info'`, `source = 'signup'` row per new
+account, `context->>'stage' = 'created'`, with the page, referring site and
+campaign in `context` (`src`, `ref`, `utm`; `lib/auth/signup-source.ts`). It is
+the only place that is stored, and grading a channel needs all of them, old
+ones included. Everything else here is operational and safe to prune or lose.
+There is no retention job yet; at eleven daily crons writing one row each plus
+failures, expect a few thousand rows a year. When it needs one, keep the signup
+rows:
 
-Roll back with `drop table if exists system_events;` — the code keeps working.
-`recordEvent` treats a missing table as a failed insert, logs one line and
+```sql
+delete from system_events
+where created_at < now() - interval '90 days'
+  and not (source = 'signup' and level = 'info' and context->>'stage' = 'created');
+```
+
+Roll back with `drop table if exists system_events;` — the code keeps working,
+but the signup sources go with it, so export them first:
+
+```sql
+\copy (select created_at, account_id, context from system_events where source = 'signup' and level = 'info' and context->>'stage' = 'created') to 'signup-sources.csv' csv header
+```
+
+After the drop, `recordEvent` treats a missing table as a failed insert, logs one line and
 returns false, and `/admin/events` says the log is unavailable rather than
 showing an empty table.
 

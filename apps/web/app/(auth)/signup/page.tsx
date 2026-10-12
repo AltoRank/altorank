@@ -166,7 +166,9 @@ async function signUp(formData: FormData) {
     // The one success row a signup writes: the account and its owner exist.
     // It is what makes a channel gradeable, so it is written even when the
     // source is empty ("source unknown" is a finding too). A repeat submit
-    // that reused the first one's account is not a second signup.
+    // that reused the first one's account is not a second signup. It is the
+    // only record of the source, so a prune of system_events keeps these rows
+    // (supabase/migrations/RUNBOOK.md, 082).
     if (!alreadyMember) {
       await recordEvent({
         level: "info",
