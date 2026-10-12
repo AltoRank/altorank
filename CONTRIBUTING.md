@@ -14,8 +14,8 @@ cannot support. This file covers the rest.
 2. **One implementation per behaviour.** Generation lives in
    `lib/content/generate.ts`; the streaming route and the cron both call it.
    Resist the second copy.
-3. **An account is not a workspace.** RLS stops one customer reading another's
-   data and nothing more; every read a page renders must also name its
+3. **An account is not a workspace.** By default RLS stops only one account
+   reading another's data; every read a page renders must also name its
    workspace. [AGENTS.md](AGENTS.md) explains why, and the tests in
    `apps/web/lib/queries/__tests__/workspace-scope*.test.ts` fail CI when a
    query forgets.

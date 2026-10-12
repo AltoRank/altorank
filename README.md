@@ -3,17 +3,19 @@
 **An open-source alternative to Outrank and Jasper.** AltoRank researches a
 keyword, writes the article, scores it and fact-checks it: a figure that cites
 a page is looked for on that page, and one with no source is flagged for the
-reviewer. Every draft leaves as Markdown (front matter included) or HTML,
-copied or downloaded, for you to paste wherever you publish. **Mark as
-published** then records the live URL, and the article is tracked from there:
-indexing and rank.
+reviewer. Every draft can be copied as Markdown (front matter included) or
+HTML, or downloaded as a `.md` file, for you to paste wherever you publish.
+Approve it, paste it, then **Mark as published** records the live URL, and the
+article is tracked from there: indexing and rank.
 
-Nothing goes live without an approval recorded under a named person. Approve
-each draft by hand, or set a rule that approves drafts after a hold unless you
-hold them (the rule publishes through a CMS connection, which is built but not
-yet verified end to end; see [Status](#status)). Agents can research and draft
-through the MCP server and the agent API, and neither has a publish or approve
-tool.
+AltoRank never publishes to your site without an approval recorded under a
+named person. Approve each draft by hand, or set a rule that approves drafts
+after a hold unless you hold them (the rule publishes through a CMS connection,
+which is built but not yet verified end to end; see [Status](#status)).
+Agents can research and draft through the MCP server and the agent API.
+Neither can approve, and neither can publish anything a person has not already
+approved (the one publish-side call retries a failed publish of an approved
+article).
 
 Self-host it free under AGPL-3.0, or use the hosted app at `app.altorank.co`.
 Open source, the whole product. No feature-gated tier, no `ee/` directory.
