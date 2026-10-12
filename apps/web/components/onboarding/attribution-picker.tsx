@@ -19,8 +19,10 @@ export function attributionComplete(d: AttributionDraft): boolean {
  *
  * Tiles rather than a select because the list is short and the marks do the
  * reading: a person who came from a chat window finds the assistant's mark
- * before they find the word "AI" in a dropdown. The wizard shows two columns
- * at 720px; Settings has room for five.
+ * before they find the word "AI" in a dropdown. Two columns by default;
+ * `columns={5}` is five where the picker has the room (a container of 48rem),
+ * three in a narrower one and two on a phone, where five cut every label down
+ * to a letter (recorded 2026-10-12 at 375px).
  */
 export function AttributionPicker({
   value,
@@ -32,8 +34,8 @@ export function AttributionPicker({
   columns?: 2 | 5;
 }) {
   return (
-    <div>
-      <div role="radiogroup" aria-label="How did you hear about us" className={`grid gap-2 ${columns === 5 ? "grid-cols-5" : "grid-cols-2"}`}>
+    <div className="@container">
+      <div role="radiogroup" aria-label="How did you hear about us" className={`grid gap-2 ${columns === 5 ? "grid-cols-2 @sm:grid-cols-3 @3xl:grid-cols-5" : "grid-cols-2"}`}>
         {ATTRIBUTION_SOURCES.map((s) => {
           const selected = value.source === s.id;
           return (
@@ -54,7 +56,7 @@ export function AttributionPicker({
                   {Icons[s.icon]({ size: 15 })}
                 </span>
               )}
-              <span className="text-[13px] leading-[1.35]">{s.label}</span>
+              <span className="min-w-0 break-words text-[13px] leading-[1.35]">{s.label}</span>
             </button>
           );
         })}

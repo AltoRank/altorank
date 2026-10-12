@@ -1,11 +1,13 @@
 import type { OnboardingPlanned } from "@/lib/onboarding/events";
 import { topicLabels } from "@/lib/keyword-research/topic-labels";
 
-export function TopicBriefs({ planned }: { planned: OnboardingPlanned[] }) {
-  const topics = planned.filter((p) => p.brief?.status === "qualified").slice(0, 5);
+export function TopicBriefs({ planned, title, only }: { planned: OnboardingPlanned[]; title?: string; only?: string }) {
+  const topics = planned
+    .filter((p) => p.brief?.status === "qualified" && (!only || p.term.trim().toLowerCase() === only.trim().toLowerCase()))
+    .slice(0, 5);
   if (!topics.length) return null;
   return <section className="my-5">
-    <h2 className="mb-3 text-lg font-semibold">Why these articles</h2>
+    <h2 className="mb-3 text-lg font-semibold">{title ?? (topics.length === 1 ? "Why this article" : "Why these articles")}</h2>
     <div className="flex flex-col gap-3">{topics.map(({term,brief}) => <details key={term} className="rounded-lg border border-line bg-panel p-4">
       <summary className="cursor-pointer font-medium">{brief!.angle}{topicLabels(brief).map((l) => <span key={l.label} title={l.explain} className={`ml-2 rounded-full border border-line px-2 py-0.5 text-[11px] font-normal ${l.label === "Top of funnel" ? "text-ink-3" : "text-warn"}`}>{l.label}</span>)}</summary>
       <dl className="mt-3 grid gap-2 text-sm text-ink-2">

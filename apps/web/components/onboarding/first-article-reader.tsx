@@ -1,74 +1,201 @@
 "use client";
 
 // ---------------------------------------------------------------------------
-// The first article in full on the gate, read-only (PRETRIAL_FULL_ARTICLE)
+// The first article in full on the gate, as it is written (PRETRIAL_FULL_ARTICLE)
 // ---------------------------------------------------------------------------
 //
 // Rendered only when the server says the switch is on and the person is the
-// owner (app/(setup)/onboarding/page.tsx). It asks /api/onboard/first-article
-// for the text every few seconds while the body is being written, so it
-// streams in, and stops once the saved article comes back. Nothing here
-// edits, approves or publishes: those open with the trial. The text arrives
-// already cleaned on the server (lib/onboarding/first-article-body.ts).
+// owner (app/(setup)/onboarding/page.tsx). The text comes from the gate's
+// one poller (./use-first-article-live.ts), already rebuilt from an
+// allowlist on the server (lib/onboarding/readable-html.ts); this only
+// decides how much of it is on screen (lib/onboarding/stream-reveal.ts),
+// cutting between whole tags of that html, so it never makes markup of its
+// own beyond closing what it opened and the caret below.
+//
+// - typed at the writer's pace with a catch-up, a caret at the end while it
+//   is being written, never in two-second blocks cut mid-word;
+// - one element per top-level block, keyed by position, so text already
+//   shown is never re-rendered; a new block rises in;
+// - the page follows the caret only while the reader is watching it (the
+//   caret is on screen); scrolled away, a "Jump to the latest" pill brings
+//   them back instead of the page pulling them down;
+// - before the first word, the outline it is being written to stands in for
+//   the text, so the reader is never an empty box.
+//
+// Less motion asked for: the text appears as it arrives, without typing,
+// rising or following. Nothing here edits, approves or publishes.
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Icons } from "@/components/ui";
+import { nextShown, revealPrefix, splitBlocks, visibleLength, withCaret } from "@/lib/onboarding/stream-reveal";
+import { useReducedMotion } from "./use-first-article-live";
 
-const POLL_MS = 2_500;
-/** Stop asking after this long without a finished body; the gate still stands. */
-const GIVE_UP_MS = 10 * 60_000;
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
-export function FirstArticleReader({ workspaceId, title }: { workspaceId: string; title: string }) {
-  const [html, setHtml] = useState<string>("");
-  const [done, setDone] = useState(false);
-  const [unavailable, setUnavailable] = useState(false);
+/** Room kept under the caret when the page follows it. */
+const FOLLOW_MARGIN = 120;
 
+/** One top-level block of the server-cleaned html (see the header). */
+const Block = memo(function Block({ html, rise }: { html: string; rise: boolean }) {
+  return <div className={rise ? "rise-in" : undefined} dangerouslySetInnerHTML={{ __html: html }} />;
+});
+
+export function FirstArticleText({
+  html,
+  done,
+  arrivalCps = 0,
+  outline = [],
+  waiting,
+}: {
+  html: string;
+  done: boolean;
+  arrivalCps?: number;
+  /** The headings it is written to: shown, muted, until the first words land. */
+  outline?: string[];
+  /** What is happening before the first word, for the placeholder. */
+  waiting: string;
+}) {
+  const available = visibleLength(html);
+  const reduced = useReducedMotion();
+  // A body already written when the page opened is shown whole, at once:
+  // there is nothing to watch being typed.
+  const [typed, setShown] = useState(() => (done ? available : 0));
+  // Written, or less motion asked for: everything that has arrived, at once.
+  const shown = done || reduced ? available : Math.min(typed, available);
+  // Blocks already there on the first paint (a reload) do not rise; every
+  // block after them does, once, when it first appears. Fixed per index, so
+  // a block's class never changes under it and never replays the rise.
+  const [settledBlocks] = useState(() => (done ? splitBlocks(html).length : 0));
+  const container = useRef<HTMLDivElement | null>(null);
+  const [following, setFollowing] = useState(true);
+  const [caretAway, setCaretAway] = useState(false);
+  const userMoved = useRef(false);
+
+  // The typing loop: one frame at a time toward what has arrived.
   useEffect(() => {
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const started = Date.now();
-    async function poll() {
-      try {
-        const res = await fetch(`/api/onboard/first-article?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" });
-        if (stopped) return;
-        if (res.status === 404 || res.status === 401) {
-          setUnavailable(true);
-          return;
-        }
-        if (res.ok) {
-          const body = (await res.json()) as { html?: string; done?: boolean };
-          if (stopped) return;
-          if (typeof body.html === "string") setHtml(body.html);
-          if (body.done) {
-            setDone(true);
-            return;
-          }
-        }
-      } catch {
-        // A missed poll is the next one's.
-      }
-      if (!stopped && Date.now() - started < GIVE_UP_MS) timer = setTimeout(poll, POLL_MS);
-    }
-    void poll();
-    return () => {
-      stopped = true;
-      clearTimeout(timer);
+    if (reduced || done) return;
+    let raf = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(100, now - last);
+      last = now;
+      setShown((s) => {
+        const next = nextShown(s, available, dt, arrivalCps);
+        if (next < available) raf = requestAnimationFrame(tick);
+        return next;
+      });
     };
-  }, [workspaceId]);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [available, done, reduced, arrivalCps]);
 
-  if (unavailable) return null;
-  return (
-    <section aria-label="Your first article, in full" className="rounded-[10px] border border-line bg-bg p-5" data-testid="first-article-reader">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <span className="text-[11px] uppercase tracking-wide text-ink-3">Read it in full</span>
-        <span className="text-[11.5px] text-ink-3">{done ? "Written" : "Being written…"}</span>
+  const writing = !done;
+  const revealed = shown >= available ? html : revealPrefix(html, shown);
+  const blocks = splitBlocks(revealed);
+
+  // Whether the person has taken the page somewhere else themselves.
+  useEffect(() => {
+    if (!writing) return;
+    const moved = () => {
+      userMoved.current = true;
+    };
+    const keys = (e: KeyboardEvent) => {
+      if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key)) moved();
+    };
+    const onScroll = () => {
+      const caret = container.current?.querySelector(".stream-caret");
+      if (!caret) return;
+      const r = caret.getBoundingClientRect();
+      const inView = r.top >= 0 && r.bottom <= window.innerHeight;
+      setCaretAway(!inView);
+      // Only the person's own scrolling changes whether the page follows:
+      // back at the caret, it follows again; away from it, it stays put.
+      if (userMoved.current) {
+        setFollowing(inView);
+        userMoved.current = false;
+      }
+    };
+    window.addEventListener("wheel", moved, { passive: true });
+    window.addEventListener("touchmove", moved, { passive: true });
+    window.addEventListener("keydown", keys);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("wheel", moved);
+      window.removeEventListener("touchmove", moved);
+      window.removeEventListener("keydown", keys);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, [writing]);
+
+  // Follow the caret, gently: only while following, only by what it moved.
+  useIsoLayoutEffect(() => {
+    if (!writing) return;
+    const caret = container.current?.querySelector(".stream-caret");
+    if (!caret) return;
+    const r = caret.getBoundingClientRect();
+    const limit = window.innerHeight - FOLLOW_MARGIN;
+    if (following && !reduced && r.bottom > limit && r.top < window.innerHeight + 200) {
+      window.scrollBy(0, r.bottom - limit);
+      return;
+    }
+    const away = r.top < 0 || r.bottom > window.innerHeight;
+    if (away !== caretAway) setCaretAway(away);
+  });
+
+  if (!html) {
+    return (
+      <div className="flex flex-col gap-3" aria-busy="true">
+        <p className="m-0 flex items-center gap-2 text-[13px] text-ink-2">
+          <span className="relative flex h-2 w-2" aria-hidden>
+            <span className="absolute inline-flex h-full w-full rounded-full bg-accent opacity-60 motion-safe:animate-ping" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+          </span>
+          {waiting}
+        </p>
+        {outline.length > 0 && (
+          <ol className="m-0 flex list-none flex-col gap-3 p-0" aria-label="The outline it is being written to">
+            {outline.map((heading, i) => (
+              <li key={`${i}-${heading}`} className="flex flex-col gap-1.5">
+                <span className="text-[15px] font-semibold leading-snug text-ink-3">{heading}</span>
+                {i === 0 && (
+                  <>
+                    <span className="h-2.5 w-full rounded-full bg-panel-2 motion-safe:animate-pulse" aria-hidden />
+                    <span className="h-2.5 w-4/5 rounded-full bg-panel-2 motion-safe:animate-pulse" aria-hidden />
+                  </>
+                )}
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
-      <h2 className="m-0 mb-3 text-[18px] font-semibold leading-snug text-ink">{title}</h2>
-      {html ? (
-        <div className="prose prose-sm max-w-none text-ink [&_a]:text-accent [&_h2]:mt-5 [&_h2]:text-[15px] [&_h2]:font-semibold [&_h3]:mt-4 [&_h3]:text-[14px] [&_h3]:font-semibold [&_p]:my-2 [&_p]:text-[13.5px] [&_p]:leading-[1.65] [&_li]:text-[13.5px]" dangerouslySetInnerHTML={{ __html: html }} />
-      ) : (
-        <p className="m-0 text-[12.5px] text-ink-3">The text appears here as it is written.</p>
+    );
+  }
+
+  return (
+    <>
+      <div ref={container} className="article-text" aria-busy={writing}>
+        {blocks.map((block, i) => (
+          <Block key={i} html={writing && i === blocks.length - 1 ? withCaret(block) : block} rise={i >= settledBlocks} />
+        ))}
+        {writing && blocks.length === 0 && <span className="stream-caret" aria-hidden="true" />}
+      </div>
+      {writing && caretAway && !following && (
+        <button
+          type="button"
+          onClick={() => {
+            const caret = container.current?.querySelector(".stream-caret");
+            caret?.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
+            setFollowing(true);
+            setCaretAway(false);
+          }}
+          className="fixed bottom-20 left-1/2 z-30 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-panel px-3.5 py-2 text-[12.5px] text-ink shadow-md"
+        >
+          <span className="inline-flex rotate-90">
+            <Icons.arrow size={12} />
+          </span>
+          Jump to the latest
+        </button>
       )}
-      <p className="m-0 mt-4 text-[12px] text-ink-2">Read-only. Editing, approving and publishing open with your trial.</p>
-    </section>
+    </>
   );
 }

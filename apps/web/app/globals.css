@@ -198,3 +198,40 @@ body {
 .scroll::-webkit-scrollbar-thumb { background: var(--line); border-radius: 5px; }
 .scroll::-webkit-scrollbar-thumb:hover { background: var(--ink-4); }
 .scroll::-webkit-scrollbar-track { background: transparent; }
+
+/* === The first article on the onboarding gate ===
+   Plain CSS rather than the typography plugin, which this app does not load:
+   the reader's `prose` classes did nothing, and lists had no markers
+   (recorded 2026-10-12). The streamed text and the saved article use the
+   same rules, so the hand-over from one to the other does not restyle. */
+.article-text { font-size: 15px; line-height: 1.7; color: var(--ink); overflow-wrap: anywhere; }
+.article-text > div:first-child > :first-child { margin-top: 0; }
+.article-text h2 { margin: 1.6em 0 0.5em; font-size: 17px; font-weight: 600; line-height: 1.35; }
+.article-text h3, .article-text h4 { margin: 1.3em 0 0.4em; font-size: 15px; font-weight: 600; line-height: 1.4; }
+.article-text p { margin: 0.75em 0; }
+.article-text ul { margin: 0.75em 0; padding-left: 1.35em; list-style: disc; }
+.article-text ol { margin: 0.75em 0; padding-left: 1.5em; list-style: decimal; }
+.article-text li { margin: 0.3em 0; padding-left: 0.15em; }
+.article-text li > p { margin: 0; }
+.article-text li::marker { color: var(--ink-3); }
+.article-text a { color: var(--accent-ink); text-decoration: underline; text-decoration-color: var(--accent-soft); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.article-text strong, .article-text b { font-weight: 600; }
+.article-text blockquote { margin: 1em 0; padding-left: 1em; border-left: 3px solid var(--line); color: var(--ink-2); }
+.article-text table { display: block; max-width: 100%; margin: 1em 0; overflow-x: auto; border-collapse: collapse; font-size: 13.5px; line-height: 1.55; }
+.article-text th, .article-text td { padding: 6px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+.article-text th { background: var(--panel-2); font-weight: 600; }
+.article-text img { max-width: 100%; height: auto; border-radius: var(--radius); }
+.article-text hr { margin: 1.5em 0; border: 0; border-top: 1px solid var(--line); }
+
+/* A block arriving, an outline item landing, a screen handing over: one
+   short rise, and none at all for anyone who asked for less motion. */
+@keyframes rise-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.rise-in { animation: rise-in 320ms ease-out both; }
+.stream-caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 2px; vertical-align: -0.17em; background: var(--accent); animation: caret-blink 1.05s steps(1) infinite; }
+@keyframes caret-blink { 50% { opacity: 0; } }
+@keyframes bar-shimmer { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+.bar-shimmer { animation: bar-shimmer 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .rise-in, .bar-shimmer { animation: none; }
+  .stream-caret { animation: none; }
+}
