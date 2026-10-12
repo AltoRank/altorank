@@ -12,6 +12,13 @@ import { checkDomainReachable } from "@/lib/domain/reachable";
 import { SubmitButton } from "@/components/auth/submit-button";
 import { recordEvent } from "@/lib/observability/record";
 import { existingSignup } from "@/lib/auth/signup-reuse";
+import {
+  describeSignupSource,
+  parseSignupSource,
+  signupSourceContext,
+  signupSourceFields,
+  signupSourceQuery,
+} from "@/lib/auth/signup-source";
 
 export const metadata: Metadata = {
   title: "Sign Up",
@@ -21,6 +28,13 @@ async function signUp(formData: FormData) {
   "use server";
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
+  // Where this signup came from (the marketing page, the referring site, the
+  // campaign), carried in from the URL by hidden inputs. Every redirect back
+  // to this form below takes it along, so a failed first submit keeps it; see
+  // lib/auth/signup-source.ts.
+  const source = parseSignupSource(formData);
+  const carry = signupSourceQuery(source);
+  const attribution = signupSourceContext(source);
   // Set when signup was reached from the homepage growth plan: the visitor has
   // already typed their domain once and seen a plan for it, so the first
   // workspace is created for that domain here rather than asked for again.
@@ -28,7 +42,7 @@ async function signUp(formData: FormData) {
   // Without a workspace there is nothing to onboard, and the wizard would
   // bounce the new account to an empty "Your sites" page. Refuse up front.
   if (!DOMAIN_PATTERN.test(domain)) {
-    redirect("/signup?error=" + encodeURIComponent("Enter your website as a domain, like acme.com."));
+    redirect("/signup?error=" + encodeURIComponent("Enter your website as a domain, like acme.com.") + carry);
   }
 
   // The pattern above is shape only, and a name that resolves to nothing still
@@ -38,7 +52,7 @@ async function signUp(formData: FormData) {
   // Only a name with no DNS at all is refused; see lib/domain/reachable.ts.
   const reach = await checkDomainReachable(domain);
   if (!reach.ok) {
-    redirect("/signup?error=" + encodeURIComponent(reach.reason) + "&domain=" + encodeURIComponent(domain));
+    redirect("/signup?error=" + encodeURIComponent(reach.reason) + "&domain=" + encodeURIComponent(domain) + carry);
   }
 
   // The account's name, from the domain, because asking for both is asking
@@ -56,7 +70,11 @@ async function signUp(formData: FormData) {
   try {
     userId = await sendSignupConfirmation({ email, password, name, next: "/onboarding" });
   } catch (e) {
-    redirect("/signup?error=" + encodeURIComponent(authErrorMessage(e instanceof Error ? e.message : "Could not create the account")));
+    redirect(
+      "/signup?error=" +
+        encodeURIComponent(authErrorMessage(e instanceof Error ? e.message : "Could not create the account")) +
+        carry,
+    );
   }
   const data = { user: { id: userId } };
 
@@ -118,9 +136,9 @@ async function signUp(formData: FormData) {
         level: "error",
         source: "signup",
         message: `The account row could not be created, so the user has no account: ${lastError}`,
-        context: { stage: "account", userId: data.user.id, domain },
+        context: { stage: "account", userId: data.user.id, domain, ...attribution },
       });
-      redirect("/signup?error=" + encodeURIComponent(`Could not set up your workspace: ${lastError}`));
+      redirect("/signup?error=" + encodeURIComponent(`Could not set up your workspace: ${lastError}`) + carry);
     }
 
     const { error: memberError } = alreadyMember
@@ -136,12 +154,27 @@ async function signUp(formData: FormData) {
         source: "signup",
         message: `The membership could not be created, so the user cannot reach their own account: ${memberError.message}`,
         accountId,
-        context: { stage: "member", userId: data.user.id, domain },
+        context: { stage: "member", userId: data.user.id, domain, ...attribution },
       });
       redirect(
         "/signup?error=" +
-          encodeURIComponent(`Could not finish setting up your account: ${memberError.message}`),
+          encodeURIComponent(`Could not finish setting up your account: ${memberError.message}`) +
+          carry,
       );
+    }
+
+    // The one success row a signup writes: the account and its owner exist.
+    // It is what makes a channel gradeable, so it is written even when the
+    // source is empty ("source unknown" is a finding too). A repeat submit
+    // that reused the first one's account is not a second signup.
+    if (!alreadyMember) {
+      await recordEvent({
+        level: "info",
+        source: "signup",
+        message: `Account created, ${describeSignupSource(source)}`,
+        accountId,
+        context: { stage: "created", userId: data.user.id, domain, ...attribution },
+      });
     }
 
     if (DOMAIN_PATTERN.test(domain) && !prior.workspaceId) {
@@ -185,7 +218,7 @@ async function signUp(formData: FormData) {
           source: "signup",
           message: `The first site could not be created, so nothing will be written for this account yet: ${wsError.message}`,
           accountId,
-          context: { stage: "workspace", userId: data.user.id, domain },
+          context: { stage: "workspace", userId: data.user.id, domain, ...attribution },
         });
       }
     }
@@ -200,6 +233,9 @@ export default async function SignUpPage(props: {
   const searchParams = await props.searchParams;
   const domain = normalizeDomain(searchParams?.domain ?? "");
   const prefilled = DOMAIN_PATTERN.test(domain) ? domain : null;
+  // Read the same way the action reads them, so only values that pass the
+  // shape checks are ever echoed into the form.
+  const sourceFields = signupSourceFields(parseSignupSource(searchParams));
 
   return (
     <div className="space-y-6">
@@ -213,6 +249,9 @@ export default async function SignUpPage(props: {
       </div>
 
       <form action={signUp} className="space-y-4">
+        {sourceFields.map(([name, value]) => (
+          <input key={name} type="hidden" name={name} value={value} />
+        ))}
         {searchParams?.success && (
           <div className="text-sm text-accent-ink bg-accent-soft px-3 py-2 rounded-lg">
             {searchParams.success}
