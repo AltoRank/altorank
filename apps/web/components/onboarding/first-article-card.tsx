@@ -105,7 +105,7 @@ export function FirstArticleCardView({
   const done = new Set(written ? outline.map((_, i) => i) : live?.sectionsDone ?? []);
   const stage = live?.stage ?? null;
   const stageS = live?.stageSince && now ? (now - live.stageSince) / 1000 : 0;
-  const purpose = brief?.audience && brief?.buyingJob ? `For ${brief.audience.replace(/\.$/, "")}: ${brief.buyingJob.replace(/\.$/, "")}.` : null;
+  const purpose = brief?.audience && brief?.buyingJob ? `${brief.audience.replace(/\.$/, "")}, ${brief.buyingJob.replace(/\.$/, "")}.` : null;
   const showText = readable && live && !live.refused;
 
   return (
@@ -118,7 +118,12 @@ export function FirstArticleCardView({
         </span>
       </div>
       <h2 className="m-0 text-[19px] font-semibold leading-snug text-ink">{title}</h2>
-      {purpose && <p className="m-0 mt-1.5 text-[13px] leading-[1.55] text-ink-2">{purpose}</p>}
+      {purpose && (
+        <p className="m-0 mt-1.5 text-[13px] leading-[1.55] text-ink-2">
+          <span className="text-ink-3">Written for: </span>
+          {purpose}
+        </p>
+      )}
       {article && article.labels.length > 0 && (
         <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0">
           {article.labels.map((l) => (
@@ -139,9 +144,7 @@ export function FirstArticleCardView({
           {finalWords > 0
             ? `${n(finalWords)} words`
             : target > 0
-              ? live && live.words > 0 && writing
-                ? `${n(live.words)} of about ${n(target)} words`
-                : `About ${n(target)} words`
+              ? `About ${n(target)} words`
               : "—"}
         </Fact>
         {/* Counted from the article's own links once written; while it is

@@ -108,6 +108,7 @@ function article(id: string, workspace_id: string): Row {
     seo_checks: [{ name: "keyword", note: SECRET }],
     aeo_checks: [{ note: SECRET }],
     body_stream: `<p>${SECRET}</p>`,
+    body_progress: { v: 1, stage: "writing", since: "2026-10-12T00:00:00Z", sections: 2, words: 140 },
     seo_score: 70,
   };
 }

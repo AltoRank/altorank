@@ -41,7 +41,7 @@ const n = (x: number) => x.toLocaleString("en-US");
 /** The first `count` sentences of a phase's own detail. */
 function sentences(text: string | undefined, count: number): string {
   const parts = (text ?? "").match(/[^.!?]+[.!?]+/g) ?? (text ? [text] : []);
-  return parts.slice(0, count).join(" ").trim();
+  return parts.slice(0, count).map((p) => p.trim()).join(" ");
 }
 
 /** One line of what a phase is doing or found, for a person. Pure. */
@@ -67,7 +67,7 @@ export function phaseDetail(
         const { checked, withIssues } = report.existingPages;
         return `${n(checked)} ${checked === 1 ? "page" : "pages"} read${withIssues ? `, ${n(withIssues)} with something to fix` : ", nothing to fix"}`;
       }
-      return sentences(detail, 1);
+      return sentences(detail, 2);
     case "planning": {
       if (!active) {
         const planned = state.planned.length;
