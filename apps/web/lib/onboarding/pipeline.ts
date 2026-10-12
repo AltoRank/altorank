@@ -434,6 +434,25 @@ async function runPhases(
       } catch {
         // A count is a courtesy; a plan is not held up for it.
       }
+      // A results page or a judge read that failed on the provider's side
+      // (a 402 from an exhausted balance, an outage) leaves its term
+      // `provider_error`. When nothing was planned and some were, the empty
+      // plan is ours, not the site's: on 2026-10-12 every results page
+      // answered 402 and the screen said "No keyword clear enough to plan
+      // yet", as if the site had no topics.
+      let providerFailed = 0;
+      if (plan.length === 0) {
+        try {
+          const { count } = await supabase
+            .from("keywords")
+            .select("id", { count: "exact", head: true })
+            .eq("workspace_id", workspace.id)
+            .eq("opportunity->>cause", "provider_error");
+          providerFailed = count ?? 0;
+        } catch {
+          // As above: the wording waits on nothing.
+        }
+      }
       const pageNote = needsPage
         ? ` ${needsPage} search${needsPage === 1 ? "" : "es"} your buyers make want${needsPage === 1 ? "s" : ""} a landing page rather than an article; see Keywords.`
         : "";
@@ -462,7 +481,9 @@ async function runPhases(
             : `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has ${who} and supporting search evidence.${labelNote}${pageNote}`
           : firstAlreadyPlanned
             ? `Your first article is already on the calendar; the rest of the plan opens with the trial.${pageNote}`
-            : `No keyword clear enough to plan yet.${pageNote}`;
+            : providerFailed > 0
+              ? `Could not check the search results for ${providerFailed} search${providerFailed === 1 ? "" : "es"}: a problem on our side, not your site. Nothing was planned yet.`
+              : `No keyword clear enough to plan yet.${pageNote}`;
       // Nothing cleared the bar: which stage emptied the pool, for the row
       // and the operator (lib/onboarding/empty-pool.ts). Not for a held
       // account whose one article is already on the calendar - that site has
@@ -610,7 +631,12 @@ async function runPhases(
                 status: "active",
                 detail:
                   `Read ${research.competitors.length} ranking page${research.competitors.length === 1 ? "" : "s"}` +
-                  ` and ${research.peopleAlsoAsk.length} question${research.peopleAlsoAsk.length === 1 ? "" : "s"} people ask. Writing now.`,
+                  // "and 0 questions people ask" read as a shortfall; none is
+                  // simply not mentioned.
+                  (research.peopleAlsoAsk.length
+                    ? ` and ${research.peopleAlsoAsk.length} question${research.peopleAlsoAsk.length === 1 ? "" : "s"} people ask`
+                    : "") +
+                  ". Writing now.",
               }),
           }));
           const entry = plan.find((p) => p.term === next.term);

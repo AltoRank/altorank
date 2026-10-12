@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { initialOnboardingState, onboardingOutcome, PLANNING_CHECK_TERMS, reduceOnboarding, stateFromRun, type OnboardingRunRow } from "../events";
+import { withoutChecking } from "../run-store";
 
 // The searches the planner is checking, named on the loading screen while it
 // checks them, and gone from the row the moment planning settles: a finished
@@ -36,6 +37,25 @@ describe("the planning check", () => {
     } as unknown as OnboardingRunRow;
     const read = stateFromRun(row, null);
     expect(read.steps.find((x) => x.phase === "planning")).not.toHaveProperty("checking");
+  });
+
+  it("is not read back off a run that was closed mid-planning, and closing it drops the terms", () => {
+    const row = {
+      id: "r1", workspace_id: "ws1", status: "error", planned: [], keywords_found: 10, article_id: null, error: "cut off",
+      started_at: "2026-10-12T00:00:00Z", updated_at: "2026-10-12T00:01:00Z", finished_at: "2026-10-12T00:02:00Z",
+      phases: [
+        { phase: "keywords", status: "done", detail: "10 keywords" },
+        { phase: "planning", status: "active", checking: { terms, judged: 3, qualified: 1 } },
+      ],
+    } as unknown as OnboardingRunRow;
+    expect(JSON.stringify(stateFromRun(row, null).steps)).not.toContain("acme term");
+    // Still running, the same step does carry them.
+    expect(stateFromRun({ ...row, status: "running" }, null).steps.find((x) => x.phase === "planning")?.checking?.terms.length).toBe(PLANNING_CHECK_TERMS);
+    const closed = withoutChecking(row.phases);
+    expect(JSON.stringify(closed)).not.toContain("acme term");
+    expect(closed?.find((p) => p.phase === "planning")).toEqual({ phase: "planning", status: "active" });
+    expect(closed?.find((p) => p.phase === "keywords")).toEqual({ phase: "keywords", status: "done", detail: "10 keywords" });
+    expect(withoutChecking([{ phase: "keywords", status: "done" }] as OnboardingRunRow["phases"])).toBeNull();
   });
 
   it("says outlined, not written, while the first article's body is still owed", () => {

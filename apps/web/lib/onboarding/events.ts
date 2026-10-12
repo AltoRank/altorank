@@ -410,8 +410,10 @@ export function stateFromRun(
     const p = known.get(phase);
     if (!p) return { phase, status: "pending" };
     const step: OnboardingStep = p.detail === undefined ? { phase, status: p.status } : { phase, status: p.status, detail: p.detail };
-    // The live check, only on a step that is still active (see PlanningCheck).
-    if (p.status === "active" && p.checking && Array.isArray(p.checking.terms)) {
+    // The live check, only on a step that is still active in a run that is
+    // still running (see PlanningCheck): a run cut off mid-planning keeps
+    // its step "active" on the row, and a closed run names no searches.
+    if (run.status === "running" && p.status === "active" && p.checking && Array.isArray(p.checking.terms)) {
       step.checking = {
         terms: p.checking.terms.filter((t): t is string => typeof t === "string").slice(0, PLANNING_CHECK_TERMS),
         judged: Number(p.checking.judged) || 0,
