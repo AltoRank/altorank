@@ -29,6 +29,7 @@
 import { Icons } from "@/components/ui";
 import type { FirstArticleCard } from "@/lib/onboarding/first-article";
 import type { Opportunity } from "@/lib/keyword-research/opportunity";
+import { plainTopicLabel } from "@/lib/keyword-research/topic-labels";
 import { bodyFraction, BODY_STAGE_S, type BodyStage } from "@/lib/onboarding/setup-progress";
 import { ProgressBar, useNow } from "./progress-bar";
 import { FirstArticleText } from "./first-article-reader";
@@ -59,16 +60,34 @@ function Fact({ label, children, wide = false }: { label: string; children: Reac
   );
 }
 
-/** The stage in the person's words. */
-function stageLine(stage: BodyStage | null, written: number, total: number, words: number): string {
-  if (stage === "writing") {
-    const at = Math.min(total, written + 1);
-    return total > 0
-      ? `Writing section ${at} of ${total}${words > 0 ? ` · ${n(words)} words so far` : ""}`
-      : `Writing${words > 0 ? ` · ${n(words)} words so far` : ""}`;
-  }
-  if (stage === "finishing") return `Checking its facts and adding links${words > 0 ? ` · ${n(words)} words` : ""}`;
+/**
+ * The stage in the person's words. Only this goes in the live region: it
+ * changes a handful of times in two minutes. The word count beside it
+ * changes on every answer and is not read out (`wordsLine`); a screen reader
+ * re-read the whole line every second or two while the body was written
+ * (review, 2026-10-12).
+ */
+export function stageLine(stage: BodyStage | null, written: number, total: number): string {
+  if (stage === "writing") return total > 0 ? `Writing section ${Math.min(total, written + 1)} of ${total}` : "Writing";
+  if (stage === "finishing") return "Checking its facts and adding links";
   return "Planning each section from the pages that rank for it";
+}
+
+/** The words so far, beside the stage; empty before the first. */
+export function wordsLine(stage: BodyStage | null, words: number): string {
+  if (words <= 0) return "";
+  return stage === "finishing" ? `${n(words)} words` : `${n(words)} words so far`;
+}
+
+/**
+ * Who the article is for, as the planner wrote it. Only the audience: it was
+ * joined to the buying job with a comma, and the job is a capitalised
+ * imperative, so the line read "…decor ideas, Source handmade …" on every
+ * gate (review, 2026-10-12).
+ */
+export function writtenFor(brief: Pick<Opportunity, "audience"> | null | undefined): string | null {
+  const audience = brief?.audience?.trim().replace(/\.$/, "");
+  return audience ? audience : null;
 }
 
 export function FirstArticleCardView({
@@ -105,7 +124,7 @@ export function FirstArticleCardView({
   const done = new Set(written ? outline.map((_, i) => i) : live?.sectionsDone ?? []);
   const stage = live?.stage ?? null;
   const stageS = live?.stageSince && now ? (now - live.stageSince) / 1000 : 0;
-  const purpose = brief?.audience && brief?.buyingJob ? `${brief.audience.replace(/\.$/, "")}, ${brief.buyingJob.replace(/\.$/, "")}.` : null;
+  const purpose = writtenFor(brief);
   const showText = readable && live && !live.refused;
 
   return (
@@ -126,12 +145,15 @@ export function FirstArticleCardView({
       )}
       {article && article.labels.length > 0 && (
         <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0">
-          {article.labels.map((l) => (
-            <li key={l.label} className="text-[12px] leading-[1.5] text-ink-2">
-              <span className={`mr-1.5 rounded-full border border-line px-2 py-0.5 text-[11px] ${l.label === "Top of funnel" ? "text-ink-3" : "text-warn"}`}>{l.label}</span>
-              {l.explain}
-            </li>
-          ))}
+          {article.labels.map((raw) => {
+            const l = plainTopicLabel(raw);
+            return (
+              <li key={raw.label} className="text-[12px] leading-[1.5] text-ink-2">
+                <span className={`mr-1.5 whitespace-nowrap rounded-full border border-line px-2 py-0.5 text-[11px] ${raw.label === "Top of funnel" ? "text-ink-3" : "text-warn"}`}>{l.label}</span>
+                {l.explain}
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -154,10 +176,11 @@ export function FirstArticleCardView({
       </dl>
 
       {writing && (
-        <div className="mt-4 flex flex-col gap-1.5" aria-live="polite">
+        <div className="mt-4 flex flex-col gap-1.5">
           <ProgressBar fraction={bodyFraction(stage, stageS, false)} label="The article being written" />
           <p className="m-0 text-[12px] text-ink-2">
-            {stageLine(stage, done.size, outline.length, live?.words ?? 0)}
+            <span role="status">{stageLine(stage, done.size, outline.length)}</span>
+            {wordsLine(stage, live?.words ?? 0) && <span> · {wordsLine(stage, live?.words ?? 0)}</span>}
             <span className="text-ink-3"> · usually about {Math.round((BODY_STAGE_S.thinking + BODY_STAGE_S.writing + BODY_STAGE_S.finishing) / 60)} minutes</span>
           </p>
         </div>
@@ -170,7 +193,9 @@ export function FirstArticleCardView({
             done={written}
             arrivalCps={live.arrivalCps}
             outline={outline}
-            waiting={stage === "writing" ? "The first words are on their way…" : "Planning each section before the first word…"}
+            // The bar's line above already says the sections are being
+            // planned; this one only says where the text appears.
+            waiting={stage === "writing" ? "The first words are on their way…" : "The text appears here as it is written."}
           />
         ) : (
           <>

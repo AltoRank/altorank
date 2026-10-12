@@ -17,8 +17,9 @@
 // - one element per top-level block, keyed by position, so text already
 //   shown is never re-rendered; a new block rises in;
 // - the page follows the caret only while the reader is watching it (the
-//   caret is on screen); scrolled away, a "Jump to the latest" pill brings
-//   them back instead of the page pulling them down;
+//   caret is on screen after the last scroll the follow did not make);
+//   scrolled away by any means, a "Jump to the latest" pill brings them
+//   back instead of the page pulling them down;
 // - before the first word, the outline it is being written to stands in for
 //   the text, so the reader is never an empty box.
 //
@@ -69,7 +70,11 @@ export function FirstArticleText({
   const container = useRef<HTMLDivElement | null>(null);
   const [following, setFollowing] = useState(true);
   const [caretAway, setCaretAway] = useState(false);
-  const userMoved = useRef(false);
+  // Where the page's own follow last sent the window, so the scroll event it
+  // causes is not read as the person's; and, after "Jump to the latest", how
+  // long to let the smooth scroll run before reading positions again.
+  const ownScrollTo = useRef<number | null>(null);
+  const settleUntil = useRef(0);
 
   // The typing loop: one frame at a time toward what has arrived.
   useEffect(() => {
@@ -93,37 +98,34 @@ export function FirstArticleText({
   const revealed = shown >= available ? html : revealPrefix(html, shown);
   const blocks = splitBlocks(revealed);
 
-  // Whether the person has taken the page somewhere else themselves.
+  // Whether the page follows is decided by where the caret is, after every
+  // scroll the follow itself did not cause - a wheel, a touch, a key, Tab
+  // onto a button below, a dragged scrollbar, a resize, an anchor. It used to
+  // change only on wheel, touch and a list of keys, so anything else left it
+  // "following" with the caret above the screen, and the pill, shown only
+  // when not following, never came (review, 2026-10-12).
   useEffect(() => {
     if (!writing) return;
-    const moved = () => {
-      userMoved.current = true;
-    };
-    const keys = (e: KeyboardEvent) => {
-      if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(e.key)) moved();
-    };
-    const onScroll = () => {
+    const check = () => {
+      if (performance.now() < settleUntil.current) return;
+      const own = ownScrollTo.current;
+      if (own !== null && Math.abs(window.scrollY - own) <= 2) {
+        ownScrollTo.current = null;
+        return;
+      }
+      ownScrollTo.current = null;
       const caret = container.current?.querySelector(".stream-caret");
       if (!caret) return;
       const r = caret.getBoundingClientRect();
       const inView = r.top >= 0 && r.bottom <= window.innerHeight;
       setCaretAway(!inView);
-      // Only the person's own scrolling changes whether the page follows:
-      // back at the caret, it follows again; away from it, it stays put.
-      if (userMoved.current) {
-        setFollowing(inView);
-        userMoved.current = false;
-      }
+      setFollowing(inView);
     };
-    window.addEventListener("wheel", moved, { passive: true });
-    window.addEventListener("touchmove", moved, { passive: true });
-    window.addEventListener("keydown", keys);
-    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
     return () => {
-      window.removeEventListener("wheel", moved);
-      window.removeEventListener("touchmove", moved);
-      window.removeEventListener("keydown", keys);
-      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
     };
   }, [writing]);
 
@@ -134,12 +136,18 @@ export function FirstArticleText({
     if (!caret) return;
     const r = caret.getBoundingClientRect();
     const limit = window.innerHeight - FOLLOW_MARGIN;
-    if (following && !reduced && r.bottom > limit && r.top < window.innerHeight + 200) {
-      window.scrollBy(0, r.bottom - limit);
+    if (following && !reduced && r.bottom > limit && r.top >= 0 && r.top < window.innerHeight + 200) {
+      const by = r.bottom - limit;
+      ownScrollTo.current = window.scrollY + by;
+      window.scrollBy(0, by);
       return;
     }
     const away = r.top < 0 || r.bottom > window.innerHeight;
     if (away !== caretAway) setCaretAway(away);
+    // Off screen where the follow will not go (above, far below, or less
+    // motion asked for): the person is somewhere else, so the pill offers
+    // the way back instead.
+    if (away && following && performance.now() >= settleUntil.current) setFollowing(false);
   });
 
   if (!html) {
@@ -184,6 +192,7 @@ export function FirstArticleText({
           type="button"
           onClick={() => {
             const caret = container.current?.querySelector(".stream-caret");
+            settleUntil.current = performance.now() + (reduced ? 50 : 900);
             caret?.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
             setFollowing(true);
             setCaretAway(false);

@@ -17,8 +17,8 @@
 // what it found as it finds it - pages read, searches found, the topics
 // being checked by name - and a slot, drawn from the start, where the first
 // article lands. The log and the site report are still here, folded, for
-// whoever wants them. Every row is a fixed height and every slot is drawn
-// before it fills, so nothing moves under the person while they read.
+// whoever wants them. Every slot is drawn before it fills and a phase's line
+// holds two lines at most, so nothing moves under the person while they read.
 
 import { useState } from "react";
 import { Icons } from "@/components/ui";
@@ -26,6 +26,7 @@ import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
 import { PHASE_ORDER, type OnboardingPhase, type OnboardingState, type OnboardingStep } from "@/lib/onboarding/events";
 import { clock, EXPECTED_GATE_S, leadingHeadline, leadingPhase, setupFraction } from "@/lib/onboarding/setup-progress";
 import { ProgressBar, useNow } from "./progress-bar";
+import { useReducedMotion } from "./use-first-article-live";
 import { FirstLookReportView } from "./first-look-report";
 
 const PHASE_NAME: Record<OnboardingPhase, string> = {
@@ -44,12 +45,34 @@ function sentences(text: string | undefined, count: number): string {
   return parts.slice(0, count).map((p) => p.trim()).join(" ");
 }
 
-/** One line of what a phase is doing or found, for a person. Pure. */
+/**
+ * "40 pages read, 25 with something to fix", from the pages phase's own
+ * sentence ("Read 40 pages. Found 49 technical issues on 25 of them.").
+ * The one source for the line: it used to switch to the site report's count
+ * once that landed, so the same row read "Read 40 pages…" and then "39 pages
+ * read…" (review, 2026-10-12). Null when the sentence is not that shape.
+ */
+export function pagesLine(detail: string | undefined): string | null {
+  const read = detail?.match(/^Read ([\d,]+) pages?\./);
+  if (!read) return null;
+  const count = Number(read[1].replace(/,/g, ""));
+  const fix = detail!.match(/technical issues? on ([\d,]+) of them/);
+  const withIssues = fix ? Number(fix[1].replace(/,/g, "")) : 0;
+  return `${n(count)} ${count === 1 ? "page" : "pages"} read${withIssues ? `, ${n(withIssues)} with something to fix` : ", nothing to fix"}`;
+}
+
+/**
+ * One line of what a phase is doing or found, for a person. Pure.
+ *
+ * `tick` steps the planning line through the searches being checked; null
+ * (less motion asked for) holds it on the counts instead, with no term
+ * changing under the person every second and a half.
+ */
 export function phaseDetail(
   step: OnboardingStep,
   state: Pick<OnboardingState, "keywordsFound" | "planned">,
   report: FirstLookReport | null,
-  tick: number,
+  tick: number | null,
 ): string {
   const { phase, status, detail } = step;
   if (status === "pending") return "";
@@ -59,10 +82,14 @@ export function phaseDetail(
     case "scanning":
       return active ? "Reading your pages and how you write" : sentences(detail, 1) || "Learned how your site writes.";
     case "keywords":
-      if (active) return "From what you sell, the competitors you named and what they rank for";
+      if (active) return "From what you sell and what your competitors rank for";
       return state.keywordsFound ? `${n(state.keywordsFound)} searches your buyers make` : sentences(detail, 1);
     case "pages":
       if (active) return "Reading the pages you already have";
+      {
+        const line = pagesLine(detail);
+        if (line) return line;
+      }
       if (report?.existingPages) {
         const { checked, withIssues } = report.existingPages;
         return `${n(checked)} ${checked === 1 ? "page" : "pages"} read${withIssues ? `, ${n(withIssues)} with something to fix` : ", nothing to fix"}`;
@@ -74,12 +101,15 @@ export function phaseDetail(
         return planned === 0 ? sentences(detail, 1) : planned === 1 ? "Your first article is on the calendar" : `${planned} articles on the calendar`;
       }
       const check = step.checking;
-      if (check && check.terms.length) {
+      if (check && check.terms.length && tick === null) {
+        return check.judged ? `${n(check.judged)} searches checked, ${n(check.qualified)} cleared the bar` : "Checking the results pages for the searches that fit you best";
+      }
+      if (check && check.terms.length && tick !== null) {
         const term = check.terms[tick % check.terms.length];
         return `Checking the results for “${term}”${check.judged ? ` · ${n(check.judged)} checked` : ""}`;
       }
       if (check && check.judged) return `${n(check.judged)} searches checked, ${n(check.qualified)} cleared the bar`;
-      return "Reading the results pages for the searches that fit you best";
+      return "Checking the results pages for the searches that fit you best";
     }
     case "drafting": {
       if (!active) return sentences(detail, 1);
@@ -142,11 +172,14 @@ export function SetupLoading({
   const elapsed = now && startedAt ? Math.max(0, (now - startedAt) / 1000) : 0;
   const leading = leadingPhase(state.steps);
   const fraction = setupFraction(state.steps, elapsed);
-  // The planning ticker steps through the batch's terms every 1.4 seconds.
-  const tick = now ? Math.floor(now / 1400) : 0;
+  // The planning ticker steps through the batch's terms every 1.4 seconds;
+  // with less motion asked for it holds on the counts (`phaseDetail`).
+  const reduced = useReducedMotion();
+  const tick = reduced ? null : now ? Math.floor(now / 1400) : 0;
   const [openLog, setOpenLog] = useState(false);
   const firstTopic = state.planned[0]?.term ?? null;
   const planningSettled = state.steps.some((s) => s.phase === "planning" && s.status !== "pending" && s.status !== "active");
+  const siteRead = state.steps.some((s) => s.phase === "scanning" && s.status !== "pending" && s.status !== "active");
 
   return (
     <div className="mx-auto w-full max-w-[600px]">
@@ -156,7 +189,7 @@ export function SetupLoading({
           {leadingHeadline(leading, domain)}
         </h1>
         <p className="mx-auto m-0 mt-2 max-w-[440px] text-[13px] leading-[1.6] text-ink-2">
-          Usually about a minute and a half. You can leave this page: the work carries on and this screen picks up where it is.
+          You can leave this page: the work carries on and this screen picks up where it is.
         </p>
       </div>
 
@@ -181,8 +214,10 @@ export function SetupLoading({
                     {PHASE_NAME[phase]}
                     <span className="sr-only">: {STATUS_WORD[step.status]}</span>
                   </div>
-                  <div className="truncate text-[12px] leading-[18px] text-ink-2" title={line || undefined}>
-                    {line ? <span key={line} className="rise-in inline-block max-w-full truncate align-bottom">{line}</span> : " "}
+                  {/* Two lines at most: a narrow screen cut the active line
+                      to "From what you sell, the competitors you named a…". */}
+                  <div className="text-[12px] leading-[18px] text-ink-2" title={line || undefined}>
+                    {line ? <span key={line} className="rise-in line-clamp-2 block max-w-full">{line}</span> : " "}
                   </div>
                 </div>
               </li>
@@ -224,7 +259,9 @@ export function SetupLoading({
           <span>
             {report
               ? `Your site report is ready${report.readiness ? ` · AI readability ${report.readiness.score}/100` : ""}`
-              : "Your site report · ready once your site is read"}
+              : siteRead
+                ? "Your site report · being put together"
+                : "Your site report · ready once your site is read"}
           </span>
           {report && <span className="text-ink-3 transition-transform group-open:rotate-180"><Icons.caretDown size={12} /></span>}
         </summary>

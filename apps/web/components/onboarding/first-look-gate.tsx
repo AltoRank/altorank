@@ -111,23 +111,55 @@ export function GateTop({
   const words = hasArticle && ending === "article" ? articleHeading(written, fullArticle) : { heading, lede };
   const keyword = firstArticle?.keyword ?? pending?.keyword ?? "";
   const brief = keyword ? planned.find((p) => sameTerm(p.term, keyword))?.brief ?? null : null;
+  useRefreshWhileRefused(live.refused && hasArticle && !written, router);
 
   // The ask under the article can be a long way down once the text is in;
-  // a slim bar keeps it a click away while it is off screen.
+  // a slim bar keeps it a click away - but only once the person has read
+  // into the article (its card's top is behind them) or gone past the ask.
+  // Shown whenever the ask was merely below the fold, it covered the foot of
+  // the article from the gate's first frame (review, 2026-10-12).
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const askRef = useRef<HTMLDivElement | null>(null);
-  const [askInView, setAskInView] = useState(true);
+  const [showBar, setShowBar] = useState(false);
   useEffect(() => {
-    const el = askRef.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    const io = new IntersectionObserver(([entry]) => setAskInView(entry.isIntersecting), { rootMargin: "0px 0px -40px 0px" });
-    io.observe(el);
-    return () => io.disconnect();
+    const measure = () => {
+      const ask = askRef.current?.getBoundingClientRect();
+      const card = cardRef.current?.getBoundingClientRect();
+      if (!ask) return;
+      const askVisible = ask.bottom > 0 && ask.top < window.innerHeight - 40;
+      const pastAsk = ask.bottom <= 0;
+      const intoArticle = card ? card.top < 0 : pastAsk;
+      setShowBar(!askVisible && (pastAsk || intoArticle));
+    };
+    measure();
+    window.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    // The article grows under a still page while it is written.
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    if (ro && cardRef.current) ro.observe(cardRef.current);
+    return () => {
+      window.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+      ro?.disconnect();
+    };
   }, []);
   const asks = asksForCard(ending) && canBuy;
+
+  // Said once to a screen reader when the gate replaces the loading screen,
+  // and again when the article is written: the heading itself is not live,
+  // and a live region filled before it is mounted is not read out.
+  const [announced, setAnnounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setAnnounced(words.heading), 400);
+    return () => clearTimeout(t);
+  }, [words.heading]);
 
   return (
     <>
       {notice}
+      <p role="status" className="sr-only">
+        {announced}
+      </p>
       <div className="mb-6 text-center">
         <h1 className="m-0 mb-1.5 text-[22px] font-semibold leading-tight">{words.heading}</h1>
         <p className="mx-auto m-0 max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">{words.lede}</p>
@@ -135,19 +167,20 @@ export function GateTop({
       <div className="flex flex-col gap-4">
         {retry}
         {hasArticle && (
-          <FirstArticleCardView article={firstArticle} pending={firstArticle ? null : pending} brief={brief} live={hasArticle ? live : null} readable={fullArticle} />
+          <div ref={cardRef}>
+            <FirstArticleCardView article={firstArticle} pending={firstArticle ? null : pending} brief={brief} live={live} readable={fullArticle} />
+          </div>
         )}
         <div ref={askRef} className="scroll-mt-6" id="start-trial">
           <SetupAsk ending={ending} canBuy={canBuy} followUp={followUp} returnTo="/dashboard" />
         </div>
         <TopicBriefs planned={planned} only={keyword || undefined} />
       </div>
-      {asks && !askInView && (
+      {asks && showBar && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-panel/95 backdrop-blur">
           <div className="mx-auto flex max-w-[680px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
             <p className="m-0 min-w-0 text-[12.5px] leading-[1.4] text-ink-2">
-              {written ? "Read it in full, approve it and publish it." : "Read it in full once it is written."}{" "}
-              <span className="hidden sm:inline">{TRIAL_DAYS} days free, cancel any time.</span>
+              {stickyLine(written, fullArticle)} <span className="whitespace-nowrap">{TRIAL_DAYS} days free with a card.</span>
             </p>
             <StartTrialButton returnTo="/dashboard" onStart={() => trackStep("trial_clicked")} className="shrink-0" />
           </div>
@@ -155,6 +188,35 @@ export function GateTop({
       )}
     </>
   );
+}
+
+/**
+ * The slim bar's sentence. With the full article on the gate the person is
+ * reading it already, so the trial is for what they cannot do here: edit,
+ * approve and publish (the lede and the lock line say the same). With it
+ * off, the trial is what opens the text.
+ */
+export function stickyLine(written: boolean, fullArticle: boolean): string {
+  if (fullArticle) return "Edit, approve and publish it with the trial.";
+  return written ? "Read it in full, approve it and publish it." : "Read it in full once it is written.";
+}
+
+/**
+ * The poller was refused (a member who is not the owner, or a run whose
+ * article is not the site's first): nothing live will say the body landed,
+ * so the page is read again every 20 seconds until it does, as it was before
+ * the poller existed. Stops after ten minutes.
+ */
+function useRefreshWhileRefused(active: boolean, router: { refresh: () => void }): void {
+  useEffect(() => {
+    if (!active) return;
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (Date.now() - started > 10 * 60_000) clearInterval(timer);
+      else router.refresh();
+    }, 20_000);
+    return () => clearInterval(timer);
+  }, [active, router]);
 }
 
 /**

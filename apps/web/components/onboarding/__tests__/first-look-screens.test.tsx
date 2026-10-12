@@ -8,9 +8,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => undefined, push: () => undefined }) }));
 
-import { phaseDetail } from "../setup-loading";
-import { FirstArticleCardView } from "../first-article-card";
-import { articleHeading } from "../first-look-gate";
+import { pagesLine, phaseDetail } from "../setup-loading";
+import { FirstArticleCardView, stageLine, wordsLine, writtenFor } from "../first-article-card";
+import { articleHeading, stickyLine } from "../first-look-gate";
+import { plainTopicLabel, topicLabels } from "@/lib/keyword-research/topic-labels";
 import type { FirstArticleCard } from "@/lib/onboarding/first-article";
 import type { FirstArticleLive } from "../use-first-article-live";
 
@@ -39,7 +40,7 @@ describe("the loading screen's lines", () => {
   it("says what each phase found, in a person's words", () => {
     expect(phaseDetail({ phase: "keywords", status: "done", detail: "81 keywords found: 169/169 buyer decisions confirmed" }, base, null, 0)).toBe("81 searches your buyers make");
     expect(phaseDetail({ phase: "pages", status: "done", detail: "Read 40 pages. Found 49 technical issues on 25 of them. Stopped at 40 of 125; the nightly pass reads the rest." }, base, null, 0))
-      .toBe("Read 40 pages. Found 49 technical issues on 25 of them.");
+      .toBe("40 pages read, 25 with something to fix");
     expect(phaseDetail({ phase: "scanning", status: "pending" }, base, null, 0)).toBe("");
   });
 
@@ -48,6 +49,20 @@ describe("the loading screen's lines", () => {
     expect(phaseDetail(step, base, null, 0)).toBe("Checking the results for “acme kits” · 15 checked");
     expect(phaseDetail(step, base, null, 1)).toBe("Checking the results for “acme kit price” · 15 checked");
     expect(phaseDetail({ ...step, checking: { terms: [], judged: 30, qualified: 3 } }, base, null, 0)).toBe("30 searches checked, 3 cleared the bar");
+  });
+
+  it("holds on the counts, naming no term, when less motion is asked for", () => {
+    const step = { phase: "planning" as const, status: "active" as const, checking: { terms: ["acme kits", "acme kit price"], judged: 15, qualified: 2 } };
+    expect(phaseDetail(step, base, null, null)).toBe("15 searches checked, 2 cleared the bar");
+    expect(phaseDetail({ ...step, checking: { ...step.checking, judged: 0 } }, base, null, null)).not.toContain("acme");
+  });
+
+  it("words the pages line one way, from one source, whether or not the report has landed", () => {
+    const detail = "Read 40 pages. Found 49 technical issues on 25 of them.";
+    const report = { existingPages: { checked: 39, withIssues: 25 } } as unknown as Parameters<typeof phaseDetail>[2];
+    expect(phaseDetail({ phase: "pages", status: "done", detail }, base, report, 0)).toBe("40 pages read, 25 with something to fix");
+    expect(pagesLine("Read 1 page. Nothing technical to fix.")).toBe("1 page read, nothing to fix");
+    expect(pagesLine("Could not read the site.")).toBeNull();
   });
 
   it("does not say the outline is being written", () => {
@@ -91,6 +106,37 @@ describe("the gate's article card", () => {
     // starts empty, and the outline card is not drawn beside it.
     expect(markup).not.toContain(">Outline<");
     expect(text(markup)).toContain("Read-only.");
+  });
+
+  it("says who it is for without gluing the buying job on as a broken sentence", () => {
+    expect(writtenFor({ audience: "Home decorators looking for ideas." })).toBe("Home decorators looking for ideas");
+    expect(writtenFor({ audience: "  " })).toBeNull();
+    const html = text(renderToStaticMarkup(
+      <FirstArticleCardView article={OUTLINED} live={live()} brief={{ audience: "Home decorators looking for ideas", buyingJob: "Source kits and ideas" } as never} />,
+    ));
+    expect(html).toContain("Written for: Home decorators looking for ideas");
+    expect(html).not.toContain("Source kits");
+  });
+
+  it("puts only the stage in the live region; the word count beside it is not re-read", () => {
+    const markup = renderToStaticMarkup(<FirstArticleCardView article={OUTLINED} live={live()} />);
+    expect(markup).toContain('<span role="status">Writing section 2 of 4</span>');
+    expect(markup).not.toContain("aria-live");
+    expect(stageLine("finishing", 3, 4)).toBe("Checking its facts and adding links");
+    expect(wordsLine("writing", 0)).toBe("");
+    expect(wordsLine("finishing", 1200)).toBe("1,200 words");
+  });
+
+  it("words the funnel label for a first-timer", () => {
+    const [label] = topicLabels({ funnel: "audience" }).map(plainTopicLabel);
+    expect(label.label).toBe("Early reader");
+    expect(label.explain).not.toMatch(/funnel|providers/i);
+  });
+
+  it("the slim trial bar never offers to let them read what they are reading", () => {
+    expect(stickyLine(false, true)).toBe("Edit, approve and publish it with the trial.");
+    expect(stickyLine(true, true)).not.toMatch(/read it/i);
+    expect(stickyLine(false, false)).toBe("Read it in full once it is written.");
   });
 
   it("words the heading by how far the article has got", () => {
