@@ -8,6 +8,7 @@ import { insertWorkspaceAsServer } from "@/lib/workspaces/insert";
 import { getValidAccessToken, tokenGrants } from "@/lib/google/oauth";
 import { listGSCSites, type GSCSite } from "@/lib/google/gsc";
 import { listGA4Properties, matchGA4Property } from "@/lib/google/ga4";
+import { backfillAnalytics } from "@/lib/google/sync";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
@@ -109,6 +110,105 @@ export async function listDetectedProperties(): Promise<
   } catch (err) {
     return { connected: true, properties: [], error: err instanceof Error ? err.message : "Could not read your properties" };
   }
+}
+
+export type ConnectResult =
+  | { ok: true; workspaceId: string; synced: number }
+  | { ok: false; message: string };
+
+/**
+ * Connect a site that is already a workspace to the account's stored consent.
+ *
+ * The callback links every site its consent covers, but only at the moment
+ * of consent. Someone who connected from the onboarding wizard with a Google
+ * account that could not see their site yet, then verified it in Search
+ * Console and came back as the page told them to, found their site listed as
+ * "already a workspace" with nothing to press: the picker creates workspaces,
+ * and this one existed. This is that button. Same checks as the callback's
+ * linking: the property is one this consent can read, and the site belongs
+ * to the account the consent is stored on (the workspace list the picker is
+ * built from is whatever RLS shows, which for someone in two accounts is
+ * both). Writing goes through the person's own client, so RLS still decides
+ * which sites they may touch.
+ */
+export async function connectPropertyToWorkspace(siteUrl: string): Promise<ConnectResult> {
+  const { accountId } = await requireAuth();
+  const supabase = await createClient();
+
+  const { connected, properties, error } = await listDetectedProperties();
+  if (!connected) return { ok: false, message: "No Google account is connected yet. Connect one first." };
+  if (error) return { ok: false, message: error };
+  const property = properties.find((p) => p.siteUrl === siteUrl);
+  if (!property) {
+    return { ok: false, message: "This Google account no longer lists that property. Reload the page." };
+  }
+  if (!property.canRead) {
+    return {
+      ok: false,
+      message: "This Google account cannot read that property's search data. Ask its owner for full access in Search Console.",
+    };
+  }
+
+  // This account's site for the property, looked up here rather than taken
+  // from the list: the list is built from every site RLS shows, across all
+  // the person's accounts, and the consent belongs to one of them.
+  const { data: own } = await supabase
+    .from("workspaces")
+    .select("id, domain")
+    .eq("account_id", accountId)
+    .not("domain", "is", null);
+  const site = (own ?? []).find(
+    (w) => (w.domain as string).replace(/^www\./, "").toLowerCase() === property.domain,
+  );
+  if (!site) {
+    return { ok: false, message: `No site on this account is ${property.domain}. Select it to create one.` };
+  }
+  const workspaceId = site.id as string;
+
+  const { data: already } = await supabase
+    .from("workspace_integrations")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("integration_id", "gsc")
+    .maybeSingle();
+  if (already) return { ok: true, workspaceId, synced: 0 };
+
+  const { data: conn } = await supabase
+    .from("account_integrations")
+    .select("tokens")
+    .eq("account_id", accountId)
+    .eq("provider", "google")
+    .maybeSingle();
+  const encrypted = (conn?.tokens as { encrypted?: string } | null)?.encrypted;
+  if (!encrypted) return { ok: false, message: "No Google account is connected yet. Connect one first." };
+
+  const { error: writeError } = await supabase.from("workspace_integrations").upsert(
+    {
+      workspace_id: workspaceId,
+      integration_id: "gsc",
+      config: { type: "gsc", gscSiteUrl: property.siteUrl },
+      tokens: { encrypted },
+      connected_at: new Date().toISOString(),
+      needs_reconnect: false,
+      last_sync_error: null,
+    },
+    { onConflict: "workspace_id,integration_id" },
+  );
+  if (writeError) return { ok: false, message: `Could not connect ${property.domain}: ${writeError.message}` };
+
+  // The last week now, as the callback does for one site; the nightly sync
+  // covers the same days if this fails.
+  let synced = 0;
+  try {
+    const r = await backfillAnalytics(supabase, workspaceId, "gsc", 7);
+    synced = r.gsc;
+  } catch {
+    synced = 0;
+  }
+
+  revalidatePath("/connect/google");
+  revalidatePath("/connect");
+  return { ok: true, workspaceId, synced };
 }
 
 export type CreateResult =

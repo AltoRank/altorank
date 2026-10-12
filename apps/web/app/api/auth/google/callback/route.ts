@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
+import { ACCOUNT_CONSENT_REFUSED, seesEverySite } from "@/lib/google/account-consent";
 import {
   exchangeCode,
   encryptTokens,
@@ -168,6 +169,17 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // Whether this person may set the consent the whole account is listed
+    // with (lib/google/account-consent.ts). An account-level connect is
+    // nothing else, so a member scoped to some sites is refused before the
+    // code is spent; a site's own button still connects their site.
+    const accountWide = await seesEverySite(supabase, user.id, member.account_id);
+    if (workspaceId === "account" && !accountWide) {
+      return NextResponse.redirect(
+        new URL(`/connect?error=${encodeURIComponent(ACCOUNT_CONSENT_REFUSED)}`, request.url),
+      );
+    }
+
     const tokens = await exchangeCode(code);
     const encrypted = encryptTokens(tokens);
 
@@ -187,21 +199,38 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
     // a consent that reads Search Console: the account's consent is what
     // /connect/google lists properties with, and an Analytics-only token
     // there would empty the list.
-    if (granted.includes("gsc")) {
-      await supabase.from("account_integrations").upsert(
-        { account_id: member.account_id, provider: "google", tokens: { encrypted }, connected_at: new Date().toISOString() },
-        { onConflict: "account_id,provider" },
-      );
+    //
+    // With the service role: members may only read this table (migration
+    // 033), and this upsert ran on the person's own client with its result
+    // ignored, so RLS refused it without a word and an account-level connect
+    // landed on "No Google account is connected yet", whose link started the
+    // same consent again. `accountWide` above is the check that policy would
+    // have made. A refusal is now an error: for an account-level connect the
+    // consent is the whole point, so it says so; for a site's own button the
+    // site's row below is what was asked for, so it is logged and the
+    // connect goes on.
+    if (granted.includes("gsc") && accountWide) {
+      const { error: consentError } = await createServiceClient()
+        .from("account_integrations")
+        .upsert(
+          { account_id: member.account_id, provider: "google", tokens: { encrypted }, connected_at: new Date().toISOString() },
+          { onConflict: "account_id,provider" },
+        );
+      if (consentError) {
+        if (workspaceId === "account") {
+          throw new Error(`Google connected, but the connection could not be saved: ${consentError.message}`);
+        }
+        console.error("[google] storing the account consent:", consentError.message);
+      }
     }
 
     // Account-level connect: take the person to the picker, where choosing
     // properties creates workspaces. The sites the account already has are
     // connected first - the onboarding wizard connects from here while its
-    // site already exists, and the picker only offers properties that are not
-    // a workspace yet, so without this the site being set up was never
-    // connected at all. One new site gets its last week now, as a site's own
-    // button does; more than that waits for the nightly sync, so the
-    // redirect does not wait on every site in the account.
+    // site already exists, so without this the site being set up waited for
+    // someone to find its Connect on the picker. One new site gets its last
+    // week now, as a site's own button does; more than that waits for the
+    // nightly sync, so the redirect does not wait on every site in the account.
     if (workspaceId === "account") {
       const linked = await linkAccountWorkspaces(supabase, member.account_id, encrypted, granted);
       const withGsc = linked.filter((l) => l.gsc);

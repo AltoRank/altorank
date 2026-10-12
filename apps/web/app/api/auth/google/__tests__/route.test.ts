@@ -60,6 +60,7 @@ beforeEach(() => {
       { id: WS, account_id: "acc-1", domain: "acme.co" },
       { id: OTHER_WS, account_id: "acc-2", domain: "rival.co" },
     ],
+    account_members: [{ account_id: "acc-1", user_id: "u1", role: "owner", workspace_ids: null }],
   });
 });
 
@@ -90,6 +91,20 @@ describe("GET /api/auth/google with no workspaceId (account level)", () => {
     requireAuth.mockRejectedValueOnce(new Error("No account membership found"));
     const res = await get("integrationId=gsc");
     expect(res.headers.get("location")).toBe("https://app.altorank.co/connect?error=no_account");
+  });
+
+  it("refuses a member who sees only some sites: the consent it stores lists the whole account", async () => {
+    db.tables.account_members[0].workspace_ids = [WS];
+    const res = await get("integrationId=gsc");
+    const location = new URL(res.headers.get("location") ?? "");
+    expect(location.origin + location.pathname).toBe("https://app.altorank.co/connect");
+    expect(location.searchParams.get("error")).toContain("needs access to every site");
+  });
+
+  it("still lets that member connect their own site from its button", async () => {
+    db.tables.account_members[0].workspace_ids = [WS];
+    const res = await get(`workspaceId=${WS}&integrationId=gsc`);
+    expect(consent(res).state).toMatchObject({ workspaceId: WS, integrationId: "gsc" });
   });
 
   it("does not connect Analytics without a site: a GA4 property belongs to one", async () => {

@@ -24,10 +24,48 @@ const requireAuth = vi.fn();
 vi.mock("@/lib/auth/require-auth", () => ({ requireAuth: (...args: unknown[]) => requireAuth(...args) }));
 
 let db: FakeSupabase;
+/** Set to make the service-role write of the account consent fail too. */
+let serviceRefuses = false;
+
+/**
+ * A write PostgREST answers with an RLS refusal: an error in the result, no
+ * throw, which is exactly what an unchecked `await` swallows.
+ */
+function refused(message: string) {
+  const result = { data: null, error: { message } };
+  const chain: Record<string, unknown> = {};
+  for (const m of ["eq", "select", "single", "maybeSingle"]) chain[m] = () => chain;
+  chain.then = (resolve: (v: unknown) => unknown) => Promise.resolve(result).then(resolve);
+  return chain;
+}
+
+/**
+ * The person's own client, with the one policy that matters here: members
+ * may read `account_integrations` but not write it (migration 033 gives the
+ * table a SELECT policy and nothing else). The plain fake has no RLS, which
+ * is how a callback writing the consent with this client passed its tests
+ * while the write was refused in production.
+ */
+function asMember(table: string) {
+  const q = db.from(table);
+  if (table !== "account_integrations") return q;
+  const deny = () => refused('new row violates row-level security policy for table "account_integrations"');
+  return { ...q, insert: deny, upsert: deny, update: deny, delete: deny };
+}
+
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({
-    from: (table: string) => db.from(table),
+    from: (table: string) => asMember(table),
     auth: { getUser: async () => ({ data: { user: { id: "u1" } }, error: null }) },
+  }),
+  createServiceClient: () => ({
+    from: (table: string) => {
+      if (serviceRefuses && table === "account_integrations") {
+        const deny = () => refused("service write failed");
+        return { ...db.from(table), upsert: deny };
+      }
+      return db.from(table);
+    },
   }),
 }));
 
@@ -101,8 +139,16 @@ beforeEach(() => {
     ],
     workspace_integrations: [],
     account_integrations: [],
+    // Sees every site on the account: may set the account's consent.
+    account_members: [{ account_id: "acc-1", user_id: "u1", role: "owner", workspace_ids: null }],
   });
+  serviceRefuses = false;
 });
+
+/** Make u1 a member who sees only these sites. */
+function restrictTo(...workspaceIds: string[]) {
+  db.tables.account_members[0].workspace_ids = workspaceIds;
+}
 
 describe("account-level connect (no site named)", () => {
   it("stores the consent, connects the site being set up, and lands on the picker", async () => {
@@ -141,6 +187,42 @@ describe("account-level connect (no site named)", () => {
     expect(backfillAnalytics).not.toHaveBeenCalled();
   });
 
+  it("stores the consent with the service role, since members may only read it", async () => {
+    // asMember refuses this table's writes, as RLS does: a consent written
+    // with the person's client would leave the table empty here and the
+    // picker saying "No Google account is connected yet".
+    granted(GSC_SCOPE);
+    const res = await callback("account", "gsc");
+    expect(res.headers.get("location")).toBe("https://app.altorank.co/connect/google");
+    expect(db.tables.account_integrations).toEqual([
+      expect.objectContaining({ account_id: "acc-1", provider: "google", tokens: { encrypted: expect.any(String) } }),
+    ]);
+  });
+
+  it("says so when the consent cannot be stored, instead of landing on a page that says nothing is connected", async () => {
+    serviceRefuses = true;
+    granted(GSC_SCOPE);
+    const res = await callback("account", "gsc");
+    const location = decodeURIComponent(res.headers.get("location") ?? "");
+    expect(location).toContain("/connect?error=");
+    expect(location).toContain("could not be saved");
+    expect(db.tables.account_integrations).toHaveLength(0);
+  });
+
+  it("refuses a member scoped to some sites before Google's code is spent, and keeps the account's consent", async () => {
+    restrictTo(WS);
+    db.tables.account_integrations.push({ account_id: "acc-1", provider: "google", tokens: { encrypted: "owner's" } });
+    const res = await callback("account", "gsc");
+    const location = decodeURIComponent(res.headers.get("location") ?? "");
+    expect(location).toContain("/connect?error=");
+    expect(location).toContain("needs access to every site");
+    expect(exchangeCode).not.toHaveBeenCalled();
+    expect(db.tables.account_integrations).toEqual([
+      { account_id: "acc-1", provider: "google", tokens: { encrypted: "owner's" } },
+    ]);
+    expect(db.writes).toHaveLength(0);
+  });
+
   it("stores nothing when the person unticked Search Console on Google's screen", async () => {
     granted();
     const res = await callback("account", "gsc");
@@ -173,6 +255,27 @@ describe("site-level connect", () => {
     expect(db.tables.workspace_integrations).toContainEqual(
       expect.objectContaining({ workspace_id: WS, integration_id: "ga4", config: { type: "ga4", ga4PropertyId: "42" } }),
     );
+  });
+
+  it("connects a scoped member's own site but leaves the account's consent alone", async () => {
+    restrictTo(WS);
+    db.tables.account_integrations.push({ account_id: "acc-1", provider: "google", tokens: { encrypted: "owner's" } });
+    granted(GSC_SCOPE);
+    const res = await callback(WS, "gsc");
+
+    expect(res.headers.get("location")).toContain(`/workspaces/${WS}?connected=gsc`);
+    expect(db.tables.workspace_integrations.some((r) => r.workspace_id === WS && r.integration_id === "gsc")).toBe(true);
+    expect(db.tables.account_integrations).toEqual([
+      { account_id: "acc-1", provider: "google", tokens: { encrypted: "owner's" } },
+    ]);
+  });
+
+  it("still connects the site when the account consent cannot be stored", async () => {
+    serviceRefuses = true;
+    granted(GSC_SCOPE);
+    const res = await callback(WS, "gsc");
+    expect(res.headers.get("location")).toContain(`/workspaces/${WS}?connected=gsc`);
+    expect(db.tables.workspace_integrations.some((r) => r.workspace_id === WS)).toBe(true);
   });
 
   it("does not let an Analytics-only consent replace the account's Search Console consent", async () => {

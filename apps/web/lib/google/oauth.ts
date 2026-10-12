@@ -69,7 +69,11 @@ export function getAuthUrl(state: string, integrationId: GoogleIntegrationId): s
     // already granted this app, so a GA4 connect does not drop Search Console.
     include_granted_scopes: "true",
     access_type: "offline",
-    prompt: "consent",
+    // `select_account`: the Google account that owns the site is often not
+    // the one the browser is signed in to, and /connect/google offers "Use a
+    // different Google account", which only means something if Google asks
+    // which one. `consent`: a refresh token on every connect.
+    prompt: "select_account consent",
     state,
   });
 

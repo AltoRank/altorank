@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { getAuthUrl, type GoogleIntegrationId } from "@/lib/google/oauth";
+import { ACCOUNT_CONSENT_REFUSED, seesEverySite } from "@/lib/google/account-consent";
 import { encodeOauthState, newOauthNonce, setOauthNonce } from "@/lib/google/oauth-state";
 
 /**
@@ -94,6 +95,13 @@ export async function GET(request: NextRequest) {
   // every one of them ended in `workspace_not_found` and the callback's
   // account branch was unreachable (broken since 2026-09-02).
   let stateWorkspace = "account";
+  // The callback stores an account-level consent for the whole account, so
+  // only someone who sees every site may start one (lib/google/account-consent.ts).
+  // Checked here too, so a member scoped to one client hears it before
+  // Google's screen rather than after it.
+  if (!workspaceId && !(await seesEverySite(supabase, user.id, accountId))) {
+    return back(request, { error: ACCOUNT_CONSENT_REFUSED });
+  }
   if (workspaceId) {
     const { data: workspace } = await supabase
       .from("workspaces")

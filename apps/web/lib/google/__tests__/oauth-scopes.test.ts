@@ -32,7 +32,8 @@ describe("getAuthUrl", () => {
     expect(gsc.get("scope")).toBe(GSC_SCOPE);
     expect(gsc.get("include_granted_scopes")).toBe("true");
     expect(gsc.get("access_type")).toBe("offline");
-    expect(gsc.get("prompt")).toBe("consent");
+    // The account chooser too: "Use a different Google account" relies on it.
+    expect(gsc.get("prompt")).toBe("select_account consent");
 
     const ga4 = new URL(getAuthUrl("s", "ga4")).searchParams;
     expect(ga4.get("scope")).toBe(GA4_SCOPE);
