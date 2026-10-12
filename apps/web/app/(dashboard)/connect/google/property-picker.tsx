@@ -13,12 +13,26 @@ import {
 } from "@/app/actions/google-properties";
 
 /**
+ * What an existing workspace's Search Console connection is, in the picker's
+ * words. A row Google refused the token for is not "connected": the site
+ * reads nothing until it is reconnected.
+ */
+function existingLabel(
+  p: Pick<DetectedProperty, "existingConnected" | "existingNeedsReconnect">,
+): string {
+  if (p.existingConnected) return "connected";
+  if (p.existingNeedsReconnect) return "needs reconnect";
+  return "already a workspace";
+}
+
+/**
  * Ticking a property creates a workspace for it. Properties this account
  * cannot read are shown, greyed, with the reason: hiding them would leave
  * someone hunting for a site that is right there under the wrong permission.
  * A readable property that is already a workspace without Search Console
  * gets a Connect of its own: that is the onboarding wizard's site when the
- * first Google account chosen could not see it.
+ * first Google account chosen could not see it. One whose connection Google
+ * refused says so and gets a Reconnect.
  */
 export function PropertyPicker({ properties }: { properties: DetectedProperty[] }) {
   const router = useRouter();
@@ -92,8 +106,9 @@ export function PropertyPicker({ properties }: { properties: DetectedProperty[] 
         <div className="flex flex-col">
           {properties.map((p, i) => {
             const disabled = !p.canRead || Boolean(p.existingWorkspaceId);
-            // Already a workspace, readable, and not reading Search Console:
-            // not something to create, something to connect.
+            // Already a workspace, readable, and not reading Search Console
+            // (never connected, or Google refused its token): not something
+            // to create, something to connect.
             const connectable = p.canRead && Boolean(p.existingWorkspaceId) && !p.existingConnected;
             return (
               <label
@@ -118,13 +133,19 @@ export function PropertyPicker({ properties }: { properties: DetectedProperty[] 
                     <span className="flex items-center justify-end gap-3">
                       <Link
                         href={`/workspaces/${p.existingWorkspaceId}`}
-                        className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-accent-ink hover:underline"
+                        className={`font-mono text-[10.5px] uppercase tracking-[0.06em] hover:underline ${
+                          p.existingNeedsReconnect && !p.existingConnected ? "text-err-ink" : "text-accent-ink"
+                        }`}
                       >
-                        {p.existingConnected ? "connected" : "already a workspace"}
+                        {existingLabel(p)}
                       </Link>
                       {connectable && (
                         <Button size="sm" disabled={pending} onClick={() => connect(p)}>
-                          {connecting === p.siteUrl ? "Connecting…" : "Connect"}
+                          {connecting === p.siteUrl
+                            ? "Connecting…"
+                            : p.existingNeedsReconnect
+                              ? "Reconnect"
+                              : "Connect"}
                         </Button>
                       )}
                     </span>

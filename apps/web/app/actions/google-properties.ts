@@ -37,6 +37,13 @@ export type DetectedProperty = {
    * connected, and "already a workspace" did not say so.
    */
   existingConnected: boolean;
+  /**
+   * That workspace has a Search Console row whose token Google refused
+   * (migration 070): connected once, not reading anything now. Not
+   * `existingConnected`, so the picker offers a Reconnect rather than
+   * calling a dead connection "connected".
+   */
+  existingNeedsReconnect: boolean;
 };
 
 function domainOf(siteUrl: string): string {
@@ -87,24 +94,34 @@ export async function listDetectedProperties(): Promise<
     const { data: gscRows } = existingIds.length
       ? await supabase
           .from("workspace_integrations")
-          .select("workspace_id")
+          .select("workspace_id, needs_reconnect")
           .eq("integration_id", "gsc")
           .in("workspace_id", existingIds)
-      : { data: [] as { workspace_id: string }[] };
-    const connectedIds = new Set((gscRows ?? []).map((r) => r.workspace_id as string));
+      : { data: [] as { workspace_id: string; needs_reconnect: boolean | null }[] };
+    // A row the nightly sync marked dead is not a connection: the site reads
+    // nothing until someone reconnects it.
+    const connectedIds = new Set<string>();
+    const deadIds = new Set<string>();
+    for (const r of gscRows ?? []) {
+      (r.needs_reconnect ? deadIds : connectedIds).add(r.workspace_id as string);
+    }
 
     return {
       connected: true,
       properties: sites
-        .map((s) => ({
-          siteUrl: s.siteUrl,
-          domain: domainOf(s.siteUrl),
-          permissionLevel: s.permissionLevel,
-          canRead: READABLE.has(s.permissionLevel),
-          isOwner: s.permissionLevel === "siteOwner",
-          existingWorkspaceId: byDomain.get(domainOf(s.siteUrl)) ?? null,
-          existingConnected: connectedIds.has(byDomain.get(domainOf(s.siteUrl)) ?? ""),
-        }))
+        .map((s) => {
+          const existingWorkspaceId = byDomain.get(domainOf(s.siteUrl)) ?? null;
+          return {
+            siteUrl: s.siteUrl,
+            domain: domainOf(s.siteUrl),
+            permissionLevel: s.permissionLevel,
+            canRead: READABLE.has(s.permissionLevel),
+            isOwner: s.permissionLevel === "siteOwner",
+            existingWorkspaceId,
+            existingConnected: existingWorkspaceId !== null && connectedIds.has(existingWorkspaceId),
+            existingNeedsReconnect: existingWorkspaceId !== null && deadIds.has(existingWorkspaceId),
+          };
+        })
         .sort((a, b) => Number(b.canRead) - Number(a.canRead) || a.domain.localeCompare(b.domain)),
     };
   } catch (err) {
@@ -165,13 +182,16 @@ export async function connectPropertyToWorkspace(siteUrl: string): Promise<Conne
   }
   const workspaceId = site.id as string;
 
+  // A live connection is left as it is. A row Google refused the token for
+  // is written over with this consent, which has just listed the property,
+  // so it is the Reconnect the picker offers for it.
   const { data: already } = await supabase
     .from("workspace_integrations")
-    .select("id")
+    .select("id, needs_reconnect")
     .eq("workspace_id", workspaceId)
     .eq("integration_id", "gsc")
     .maybeSingle();
-  if (already) return { ok: true, workspaceId, synced: 0 };
+  if (already && !already.needs_reconnect) return { ok: true, workspaceId, synced: 0 };
 
   const { data: conn } = await supabase
     .from("account_integrations")

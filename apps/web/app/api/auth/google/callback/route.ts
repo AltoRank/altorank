@@ -28,10 +28,15 @@ import { clearOauthNonce, decodeOauthState, nonceMatches, OAUTH_STATE_COOKIE } f
  */
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 
-/** What to tell someone who unticked the scope they came to connect. */
+/**
+ * What to tell someone whose consent came back without the scope they came
+ * to connect. It names no control on Google's screen: whether that screen
+ * shows a checkbox per scope or only Allow and Cancel is Google's choice, and
+ * a Cancel arrives as `error=access_denied`, not here.
+ */
 const NOT_GRANTED: Record<GoogleIntegrationId, string> = {
-  gsc: "Google did not grant access to Search Console. Connect again and leave Search Console ticked on Google's screen.",
-  ga4: "Google did not grant access to Google Analytics. Connect again and leave Google Analytics ticked on Google's screen.",
+  gsc: "Google did not grant access to Search Console. Connect again and allow access to Search Console when Google asks.",
+  ga4: "Google did not grant access to Google Analytics. Connect again and allow access to Google Analytics when Google asks.",
 };
 
 function isGoogleIntegration(id: string): id is GoogleIntegrationId {
@@ -184,9 +189,10 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
     const encrypted = encryptTokens(tokens);
 
     // What this consent can actually read. Each connect asks for its own
-    // scope, the token also carries any scope granted before
-    // (include_granted_scopes), and Google lets the person untick a scope on
-    // its screen - so the answer is the token's, not the button's.
+    // scope and the token also carries any scope granted before
+    // (include_granted_scopes), so the answer is the token's, not the
+    // button's. A token that came back without the scope asked for stores
+    // nothing.
     const granted = grantedIntegrations(tokens.scope);
     if (!granted.includes(integrationId)) {
       return NextResponse.redirect(

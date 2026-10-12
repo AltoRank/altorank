@@ -71,7 +71,13 @@ describe("connectPropertyToWorkspace", () => {
   it("stored consent + an existing unconnected workspace ends connected", async () => {
     const before = await listDetectedProperties();
     expect(before.properties).toEqual([
-      expect.objectContaining({ siteUrl: SITE, existingWorkspaceId: WS, existingConnected: false, canRead: true }),
+      expect.objectContaining({
+        siteUrl: SITE,
+        existingWorkspaceId: WS,
+        existingConnected: false,
+        existingNeedsReconnect: false,
+        canRead: true,
+      }),
     ]);
 
     const result = await connectPropertyToWorkspace(SITE);
@@ -126,10 +132,52 @@ describe("connectPropertyToWorkspace", () => {
 
   it("leaves an already connected site as it is", async () => {
     seed([{ id: WS, account_id: "acc-1", domain: "acme.co" }], {
-      workspace_integrations: [{ workspace_id: WS, integration_id: "gsc", config: { type: "gsc" } }],
+      workspace_integrations: [{ workspace_id: WS, integration_id: "gsc", config: { type: "gsc" }, needs_reconnect: false }],
     });
+    const before = await listDetectedProperties();
+    expect(before.properties[0]).toMatchObject({ existingConnected: true, existingNeedsReconnect: false });
     const result = await connectPropertyToWorkspace(SITE);
     expect(result).toEqual({ ok: true, workspaceId: WS, synced: 0 });
     expect(db.writes).toHaveLength(0);
+  });
+});
+
+describe("a site whose Search Console token Google refused", () => {
+  const DEAD = {
+    workspace_id: WS,
+    integration_id: "gsc",
+    config: { type: "gsc", gscSiteUrl: SITE },
+    tokens: { encrypted: "someone-else's-dead-token" },
+    needs_reconnect: true,
+    last_sync_error: "invalid_grant",
+  };
+
+  it("is listed as needing a reconnect, not as connected", async () => {
+    seed([{ id: WS, account_id: "acc-1", domain: "acme.co" }], { workspace_integrations: [DEAD] });
+    const { properties } = await listDetectedProperties();
+    expect(properties[0]).toMatchObject({
+      existingWorkspaceId: WS,
+      existingConnected: false,
+      existingNeedsReconnect: true,
+    });
+  });
+
+  it("is written over with the stored consent on Reconnect", async () => {
+    seed([{ id: WS, account_id: "acc-1", domain: "acme.co" }], { workspace_integrations: [DEAD] });
+    const result = await connectPropertyToWorkspace(SITE);
+
+    expect(result).toEqual({ ok: true, workspaceId: WS, synced: 12 });
+    const inserts = db.writes.filter((w) => w.table === "workspace_integrations" && w.op === "insert");
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0].rows).toEqual([
+      expect.objectContaining({
+        workspace_id: WS,
+        integration_id: "gsc",
+        tokens: { encrypted: CONSENT },
+        needs_reconnect: false,
+        last_sync_error: null,
+      }),
+    ]);
+    expect(backfillAnalytics).toHaveBeenCalledWith(expect.anything(), WS, "gsc", 7);
   });
 });

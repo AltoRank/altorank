@@ -223,12 +223,14 @@ describe("account-level connect (no site named)", () => {
     expect(db.writes).toHaveLength(0);
   });
 
-  it("stores nothing when the person unticked Search Console on Google's screen", async () => {
+  it("stores nothing when Google's consent comes back without Search Console", async () => {
     granted();
     const res = await callback("account", "gsc");
     const location = decodeURIComponent(res.headers.get("location") ?? "");
     expect(location).toContain("/connect?error=");
-    expect(location).toContain("Search Console");
+    expect(location).toContain("allow access to Search Console when Google asks");
+    // Google's screen has no checkbox for a single scope to leave ticked.
+    expect(location).not.toMatch(/tick/i);
     expect(db.writes).toHaveLength(0);
   });
 });
@@ -286,12 +288,13 @@ describe("site-level connect", () => {
     expect(listGSCSites).not.toHaveBeenCalled();
   });
 
-  it("refuses a GA4 connect whose consent left Analytics unticked, and writes nothing", async () => {
+  it("refuses a GA4 connect whose consent came back without Analytics, and writes nothing", async () => {
     granted(GSC_SCOPE);
     const res = await callback(WS, "ga4");
     const location = decodeURIComponent(res.headers.get("location") ?? "");
     expect(location).toContain("/connect?error=");
-    expect(location).toContain("Google Analytics");
+    expect(location).toContain("allow access to Google Analytics when Google asks");
+    expect(location).not.toMatch(/tick/i);
     expect(db.writes).toHaveLength(0);
   });
 });
