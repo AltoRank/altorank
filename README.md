@@ -1,16 +1,21 @@
-# AltoRank
+# AltoRank: open-source, self-hosted AI SEO content writer (Outrank alternative)
 
-**Open source alternative to Outrank and Jasper.** AI SEO content engine:
-keyword research → article → Markdown, HTML, or one of 13 publishing adapters.
+**An open-source alternative to Outrank and Jasper.** AltoRank researches a
+keyword, writes the article, scores it and fact-checks it: a figure that cites
+a page is looked for on that page, and one with no source is flagged for the
+reviewer. Every draft leaves as Markdown (front matter included) or HTML,
+copied or downloaded, for you to paste wherever you publish. **Mark as
+published** then records the live URL, and the article is tracked from there:
+indexing and rank.
 
-It researches a keyword, writes the article, scores it and checks its claims.
-The draft leaves as Markdown or HTML for you to paste wherever you publish, or
-through a CMS adapter (see [Publishing](#what-works-today) for how far those
-have been tested). Who decides that it ships is yours to choose per workspace:
-approve each draft by hand, or set a rule that publishes after a hold unless you
-hold it. Either way the approval is recorded under a named person, and the
-article is tracked after - indexing and rank.
+Nothing goes live without an approval recorded under a named person. Approve
+each draft by hand, or set a rule that approves drafts after a hold unless you
+hold them (the rule publishes through a CMS connection, which is built but not
+yet verified end to end; see [Status](#status)). Agents can research and draft
+through the MCP server and the agent API, and neither has a publish or approve
+tool.
 
+Self-host it free under AGPL-3.0, or use the hosted app at `app.altorank.co`.
 Open source, the whole product. No feature-gated tier, no `ee/` directory.
 
 ---
@@ -220,23 +225,6 @@ docker/                 container setup for self-hosting
 tools/agent-readiness/  standalone agent-readiness scanner
 ```
 
-The marketing site (altorank.co) lives in its own private repository,
-`AltoRank/altorank-marketing`. It moved out of this tree on 2026-09-06 so the
-product stays open while positioning and pricing copy do not. Nothing here
-imports it; the two are coupled only by the plan limits noted in
-`apps/web/lib/stripe.ts` and `apps/web/lib/billing/quota.ts`, which must be
-changed in both places together.
-
-Two conventions worth knowing before you send a patch:
-
-1. **Never render an unknown as zero.** A number nobody measured, displayed as a
-   measurement, is a fabricated claim even when no human typed it. Use
-   `number | null`, render an em dash, and average only over rows that have a
-   value.
-2. **One implementation per behaviour.** Generation lives in
-   `lib/content/generate.ts`; the streaming route and the cron both call it.
-   Resist the second copy.
-
 ## Licence
 
 **GNU AGPL-3.0-only.** Full text in [LICENSE](LICENSE).
@@ -260,3 +248,6 @@ regardless of how good the code is:
   canonical example.
 - Adding a claim the repository cannot support. If `grep` cannot find the
   feature, the README does not get to mention it.
+
+The code conventions a patch is read against, and how this repository relates
+to the marketing site, are in [CONTRIBUTING.md](CONTRIBUTING.md).
