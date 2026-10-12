@@ -2,15 +2,17 @@ import { describe, expect, it } from "vitest";
 import { fullArticleOn, readableHtml, readFirstArticleBody, readFirstArticleProgress } from "../first-article-body";
 
 describe("the gate's full-article reader", () => {
-  it("is off unless PRETRIAL_FULL_ARTICLE is exactly 1", () => {
-    expect(fullArticleOn({})).toBe(false);
-    expect(fullArticleOn({ PRETRIAL_FULL_ARTICLE: "true" })).toBe(false);
+  it("is on by default: unset or 1 is on, 0 (or anything else) is off", () => {
+    expect(fullArticleOn({})).toBe(true);
+    expect(fullArticleOn({ PRETRIAL_FULL_ARTICLE: "" })).toBe(true);
     expect(fullArticleOn({ PRETRIAL_FULL_ARTICLE: "1" })).toBe(true);
+    expect(fullArticleOn({ PRETRIAL_FULL_ARTICLE: "0" })).toBe(false);
+    expect(fullArticleOn({ PRETRIAL_FULL_ARTICLE: "false" })).toBe(false);
   });
 
   it("reads nothing at all with the switch off", async () => {
     const untouchable = new Proxy({}, { get: () => { throw new Error("read with the switch off"); } });
-    expect(await readFirstArticleBody(untouchable as never, "u1", "ws1", { env: {}, service: untouchable as never })).toEqual({ ok: false, reason: "off" });
+    expect(await readFirstArticleBody(untouchable as never, "u1", "ws1", { env: { PRETRIAL_FULL_ARTICLE: "0" }, service: untouchable as never })).toEqual({ ok: false, reason: "off" });
   });
 
   it("keeps the article and drops what runs, embeds, navigates or is the writer's scaffolding", () => {
@@ -24,7 +26,7 @@ describe("the gate's full-article reader", () => {
       "<p>Half a sentence still being writ",
     ].join("\n");
     const out = readableHtml(html);
-    expect(out).toContain("<p>Kept <a>link</a> and <a href=\"https://ok.example\" rel=\"nofollow noopener noreferrer\">ok</a>.</p>");
+    expect(out).toContain("<p>Kept <a>link</a> and <a href=\"https://ok.example\" rel=\"nofollow noopener noreferrer\" target=\"_blank\" tabindex=\"-1\">ok</a>.</p>");
     expect(out).toContain("<h2>Section</h2><p>See pricing guide.</p>");
     expect(out).toContain("Half a sentence still being writ");
     for (const gone of ["<h1", "onclick", "javascript:", "<script", "<style", "<iframe", "meta-description", "```"]) expect(out).not.toContain(gone);

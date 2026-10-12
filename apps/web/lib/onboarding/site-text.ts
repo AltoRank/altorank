@@ -32,6 +32,7 @@ import { fetchInstantPage } from "@/lib/audit/onpage";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { discoverSite } from "./site-discovery";
 import { e2eStubsEnabled, stubReadSiteText } from "@/lib/e2e/stubs";
+import { htmlLangOf } from "./locale-guess";
 
 export type SiteTextSource = "static" | "sitemap" | "rendered" | "none";
 
@@ -56,6 +57,13 @@ export interface SiteText {
   chars: number;
   /** Absent from fixtures and from callers that never fetched anything. */
   observed?: ObservedSite;
+  /**
+   * The `lang` on the first page that answered, as written ("it-IT"); null
+   * when none did or it carries none. Kept even when the read is too thin to
+   * describe the site: it is how the wizard guesses language and market on a
+   * failed read (lib/onboarding/locale-guess.ts).
+   */
+  htmlLang?: string | null;
 }
 
 /** Enough links to include a site's whole navigation and footer. */
@@ -138,6 +146,7 @@ export async function readSiteText(domain: string, maxChars = 12_000): Promise<S
     source,
     chars: text.length,
     observed: observedFrom(domain, fetched, probed),
+    htmlLang: [...fetched, ...probed].map((p) => htmlLangOf(p.html)).find(Boolean) ?? null,
   });
 
   // Discovery is needed by the next wizard screen anyway and is cheap, so it

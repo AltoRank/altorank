@@ -2,18 +2,21 @@
 // The first article's full text on the gate, behind a switch
 // ---------------------------------------------------------------------------
 //
-// PRETRIAL_FULL_ARTICLE=1 lets an account's owner read their own first
-// article in full on the gate screen before the trial - streamed in while it
-// is written, read-only. Off by default: the gate then shows the shape only,
-// as it has since a real signup copied a whole draft off a preview page and
-// published it within the hour (2026-09-22). Publishing, editing, more
-// articles and the dashboard stay behind the trial either way.
+// PRETRIAL_FULL_ARTICLE lets an account's owner read their own first article
+// in full on the gate screen before the trial - streamed in while it is
+// written, read-only. On by default (founder decision 2026-10-12: the owner
+// reads before being asked for a card); set it to "0" to go back to the
+// shape only, as the gate showed from 2026-09-22, when a real signup copied a
+// whole draft off a preview page and published it within the hour.
+// Publishing, editing, more articles and the dashboard stay behind the trial
+// either way.
 //
 // Migration 097 keeps the text from every client token; this does not change
 // that. The text leaves the database here, on the service role, only after
 // every one of these has answered yes:
 //
-//   the switch     PRETRIAL_FULL_ARTICLE is "1"
+//   the switch     PRETRIAL_FULL_ARTICLE is unset or "1" (anything else,
+//                  "0" included, is off)
 //   the person     signed in, and the OWNER of the account the site is in -
 //                  asked through their own client, so RLS decides whether
 //                  they can see the site at all
@@ -38,11 +41,10 @@ import { outlineHeadings, outlineOf } from "@/lib/content/outline";
 import { readBodyProgress, sectionsDone } from "./body-progress";
 import type { BodyStage } from "./setup-progress";
 
-export const FULL_ARTICLE_SWITCH = "PRETRIAL_FULL_ARTICLE";
-
-export function fullArticleOn(env: Record<string, string | undefined> = process.env): boolean {
-  return env[FULL_ARTICLE_SWITCH] === "1";
-}
+// The switch itself lives in ./full-article-switch.ts, so the emails can ask
+// it without importing the reader's database reads.
+import { fullArticleOn } from "./full-article-switch";
+export { FULL_ARTICLE_SWITCH, fullArticleOn } from "./full-article-switch";
 
 const WRITTEN = new Set(["review", "approved", "scheduled", "live"]);
 

@@ -38,7 +38,7 @@ import { formatTrialDate } from "@/lib/billing/trial";
  */
 export const TRIAL_HOLD_MESSAGE =
   `Waiting for your trial to start. Setup has used the one article an account gets before the trial; nothing more is drafted until the ${TRIAL_DAYS}-day trial begins, ` +
-  `and then the rest of this week's plan is written straight away.`;
+  `and then the articles planned for this week are written straight away.`;
 
 /** The sentence every surface that holds an article's text gives a gated account. */
 export const BODY_LOCKED_MESSAGE =
@@ -51,16 +51,19 @@ export const BODY_LOCKED_MESSAGE =
  */
 export const TRIAL_SPEND_MESSAGE =
   `Nothing more runs until the ${TRIAL_DAYS}-day trial starts. Setup has used the one article an account gets before the trial; ` +
-  `start the trial from the setup screen to open research, audits and the rest of this week's drafts.`;
+  `start the trial from the setup screen to open research, audits and more drafts.`;
 
 /**
  * The sentence a gated account gets when it asks for setup again after the
  * setup runs it has before the trial (PRE_TRIAL_SETUP_RUNS). Says nothing
- * about an article: these runs may have ended without one.
+ * about an article: these runs may have ended without one. Nor does it
+ * promise "the rest of this week's plan" to an account that may have nothing
+ * planned (review, 2026-10-12): what the trial does is plan the month again
+ * (lib/plan/resume-week.ts) and write what lands in this week.
  */
 export const TRIAL_SETUP_MESSAGE =
-  `Setup has already run for this account. It runs again when the ${TRIAL_DAYS}-day trial starts, ` +
-  `and the trial drafts the rest of this week's plan straight away. Start it from the setup screen.`;
+  `Setup has already run for this account. When the ${TRIAL_DAYS}-day trial starts, we plan your month again ` +
+  `and write the articles planned for this week straight away. Start it from the setup screen.`;
 
 /** What the gated account asked for: another article, an existing article's text, setup again, or other paid work. */
 export type TrialRefusalAsk = "draft" | "body" | "setup" | "spend";

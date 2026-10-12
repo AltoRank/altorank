@@ -33,6 +33,7 @@ export interface SeedableProfile {
   audiences?: string[] | null;
   offerings?: string[] | null;
   competitors?: string[] | null;
+  competitorNames?: string[] | null;
   searchRivals?: string[] | null;
   buyingJobs?: string[] | null;
   differentiators?: string[] | null;

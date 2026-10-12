@@ -392,7 +392,7 @@ describe("a first look's draft, gated on its outline", () => {
     expect(generateArticle.mock.calls[0][0]).toMatchObject({ outline: { keepOnFailure: false } });
   });
 
-  it("keeps the body as it is written for the gate's reader only with PRETRIAL_FULL_ARTICLE on, and clears it when saved", async () => {
+  it("keeps the body as it is written for the gate's reader only with PRETRIAL_FULL_ARTICLE on (the default), and clears it when saved", async () => {
     db.rows("articles").push({ id: "art-9", workspace_id: "ws1", body_stream: null });
     getQuota.mockResolvedValue(gated(0));
     const streamingBody = outlinedThen(async () => ({ articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } }));
@@ -420,7 +420,12 @@ describe("a first look's draft, gated on its outline", () => {
         outline: { onReady: async (r) => { await opts.outline?.onReady?.(r); opts.onChunk?.("<h2>Key takeaways</h2><p>secret words here</p><h2>Next</h2>"); opts.onWritten?.(); } },
       }),
     );
-    await post(first);
+    process.env.PRETRIAL_FULL_ARTICLE = "0";
+    try {
+      await post(first);
+    } finally {
+      delete process.env.PRETRIAL_FULL_ARTICLE;
+    }
     expect(db.updates.filter((u) => u.table === "articles" && "body_stream" in u.patch)).toEqual([]);
     const counts = db.updates.filter((u) => u.table === "articles" && "body_progress" in u.patch).map((u) => u.patch.body_progress);
     expect(counts.length).toBeGreaterThan(1);

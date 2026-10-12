@@ -3,6 +3,7 @@
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { ChipList, CountedHeading } from "./fields";
 import { doubtedAudiences } from "@/lib/onboarding/audience-check";
+import { wizardExamples } from "@/lib/onboarding/wizard-rules";
 
 export const MAX_AUDIENCES = 7;
 export const MAX_COMPETITORS = 7;
@@ -15,23 +16,36 @@ export function normaliseCompetitor(c: string): string {
 
 /**
  * What people buy, in their words. This is the seed list for keyword research:
- * every research phrase is proposed from these, so "order picking software"
- * here is worth more than any endpoint downstream.
+ * every research phrase is proposed from these, so a buyer's words here are
+ * worth more than any endpoint downstream. The copy says that without the
+ * jargon (UX audit 2026-10-12, #12), with examples from the business itself.
  */
-export function OfferingList({ profile, patch }: { profile: BusinessProfile; patch: (p: Partial<BusinessProfile>) => void }) {
+export function OfferingList({
+  profile,
+  patch,
+  inputId,
+}: {
+  profile: BusinessProfile;
+  patch: (p: Partial<BusinessProfile>) => void;
+  /** For the wizard, which scrolls here when nothing is listed. */
+  inputId?: string;
+}) {
   const offerings = profile.offerings ?? [];
+  const examples = wizardExamples(profile);
   return (
     <>
       <CountedHeading title="What people buy from you" count={offerings.length} max={MAX_OFFERINGS} />
       <ChipList
         items={offerings}
         onChange={(next) => patch({ offerings: next })}
-        placeholder="e.g. order picking software"
+        placeholder={examples.offeringPlaceholder}
+        label="Add something people buy from you"
+        inputId={inputId}
         max={MAX_OFFERINGS}
       />
       <p className="mt-2 text-[11.5px] text-ink-3">
-        Products, services, the job they do, in the words a buyer would type into Google. Keyword research starts from
-        these, so “packing slip template” beats “fulfilment reimagined”.
+        Products and services, and the jobs you do. {examples.offeringHelp} We look for what people type into Google about
+        these.
       </p>
     </>
   );
@@ -49,21 +63,20 @@ export function AudienceList({
 }) {
   const doubted = doubtedAudiences(profile.audiences);
   const quote = (xs: string[]) => xs.map((x) => `“${x}”`).join(", ");
+  const examples = wizardExamples(profile);
   return (
     <>
       {heading && <CountedHeading title="Target audiences" count={profile.audiences.length} max={MAX_AUDIENCES} />}
       <ChipList
         items={profile.audiences}
         onChange={(audiences) => patch({ audiences })}
-        placeholder="e.g. Pop culture fans who wear merch"
+        placeholder={examples.audiencePlaceholder}
+        label="Add a kind of customer"
         max={MAX_AUDIENCES}
       />
       {/* The one line the first real signup needed: they answered this field
           with the countries they ship to and the things they sell. */}
-      <p className="mt-2 text-[11.5px] text-ink-3">
-        The people who buy, not where they are or what they buy: a role, a segment, a situation. “Marketing leads at B2B SaaS
-        companies”, “Gift buyers looking for themed hoodies”.
-      </p>
+      <p className="mt-2 text-[11.5px] text-ink-3">{examples.audienceHelp}</p>
       {(doubted.places.length > 0 || doubted.products.length > 0) && (
         <p className="mt-1.5 text-[11.5px] text-warn-ink">
           {doubted.places.length > 0 && (
@@ -76,7 +89,7 @@ export function AudienceList({
               {quote(doubted.products)} {doubted.products.length === 1 ? "reads" : "read"} as a product.{" "}
             </>
           )}
-          Keywords are chosen for the people you name, so say who buys these.
+          We write for the people you name, so say who buys these.
         </p>
       )}
     </>

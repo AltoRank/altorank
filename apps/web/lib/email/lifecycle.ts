@@ -43,6 +43,7 @@ import { sendOnce, type RenderedEmail, type SendOnceOutcome } from "./send-once"
 import { operatorRecipients } from "@/lib/auth/operators";
 import type { EmptyPool } from "@/lib/onboarding/events";
 import { beforeTrialLine, trialGateUrl } from "./article-emails";
+import { fullArticleOn } from "@/lib/onboarding/full-article-switch";
 
 /** Every string below is user data: a domain, a title, a keyword, a name. */
 const esc = (s: unknown) =>
@@ -569,7 +570,7 @@ export function renderWelcome(a: WelcomeEmail): RenderedEmail {
   const next = a.beforeTrial
     ? emailButton(trialGateUrl(), "Continue setup") +
       emailParagraph(
-        `Setup writes your first article and shows you its title, outline and length. ${beforeTrialLine(1)} No card is on file until you start the trial.`,
+        `${fullArticleOn() ? "Setup writes your first article while you watch." : "Setup writes your first article and shows you its title, outline and length."} ${beforeTrialLine(1)} No card is on file until you start the trial.`,
       )
     : emailButton(appLink("/dashboard"), "Open the dashboard") +
       emailParagraph(
@@ -877,6 +878,10 @@ export type SetupFailedEmail = {
   line: string;
   /** True when the reason clears on its own and the next look is scheduled. */
   transient: boolean;
+  /** A provider (search data, the model) did not answer: ours, not the site's. */
+  provider?: boolean;
+  /** The overnight retry will run (lib/onboarding/provider-retry-gate.ts): only then is it promised. */
+  retryTonight?: boolean;
 };
 
 /**
@@ -897,6 +902,23 @@ export type SetupFailedEmail = {
 export function renderSetupFailed(a: SetupFailedEmail): RenderedEmail {
   const site = a.domain ?? "your site";
   const line = a.line.replace(/\s*[.!]+$/, "");
+  // Our provider's outage: no "try again" button, which would buy the same
+  // outage (UX audit 2026-10-12, #16); the retry is ours to make.
+  if (a.provider) {
+    return {
+      subject: `We could not reach our search data while we set up ${site}`,
+      preheader: a.retryTonight ? "We try again overnight. Nothing to do on your side." : "A problem on our side, not your site.",
+      footerNote: `Sent because setup for ${site} on AltoRank ran and fell short. At most one of these a day.`,
+      html:
+        eyebrow(site) +
+        heading("We could not reach our search data") +
+        emailParagraph(`We could not check what your buyers search for, because the service we get search data from did not answer. That is a problem on our side, not with ${esc(site)}, and nothing was charged.`) +
+        (a.retryTonight
+          ? emailParagraph(`We try again automatically, usually overnight, and email you when your first article is written. There is nothing you need to do.`)
+          : emailParagraph(`Nothing has been written or published, and nothing is wrong with your account.`)) +
+        emailButton(appLink("/onboarding"), "See where setup is"),
+    };
+  }
   return {
     subject: `Setup didn't finish for ${site}`,
     preheader: line,

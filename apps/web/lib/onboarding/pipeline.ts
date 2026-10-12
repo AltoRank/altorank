@@ -42,7 +42,7 @@ import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { spendClient } from "@/lib/billing/default-spend";
 import { currentSpendScope, isBudgetRefusal, watchRefusals, withSpendScope, withStage } from "@/lib/billing/spend-scope";
 import { draftBudgetShort, draftCanBuyLookup, openFirstLookBudget, type RunBudgetState } from "@/lib/billing/run-budget";
-import type { EmptyPool, OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
+import { poolMostlyUnanswered, type EmptyPool, type OnboardingArticle, type OnboardingEvent, type PhaseStatus } from "./events";
 import { readEmptyPool } from "./empty-pool";
 import { modelAvailable } from "@/lib/keyword-research/buyer-model";
 import { countScheduled, heldTopics, schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
@@ -316,6 +316,12 @@ async function runPhases(
       // is the difference between "your site has no demand" and "we could not
       // read your site", which are not the same news.
       const why = analysis.layers.find((l) => l.id === "keywords" && l.status === "unavailable")?.detail;
+      // The keyword layer threw, or its judge returned nothing: a provider
+      // (search data or the model) did not answer. With nothing found that is
+      // the news, and it is ours, not the site's - it used to fall through to
+      // "Nothing rankable found" and end as "nothing cleared the bar", or to
+      // a free retry that bought the same outage again (UX audit 2026-10-12).
+      const keywordLayerFailed = analysis.layers.some((l) => l.id === "keywords" && l.status === "failed");
       // What the keyword work actually did, in its own words. `analyseDomain`
       // builds the breakdown - how many the site already ranks for, how many
       // came from the rivals the person named, how many were dropped as things
@@ -336,8 +342,21 @@ async function runPhases(
       const crawlFailed = crawl?.status === "failed" ? crawl.detail : null;
       const willRetry = crawlFailed !== null && isTransientCrawlFailure(crawlFailed);
       const budgetStopped = keywordsFound === 0 && discoveryRefused;
-      researchFoundNothing = keywordsFound === 0 && crawlFailed === null && !why && !budgetStopped;
-      emit({
+      // Not when the run's own budget refused the buyer test: that leaves the
+      // judge with no verdicts and the layer "failed" too, and calling it an
+      // outage sent the person "our provider is down" and bought a second
+      // run against the same budget overnight (review, 2026-10-12).
+      const providerFailedHere = keywordsFound === 0 && crawlFailed === null && keywordLayerFailed && !budgetStopped;
+      researchFoundNothing = keywordsFound === 0 && crawlFailed === null && !why && !budgetStopped && !providerFailedHere;
+      if (providerFailedHere) {
+        emit({
+          phase: "keywords",
+          status: "failed",
+          cause: "provider",
+          detail: "We could not reach our search data, so no search was checked yet. That is a problem on our side, not your site.",
+          keywordsFound,
+        });
+      } else emit({
         phase: "keywords",
         status: keywordsFound > 0 ? "done" : "skipped",
         detail:
@@ -498,6 +517,9 @@ async function runPhases(
         detail: planningDetail,
         planned: plan.map((p) => ({ term: p.term, date: p.date, brief: p.brief })),
         ...(emptyPool ? { emptyPool } : {}),
+        // Nothing planned because the results pages could not be read: most
+        // of the pool went unanswered, not one search among many judged.
+        ...(plan.length === 0 && !firstAlreadyPlanned && providerFailed > 0 && (!emptyPool || poolMostlyUnanswered(emptyPool)) ? { cause: "provider" as const } : {}),
       });
     } catch (err) {
       planningDetail = message(err);

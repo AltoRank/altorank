@@ -135,6 +135,72 @@ export function bodyFraction(stage: BodyStage | null, stageElapsedS: number, don
   return Math.min(MAX_UNFINISHED, at / total);
 }
 
+// ---------------------------------------------------------------------------
+// One bar and one clock, from the click to the written article
+// ---------------------------------------------------------------------------
+//
+// There were two: the loading screen's reached about 85% at 1:24 against
+// "usually about 1:32", and then the gate drew a second one near 2% with "usually
+// about 2 minutes" (UX audit 2026-10-12, #7). Now the setup is the first part of
+// one bar and the body the rest, the clock runs from the click to the written
+// article, and there is one promise: about FIRST_LOOK_MINUTES minutes, the
+// number the wizard's bar quotes (lib/onboarding/copy.ts).
+
+/**
+ * The one estimate the screens quote. Recorded 2026-10-12 on two runs: gate
+ * at 93s and body written at 168s, and gate at 97s and body written at 209s.
+ * "About 3 minutes" covers both.
+ */
+export const FIRST_LOOK_MINUTES = 3;
+
+/** The body, start to saved, as the stages above add up. */
+export const EXPECTED_BODY_S = BODY_ORDER.reduce((sum, s) => sum + BODY_STAGE_S[s], 0);
+
+/** How much of the one bar the setup takes; the body is the rest. */
+export const SETUP_SHARE = EXPECTED_GATE_S / (EXPECTED_GATE_S + EXPECTED_BODY_S);
+
+/**
+ * Past this, the screens say it is taking longer than usual. Set from the
+ * slower recorded run (209s) plus a minute, not from the promise plus half a
+ * minute: at 3:30 a normal run (3:29) all but tripped it, and the card told
+ * the owner they could leave while the article was finishing on screen
+ * (review, 2026-10-12).
+ */
+export const LONGER_AFTER_S = 270;
+
+/**
+ * The whole first look, 0 to 1. Before the gate, the setup's own progress
+ * scaled into its share; after it, the body's, scaled into the rest. The
+ * swap is continuous: the setup's share ends where the body's begins.
+ */
+export function firstLookFraction(
+  steps: readonly OnboardingStep[],
+  elapsedS: number,
+  body: { stage: BodyStage | null; stageElapsedS: number; done: boolean } | null = null,
+): number {
+  if (body) {
+    if (body.done) return 1;
+    return Math.min(MAX_UNFINISHED, SETUP_SHARE + (1 - SETUP_SHARE) * bodyFraction(body.stage, body.stageElapsedS, false));
+  }
+  // The setup at its end is the gate, not the article: it fills its share.
+  return Math.min(SETUP_SHARE, setupFraction(steps, elapsedS) * SETUP_SHARE);
+}
+
+/**
+ * Whether to say "taking longer than usual": past LONGER_AFTER_S on the one
+ * clock, or - before the gate - when the setup alone has run a minute past
+ * its usual end, since the article cannot then land in about three minutes.
+ */
+export function runningLong(elapsedS: number, gateReached: boolean): boolean {
+  if (elapsedS > LONGER_AFTER_S) return true;
+  return !gateReached && elapsedS > EXPECTED_GATE_S + 60;
+}
+
+/** The clock's second line: the one estimate, or that it is running long. */
+export function estimateLine(elapsedS: number, gateReached: boolean): string {
+  return runningLong(elapsedS, gateReached) ? "Taking longer than usual" : `about ${FIRST_LOOK_MINUTES} minutes in all`;
+}
+
 /** "0:47". */
 export function clock(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));

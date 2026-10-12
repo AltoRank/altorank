@@ -20,6 +20,7 @@ import {
 } from "@/lib/audit/profile-refresh";
 import { monthlyTarget, schedulePlan } from "@/lib/onboarding/plan";
 import { reapStaleRuns } from "@/lib/onboarding/run-store";
+import { retryProviderDownRuns } from "@/lib/onboarding/provider-retry";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { topUpKeywords, type TopUpOutcome } from "@/lib/keyword-research/top-up";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
@@ -86,6 +87,14 @@ async function run(request: Request) {
   const reaped = await reapStaleRuns(supabase, startedAt.getTime()).catch((err) => {
     console.error(`[cron.analyze] stale runs: ${err instanceof Error ? err.message : err}`);
     return { reaped: 0, runIds: [] as string[] };
+  });
+
+  // Then: the first looks a provider outage cut short, tried again once, as
+  // the setup screen promised (lib/onboarding/provider-retry.ts). Bounded by
+  // the spend gate's count of pre-trial runs, so never more than once a site.
+  const providerRetries = await retryProviderDownRuns(supabase, startedAt.getTime()).catch((err) => {
+    console.error(`[cron.analyze] provider retries: ${err instanceof Error ? err.message : err}`);
+    return [];
   });
 
   // A workspace nobody has read yet, that has attempts left, and that was not
@@ -265,6 +274,7 @@ async function run(request: Request) {
 
   return NextResponse.json({
     staleRunsClosed: reaped.reaped,
+    providerRetriesStarted: providerRetries.filter((r) => r.runId).length,
     pending: pending?.length ?? 0,
     refused: results.filter((r) => r.status === "skipped").length,
     analysed: results.filter((r) => r.status === "analysed").length,

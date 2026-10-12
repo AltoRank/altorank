@@ -78,7 +78,10 @@ describe("the gate's article card", () => {
     expect(html).not.toMatch(/\bWritten\b/);
     expect(html).not.toContain("Sources");
     expect(html).toContain(OUTLINED.keyword);
-    expect(html).toContain("About 1,700 words");
+    // One word figure: the target until the writer's count is in, then that count.
+    expect(html).toContain("Length 240 words so far");
+    expect(html).not.toContain("About 1,700 words");
+    expect(text(renderToStaticMarkup(<FirstArticleCardView article={OUTLINED} live={live({ words: 0 })} />))).toContain("Length About 1,700 words");
     expect(html).toContain("Writing section 2 of 4 · 240 words so far");
     // No fact-check verdict on the paywall.
     expect(html).not.toContain("Fact check");
@@ -92,12 +95,39 @@ describe("the gate's article card", () => {
   });
 
   it("says written, with the real count, once the body is saved", () => {
-    const written: FirstArticleCard = { ...OUTLINED, state: "written", wordCount: 1381, sources: 2 };
+    const written: FirstArticleCard = { ...OUTLINED, state: "written", wordCount: 1381, sources: 4 };
     const html = text(renderToStaticMarkup(<FirstArticleCardView article={written} live={live({ done: true })} />));
     expect(html).toContain("Written");
     expect(html).toContain("1,381 words");
-    expect(html).toContain("Sources cited 2");
+    expect(html).toContain("Sources cited 4");
     expect(html).not.toContain("About 1,700");
+  });
+
+  it("hides a source count below three: one or two read as thin research", () => {
+    const written: FirstArticleCard = { ...OUTLINED, state: "written", wordCount: 1381, sources: 2 };
+    expect(text(renderToStaticMarkup(<FirstArticleCardView article={written} live={live({ done: true })} />))).not.toContain("Sources");
+    expect(text(renderToStaticMarkup(<FirstArticleCardView article={{ ...written, sources: 3 }} live={live({ done: true })} />))).toContain("Sources cited 3");
+  });
+
+  it("promises no date before the trial: ready when you approve it", () => {
+    const html = text(renderToStaticMarkup(<FirstArticleCardView article={OUTLINED} live={live()} />));
+    expect(html).toContain("Publishing Ready when you approve it");
+    expect(html).not.toMatch(/Scheduled for|Oct 12/);
+  });
+
+  it("shows no verdict labels on the paywall: no funnel stage, no warning-orange confidence", () => {
+    const labelled: FirstArticleCard = { ...OUTLINED, labels: topicLabels({ funnel: "audience", confidence: "lower", demand: "unmeasured" }) };
+    const markup = renderToStaticMarkup(<FirstArticleCardView article={labelled} live={live()} />);
+    expect(text(markup)).not.toMatch(/Early reader|not yet shopping|Top of funnel|Lower confidence|Unmeasured/);
+    expect(markup).not.toContain("text-warn");
+  });
+
+  it("leaves the site's own closing out of the outline it lists, but counts it for the writer", () => {
+    const withClosing: FirstArticleCard = { ...OUTLINED, closing: "Learn more about Acme" };
+    const markup = renderToStaticMarkup(<FirstArticleCardView article={withClosing} live={live({ sectionsDone: [0, 1, 2] })} />);
+    expect(text(markup)).not.toContain("Learn more about Acme");
+    expect(text(markup)).toContain("How to choose one (written)");
+    expect(text(markup)).toContain("Writing section 4 of 4");
   });
 
   it("replaces the outline with the text when the owner may read it", () => {
@@ -143,5 +173,13 @@ describe("the gate's article card", () => {
     expect(articleHeading(false, false).heading).toBe("Your first article is being written");
     expect(articleHeading(true, true).heading).toBe("Your first article is written");
     expect(articleHeading(false, true).lede).toContain("Read it below as it is written");
+  });
+
+  it("promises more articles only as many as the plan holds, and never 'the rest of the week'", () => {
+    for (const [written, full] of [[true, true], [true, false], [false, true], [false, false]] as const) {
+      expect(articleHeading(written, full, 0).lede).not.toMatch(/rest of the week|more topic|30-day|month/i);
+    }
+    expect(articleHeading(true, true, 3).lede).toContain("the 3 more topics we found for your site");
+    expect(articleHeading(true, false, 1).lede).toContain("The 1 more topic we found for your site");
   });
 });

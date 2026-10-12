@@ -29,6 +29,7 @@ import { extractLinks, isCitationLink } from "@/lib/seo/links";
 import { readArticlesWhole } from "@/lib/articles/body-read";
 import type { FactCheckReport } from "@/lib/ai/fact-check";
 import { outlineHeadings, outlineOf, type ArticleOutline } from "@/lib/content/outline";
+import { supportedLocales } from "@/lib/i18n/locale";
 
 // The fact check's own verdicts, so a verdict it adds reaches the card: a
 // draft in a language the checker does not read is `unchecked` (migration
@@ -58,6 +59,14 @@ export interface FirstArticleCard {
    * check yet. `written`: read off the finished body.
    */
   state: "outlined" | "written";
+  /**
+   * The last heading when it is the site's own closing - "Learn more about
+   * <the business>", added by enrichment (lib/content/enrich/cta.ts) - and
+   * not a section of the article. The gate leaves it out of the outline it
+   * shows: listed there it read as a section of brand plug (UX audit
+   * 2026-10-12). Absent when the article has none.
+   */
+  closing?: string;
 }
 
 export interface FirstArticleFact {
@@ -93,6 +102,19 @@ export function articleOutline(html: string): string[] {
 }
 
 /**
+ * Whether a heading is the closing call to action enrichment adds, in any
+ * language the contract describes: "Learn more about X", "Scopri di più su X"
+ * and the rest, whatever X is.
+ */
+export function isClosingHeading(heading: string): boolean {
+  const h = heading.trim();
+  return supportedLocales().some((locale) => {
+    const [before, after] = locale.labels.learnMore("\u0000").split("\u0000");
+    return h.length > before.length + after.length && h.startsWith(before) && h.endsWith(after);
+  });
+}
+
+/**
  * How many different outside pages the article cites. Two spellings of one
  * page (a tracking parameter, a trailing slash) are one source, the same rule
  * the citation check uses.
@@ -123,12 +145,15 @@ export function toFirstArticleCard(
   opts: { domain: string | null | undefined; scheduledDate: string | null; more: number; verdict?: unknown; volume?: number | null },
 ): FirstArticleCard {
   const html = contentHtml(row.content);
+  const outline = articleOutline(html);
+  const last = outline[outline.length - 1];
   return {
     id: row.id,
     title: row.title ?? "",
     keyword: row.keyword ?? "",
     scheduledDate: opts.scheduledDate,
-    outline: articleOutline(html),
+    outline,
+    ...(last && isClosingHeading(last) ? { closing: last } : {}),
     wordCount: row.word_count ?? 0,
     sources: sourcesCited(html, opts.domain),
     verdict: VERDICTS.has(row.fact_check_verdict ?? "") ? (row.fact_check_verdict as FirstArticleVerdict) : null,
@@ -155,6 +180,7 @@ export function toOutlinedCard(
     keyword: row.keyword ?? "",
     scheduledDate: opts.scheduledDate,
     outline: outlineHeadings(outline),
+    ...(outline.closing ? { closing: outline.closing } : {}),
     wordCount: outline.targetWordCount,
     sources: outline.sources.length,
     verdict: null,

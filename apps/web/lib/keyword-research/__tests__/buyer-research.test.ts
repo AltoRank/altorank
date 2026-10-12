@@ -181,6 +181,33 @@ describe("discoverBuyerKeywords", () => {
     expect(out.fromCompetitors[0].competitor).toBe("packiyo.com");
   });
 
+  // Competitors are optional in the wizard since 2026-10-12: a profile with
+  // none still plans, from the seeds and the rivals its results pages hold,
+  // and a rival kept as a name is said to the model and never looked up.
+  it("plans with no competitor named, and never looks up a name kept as a name", async () => {
+    ranked.mockResolvedValue([rankedRow("packing slip template")]);
+    ask.mockResolvedValue('["packing slip template", "order picking software"]');
+    const out = await discoverBuyerKeywords({
+      domain: "acme-pack.example",
+      business: {
+        name: "Acme Pack",
+        description: "Acme Pack is an order picking and packing app for online shops: pack slips, barcode scanning, and shipping labels from one screen.",
+        audiences: ["Online shops fulfilling in-house"],
+        offerings: ["order picking software", "packing slip generator"],
+        competitors: [],
+        competitorNames: ["Bottega Acme"],
+        searchRivals: ["rival-acme.example"],
+      },
+    });
+    expect(out.competitorsAsked).toEqual([]);
+    expect(out.competitorsUnresolved).toEqual([]);
+    // Only the kept results-page rival is read; the name never is.
+    expect(ranked.mock.calls.map((c) => c[0])).toEqual(["rival-acme.example"]);
+    expect(JSON.stringify(ranked.mock.calls)).not.toMatch(/bottega/i);
+    expect(out.seeds.seeds.length).toBeGreaterThan(0);
+    expect(ask.mock.calls[0][1]).toContain("Competitors named by the owner (no website): Bottega Acme");
+  });
+
   it("prices the seeds, keeps the ones anyone searches, and long-tails the best five", async () => {
     ask.mockResolvedValue(JSON.stringify(["packing slip template", "order picking software", "warehouse picking app", "packiyo alternative", "alpha beta", "charlie delta", "echo foxtrot", "golf hotel"]));
     price.mockResolvedValue(

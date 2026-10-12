@@ -35,6 +35,7 @@ export {
   type ProfileSection,
 } from "./profile-shape";
 import type { BusinessProfile } from "./profile-shape";
+import type { LocaleGuess } from "./locale-guess";
 
 /** Enough of the site to characterise it; more than this is wasted tokens. */
 // 8k chars is plenty to describe a business and keeps the proposal under ~15 s.
@@ -86,6 +87,14 @@ export interface InferenceResult {
    * card was declined"), which a static copy map cannot.
    */
   message?: string;
+  /** The first page's `lang`, from the read (lib/onboarding/site-text.ts). */
+  htmlLang?: string | null;
+  /**
+   * Language and market guessed from that `lang` and the country domain,
+   * when the read produced no profile. Set by the wizard's server action;
+   * the wizard starts from it instead of English / Global.
+   */
+  localeGuess?: LocaleGuess | null;
 }
 
 /**
@@ -105,7 +114,7 @@ export async function inferBusinessProfileDetailed(domain: string): Promise<Infe
 
   const read = await readSiteText(domain, MAX_CHARS);
   if (read.source === "none" || read.text.length < Math.min(MIN_CHARS, 250)) {
-    return { profile: null, reason: "unreadable", source: read.source, observed: read.observed };
+    return { profile: null, reason: "unreadable", source: read.source, observed: read.observed, htmlLang: read.htmlLang };
   }
 
   try {
@@ -121,9 +130,9 @@ export async function inferBusinessProfileDetailed(domain: string): Promise<Infe
     const profile = parseProfile(raw, domain);
     return profile
       ? { profile, reason: "ok", source: read.source, observed: read.observed }
-      : { profile: null, reason: "model_failed", source: read.source, observed: read.observed };
+      : { profile: null, reason: "model_failed", source: read.source, observed: read.observed, htmlLang: read.htmlLang };
   } catch {
-    return { profile: null, reason: "model_failed", source: read.source, observed: read.observed };
+    return { profile: null, reason: "model_failed", source: read.source, observed: read.observed, htmlLang: read.htmlLang };
   }
 }
 

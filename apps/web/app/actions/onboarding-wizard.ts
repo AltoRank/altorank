@@ -24,6 +24,7 @@ import { fetchBulkAuthority } from "@/lib/seo/domain-metrics";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
 import { e2eStubsEnabled, stubSuggestCompetitors } from "@/lib/e2e/stubs";
 import { resolveLocale } from "@/lib/onboarding/locale";
+import { guessLocale } from "@/lib/onboarding/locale-guess";
 import { discoverSite, type SiteDiscovery } from "@/lib/onboarding/site-discovery";
 import {
   outputToRow,
@@ -66,11 +67,15 @@ export async function proposeProfile(workspaceId: string): Promise<InferenceResu
     action: "keyword-research",
   });
   if (!gate.allowed) {
-    return { profile: null, reason: "needs_plan", source: "none", message: gate.message };
+    return { profile: null, reason: "needs_plan", source: "none", message: gate.message, localeGuess: guessLocale({ domain: workspace.domain }) };
   }
   // Checked: a conversion page the site does not have comes back empty with
   // the reason, never as the guess (lib/onboarding/observed-facts.ts).
   const result = await inferVerifiedBusinessProfile(workspace.domain);
+  // A failed read still says which language the page is in and which
+  // country's domain it is on: the wizard starts from that, not English /
+  // Global (lib/onboarding/locale-guess.ts).
+  if (!result.profile) return { ...result, localeGuess: guessLocale({ htmlLang: result.htmlLang, domain: workspace.domain }) };
   // The model names rivals ("trainerize"); keyword research reads domains.
   // Resolved here, not in business-profile.ts, because the client wizard
   // imports that file and the resolver needs node:dns. A name nothing can
@@ -163,6 +168,59 @@ export async function saveProfile(workspaceId: string, profile: BusinessProfile)
   revalidatePath("/settings", "layout");
 }
 
+export type DraftSave = { ok: true } | { ok: false; reason: "finished" | "confirmed" | "failed" };
+
+/**
+ * The wizard's answers as the owner edits them, so a person who leaves comes
+ * back to what they had checked (UX audit 2026-10-12, #2: two of three real
+ * signups left the wizard with nothing saved).
+ *
+ * A draft, not a confirmation, and written as one:
+ * - no `confirmedAt` - only the final click stamps that (`saveProfile`), so
+ *   the writer is never told a half-checked profile is the owner's word;
+ * - only the profile and the site details; the name, language and location
+ *   columns that research reads move on the final click, as before;
+ * - only while setup is unfinished, and never over a profile someone already
+ *   confirmed: a draft that lands after the final click (a slow request, a
+ *   second tab) must not undo it;
+ * - through the person's own client, so RLS decides whether they can see
+ *   the site at all, and the update is filtered to this one site.
+ *
+ * Never throws: a draft that does not save costs the person nothing the
+ * final click will not do, so the screen is not interrupted for it.
+ */
+export async function saveProfileDraft(workspaceId: string, profile: BusinessProfile, site: SiteDetails): Promise<DraftSave> {
+  try {
+    const supabase = await createClient();
+    const { data: row, error: readError } = await supabase
+      .from("workspaces")
+      .select("id, business_profile, onboarded_at, onboarding_skipped_at")
+      .eq("id", workspaceId)
+      .maybeSingle();
+    if (readError || !row) return { ok: false, reason: "failed" };
+    if (row.onboarded_at || row.onboarding_skipped_at) return { ok: false, reason: "finished" };
+    if ((row.business_profile as BusinessProfile | null)?.confirmedAt) return { ok: false, reason: "confirmed" };
+    // Never taken from the client, even as null: a draft carries no stamp.
+    const { confirmedAt: _ignored, ...draft } = profile;
+    void _ignored;
+    const { data: written, error } = await supabase
+      .from("workspaces")
+      .update({ business_profile: draft, ...siteColumns(site) })
+      .eq("id", workspaceId)
+      .is("onboarded_at", null)
+      .is("onboarding_skipped_at", null)
+      // In the update itself, not only in the read above: a draft that read
+      // the row before the final click stamped confirmedAt (a second tab, a
+      // slow request) must still not land over it (review, 2026-10-12).
+      .or("business_profile.is.null,business_profile->>confirmedAt.is.null")
+      .select("id");
+    if (error || !written?.length) return { ok: false, reason: "failed" };
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "failed" };
+  }
+}
+
 /** Look for the sitemap and blog. Returns what was verified live, and nothing else. */
 export async function discoverSiteDetails(workspaceId: string): Promise<SiteDiscovery> {
   const { workspace } = await assertWorkspace(workspaceId);
@@ -172,16 +230,21 @@ export async function discoverSiteDetails(workspaceId: string): Promise<SiteDisc
 
 const HTTP = /^https?:\/\/\S+$/i;
 
+/** The site details as columns: only URLs that look like URLs, at most three examples. */
+function siteColumns(details: SiteDetails) {
+  const clean = (u: string) => (HTTP.test(u.trim()) ? u.trim() : null);
+  return {
+    sitemap_url: clean(details.sitemapUrl),
+    blog_root_url: clean(details.blogRootUrl),
+    example_article_urls: details.exampleArticleUrls.map((u) => u.trim()).filter((u) => HTTP.test(u)).slice(0, 3),
+  };
+}
+
 export async function saveSiteDetails(workspaceId: string, details: SiteDetails): Promise<void> {
   const { supabase } = await assertWorkspace(workspaceId);
-  const clean = (u: string) => (HTTP.test(u.trim()) ? u.trim() : null);
   const { error } = await supabase
     .from("workspaces")
-    .update({
-      sitemap_url: clean(details.sitemapUrl),
-      blog_root_url: clean(details.blogRootUrl),
-      example_article_urls: details.exampleArticleUrls.map((u) => u.trim()).filter((u) => HTTP.test(u)).slice(0, 3),
-    })
+    .update(siteColumns(details))
     .eq("id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/settings", "layout");

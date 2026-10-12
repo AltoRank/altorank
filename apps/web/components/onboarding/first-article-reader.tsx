@@ -12,29 +12,26 @@
 // cutting between whole tags of that html, so it never makes markup of its
 // own beyond closing what it opened and the caret below.
 //
-// - typed at the writer's pace with a catch-up, a caret at the end while it
-//   is being written, never in two-second blocks cut mid-word;
+// - typed at a reading pace, a character at a time, a little quicker when a
+//   backlog builds and quicker again once the body is saved, never in
+//   blocks cut mid-word (lib/onboarding/stream-reveal.ts);
 // - one element per top-level block, keyed by position, so text already
 //   shown is never re-rendered; a new block rises in;
-// - the page follows the caret only while the reader is watching it (the
-//   caret is on screen after the last scroll the follow did not make);
-//   scrolled away by any means, a "Jump to the latest" pill brings them
-//   back instead of the page pulling them down;
+// - the page never scrolls itself. It used to follow the caret down, and on
+//   2026-10-12 it scrolled a reader 1,000px while they were reading (UX
+//   audit #10). When the caret is below the screen, a "Jump to the latest"
+//   pill offers the way down instead, once, on a click;
 // - before the first word, the outline it is being written to stands in for
 //   the text, so the reader is never an empty box.
 //
-// Less motion asked for: the text appears as it arrives, without typing,
-// rising or following. Nothing here edits, approves or publishes.
+// Less motion asked for: the text appears as it arrives, without typing or
+// rising. Nothing here edits, approves or publishes. Its links open in a new
+// tab and sit outside the tab order (lib/onboarding/readable-html.ts).
 
-import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Icons } from "@/components/ui";
-import { nextShown, revealPrefix, splitBlocks, visibleLength, withCaret } from "@/lib/onboarding/stream-reveal";
+import { revealPrefix, revealStep, splitBlocks, startAt, visibleLength, withCaret, type RevealState } from "@/lib/onboarding/stream-reveal";
 import { useReducedMotion } from "./use-first-article-live";
-
-const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
-
-/** Room kept under the caret when the page follows it. */
-const FOLLOW_MARGIN = 120;
 
 /** One top-level block of the server-cleaned html (see the header). */
 const Block = memo(function Block({ html, rise }: { html: string; rise: boolean }) {
@@ -44,13 +41,19 @@ const Block = memo(function Block({ html, rise }: { html: string; rise: boolean 
 export function FirstArticleText({
   html,
   done,
-  arrivalCps = 0,
   outline = [],
   waiting,
+  onRevealing,
 }: {
   html: string;
   done: boolean;
-  arrivalCps?: number;
+  /**
+   * Told whether text is still appearing: being written, or written and
+   * still being typed out. The gate keeps its "being written" heading and
+   * its trial bar up until it is not (review, 2026-10-12: the last ~4,000
+   * characters typed for 14s under "written", with no button on screen).
+   */
+  onRevealing?: (revealing: boolean) => void;
   /** The headings it is written to: shown, muted, until the first words land. */
   outline?: string[];
   /** What is happening before the first word, for the placeholder. */
@@ -59,96 +62,69 @@ export function FirstArticleText({
   const available = visibleLength(html);
   const reduced = useReducedMotion();
   // A body already written when the page opened is shown whole, at once:
-  // there is nothing to watch being typed.
-  const [typed, setShown] = useState(() => (done ? available : 0));
-  // Written, or less motion asked for: everything that has arrived, at once.
-  const shown = done || reduced ? available : Math.min(typed, available);
+  // there is nothing to watch being typed. One that lands while the page is
+  // open keeps being typed to its end.
+  const [reveal, setReveal] = useState<RevealState>(() => startAt(available, done));
+  // Less motion asked for: everything that has arrived, at once.
+  const shown = reduced ? available : Math.min(reveal.shown, available);
   // Blocks already there on the first paint (a reload) do not rise; every
   // block after them does, once, when it first appears. Fixed per index, so
   // a block's class never changes under it and never replays the rise.
-  const [settledBlocks] = useState(() => (done ? splitBlocks(html).length : 0));
+  const [settledBlocks] = useState(() => splitBlocks(revealPrefix(html, startAt(available, done).shown)).length);
   const container = useRef<HTMLDivElement | null>(null);
-  const [following, setFollowing] = useState(true);
-  const [caretAway, setCaretAway] = useState(false);
-  // Where the page's own follow last sent the window, so the scroll event it
-  // causes is not read as the person's; and, after "Jump to the latest", how
-  // long to let the smooth scroll run before reading positions again.
-  const ownScrollTo = useRef<number | null>(null);
-  const settleUntil = useRef(0);
+  const [caretBelow, setCaretBelow] = useState(false);
 
   // The typing loop: one frame at a time toward what has arrived.
+  const typing = !reduced && shown < available;
+  // Whether anything has been typed yet: a page opened half-way through a
+  // body starts where the text already is, but for its tail (`startAt`).
+  const begun = useRef(reveal.shown > 0);
   useEffect(() => {
-    if (reduced || done) return;
+    if (!typing) return;
     let raf = 0;
     let last = performance.now();
     const tick = (now: number) => {
       const dt = Math.min(100, now - last);
       last = now;
-      setShown((s) => {
-        const next = nextShown(s, available, dt, arrivalCps);
-        if (next < available) raf = requestAnimationFrame(tick);
-        return next;
-      });
+      const first = !begun.current;
+      begun.current = true;
+      setReveal((r) => (first && r.shown === 0 ? revealStep(startAt(available, false), available, dt, done) : revealStep(r, available, dt, done)));
+      raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [available, done, reduced, arrivalCps]);
+  }, [typing, available, done]);
 
-  const writing = !done;
+  // Still appearing: being written, or written and still being typed out.
+  const writing = !done || shown < available;
   const revealed = shown >= available ? html : revealPrefix(html, shown);
   const blocks = splitBlocks(revealed);
 
-  // Whether the page follows is decided by where the caret is, after every
-  // scroll the follow itself did not cause - a wheel, a touch, a key, Tab
-  // onto a button below, a dragged scrollbar, a resize, an anchor. It used to
-  // change only on wheel, touch and a list of keys, so anything else left it
-  // "following" with the caret above the screen, and the pill, shown only
-  // when not following, never came (review, 2026-10-12).
+  // Whether the caret is below the screen, read after every scroll and every
+  // frame of text: the pill is offered then and only then.
   useEffect(() => {
     if (!writing) return;
     const check = () => {
-      if (performance.now() < settleUntil.current) return;
-      const own = ownScrollTo.current;
-      if (own !== null && Math.abs(window.scrollY - own) <= 2) {
-        ownScrollTo.current = null;
-        return;
-      }
-      ownScrollTo.current = null;
       const caret = container.current?.querySelector(".stream-caret");
       if (!caret) return;
-      const r = caret.getBoundingClientRect();
-      const inView = r.top >= 0 && r.bottom <= window.innerHeight;
-      setCaretAway(!inView);
-      setFollowing(inView);
+      setCaretBelow(caret.getBoundingClientRect().top > window.innerHeight - 24);
     };
+    check();
     window.addEventListener("scroll", check, { passive: true });
     window.addEventListener("resize", check);
     return () => {
       window.removeEventListener("scroll", check);
       window.removeEventListener("resize", check);
     };
-  }, [writing]);
+  }, [writing, blocks.length, shown]);
 
-  // Follow the caret, gently: only while following, only by what it moved.
-  useIsoLayoutEffect(() => {
-    if (!writing) return;
-    const caret = container.current?.querySelector(".stream-caret");
-    if (!caret) return;
-    const r = caret.getBoundingClientRect();
-    const limit = window.innerHeight - FOLLOW_MARGIN;
-    if (following && !reduced && r.bottom > limit && r.top >= 0 && r.top < window.innerHeight + 200) {
-      const by = r.bottom - limit;
-      ownScrollTo.current = window.scrollY + by;
-      window.scrollBy(0, by);
-      return;
-    }
-    const away = r.top < 0 || r.bottom > window.innerHeight;
-    if (away !== caretAway) setCaretAway(away);
-    // Off screen where the follow will not go (above, far below, or less
-    // motion asked for): the person is somewhere else, so the pill offers
-    // the way back instead.
-    if (away && following && performance.now() >= settleUntil.current) setFollowing(false);
-  });
+  // Nothing in hand yet counts as not revealing: the gate decides that case
+  // from the html itself.
+  const revealing = Boolean(html) && writing;
+  useEffect(() => {
+    onRevealing?.(revealing);
+  }, [revealing, onRevealing]);
+  useEffect(() => () => onRevealing?.(false), [onRevealing]);
 
   if (!html) {
     return (
@@ -187,17 +163,14 @@ export function FirstArticleText({
         ))}
         {writing && blocks.length === 0 && <span className="stream-caret" aria-hidden="true" />}
       </div>
-      {writing && caretAway && !following && (
+      {writing && caretBelow && (
         <button
           type="button"
           onClick={() => {
             const caret = container.current?.querySelector(".stream-caret");
-            settleUntil.current = performance.now() + (reduced ? 50 : 900);
             caret?.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
-            setFollowing(true);
-            setCaretAway(false);
           }}
-          className="fixed bottom-20 left-1/2 z-30 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-panel px-3.5 py-2 text-[12.5px] text-ink shadow-md"
+          className="fixed bottom-24 left-1/2 z-30 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-panel px-3.5 py-2 text-[12.5px] text-ink shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
         >
           <span className="inline-flex rotate-90">
             <Icons.arrow size={12} />
