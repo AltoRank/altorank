@@ -410,6 +410,10 @@ async function runPhases(
         qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES,
         firstLook,
         onFunnel: (f) => { planFunnel = f; },
+        // The searches being checked, named on the screen while it happens.
+        // The reducer keeps them only while the phase is active.
+        onQualifyProgress: (p) =>
+          emit({ phase: "planning", status: "active", checking: { terms: p.checking, judged: p.judged, qualified: p.qualified } }),
         // Not on the way to the gate: kept alive with the run's tail.
         questionsInBackground: (pending) => { questionsSettled = pending.then(() => undefined, () => undefined); },
       }));

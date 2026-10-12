@@ -20,5 +20,15 @@ export async function GET(request: NextRequest) {
   if (!workspaceId) return NextResponse.json({ error: "workspaceId is required" }, { status: 400 });
   const body = await readFirstArticleBody(supabase, user.id, workspaceId);
   if (!body.ok) return NextResponse.json({ error: "Not found" }, { status: 404, headers: { "cache-control": "no-store" } });
-  return NextResponse.json({ articleId: body.articleId, html: body.html, done: body.done }, { headers: { "cache-control": "no-store" } });
+  const { progress } = body;
+  return NextResponse.json(
+    {
+      articleId: body.articleId,
+      html: body.html,
+      done: body.done,
+      // The same counts the progress route answers, so the reader asks once.
+      progress: { stage: progress.stage, stageMs: progress.stageMs, sectionsDone: progress.sectionsDone, sections: progress.sections, words: progress.words },
+    },
+    { headers: { "cache-control": "no-store" } },
+  );
 }

@@ -22,11 +22,21 @@
 //
 // Anything else - another account, another article, a member who is not the
 // owner, the switch off - is refused with nothing read.
+//
+// Beside the text, how far it has got (`readFirstArticleProgress`): the
+// stage, the outline's sections written and the words so far, read from the
+// counts-only record the draft route keeps (migration 108). That one is
+// answered with the switch off too - it is how the gate ticks the outline
+// while the text stays locked - to the same person, for the same article,
+// and it never selects a body column.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
 import { tiptapToHtml } from "@/lib/cms/html";
 import { readableHtml } from "./readable-html";
+import { outlineHeadings, outlineOf } from "@/lib/content/outline";
+import { readBodyProgress, sectionsDone } from "./body-progress";
+import type { BodyStage } from "./setup-progress";
 
 export const FULL_ARTICLE_SWITCH = "PRETRIAL_FULL_ARTICLE";
 
@@ -37,8 +47,8 @@ export function fullArticleOn(env: Record<string, string | undefined> = process.
 const WRITTEN = new Set(["review", "approved", "scheduled", "live"]);
 
 export type FirstArticleBody =
-  | { ok: true; articleId: string; html: string; done: boolean }
-  | { ok: false; reason: "off" | "not-found" | "not-owner" | "no-first-article" };
+  | { ok: true; articleId: string; html: string; done: boolean; progress: FirstArticleProgress }
+  | { ok: false; reason: "off" | Refusal };
 
 /**
  * The article's HTML as the reader shows it: rebuilt from an allowlist, never
@@ -46,17 +56,20 @@ export type FirstArticleBody =
  */
 export { readableHtml };
 
+/** Why a read of the first article was refused; the routes answer every one the same way. */
+type Refusal = "not-found" | "not-owner" | "no-first-article";
+
 /**
- * The first article's body for the person asking, or why not. `client` is
- * the person's own (cookie) client; `userId` is who it is signed in as.
+ * The run's first article on this site, if the person asking owns the
+ * account the site is in, or why not. Every read of the first article on the
+ * gate - its text, its progress - asks this first.
  */
-export async function readFirstArticleBody(
+async function ownersFirstArticle(
   client: SupabaseClient,
   userId: string,
   workspaceId: string,
-  opts: { env?: Record<string, string | undefined>; service?: SupabaseClient } = {},
-): Promise<FirstArticleBody> {
-  if (!fullArticleOn(opts.env)) return { ok: false, reason: "off" };
+  service: SupabaseClient,
+): Promise<{ ok: true; articleId: string } | { ok: false; reason: Refusal }> {
   // Through the person's client: RLS answers whether they can see the site.
   const { data: site } = await client.from("workspaces").select("id, account_id").eq("id", workspaceId).maybeSingle();
   if (!site) return { ok: false, reason: "not-found" };
@@ -76,7 +89,6 @@ export async function readFirstArticleBody(
     .maybeSingle();
   const articleId = (run as { article_id?: string | null } | null)?.article_id ?? null;
   if (!articleId) return { ok: false, reason: "no-first-article" };
-  const service = opts.service ?? createServiceClient();
   // The site's first article, and the run's: the oldest that is not errored.
   const { data: first } = await service
     .from("articles")
@@ -88,17 +100,104 @@ export async function readFirstArticleBody(
     .limit(1)
     .maybeSingle();
   if ((first as { id?: string } | null)?.id !== articleId) return { ok: false, reason: "no-first-article" };
+  return { ok: true, articleId };
+}
+
+/**
+ * The first article's body for the person asking, or why not. `client` is
+ * the person's own (cookie) client; `userId` is who it is signed in as.
+ */
+export async function readFirstArticleBody(
+  client: SupabaseClient,
+  userId: string,
+  workspaceId: string,
+  opts: { env?: Record<string, string | undefined>; service?: SupabaseClient } = {},
+): Promise<FirstArticleBody> {
+  if (!fullArticleOn(opts.env)) return { ok: false, reason: "off" };
+  const service = opts.service ?? createServiceClient();
+  const owned = await ownersFirstArticle(client, userId, workspaceId, service);
+  if (!owned.ok) return owned;
+  const articleId = owned.articleId;
   const { data: row } = await service
     .from("articles")
-    .select("id, status, content, body_stream")
+    .select("id, status, word_count, content, body_stream, body_progress, instructions_snapshot")
     .eq("id", articleId)
     .eq("workspace_id", workspaceId)
     .maybeSingle();
-  const article = row as { id: string; status: string; content: unknown; body_stream: string | null } | null;
+  const article = row as { id: string; status: string; word_count: number | null; content: unknown; body_stream: string | null; body_progress: unknown; instructions_snapshot: unknown } | null;
   if (!article) return { ok: false, reason: "no-first-article" };
   const done = WRITTEN.has(article.status) && article.content !== null;
   const html = done
     ? readableHtml(typeof article.content === "string" ? article.content : tiptapToHtml(article.content as Record<string, unknown>))
     : readableHtml(article.body_stream ?? "");
-  return { ok: true, articleId, html, done };
+  return { ok: true, articleId, html, done, progress: progressOf(article, done) };
+}
+
+// ---------------------------------------------------------------------------
+// Progress without the text, whatever the switch says
+// ---------------------------------------------------------------------------
+
+/** How far the first article's body has got. Counts, a stage and a time: never text. */
+export interface FirstArticleProgress {
+  done: boolean;
+  /** Null before the writer's first record (or once the body is saved). */
+  stage: BodyStage | null;
+  /** Milliseconds the body has been in `stage`. */
+  stageMs: number;
+  /** Indexes of the outline's headings (closing included) that are written. */
+  sectionsDone: number[];
+  /** The outline's headings, closing included: what `sectionsDone` counts out of. */
+  sections: number;
+  /** Words of body text so far; the saved count once done. */
+  words: number;
+}
+
+export type FirstArticleProgressRead =
+  | ({ ok: true; articleId: string } & FirstArticleProgress)
+  | { ok: false; reason: Refusal };
+
+function progressOf(
+  article: { status: string; body_progress: unknown; instructions_snapshot: unknown; word_count?: number | null },
+  done: boolean,
+  now: number = Date.now(),
+): FirstArticleProgress {
+  const outline = outlineOf(article.instructions_snapshot);
+  const total = outline ? outlineHeadings(outline).length : 0;
+  const progress = done ? null : readBodyProgress(article.body_progress);
+  const since = progress ? Date.parse(progress.since) : NaN;
+  return {
+    done,
+    stage: progress?.stage ?? null,
+    stageMs: Number.isFinite(since) ? Math.max(0, now - since) : 0,
+    sectionsDone: sectionsDone(progress, total, { done, hasClosing: Boolean(outline?.closing) }),
+    sections: total,
+    words: done ? Math.max(0, article.word_count ?? 0) : progress?.words ?? 0,
+  };
+}
+
+/**
+ * How far the owner's first article has got, for the gate's outline - with
+ * the switch on or off, because it carries no text: the columns read are the
+ * status, the word count, the outline and the counts-only record (108). The
+ * body columns are never selected here. Same refusals as the text.
+ */
+export async function readFirstArticleProgress(
+  client: SupabaseClient,
+  userId: string,
+  workspaceId: string,
+  opts: { service?: SupabaseClient; now?: number } = {},
+): Promise<FirstArticleProgressRead> {
+  const service = opts.service ?? createServiceClient();
+  const owned = await ownersFirstArticle(client, userId, workspaceId, service);
+  if (!owned.ok) return owned;
+  const { data: row } = await service
+    .from("articles")
+    .select("id, status, word_count, body_progress, instructions_snapshot")
+    .eq("id", owned.articleId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+  const article = row as { id: string; status: string; word_count: number | null; body_progress: unknown; instructions_snapshot: unknown } | null;
+  if (!article) return { ok: false, reason: "no-first-article" };
+  const done = WRITTEN.has(article.status) && (article.word_count ?? 0) > 0;
+  return { ok: true, articleId: owned.articleId, ...progressOf(article, done, opts.now) };
 }

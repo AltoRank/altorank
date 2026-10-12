@@ -27,7 +27,7 @@ import { randomUUID } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { connectLocalStack } from "@/lib/__tests__/support/local-db";
 import { loadFirstArticle } from "../first-article";
-import { readFirstArticleBody } from "../first-article-body";
+import { readFirstArticleBody, readFirstArticleProgress } from "../first-article-body";
 import { stampRun } from "../run-store";
 
 const STACK = await connectLocalStack();
@@ -135,6 +135,27 @@ describe.skipIf(!STACK)("the first look's gate on the local database", () => {
       verdict: null,
     });
     expect(JSON.stringify(outlined)).not.toContain(SECRET);
+  });
+
+  it("tells the owner how far the body has got with the text locked: counts only, refused to anyone else", async () => {
+    // What the draft route keeps while it writes (migration 108), beside the streamed text.
+    const since = new Date(Date.now() - 4_000).toISOString();
+    must(await admin.from("articles").update({ body_progress: { v: 1, stage: "writing", since, sections: 3, words: 240 } }).eq("id", articleA).select("id"), "progress");
+    const read = await readFirstArticleProgress(users.aOwner.client, users.aOwner.id, siteA, { service: admin });
+    expect(read).toMatchObject({ ok: true, articleId: articleA, done: false, stage: "writing", sections: OUTLINE.sections.length + 1, sectionsDone: [0, 1], words: 240 });
+    if (read.ok) expect(read.stageMs).toBeGreaterThanOrEqual(3_000);
+    // No text of any kind: not the stream, not a heading, not the title.
+    const wire = JSON.stringify(read);
+    for (const secret of [SECRET, OUTLINE.title, ...OUTLINE.sections]) expect(wire).not.toContain(secret);
+    // Refused like the text: another account, a member who is not the owner.
+    expect(await readFirstArticleProgress(users.bOwner.client, users.bOwner.id, siteA, { service: admin })).toEqual({ ok: false, reason: "not-found" });
+    expect(await readFirstArticleProgress(users.aEditor.client, users.aEditor.id, siteA, { service: admin })).toEqual({ ok: false, reason: "not-owner" });
+    // A client token can neither read the record nor write one.
+    const { error: readError } = await users.aOwner.client.from("articles").select("id, body_progress").eq("id", articleA);
+    expect(readError?.message).toMatch(/permission denied/);
+    const { error: writeError } = await users.aOwner.client.from("articles").update({ body_progress: { v: 1, stage: "finishing", since, sections: 9, words: 9999 } }).eq("id", articleA);
+    expect(writeError?.message).toMatch(/server only/);
+    must(await admin.from("articles").update({ body_progress: null }).eq("id", articleA).select("id"), "clear progress");
   });
 
   it("refuses body_stream to a client token, like every body column", async () => {

@@ -163,7 +163,7 @@ export interface EmptyPool {
  * one - keywords its count, drafting its article.
  */
 export type OnboardingEvent =
-  | { phase: OnboardingPhase; status: Exclude<PhaseStatus, "pending">; detail?: string; keywordsFound?: number; planned?: OnboardingPlanned[]; article?: OnboardingArticle; emptyPool?: EmptyPool }
+  | { phase: OnboardingPhase; status: Exclude<PhaseStatus, "pending">; detail?: string; keywordsFound?: number; planned?: OnboardingPlanned[]; article?: OnboardingArticle; emptyPool?: EmptyPool; checking?: PlanningCheck }
   | { phase: "ready" }
   | { phase: "error"; detail: string };
 
@@ -171,7 +171,29 @@ export interface OnboardingStep {
   phase: OnboardingPhase;
   status: PhaseStatus;
   detail?: string;
+  /** Planning only, and only while it is active: the topics being checked right now. */
+  checking?: PlanningCheck;
 }
+
+/**
+ * What the planner is checking while the planning phase runs, so the loading
+ * screen can name real work instead of a spinner: the searches whose results
+ * pages are being read in this batch, and how many have been judged and have
+ * cleared the bar so far.
+ *
+ * The terms live on the row only while planning is active. The reducer drops
+ * them the moment the phase settles: a finished run's row is readable by
+ * every member of the account, and a list of the topics the plan held for the
+ * trial is the keyword report the trial sells (wizard.tsx, TrialStep).
+ */
+export interface PlanningCheck {
+  terms: string[];
+  judged: number;
+  qualified: number;
+}
+
+/** At most this many terms ride on the row: the screen names a handful, not the batch. */
+export const PLANNING_CHECK_TERMS = 6;
 
 /** Topics the plan holds back for the trial: how many, and the days they would take. */
 export interface OnboardingHeld {
@@ -223,9 +245,16 @@ export function reduceOnboarding(state: OnboardingState, event: OnboardingEvent)
   if (event.phase === "ready") return { ...state, ready: true };
   if (event.phase === "error") return { ...state, error: event.detail };
 
-  const steps = state.steps.map((s) =>
-    s.phase === event.phase ? { ...s, status: event.status, detail: event.detail ?? s.detail } : s,
-  );
+  const steps = state.steps.map((s) => {
+    if (s.phase !== event.phase) return s;
+    const next: OnboardingStep = { ...s, status: event.status, detail: event.detail ?? s.detail };
+    // Only while the phase is live (see PlanningCheck): a settled step
+    // carries no terms, whatever it carried before.
+    const checking = event.status === "active" ? event.checking ?? s.checking : undefined;
+    if (checking) next.checking = { ...checking, terms: checking.terms.slice(0, PLANNING_CHECK_TERMS) };
+    else delete next.checking;
+    return next;
+  });
 
   return {
     ...state,
@@ -380,7 +409,16 @@ export function stateFromRun(
   const steps: OnboardingStep[] = PHASE_ORDER.map((phase) => {
     const p = known.get(phase);
     if (!p) return { phase, status: "pending" };
-    return p.detail === undefined ? { phase, status: p.status } : { phase, status: p.status, detail: p.detail };
+    const step: OnboardingStep = p.detail === undefined ? { phase, status: p.status } : { phase, status: p.status, detail: p.detail };
+    // The live check, only on a step that is still active (see PlanningCheck).
+    if (p.status === "active" && p.checking && Array.isArray(p.checking.terms)) {
+      step.checking = {
+        terms: p.checking.terms.filter((t): t is string => typeof t === "string").slice(0, PLANNING_CHECK_TERMS),
+        judged: Number(p.checking.judged) || 0,
+        qualified: Number(p.checking.qualified) || 0,
+      };
+    }
+    return step;
   });
   const draft: OnboardingArticle | null =
     article && run.article_id === article.id ? toOnboardingArticle(article) : null;
@@ -595,6 +633,16 @@ export function failedRunNotice(snapshot: OnboardingRunSnapshot | null): FailedR
  * written but not readable (lib/billing/trial.ts, draftBodyLocked). "In
  * review" would send it to a queue it cannot open.
  */
+/**
+ * The first article before the trial, as far as it has got. Outlined is not
+ * written: on 2026-10-12 the gate said "your first article is written" two
+ * minutes before its body existed, beside a heading that said it was being
+ * written.
+ */
+function preTrialArticle(article: OnboardingArticle | null): string {
+  return article?.outlined ? "article is outlined and being written" : "article is written";
+}
+
 export function onboardingOutcome(state: OnboardingState, handoff = false, opts: { preTrial?: boolean } = {}): OnboardingOutcome {
   if (state.error) return { tone: "error", line: state.error, produced: false };
   if (!state.ready) {
@@ -611,7 +659,7 @@ export function onboardingOutcome(state: OnboardingState, handoff = false, opts:
   const because = reason ? `: ${asClause(reason)}.` : ".";
 
   if (planned > 0 && draft) {
-    const line = `Done. ${planned} article${planned === 1 ? "" : "s"} on the calendar and your first ${opts.preTrial ? "article is written" : "draft is in review"}.`;
+    const line = `Done. ${planned} article${planned === 1 ? "" : "s"} on the calendar and your first ${opts.preTrial ? preTrialArticle(state.article) : "draft is in review"}.`;
     return { tone: "done", line: handoff ? `${line} Taking you there.` : line, produced: true };
   }
   if (planned > 0) {
@@ -624,7 +672,7 @@ export function onboardingOutcome(state: OnboardingState, handoff = false, opts:
   if (draft) {
     return {
       tone: "partial",
-      line: `Your first ${opts.preTrial ? "article is written" : "draft is in review"}. Nothing else could be scheduled yet${because}`,
+      line: `Your first ${opts.preTrial ? preTrialArticle(state.article) : "draft is in review"}. Nothing else could be scheduled yet${because}`,
       produced: true,
     };
   }

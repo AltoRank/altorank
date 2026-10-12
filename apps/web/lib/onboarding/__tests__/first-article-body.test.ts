@@ -30,3 +30,21 @@ describe("the gate's full-article reader", () => {
     for (const gone of ["<h1", "onclick", "javascript:", "<script", "<style", "<iframe", "meta-description", "```"]) expect(out).not.toContain(gone);
   });
 });
+
+describe("the reader's html, beyond the allowlist", () => {
+  it("takes the finished article's table of contents out, label and all", () => {
+    const saved =
+      "<p>Intro.</p><p><strong>Contents</strong></p><ul><li><a href=\"#one\">One</a></li><li><p><a href=\"#two\">Two</a></p></li></ul>" +
+      "<h2 id=\"one\">One</h2><p>See <a href=\"https://ok.example\">this</a>.</p><ul><li>A real list</li></ul>";
+    const out = readableHtml(saved);
+    expect(out).not.toContain("Contents");
+    expect(out).not.toContain("#one");
+    expect(out).toContain("<h2>One</h2>");
+    expect(out).toContain("<ul><li>A real list</li></ul>");
+  });
+
+  it("holds back a link placeholder the writer is half-way through", () => {
+    expect(readableHtml("<p>See {{internal-li")).toBe("<p>See </p>");
+    expect(readableHtml("<p>See {{internal-link: pricing}} now")).toBe("<p>See pricing now</p>");
+  });
+});

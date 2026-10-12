@@ -405,6 +405,8 @@ export async function recommendKeywords(
     limit?: number;
     qualify?: boolean;
     qualifyBatches?: number;
+    /** Each qualification batch, as it starts and ends (lib/keyword-research/queue.ts `onProgress`). */
+    onQualifyProgress?: (progress: { checking: string[]; judged: number; qualified: number }) => void;
     /**
      * A first look (lib/onboarding/pipeline.ts): approvals are asked twice,
      * qualification stops before the run's spend ceiling, and the floor may
@@ -1124,6 +1126,7 @@ export async function recommendKeywords(
         owners: leaders,
         ...(options.qualifyBatches ? { maxBatches: options.qualifyBatches } : {}),
         ...(options.firstLook ? { firstLook: options.firstLook } : {}),
+        ...(options.onQualifyProgress ? { onProgress: options.onQualifyProgress } : {}),
       });
       evidence = refill.verdicts;
       judged = refill.judged;
