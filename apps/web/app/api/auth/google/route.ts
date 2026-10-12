@@ -88,11 +88,11 @@ export async function GET(request: NextRequest) {
   }
 
   // No site named: connect at the account level. Every "Connect Search
-  // Console" that is not a site's own button lands here - the onboarding
-  // wizard, /connect/google, Settings - and this used to look the site up
-  // anyway, as `id = null`, so every one of them ended in
-  // `workspace_not_found` and the callback's account branch was unreachable
-  // (broken since 2026-09-02).
+  // Console" that is not a site's own button reaches this through
+  // /connect/google (the onboarding wizard, Settings, the Integrations
+  // header), and this used to look the site up anyway, as `id = null`, so
+  // every one of them ended in `workspace_not_found` and the callback's
+  // account branch was unreachable (broken since 2026-09-02).
   let stateWorkspace = "account";
   if (workspaceId) {
     const { data: workspace } = await supabase
