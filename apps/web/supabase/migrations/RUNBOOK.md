@@ -1372,11 +1372,25 @@ One column, and the 107 trigger widened to guard it:
   so), and `articles_body_stream_server_only` now refuses a client token that
   sets `body_stream` **or** `body_progress`.
 
-**Apply before its code is deployed.** Without the column the draft route's
-progress write fails (logged, `[internal/draft] body progress not written`)
-and the gate's outline does not tick; the body itself is unaffected. Re-running
-is a no-op (`if not exists`, `create or replace`, drop-then-create for the
-trigger).
+**Apply before its code is deployed - a hard pre-flight, not a nicety.** The
+code reads `body_progress` on every path that shows the first article before
+the trial: the gate's progress route, the owner's reader route and the page's
+first render (`lib/onboarding/first-article-body.ts`), and the draft route
+writes it in the same update as `body_stream`. Deployed without the column:
+
+- the reads retry without it (`readArticleRow`, on Postgres error `42703`)
+  and the draft route sends `body_stream` on its own after the first failed
+  write (logged once, `[internal/draft] body_progress missing`), so the gate
+  still flips to "written" and the owner's reader still streams;
+- what is lost is the outline's ticks and the words so far - the gate shows
+  "Planning each section…" until the body lands.
+
+Before that fallback existed (the first cut of this branch), every read
+errored into a 404, the gate took the 404 as a refusal and stopped polling,
+it never said "written" without a manual reload, and with
+`PRETRIAL_FULL_ARTICLE` on the owner never saw a word: do not deploy an
+older build of this branch without 108. Re-running is a no-op
+(`if not exists`, `create or replace`, drop-then-create for the trigger).
 
 Post-flight (expect `t`, `f`, `t`):
 
@@ -1386,13 +1400,22 @@ select exists (select 1 from information_schema.columns where table_name = 'arti
        pg_get_functiondef('public.articles_body_stream_server_only'::regproc) like '%body_progress%';
 ```
 
-Rollback, only after the code is reverted (the trigger goes back to 107's,
-by re-running 107's function and trigger block):
+Rollback, only after the code is reverted. **Trigger first, then the
+column**: 108's trigger fires on `update of body_stream, body_progress`, so
+Postgres records that it depends on `body_progress` and refuses to drop the
+column while it exists (`cannot drop column body_progress ... trigger
+articles_body_stream_server_only depends on column body_progress`). Do not
+reach for `CASCADE`: it drops the `body_stream` guard with it. In one
+transaction (`psql -1`):
 
 ```sql
+-- 1. 107's guard back: re-run, from 107_fast_first_look.sql, its
+--    `create or replace function public.articles_body_stream_server_only()`,
+--    its `revoke execute`, and its
+--    `drop trigger if exists articles_body_stream_server_only on public.articles;`
+--    `create trigger articles_body_stream_server_only before insert or update of body_stream ...`
+-- 2. only then:
 alter table public.articles drop column if exists body_progress;
--- then re-run the `create or replace function public.articles_body_stream_server_only()`
--- and `create trigger` statements from 107_fast_first_look.sql
 ```
 
 Tests: `lib/onboarding/__tests__/first-look-gate.db.test.ts` (db tier: the

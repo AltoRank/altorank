@@ -103,6 +103,27 @@ async function ownersFirstArticle(
   return { ok: true, articleId };
 }
 
+/** Postgres's "undefined column": the code is deployed and migration 108 is not. */
+const UNDEFINED_COLUMN = "42703";
+
+/**
+ * The article's row with `columns`. If `body_progress` is not there yet (code
+ * deployed before migration 108), the same read again without it: a missing
+ * column then only loses the outline's ticks. Without this every read errored
+ * into "no first article", a 404 the gate takes as a refusal, so the gate
+ * never said "written" and the owner's reader never showed a word (review,
+ * 2026-10-12).
+ */
+async function readArticleRow(service: SupabaseClient, id: string, workspaceId: string, columns: string): Promise<unknown> {
+  const read = (cols: string) => service.from("articles").select(cols).eq("id", id).eq("workspace_id", workspaceId).maybeSingle();
+  const { data, error } = await read(columns);
+  if (error?.code === UNDEFINED_COLUMN && columns.includes("body_progress")) {
+    const again = await read(columns.replace(/,\s*body_progress/, ""));
+    return again.data ? { ...(again.data as unknown as Record<string, unknown>), body_progress: null } : null;
+  }
+  return data;
+}
+
 /**
  * The first article's body for the person asking, or why not. `client` is
  * the person's own (cookie) client; `userId` is who it is signed in as.
@@ -118,12 +139,7 @@ export async function readFirstArticleBody(
   const owned = await ownersFirstArticle(client, userId, workspaceId, service);
   if (!owned.ok) return owned;
   const articleId = owned.articleId;
-  const { data: row } = await service
-    .from("articles")
-    .select("id, status, word_count, content, body_stream, body_progress, instructions_snapshot")
-    .eq("id", articleId)
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
+  const row = await readArticleRow(service, articleId, workspaceId, "id, status, word_count, content, body_stream, body_progress, instructions_snapshot");
   const article = row as { id: string; status: string; word_count: number | null; content: unknown; body_stream: string | null; body_progress: unknown; instructions_snapshot: unknown } | null;
   if (!article) return { ok: false, reason: "no-first-article" };
   const done = WRITTEN.has(article.status) && article.content !== null;
@@ -190,12 +206,7 @@ export async function readFirstArticleProgress(
   const service = opts.service ?? createServiceClient();
   const owned = await ownersFirstArticle(client, userId, workspaceId, service);
   if (!owned.ok) return owned;
-  const { data: row } = await service
-    .from("articles")
-    .select("id, status, word_count, body_progress, instructions_snapshot")
-    .eq("id", owned.articleId)
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
+  const row = await readArticleRow(service, owned.articleId, workspaceId, "id, status, word_count, body_progress, instructions_snapshot");
   const article = row as { id: string; status: string; word_count: number | null; body_progress: unknown; instructions_snapshot: unknown } | null;
   if (!article) return { ok: false, reason: "no-first-article" };
   const done = WRITTEN.has(article.status) && (article.word_count ?? 0) > 0;

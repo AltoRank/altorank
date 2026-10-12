@@ -317,6 +317,8 @@ export async function POST(request: NextRequest) {
   const streaming = fullArticleOn() && progressing;
   let streamed = "";
   let streamWrite: Promise<unknown> = Promise.resolve();
+  // False once a write found migration 108's column missing.
+  let progressColumn = true;
   let lastStreamAt = 0;
   let stage: BodyStage = "thinking";
   let stageSince = new Date().toISOString();
@@ -329,12 +331,26 @@ export async function POST(request: NextRequest) {
     const id = outlinedId;
     const measured = measureStream(streamed);
     const progress: BodyProgress | null = final ? null : { v: BODY_PROGRESS_VERSION, stage, since: stageSince, ...measured };
-    const update: Record<string, unknown> = { body_progress: progress };
+    const update: Record<string, unknown> = progressColumn ? { body_progress: progress } : {};
     // Nothing to read yet is not an empty body: the column stays unset.
     if (streaming && (final || streamed)) update.body_stream = final ? null : streamed;
+    if (!Object.keys(update).length) return streamWrite;
     streamWrite = streamWrite.then(() =>
       supabase.from("articles").update(update).eq("id", id).then(
-        (r) => { if (r.error) console.warn(`[internal/draft] body progress not written: ${r.error.message}`); },
+        async (r) => {
+          if (!r.error) return;
+          // Deployed before migration 108: the progress column is not there,
+          // and one update carrying it fails whole - the streamed text with
+          // it. Drop the column for the rest of this body and send the text
+          // on its own; only the outline's ticks are lost.
+          if (r.error.code === "42703" && progressColumn) {
+            progressColumn = false;
+            console.warn("[internal/draft] body_progress missing (migration 108 not applied); streaming without it");
+            if ("body_stream" in update) await supabase.from("articles").update({ body_stream: update.body_stream }).eq("id", id);
+            return;
+          }
+          console.warn(`[internal/draft] body progress not written: ${r.error.message}`);
+        },
         () => undefined,
       ),
     );

@@ -430,6 +430,41 @@ describe("a first look's draft, gated on its outline", () => {
     expect(counts.map((c) => (c as { stage?: string } | null)?.stage ?? null)).toContain("finishing");
   });
 
+  it("streams the text on its own when migration 108's column is missing, instead of losing it with the counts", async () => {
+    db.rows("articles").push({ id: "art-9", workspace_id: "ws1", body_stream: null });
+    getQuota.mockResolvedValue(gated(0));
+    // The database as it is with the code deployed before 108: any update
+    // that names body_progress fails whole.
+    const real = (db as unknown as { query: (t: string) => Record<string, unknown> }).query.bind(db);
+    let refused = 0;
+    (db as unknown as { query: (t: string) => Record<string, unknown> }).query = (table: string) => {
+      const q = real(table);
+      if (table !== "articles") return q;
+      const update = q.update as (p: Record<string, unknown>) => unknown;
+      q.update = (p: Record<string, unknown>) => {
+        if (!("body_progress" in p)) return update(p);
+        refused++;
+        return { eq: async () => ({ data: null, error: { code: "42703", message: "column articles.body_progress does not exist" } }) };
+      };
+      return q;
+    };
+    generateArticle.mockImplementation(async (opts: { outline?: { onReady?: (r: unknown) => Promise<void> }; onChunk?: (c: string) => void }) =>
+      outlinedThen(async () => ({ articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } }))({
+        outline: { onReady: async (r) => { await opts.outline?.onReady?.(r); await new Promise((r2) => setTimeout(r2, 5)); opts.onChunk?.("<p>first words</p>"); } },
+      }),
+    );
+    process.env.PRETRIAL_FULL_ARTICLE = "1";
+    try {
+      await post(first);
+    } finally {
+      delete process.env.PRETRIAL_FULL_ARTICLE;
+    }
+    // Tried once with the counts, then never again; the text still went out, and was cleared on save.
+    expect(refused).toBe(1);
+    const streams = db.updates.filter((u) => u.table === "articles" && "body_stream" in u.patch).map((u) => u.patch.body_stream);
+    expect(streams).toEqual(["<p>first words</p>", null]);
+  });
+
   it("an ungated body that fails is the run's failure, as before", async () => {
     getQuota.mockResolvedValue({ limit: 100, used: 2, remaining: 98, reason: "plan", plan: "starter" });
     generateArticle.mockImplementation(outlinedThen(async () => { throw new Error("boom"); }));
