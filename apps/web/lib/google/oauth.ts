@@ -3,10 +3,44 @@ import { encrypt, decrypt } from "@/lib/crypto";
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
-const SCOPES = [
-  "https://www.googleapis.com/auth/analytics.readonly",
-  "https://www.googleapis.com/auth/webmasters.readonly",
-].join(" ");
+export const GSC_SCOPE = "https://www.googleapis.com/auth/webmasters.readonly";
+export const GA4_SCOPE = "https://www.googleapis.com/auth/analytics.readonly";
+
+export type GoogleIntegrationId = "gsc" | "ga4";
+
+/**
+ * What each connect asks Google for: only what it reads.
+ *
+ * One consent used to ask for Search Console AND Analytics whichever button
+ * was pressed, so connecting Search Console during setup also asked for the
+ * sensitive Analytics scope, which nothing in setup reads. Each entry point
+ * now asks for its own scope, and `include_granted_scopes` (getAuthUrl) folds
+ * whatever the person granted before into the new token, so connecting GA4
+ * after Search Console yields one token good for both.
+ */
+export const SCOPES_BY_INTEGRATION: Record<GoogleIntegrationId, readonly string[]> = {
+  gsc: [GSC_SCOPE],
+  ga4: [GA4_SCOPE],
+};
+
+/**
+ * Which integrations a token can serve, from the `scope` Google returned
+ * with it. A token stored before the scopes were split carries no `scope`;
+ * every one of those came from the combined consent, so it is read as both,
+ * which is what the product assumed when it stored it.
+ */
+export function grantedIntegrations(scope: string | null | undefined): GoogleIntegrationId[] {
+  if (scope === undefined || scope === null) return ["gsc", "ga4"];
+  const granted = new Set(scope.split(/\s+/).filter(Boolean));
+  return (Object.keys(SCOPES_BY_INTEGRATION) as GoogleIntegrationId[]).filter((id) =>
+    SCOPES_BY_INTEGRATION[id].every((s) => granted.has(s)),
+  );
+}
+
+/** Whether a stored (encrypted) token can serve this integration. */
+export function tokenGrants(encrypted: string, integrationId: GoogleIntegrationId): boolean {
+  return grantedIntegrations(decryptTokens(encrypted).scope).includes(integrationId);
+}
 
 function getCredentials() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -21,16 +55,19 @@ function getCredentials() {
 }
 
 /**
- * Build the Google OAuth authorization URL.
+ * Build the Google OAuth authorization URL for one integration's scopes.
  */
-export function getAuthUrl(state: string): string {
+export function getAuthUrl(state: string, integrationId: GoogleIntegrationId): string {
   const { clientId, redirectUri } = getCredentials();
 
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: SCOPES,
+    scope: SCOPES_BY_INTEGRATION[integrationId].join(" "),
+    // Incremental authorization: the token also covers what this Google user
+    // already granted this app, so a GA4 connect does not drop Search Console.
+    include_granted_scopes: "true",
     access_type: "offline",
     prompt: "consent",
     state,
@@ -43,6 +80,12 @@ export interface GoogleTokens {
   access_token: string;
   refresh_token: string;
   expires_at: number;
+  /**
+   * The scopes Google granted, space-separated, as its token response gives
+   * them. Absent on tokens stored before the scopes were split; see
+   * grantedIntegrations.
+   */
+  scope?: string;
 }
 
 /**
@@ -74,6 +117,7 @@ export async function exchangeCode(code: string): Promise<GoogleTokens> {
     access_token: data.access_token,
     refresh_token: data.refresh_token,
     expires_at: Date.now() + data.expires_in * 1000,
+    ...(typeof data.scope === "string" ? { scope: data.scope } : {}),
   };
 }
 
@@ -147,6 +191,7 @@ export async function refreshTokens(refreshToken: string): Promise<GoogleTokens>
     access_token: data.access_token,
     refresh_token: refreshToken, // Keep original refresh token
     expires_at: Date.now() + data.expires_in * 1000,
+    ...(typeof data.scope === "string" ? { scope: data.scope } : {}),
   };
 }
 
@@ -175,7 +220,11 @@ export async function getValidAccessToken(
 
   // Refresh if expired (with 5 min buffer)
   if (tokens.expires_at < Date.now() + 5 * 60 * 1000) {
-    tokens = await refreshTokens(tokens.refresh_token);
+    // A refresh answer normally restates the scopes; when it does not, the
+    // grant is unchanged, so the stored one stands.
+    const refreshed = await refreshTokens(tokens.refresh_token);
+    const scope = refreshed.scope ?? tokens.scope;
+    tokens = scope === undefined ? refreshed : { ...refreshed, scope };
     await onRefresh(encryptTokens(tokens));
   }
 

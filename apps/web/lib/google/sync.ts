@@ -35,8 +35,10 @@ export const NEEDS_RECONNECT_MESSAGE = "Google disconnected: the stored token wa
 
 /**
  * Record that Google refused this workspace's token. The gsc and ga4 rows
- * hold the same token (one consent grants both, see the OAuth callback), so
- * both are marked; the callback clears both when it writes fresh tokens.
+ * normally hold the same token (a consent refreshes every row it was granted
+ * for, see the OAuth callback), and a refused refresh token means the
+ * person's grant to this app is gone, so both are marked; the callback clears
+ * the rows it writes fresh tokens to.
  */
 export async function markGoogleNeedsReconnect(supabase: SupabaseClient, workspaceId: string, message: string): Promise<void> {
   await supabase
@@ -103,16 +105,26 @@ export async function syncWorkspaceAnalytics(
     let ga4Count = 0;
     let gscCount = 0;
 
+    // GA4 failing is GA4's problem, not Search Console's: Analytics is its
+    // own consent now (lib/google/oauth.ts), so a token can read one and not
+    // the other, and a GA4 refusal used to abandon the Search Console pull
+    // below with it. The refused-refresh case cannot land here; it is thrown
+    // by getValidAccessToken above.
+    let ga4Error: string | undefined;
     if (integration.config?.ga4PropertyId) {
-      const metrics = await fetchGA4Metrics(accessToken, integration.config.ga4PropertyId, dateStr, dateStr);
-      const rows = metrics.map((m) => ({ workspace_id: ws.id, source: "ga4" as const, metric_date: dateStr, pageviews: m.pageviews, sessions: m.sessions, page_url: m.pageUrl }));
-      // An empty answer means the provider has not written that day yet, not
-      // that the day was empty. Now that the cron re-asks for recent days,
-      // deleting before checking would wipe a day that already landed.
-      if (rows.length) {
-        await supabase.from("analytics_metrics").delete().eq("workspace_id", ws.id).eq("source", "ga4").eq("metric_date", dateStr);
-        await supabase.from("analytics_metrics").insert(rows);
-        ga4Count = rows.length;
+      try {
+        const metrics = await fetchGA4Metrics(accessToken, integration.config.ga4PropertyId, dateStr, dateStr);
+        const rows = metrics.map((m) => ({ workspace_id: ws.id, source: "ga4" as const, metric_date: dateStr, pageviews: m.pageviews, sessions: m.sessions, page_url: m.pageUrl }));
+        // An empty answer means the provider has not written that day yet, not
+        // that the day was empty. Now that the cron re-asks for recent days,
+        // deleting before checking would wipe a day that already landed.
+        if (rows.length) {
+          await supabase.from("analytics_metrics").delete().eq("workspace_id", ws.id).eq("source", "ga4").eq("metric_date", dateStr);
+          await supabase.from("analytics_metrics").insert(rows);
+          ga4Count = rows.length;
+        }
+      } catch (err) {
+        ga4Error = err instanceof Error ? err.message : "GA4 sync failed";
       }
     }
 
@@ -151,7 +163,7 @@ export async function syncWorkspaceAnalytics(
       }
     }
 
-    return { workspaceId: ws.id, ga4: ga4Count, gsc: gscCount };
+    return { workspaceId: ws.id, ga4: ga4Count, gsc: gscCount, ...(ga4Error ? { error: ga4Error } : {}) };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     // invalid_grant / 401 from the refresh: the connection needs the person,

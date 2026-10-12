@@ -5,7 +5,7 @@ import { after } from "next/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { insertWorkspaceAsServer } from "@/lib/workspaces/insert";
-import { getValidAccessToken } from "@/lib/google/oauth";
+import { getValidAccessToken, tokenGrants } from "@/lib/google/oauth";
 import { listGSCSites, type GSCSite } from "@/lib/google/gsc";
 import { listGA4Properties, matchGA4Property } from "@/lib/google/ga4";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
@@ -30,6 +30,12 @@ export type DetectedProperty = {
   isOwner: boolean;
   /** Set when a workspace for this domain already exists. */
   existingWorkspaceId: string | null;
+  /**
+   * That workspace already reads Search Console. Connecting from the
+   * onboarding wizard lands here with the site being set up already
+   * connected, and "already a workspace" did not say so.
+   */
+  existingConnected: boolean;
 };
 
 function domainOf(siteUrl: string): string {
@@ -76,6 +82,15 @@ export async function listDetectedProperties(): Promise<
         .filter((w) => w.domain)
         .map((w) => [(w.domain as string).replace(/^www\./, "").toLowerCase(), w.id as string]),
     );
+    const existingIds = [...byDomain.values()];
+    const { data: gscRows } = existingIds.length
+      ? await supabase
+          .from("workspace_integrations")
+          .select("workspace_id")
+          .eq("integration_id", "gsc")
+          .in("workspace_id", existingIds)
+      : { data: [] as { workspace_id: string }[] };
+    const connectedIds = new Set((gscRows ?? []).map((r) => r.workspace_id as string));
 
     return {
       connected: true,
@@ -87,6 +102,7 @@ export async function listDetectedProperties(): Promise<
           canRead: READABLE.has(s.permissionLevel),
           isOwner: s.permissionLevel === "siteOwner",
           existingWorkspaceId: byDomain.get(domainOf(s.siteUrl)) ?? null,
+          existingConnected: connectedIds.has(byDomain.get(domainOf(s.siteUrl)) ?? ""),
         }))
         .sort((a, b) => Number(b.canRead) - Number(a.canRead) || a.domain.localeCompare(b.domain)),
     };
@@ -135,11 +151,15 @@ export async function createWorkspacesFromProperties(siteUrls: string[]): Promis
     .maybeSingle();
   const encrypted = (conn?.tokens as { encrypted?: string } | null)?.encrypted ?? null;
 
+  // Only when the consent includes Analytics: Search Console is connected on
+  // its own now, and asking GA4 with a token that lacks its scope is a 403.
   let ga4Properties: Awaited<ReturnType<typeof listGA4Properties>> = [];
   if (encrypted) {
     try {
-      const accessToken = await getValidAccessToken(encrypted, async () => {});
-      ga4Properties = await listGA4Properties(accessToken).catch(() => []);
+      if (tokenGrants(encrypted, "ga4")) {
+        const accessToken = await getValidAccessToken(encrypted, async () => {});
+        ga4Properties = await listGA4Properties(accessToken).catch(() => []);
+      }
     } catch {
       ga4Properties = [];
     }

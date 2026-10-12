@@ -90,7 +90,7 @@ export function PropertyPicker({ properties }: { properties: DetectedProperty[] 
                       href={`/workspaces/${p.existingWorkspaceId}`}
                       className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-accent-ink hover:underline"
                     >
-                      already a workspace
+                      {p.existingConnected ? "connected" : "already a workspace"}
                     </Link>
                   ) : p.isOwner ? (
                     <span className="rounded-full bg-ok-soft px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-[0.06em] text-ok-ink">
