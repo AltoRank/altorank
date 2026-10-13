@@ -6,18 +6,58 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { Button } from "@/components/ui";
 import { Card } from "@/components/ui/card";
-import { createWorkspacesFromProperties, type DetectedProperty } from "@/app/actions/google-properties";
+import {
+  connectPropertyToWorkspace,
+  createWorkspacesFromProperties,
+  type DetectedProperty,
+} from "@/app/actions/google-properties";
+
+/**
+ * What an existing workspace's Search Console connection is, in the picker's
+ * words. A row Google refused the token for is not "connected": the site
+ * reads nothing until it is reconnected.
+ */
+function existingLabel(
+  p: Pick<DetectedProperty, "existingConnected" | "existingNeedsReconnect">,
+): string {
+  if (p.existingConnected) return "connected";
+  if (p.existingNeedsReconnect) return "needs reconnect";
+  return "already a workspace";
+}
 
 /**
  * Ticking a property creates a workspace for it. Properties this account
  * cannot read are shown, greyed, with the reason: hiding them would leave
  * someone hunting for a site that is right there under the wrong permission.
+ * A readable property that is already a workspace without Search Console
+ * gets a Connect of its own: that is the onboarding wizard's site when the
+ * first Google account chosen could not see it. One whose connection Google
+ * refused says so and gets a Reconnect.
  */
 export function PropertyPicker({ properties }: { properties: DetectedProperty[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [chosen, setChosen] = useState<string[]>([]);
   const [limit, setLimit] = useState<{ message: string; needed: number } | null>(null);
+  const [connecting, setConnecting] = useState<string | null>(null);
+
+  function connect(p: DetectedProperty) {
+    setConnecting(p.siteUrl);
+    start(async () => {
+      const result = await connectPropertyToWorkspace(p.siteUrl);
+      setConnecting(null);
+      if (!result.ok) {
+        toast.error(result.message);
+        return;
+      }
+      toast.success(
+        result.synced
+          ? `${p.domain} is connected, and its recent Search Console data is in.`
+          : `${p.domain} is connected. Its Search Console data arrives with the next sync.`,
+      );
+      router.refresh();
+    });
+  }
 
   const selectable = useMemo(
     () => properties.filter((p) => p.canRead && !p.existingWorkspaceId),
@@ -66,11 +106,15 @@ export function PropertyPicker({ properties }: { properties: DetectedProperty[] 
         <div className="flex flex-col">
           {properties.map((p, i) => {
             const disabled = !p.canRead || Boolean(p.existingWorkspaceId);
+            // Already a workspace, readable, and not reading Search Console
+            // (never connected, or Google refused its token): not something
+            // to create, something to connect.
+            const connectable = p.canRead && Boolean(p.existingWorkspaceId) && !p.existingConnected;
             return (
               <label
                 key={p.siteUrl}
                 className={`flex items-center gap-3 px-5 py-3.5 ${i > 0 ? "border-t border-line-soft" : ""} ${
-                  disabled ? "opacity-55" : "cursor-pointer hover:bg-panel"
+                  connectable ? "" : disabled ? "opacity-55" : "cursor-pointer hover:bg-panel"
                 }`}
               >
                 <input
@@ -86,12 +130,25 @@ export function PropertyPicker({ properties }: { properties: DetectedProperty[] 
                 </span>
                 <span className="shrink-0 text-right">
                   {p.existingWorkspaceId ? (
-                    <Link
-                      href={`/workspaces/${p.existingWorkspaceId}`}
-                      className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-accent-ink hover:underline"
-                    >
-                      already a workspace
-                    </Link>
+                    <span className="flex items-center justify-end gap-3">
+                      <Link
+                        href={`/workspaces/${p.existingWorkspaceId}`}
+                        className={`font-mono text-[10.5px] uppercase tracking-[0.06em] hover:underline ${
+                          p.existingNeedsReconnect && !p.existingConnected ? "text-err-ink" : "text-accent-ink"
+                        }`}
+                      >
+                        {existingLabel(p)}
+                      </Link>
+                      {connectable && (
+                        <Button size="sm" disabled={pending} onClick={() => connect(p)}>
+                          {connecting === p.siteUrl
+                            ? "Connecting…"
+                            : p.existingNeedsReconnect
+                              ? "Reconnect"
+                              : "Connect"}
+                        </Button>
+                      )}
+                    </span>
                   ) : p.isOwner ? (
                     <span className="rounded-full bg-ok-soft px-2 py-0.5 font-mono text-[10.5px] uppercase tracking-[0.06em] text-ok-ink">
                       owner
