@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { decideAutoApproval, type AutoApproveCandidate, type AutoApproveRule } from "../auto-approve";
+import { decideAutoApproval, reviewerNamedIn, type AutoApproveCandidate, type AutoApproveRule } from "../auto-approve";
 
 const NOW = new Date("2026-09-08T10:00:00Z");
 
@@ -116,5 +116,31 @@ describe("decideAutoApproval", () => {
       reason: expect.stringContaining("no longer a member"),
     });
     expect(decideAutoApproval({ ...rule, auto_approve_set_by: null }, clean, NOW).approve).toBe(false);
+  });
+});
+
+describe("a draft that names a reviewer (lib/content/trust.ts)", () => {
+  const research = {
+    trust: {
+      sensitive: { kind: "health", evidence: "e" },
+      basis: "b",
+      reviewer: { name: "Sam O'Lee", role: "Registered Physiotherapist", source: "https://acme-physio.example/team" },
+      disclaimer: null,
+      notes: [],
+    },
+  };
+
+  it("is held: a reviewer line nobody confirmed is a credential the person never gave", () => {
+    const name = reviewerNamedIn("<p><em>Reviewed by Sam O&#39;Lee, Registered Physiotherapist.</em></p><p>Body</p>", research);
+    expect(name).toBe("Sam O'Lee");
+    const d = decideAutoApproval(rule, { ...clean, reviewerToConfirm: name }, NOW);
+    expect(d).toMatchObject({ approve: false, reason: expect.stringContaining("names Sam O'Lee as its reviewer") });
+  });
+
+  it("is not held once a person took the line out, or when no reviewer was found", () => {
+    expect(reviewerNamedIn("<p>Body</p>", research)).toBeNull();
+    expect(reviewerNamedIn("<p>Reviewed by nobody</p>", { trust: { ...research.trust, reviewer: null } })).toBeNull();
+    // No reviewer found is a review note, not a hold.
+    expect(decideAutoApproval(rule, { ...clean, reviewerToConfirm: null }, NOW)).toEqual({ approve: true });
   });
 });

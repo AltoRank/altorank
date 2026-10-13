@@ -37,6 +37,8 @@
 //     "content_html":     "<p>...",
 //     "meta_description": "..." | null,
 //     "created_at":       "2026-09-04T10:00:00.000Z",
+//     "published_at":     "2026-09-04T10:00:00.000Z" | null,   first publish, kept across republishes
+//     "updated_at":       "2026-09-28T10:00:00.000Z" | null,   this push
 //     "image_url":        "https://..." | null,   featured image
 //     "slug":             "kebab-case",
 //     "tags":             ["..."],
@@ -71,6 +73,10 @@ export function webhookArticle(article: PublishPayload) {
     content_html: article.html,
     meta_description: article.metaDescription ?? null,
     created_at: article.createdAt ?? article.publishedAt ?? new Date().toISOString(),
+    // Additive: when it first went out and this push, for a consumer that
+    // renders "published" and "updated" dates.
+    published_at: article.publishedAt ?? null,
+    updated_at: article.modifiedAt ?? null,
     image_url: article.featuredImageUrl ?? null,
     slug: article.slug,
     tags: article.tags ?? [],

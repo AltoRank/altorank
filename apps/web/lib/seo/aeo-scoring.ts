@@ -19,10 +19,30 @@
 // Deliberately no model call, for the same reason `recommendations.ts` gives:
 // a score that changes between runs on the same text cannot be argued with, and
 // "why did this drop" is exactly the question a reviewer asks. Everything here
-// is a function of the HTML.
+// is a function of the HTML - and of its language. What a definition, a
+// figure or a summary heading looks like is language, and comes from the
+// locale contract (lib/i18n/locale): a Turkish draft on 2026-09-22 scored 67
+// here on English patterns it could never match. Most of this score is
+// language, so in a language the contract does not describe there is no
+// score at all (null, which the editor shows as not scored and auto-approve
+// treats as unmeasured); the structural checks still report.
 
-import type { ScoringCheck, ScoringResult } from "./scoring";
+import type { ScoringCheck } from "./scoring";
 import { hrefsIn, isCitationLink } from "./links";
+import {
+  resolveLocale,
+  notCheckedFor,
+  matchesAnyHeading,
+  scaleWords,
+  phrasePattern,
+  inflection,
+  foldCase,
+  type Locale,
+  type SupportedLocale,
+} from "@/lib/i18n/locale";
+
+/** The AEO score and its checks. `score` is null when the article's language could not be read. */
+export type CitationReadinessResult = { score: number | null; checks: ScoringCheck[] };
 
 /**
  * Weights, summing to 1.
@@ -50,14 +70,6 @@ const WEIGHTS: Record<string, number> = {
   summaryBox: 0.07,
 };
 
-/**
- * The phrases a summary block announces itself with, across the languages
- * this product writes in. A heading or a bold lead that matches, followed by a
- * list, is the block an answer engine lifts as "the gist".
- */
-const SUMMARY_MARKER =
-  /\b(?:tl;?\s?dr|key takeaways?|in short|at a glance|quick answer|the short version|in breve|punti chiave|in sintesi|en r[ée]sum[ée]|l'essentiel|en resumen|puntos clave|kurz gesagt|das wichtigste|zusammenfassung)\b/i;
-
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -77,18 +89,21 @@ function leadParagraph(html: string): string {
   return first ?? "";
 }
 
+/** A check that reads language the contract does not describe for this article. */
+function notChecked(name: string, locale: Locale): ScoringCheck {
+  return { name, passed: false, score: 0, unverified: true, note: notCheckedFor(locale) };
+}
+
 // ── Definitions and answer-first ───────────────────────────────────────────
 
-function checkAnswerFirst(html: string, keyword: string): ScoringCheck {
+function checkAnswerFirst(html: string, keyword: string, locale: SupportedLocale): ScoringCheck {
   const lead = leadParagraph(html);
   const words = lead.split(/\s+/).filter(Boolean).length;
-  const opensOnSubject = lead
-    .slice(0, 120)
-    .toLowerCase()
-    .includes(keyword.toLowerCase().split(/\s+/)[0] ?? "");
+  const maxWords = scaleWords(90, locale);
+  const opensOnSubject = foldCase(lead.slice(0, 120)).includes(foldCase(keyword).split(/\s+/)[0] ?? "");
 
   // A lead that runs long is a preamble, and a preamble is what gets skipped.
-  const passed = opensOnSubject && words > 0 && words <= 90;
+  const passed = opensOnSubject && words > 0 && words <= maxWords;
   return {
     name: "answerFirst",
     passed,
@@ -97,25 +112,26 @@ function checkAnswerFirst(html: string, keyword: string): ScoringCheck {
       ? "No opening paragraph found."
       : !opensOnSubject
         ? "The opening paragraph does not name the subject in its first sentence."
-        : words > 90
-          ? `Opening paragraph is ${words} words. Under 90 reads as an answer rather than a preamble.`
+        : words > maxWords
+          ? `Opening paragraph is ${words} words. Under ${maxWords} reads as an answer rather than a preamble.`
           : "Opens by answering the query directly.",
   };
 }
 
-function checkDefinitionBlock(html: string, keyword: string): ScoringCheck {
+function checkDefinitionBlock(html: string, keyword: string, locale: SupportedLocale): ScoringCheck {
   const paras = blocks(html, "p").map(stripHtml);
-  const term = keyword.toLowerCase();
+  const term = foldCase(keyword);
+  const [minWords, maxWords] = [scaleWords(20, locale), scaleWords(70, locale)];
+  // Where the defining verb sits is grammar: "X is…" puts it in the opening,
+  // Turkish puts it on the last word of the sentence ("…bir yöntemdir").
+  const defines = (t: string) =>
+    locale.prose.definitionAt === "opening"
+      ? locale.prose.definition.test(t.slice(0, 160))
+      : locale.prose.definition.test((t.match(/^[\s\S]*?[.!?](?=\s|$)/)?.[0] ?? t).trim());
   // The shape an engine lifts: standalone, starts with the term, self-contained.
   const found = paras.find((p) => {
     const w = p.split(/\s+/).length;
-    const t = p.toLowerCase();
-    return (
-      w >= 20 &&
-      w <= 70 &&
-      t.includes(term) &&
-      /\b(is|are|refers to|means)\b/.test(t.slice(0, 160))
-    );
+    return w >= minWords && w <= maxWords && foldCase(p).includes(term) && defines(locale.lower(p));
   });
   return {
     name: "definitionBlock",
@@ -123,21 +139,46 @@ function checkDefinitionBlock(html: string, keyword: string): ScoringCheck {
     score: found ? 1 : 0,
     note: found
       ? "Contains a standalone definition an engine can lift whole."
-      : `No 20-70 word passage defines "${keyword}" on its own. That passage is what gets quoted.`,
+      : `No ${minWords}-${maxWords} word passage defines "${keyword}" on its own. That passage is what gets quoted.`,
   };
 }
 
 // ── Quotable content ───────────────────────────────────────────────────────
 
-/** Figures with a unit or a magnitude: the things an answer actually repeats. */
-export function findFigures(text: string): string[] {
-  return [
-    ...text.matchAll(/\b\d[\d,.]*\s?(?:%|percent|x\b|million|billion|k\b)|\B[$£€]\s?\d[\d,.]*/gi),
-  ].map((m) => m[0]);
+const FIGURES = new Map<string, RegExp>();
+
+/**
+ * Figures with a unit or a magnitude: the things an answer actually repeats.
+ * "12%", "$4k", "3x", and in Turkish "%12", "yüzde 12", "₺1.500", "3 milyon".
+ * What counts is the article language's, from the locale contract; in a
+ * language it does not describe nothing is read as a figure, and the callers
+ * say the check did not run.
+ */
+export function findFigures(text: string, language?: string | null): string[] {
+  const locale = resolveLocale(language);
+  if (!locale.supported) return [];
+  let re = FIGURES.get(locale.code);
+  if (!re) {
+    const n = locale.numbers;
+    const scale = n.scaleWords.filter((w) => w.replace(/\\\.\??/g, "").length > 2);
+    const after = ["%", ...(n.percentWordsAfter.length ? [phrasePattern(n.percentWordsAfter)] : []), String.raw`x\b`, ...scale, String.raw`k\b`];
+    // A figure written after its sign ends on a digit, so "%20," is "%20".
+    const digits = String.raw`\d(?:[\d,.]*\d)?`;
+    const parts = [
+      String.raw`\b\d[\d,.]*\s?(?:${after.join("|")})`,
+      String.raw`(?<![\p{L}\p{N}])[$£€₺¥]\s?${digits}`,
+      ...(n.percentSignBefore ? [String.raw`%\s?${digits}`] : []),
+      ...(n.percentWordsBefore.length ? [String.raw`(?<![\p{L}])(?:${phrasePattern(n.percentWordsBefore)})\s+${digits}`] : []),
+      ...(n.symbolAfter ? [String.raw`\b\d[\d,.]*\s?(?:[€₺]|(?:${n.currencyAfter.join("|")})${inflection(locale)})(?![\p{L}])`] : []),
+    ];
+    re = new RegExp(parts.join("|"), "giu");
+    FIGURES.set(locale.code, re);
+  }
+  return [...text.matchAll(re)].map((m) => m[0]);
 }
 
-function checkQuotableStatistics(html: string): ScoringCheck {
-  const figures = findFigures(stripHtml(html));
+function checkQuotableStatistics(html: string, locale: SupportedLocale): ScoringCheck {
+  const figures = findFigures(stripHtml(html), locale.code);
   // Not raised above 3, and not made a hard gate: "include figures" and "never
   // invent a figure" pull against each other, and when a subject genuinely has
   // no public numbers the honest article has none. This check rewards
@@ -153,8 +194,8 @@ function checkQuotableStatistics(html: string): ScoringCheck {
   };
 }
 
-function checkSourcedClaims(html: string, siteDomain?: string | null): ScoringCheck {
-  const figures = findFigures(stripHtml(html));
+function checkSourcedClaims(html: string, locale: SupportedLocale, siteDomain?: string | null): ScoringCheck {
+  const figures = findFigures(stripHtml(html), locale.code);
   if (figures.length === 0) {
     // Vacuously true, and deliberately not a failure. This check asks whether
     // the figures present are attributed; with none present there is nothing
@@ -227,12 +268,13 @@ function checkQuestionHeadings(html: string): ScoringCheck {
   };
 }
 
-function checkScannableStructure(html: string): ScoringCheck {
+function checkScannableStructure(html: string, locale: SupportedLocale): ScoringCheck {
   const paras = blocks(html, "p").map(stripHtml).filter((p) => p.length > 0);
   if (paras.length === 0) {
     return { name: "scannableStructure", passed: false, score: 0, note: "No paragraphs found." };
   }
-  const long = paras.filter((p) => p.split(/\s+/).length > 120).length;
+  const limit = scaleWords(120, locale);
+  const long = paras.filter((p) => p.split(/\s+/).length > limit).length;
   const ratio = 1 - long / paras.length;
   const passed = long === 0;
   return {
@@ -241,7 +283,7 @@ function checkScannableStructure(html: string): ScoringCheck {
     score: ratio,
     note: passed
       ? "No wall-of-text paragraphs."
-      : `${long} paragraph(s) over 120 words. Long blocks are harder to lift a clean passage from.`,
+      : `${long} paragraph(s) over ${limit} words. Long blocks are harder to lift a clean passage from.`,
   };
 }
 
@@ -261,15 +303,26 @@ function checkComparisonTable(html: string): ScoringCheck {
   };
 }
 
-function checkOutboundAuthority(html: string, siteDomain?: string | null): ScoringCheck {
+function checkOutboundAuthority(html: string, locale: Locale, siteDomain?: string | null): ScoringCheck {
   // Outbound means off this site. Every absolute URL counted before, so an
   // article whose only links were to its own siblings scored as well-cited.
   const external = hrefsIn(html).filter((h) => isCitationLink(h, siteDomain));
-  // Two is the floor; a long piece wants roughly one citation per 500 words,
-  // which is the density the citation benchmarks ask for. A 3,000-word guide
-  // with two links at the top is not a sourced guide.
+  if (!locale.supported) {
+    // The two-link floor needs no language; the per-length part counts words.
+    const passed = external.length >= 2;
+    return {
+      name: "outboundAuthority",
+      passed,
+      score: Math.min(1, external.length / 2),
+      note: `${external.length} outbound citations (two minimum). ${notCheckedFor(locale)} The per-length target counts words.`,
+    };
+  }
+  // Two is the floor; a long piece wants roughly one citation per 500
+  // (English) words, which is the density the citation benchmarks ask for. A
+  // 3,000-word guide with two links at the top is not a sourced guide.
   const words = stripHtml(html).split(/\s+/).filter(Boolean).length;
-  const required = Math.max(2, Math.round(words / 500));
+  const per = scaleWords(500, locale);
+  const required = Math.max(2, Math.round(words / per));
   const passed = external.length >= required;
   return {
     name: "outboundAuthority",
@@ -277,7 +330,7 @@ function checkOutboundAuthority(html: string, siteDomain?: string | null): Scori
     score: Math.min(1, external.length / required),
     note: passed
       ? `${external.length} outbound citations for ${words} words.`
-      : `${external.length} outbound citations; ${required} wanted for ${words} words (one per 500, two minimum). Citing sources is one of the E-E-A-T signals engines weigh.`,
+      : `${external.length} outbound citations; ${required} wanted for ${words} words (one per ${per}, two minimum). Citing sources is one of the E-E-A-T signals engines weigh.`,
   };
 }
 
@@ -296,7 +349,9 @@ function checkSummaryBox(html: string): ScoringCheck {
     ...blocks(top, "strong"),
     ...blocks(top, "b"),
   ].map(stripHtml);
-  const marked = markers.some((t) => SUMMARY_MARKER.test(t));
+  // Recognised in every language the locale contract describes: "Key
+  // takeaways", "Punti chiave", "Öne çıkan noktalar".
+  const marked = markers.some((t) => matchesAnyHeading("summary", t));
   const listed = /<(?:ul|ol)\b/i.test(top);
   const score = marked && listed ? 1 : marked ? 0.5 : 0;
   return {
@@ -321,21 +376,43 @@ function checkSummaryBox(html: string): ScoringCheck {
  * `siteDomain` lets the two link checks tell the site's own pages from
  * citations. Without it every absolute URL is treated as outbound, which is
  * the most that can be claimed about a page whose owner is unknown.
+ * `language` is `workspaces.language`: every check that reads text uses its
+ * rules, and in a language the locale contract does not describe the score
+ * is null and those checks say "not checked for <language>".
  */
 export function scoreCitationReadiness(
   html: string,
   keyword: string,
-  opts: { siteDomain?: string | null } = {},
-): ScoringResult {
+  opts: { siteDomain?: string | null; language?: string | null } = {},
+): CitationReadinessResult {
+  const locale = resolveLocale(opts.language);
+
+  if (!locale.supported) {
+    return {
+      score: null,
+      checks: [
+        notChecked("answerFirst", locale),
+        notChecked("definitionBlock", locale),
+        notChecked("quotableStatistics", locale),
+        notChecked("sourcedClaims", locale),
+        checkQuestionHeadings(html),
+        notChecked("scannableStructure", locale),
+        checkComparisonTable(html),
+        checkOutboundAuthority(html, locale, opts.siteDomain),
+        notChecked("summaryBox", locale),
+      ],
+    };
+  }
+
   const checks: ScoringCheck[] = [
-    checkAnswerFirst(html, keyword),
-    checkDefinitionBlock(html, keyword),
-    checkQuotableStatistics(html),
-    checkSourcedClaims(html, opts.siteDomain),
+    checkAnswerFirst(html, keyword, locale),
+    checkDefinitionBlock(html, keyword, locale),
+    checkQuotableStatistics(html, locale),
+    checkSourcedClaims(html, locale, opts.siteDomain),
     checkQuestionHeadings(html),
-    checkScannableStructure(html),
+    checkScannableStructure(html, locale),
     checkComparisonTable(html),
-    checkOutboundAuthority(html, opts.siteDomain),
+    checkOutboundAuthority(html, locale, opts.siteDomain),
     checkSummaryBox(html),
   ];
 

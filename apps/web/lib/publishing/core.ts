@@ -6,15 +6,20 @@ import { fetchLinkTargets, resolveInternalLinks } from "@/lib/seo/link-resolver"
 import { submitForIndexing, type IndexingResult } from "@/lib/seo/indexing";
 import { getValidAccessToken } from "@/lib/google/oauth";
 import { decryptConfig } from "@/lib/crypto";
-import type { CMSConfig } from "@/lib/types";
+import type { Article, CMSConfig } from "@/lib/types";
 import { getQuota } from "@/lib/billing/quota";
+import { workspaceTrialGate } from "@/lib/billing/body-lock";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { appendAttribution, isOperatorAccount, shouldAttribute } from "@/lib/publishing/attribution";
 import { chooseDestination, toDestinations, type IntegrationRow } from "@/lib/publishing/destinations";
 import { settleExchangeForArticle } from "@/lib/seo/exchange";
 import { createServiceClient } from "@/lib/supabase/server";
+import { readVisibleArticle } from "@/lib/articles/body-read";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
 import { recordPublish } from "@/lib/publishing/log";
 import { DEFAULT_OUTPUT_SETTINGS } from "@/lib/onboarding/output-settings";
+import { removeTitleHeading } from "@/lib/content/on-page";
+import { datelineHtml } from "@/lib/content/trust";
 
 /** Which connection an attempt went through, and how. Written to publish_log. */
 export type PublishContext = {
@@ -71,13 +76,13 @@ export async function publishArticleCore(
    */
   opts: { destinationId?: string | null } = {},
 ): Promise<PublishResult & PublishContext> {
-  const { data: article, error: articleErr } = await supabase
-    .from("articles")
-    .select("*")
-    .eq("id", articleId)
-    .single();
+  // Visibility through the caller's client - RLS for the person pressing
+  // Publish, everything for the cron - and the row itself from the server,
+  // because the body columns answer no client token (migration 097,
+  // lib/articles/body-read.ts).
+  const article = await readVisibleArticle<Article>(supabase, articleId);
 
-  if (articleErr || !article) throw new Error("Article not found");
+  if (!article) throw new Error("Article not found");
   if (!article.content) throw new Error("Article has no content to publish");
 
   // Approval-first gate (the single enforced checkpoint): nothing reaches the CMS
@@ -91,6 +96,16 @@ export async function publishArticleCore(
     throw new Error(
       `Article must be approved before publishing (current status: ${article.status}).`,
     );
+  }
+
+  // The trial gate, here and not only at Approve. Approving asks for a plan
+  // (app/actions/publish.ts), but `status` is also written through the
+  // person's own client - the editor saves that way - so an account that had
+  // not started its trial could set its first draft to `approved` over
+  // PostgREST, and cron/publish would push the text to the CMS it connected
+  // during setup. Publishing is handing the text out; the gate decides that.
+  if ((await workspaceTrialGate(supabase, article.workspace_id)) === "gated") {
+    throw new Error(BODY_LOCKED_MESSAGE);
   }
 
   const { data: wsIntegrations } = await supabase
@@ -132,6 +147,10 @@ type ArticleRow = {
   keyword: string | null;
   created_at: string | null;
   published_at: string | null;
+  /** `held-in-cms` when the last push was kept as a draft on the far side. */
+  indexing_status?: { indexnow?: unknown } | null;
+  /** Set when the article was found live on the site after a held push. */
+  found_on_site_at?: string | null;
 };
 
 /** Everything after the destination is known; failures here are retryable. */
@@ -168,7 +187,10 @@ async function pushToDestination(
     },
   });
 
-  let html = tiptapToHtml(article.content as Record<string, unknown>);
+  // The title goes as its own field and every destination shows it as the
+  // page's H1, so a body <h1> repeating it is a second H1 - which drafts
+  // written before 2026-09-28 carry (lib/content/on-page.ts).
+  let html = removeTitleHeading(tiptapToHtml(article.content as Record<string, unknown>), article.title).html;
 
   // Resolve any internal link placeholder still in the document. Generation
   // resolves or unwraps them, so this only matters for a draft written by hand
@@ -197,6 +219,9 @@ async function pushToDestination(
   // adapters that can host the key file, and the submission after the publish
   // uses the same value. Null when the workspace has none.
   let indexNowKey: string | null = null;
+  // Whether the workspace row was read: a dateline is only written in a
+  // language known to be the site's, never in a default guessed after a failure.
+  let workspaceRead = false;
   try {
     const { data: ws } = await supabase
       .from("workspaces")
@@ -208,6 +233,7 @@ async function pushToDestination(
     const profileName = (ws?.business_profile as { name?: unknown } | null)?.name;
     publisherName = (typeof profileName === "string" && profileName.trim()) || String(ws?.domain ?? "").replace(/^https?:\/\//, "");
     language = typeof ws?.language === "string" ? ws.language : null;
+    workspaceRead = Boolean(ws);
     if (ws?.account_id) {
       const quota = await getQuota(supabase, ws.account_id);
       const removeBranding =
@@ -217,12 +243,23 @@ async function pushToDestination(
         // Crons carry no caller, so the operator check has to ask the account.
         !(await isOperatorAccount(supabase, ws.account_id))
       ) {
-        html = appendAttribution(html);
+        html = appendAttribution(html, language);
       }
     }
   } catch {
     // Branding is never worth failing a publish over.
   }
+
+  // When it first went live, kept across republishes, and now. A republish
+  // is an update: the page's "published" date (the dateline, BlogPosting,
+  // git's publishDate, Shopify's published_at) is the day it first went out,
+  // where it used to be overwritten on every push. A push the CMS held as a
+  // draft is not a publish, so its date is not kept: the push that takes the
+  // article live is the first publish - unless the article was since found
+  // live on the site, whose date that check recorded.
+  const lastPushHeld = article.indexing_status?.indexnow === "held-in-cms" && !article.found_on_site_at;
+  const publishedAt = (!lastPushHeld && article.published_at) || new Date().toISOString();
+  const modifiedAt = new Date().toISOString();
 
   // Structured data, rebuilt from the body that is about to go out (see
   // lib/publishing/schema.ts). The FAQ follows the Article settings switch,
@@ -242,15 +279,14 @@ async function pushToDestination(
       .maybeSingle();
     const faqEnabled =
       typeof settings?.faq_schema === "boolean" ? settings.faq_schema : DEFAULT_OUTPUT_SETTINGS.faqSchema;
-    const now = new Date().toISOString();
     structuredData = structuredDataFor(
       html,
       {
         title: article.title,
         description: article.meta_description,
         imageUrl: article.featured_image_url,
-        datePublished: article.published_at ?? now,
-        dateModified: now,
+        datePublished: publishedAt,
+        dateModified: modifiedAt,
         keyword: article.keyword,
         publisherName: publisherName || siteUrl.replace(/^https?:\/\//, ""),
         language,
@@ -261,6 +297,12 @@ async function pushToDestination(
   } catch {
     // Schema is never worth failing a publish over.
   }
+
+  // Both dates go to every adapter, and into every article as a visible
+  // dateline, in the site's language (lib/content/trust.ts). Only here are
+  // both known.
+  const dateline = workspaceRead ? datelineHtml(language, { publishedAt, modifiedAt }) : null;
+  if (dateline) html = `${dateline}\n${html}`;
 
   const payload: PublishPayload = {
     id: articleId,
@@ -279,7 +321,7 @@ async function pushToDestination(
               metaDescription: article.meta_description,
               keyword: article.keyword,
               featuredImageUrl: article.featured_image_url,
-              publishedAt: article.published_at,
+              publishedAt,
             },
             siteUrl,
           )
@@ -288,6 +330,8 @@ async function pushToDestination(
     metaDescription: article.meta_description ?? undefined,
     focusKeyword: article.keyword ?? undefined,
     createdAt: article.created_at ?? undefined,
+    publishedAt,
+    modifiedAt,
     featuredImageUrl: article.featured_image_url ?? undefined,
     publishMode,
     structuredData,
@@ -336,7 +380,10 @@ async function pushToDestination(
       // A draft may have no public address yet (Wix returns none); null says
       // so, where "" would render as a link to nowhere.
       published_url: result.url || null,
-      published_at: new Date().toISOString(),
+      // The first publish, kept: a republish is an update, and the page's
+      // "published" date (the dateline, BlogPosting, git's publishDate) is
+      // the day it first went out. Was overwritten on every push.
+      published_at: publishedAt,
       updated_at: new Date().toISOString(),
     })
     .eq("id", articleId);

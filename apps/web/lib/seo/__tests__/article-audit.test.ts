@@ -155,6 +155,29 @@ describe("auditArticle", () => {
     expect(item.locate).toEqual(["Litmus"]);
   });
 
+  it("names a kept not-found listing apart from a guarded source, and locates it first", () => {
+    // A store that hides listings by country answers 404 from where the check
+    // ran; so does an app id the model invented. Kept, but not as a WAF block.
+    const play = "https://play.google.com/store/apps/details?id=com.example.invented";
+    const html =
+      `<h1>x</h1><p>See <a href="https://b.example/waf">Litmus</a> and <a href="${play}">the app</a>.</p>`;
+    const stamp = "2026-09-25T12:00:00.000Z";
+    const audit = auditArticle({
+      ...base,
+      html,
+      linkChecks: [
+        { url: "https://b.example/waf", status: 403, ok: false, verdict: "unverified", reason: "HTTP 403, could not verify", removed: false, checkedAt: stamp },
+        { url: play, status: 404, ok: false, verdict: "unverified", reason: "HTTP 404; this store answers ...", removed: false, checkedAt: stamp },
+      ],
+    });
+    const item = find(audit.items, "sources-verified");
+    expect(item.status).toBe("warn");
+    expect(item.detail).toContain('1 answered "not found" where we checked');
+    expect(item.detail).toContain("may not exist at all");
+    expect(item.detail).toContain("1 could not be reached (HTTP 403, could not verify)");
+    expect(item.locate).toEqual(["the app", "Litmus"]);
+  });
+
   it("passes the check when every cited URL answered", () => {
     const html = '<h1>x</h1><p><a href="https://a.example/ok">Gartner</a></p>';
     const audit = auditArticle({

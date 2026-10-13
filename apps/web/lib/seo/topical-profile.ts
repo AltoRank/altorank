@@ -22,6 +22,7 @@
 
 import type { CrawlResult } from "@/lib/audit/crawler";
 import { decodeEntities } from "@/lib/audit/html-utils";
+import { anyLanguageLabels, foldCase, matchesAnyHeading, supportedLocales } from "@/lib/i18n/locale";
 
 export interface TopicalProfile {
   domain: string;
@@ -103,6 +104,23 @@ const STOPWORDS = new Set([
 ]);
 
 /**
+ * The two- and three-word grams of every supported language's FAQ heading and
+ * "read more" anchors, folded: the page furniture `seedPhrasesFromPages`
+ * would otherwise count as a topic. The English list in that function stays
+ * as it was; this adds the rest of the contract's languages.
+ */
+const FURNITURE_GRAMS: ReadonlySet<string> = (() => {
+  const out = new Set<string>();
+  for (const phrase of [...supportedLocales().map((l) => l.labels.faqHeading), ...anyLanguageLabels("genericAnchors")]) {
+    const toks = foldCase(phrase).split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+    for (let n = 2; n <= 3; n++) {
+      for (let i = 0; i + n <= toks.length; i++) out.add(toks.slice(i, i + n).join(" "));
+    }
+  }
+  return out;
+})();
+
+/**
  * Seed phrases for keyword discovery, from the page text that names what the
  * site does: titles, h1s and h2s. Two- and three-word phrases with no
  * stopword in them, counted across pages, title and h1 weighted above h2.
@@ -168,6 +186,13 @@ export function seedPhrasesFromPages(
     "how it works",
   ]);
   for (const phrase of BOILERPLATE_PHRASES) delete score[phrase];
+  // The same furniture in every language the locale contract describes: a
+  // Turkish site's "Sıkça sorulan sorular" or "Devamını oku" heading is no
+  // more its topic than "Frequently asked questions" is an English site's.
+  // Folded, because these keys were lowered with English casing.
+  for (const key of Object.keys(score)) {
+    if (FURNITURE_GRAMS.has(foldCase(key)) || matchesAnyHeading("faq", key)) delete score[key];
+  }
 
   const ranked = Object.entries(score).sort((a, b) => b[1] - a[1]).map(([k]) => k);
   // Drop a bigram that only exists inside a higher-ranked trigram.

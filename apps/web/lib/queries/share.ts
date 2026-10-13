@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import type { ShareCardFacts } from "@/lib/share/card";
 import { resolveShareToken } from "@/lib/share/token";
+import { readGsc } from "@/lib/gsc/read";
 
 const CLICK_DAYS = 28;
 
@@ -34,7 +35,7 @@ export async function shareCardFactsWith(supabase: SupabaseClient, workspaceId: 
   const today = new Date().toISOString().slice(0, 10);
   const since = new Date(Date.now() - CLICK_DAYS * 86_400_000).toISOString().slice(0, 10);
 
-  const [{ data: ws }, { count: published }, { count: planned }, { count: gscCount }, { data: clickRows }] =
+  const [{ data: ws }, { count: published }, { count: planned }, { count: gscCount }, gsc] =
     await Promise.all([
       supabase
         .from("workspaces")
@@ -57,26 +58,20 @@ export async function shareCardFactsWith(supabase: SupabaseClient, workspaceId: 
         .select("id", { count: "exact", head: true })
         .eq("workspace_id", workspaceId)
         .eq("integration_id", "gsc"),
-      supabase
-        .from("analytics_metrics")
-        .select("clicks")
-        .eq("workspace_id", workspaceId)
-        .eq("source", "gsc")
-        // Property totals only. The sync writes four row shapes per day -
-        // totals, per query, per page, and per (query, page) - and summing
-        // them counts the same click up to four times (lib/gsc/analysis.ts).
-        // This number is printed on a public share card and burned into its
-        // OG image as "Search clicks, 28 days", which is the worst place in
-        // the product to be four times too high: it is the figure an account
-        // puts in front of its own client.
-        .is("query", null)
-        .is("page_url", null)
-        .gte("metric_date", since),
+      // Property totals only. The sync writes four row shapes per day -
+      // totals, per query, per page, and per (query, page) - and summing
+      // them counts the same click up to four times (lib/gsc/analysis.ts).
+      // This number is printed on a public share card and burned into its
+      // OG image as "Search clicks, 28 days", which is the worst place in
+      // the product to be four times too high: it is the figure an account
+      // puts in front of its own client. A failed read is "not measured"
+      // (null clicks), as it always was here, never a zero.
+      readGsc(supabase, { workspaceId, shapes: ["total"], since, columns: ["clicks"] }).catch(() => ({ total: [] })),
     ]);
   if (!ws) return null;
 
   const gscConnected = (gscCount ?? 0) > 0;
-  const rows = (clickRows ?? []) as Array<{ clicks: number | null }>;
+  const rows = gsc.total;
   const account = ws.accounts as unknown as { remove_branding: boolean | null } | null;
 
   return {

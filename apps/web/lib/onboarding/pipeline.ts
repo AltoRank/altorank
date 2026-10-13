@@ -34,14 +34,19 @@ import { analyseDomain, isTransientCrawlFailure } from "@/lib/audit/domain-analy
 import { refusing } from "@/lib/audit/host-circuit";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { generateArticle } from "@/lib/content/generate";
-import { trialGateApplies } from "@/lib/billing/trial";
+import { draftHoldReason, planHold } from "@/lib/billing/trial-hold";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
 import { hasDataForSEOCredentials, setSpendReporter } from "@/lib/seo/client";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
-import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
-import { heldTopics, schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
+import type { EmptyPool, OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
+import { readEmptyPool } from "./empty-pool";
+import { modelAvailable } from "@/lib/keyword-research/buyer-model";
+import { countScheduled, heldTopics, schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
+import { recordPlanFunnel } from "./funnel-event";
+import { withScreened, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
+import type { FirstLook } from "@/lib/keyword-research/opportunity";
 
 /** Pages the onboarding minute reads. The nightly pass reads up to forty. */
 const ONBOARDING_CRAWL_PAGES = 20;
@@ -56,6 +61,8 @@ export type Emit = (event: OnboardingEvent) => void;
 export interface RunOnboardingOptions {
   /** See the header: `inline` awaits the draft here, `dispatch` returns it. */
   firstDraft?: "inline" | "dispatch";
+  /** The `onboarding_runs` row, named on the run's funnel event (./funnel-event.ts). */
+  runId?: string;
 }
 
 /** The first draft, chosen and gated but not yet written, for the caller to dispatch. */
@@ -117,7 +124,7 @@ export async function runOnboarding(
     recordSpendByDefault({ provider: "dataforseo", operation, costUsd, workspaceId: workspace.id });
   });
   try {
-    return await runPhases(supabase, workspace, emit, options.firstDraft ?? "inline");
+    return await runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", options.runId ?? null);
   } finally {
     setSpendReporter(null);
   }
@@ -128,8 +135,13 @@ async function runPhases(
   workspace: Workspace,
   emit: Emit,
   firstDraft: "inline" | "dispatch",
+  runId: string | null = null,
 ): Promise<RunOnboardingResult> {
   const domain = workspace.domain;
+  // This run's spend is what the site's provider calls cost from here on:
+  // qualification stops buying before it reaches the first look's ceiling
+  // less the first draft's share (lib/keyword-research/opportunity.ts).
+  const firstLook: FirstLook = { since: new Date().toISOString() };
 
   // --- Phase 0: is there a site here at all? -------------------------------
   //
@@ -199,6 +211,12 @@ async function runPhases(
   // --- Phase 2: find what to write about ----------------------------------
   emit({ phase: "keywords", status: "active" });
   let keywordsFound = 0;
+  // Research ran, read the site, and found nothing: an empty pool, not a
+  // failure. False for every reason the research could not look (no domain,
+  // no provider, a crawl that failed, a keyword layer that was unavailable).
+  let researchFoundNothing = false;
+  // What discovery's hygiene dropped before storing anything, for the funnel.
+  let screened: { generalRival: number; offProfile: number } | undefined;
   if (!domain) {
     emit({ phase: "keywords", status: "skipped", detail: "No domain to analyse." });
   } else if (!hasDataForSEOCredentials()) {
@@ -221,6 +239,7 @@ async function runPhases(
         maxPages: ONBOARDING_CRAWL_PAGES,
       });
       keywordsFound = analysis.keywordsFound;
+      screened = analysis.screened;
 
       // What Google has already measured for this site, before anything the
       // model or a provider guessed. A workspace that connected Search Console
@@ -261,6 +280,7 @@ async function runPhases(
       const crawl = analysis.layers.find((l) => l.id === "crawl");
       const crawlFailed = crawl?.status === "failed" ? crawl.detail : null;
       const willRetry = crawlFailed !== null && isTransientCrawlFailure(crawlFailed);
+      researchFoundNothing = keywordsFound === 0 && crawlFailed === null && !why;
       emit({
         phase: "keywords",
         status: keywordsFound > 0 ? "done" : "skipped",
@@ -348,17 +368,38 @@ async function runPhases(
   // Four batches of up to fifteen results pages: about $0.25 at most, once.
   const FIRST_LOOK_QUALIFY_BATCHES = 4;
   let plan: PlannedEntry[] = [];
+  // Where every candidate went (./funnel-event.ts): written down for every
+  // run, planned or not, so an empty plan can be explained from one row.
+  let planFunnel: TopicFunnel | null = null;
+  let planningDetail: string | null = null;
   if (keywordsFound === 0) {
-    emit({ phase: "planning", status: "skipped", detail: "Nothing to schedule until there are keywords." });
+    planningDetail = "Nothing to schedule until there are keywords.";
+    // Only when the research looked and found nothing: a site that could not
+    // be read is a setup that fell short, and says so.
+    const emptyPool = researchFoundNothing ? await emptyPoolOrNull(supabase, workspace.id) : null;
+    emit({
+      phase: "planning",
+      status: "skipped",
+      detail: planningDetail,
+      ...(emptyPool ? { emptyPool } : {}),
+    });
   } else {
     try {
       // An account that will be asked for a card gets one article on the
       // calendar and the rest held: the trial is what opens the month. The
-      // held topics are qualified rows with no calendar entry, read back by
-      // heldTopics for the locked rows the screen shows. Everyone else -
-      // self-host, operator, paying - gets the month as before.
-      const gated = trialGateApplies(await getQuota(supabase, workspace.account_id).catch(() => null));
-      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, { maxEntries: gated ? 1 : 5, qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES });
+      // planner decides that itself (lib/billing/trial-hold.ts), and this
+      // asks it the same question only to word the screen. The held topics
+      // are qualified rows with no calendar entry, read back by heldTopics
+      // for the locked rows the screen shows. Everyone else - self-host,
+      // operator, paying - gets the month as before.
+      const hold = await planHold(supabase, workspace.id);
+      const gated = hold !== "open";
+      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, {
+        maxEntries: 5,
+        qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES,
+        firstLook,
+        onFunnel: (f) => { planFunnel = f; },
+      });
       const held = gated && plan.length
         ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [] }))
         : { count: 0, dates: [] };
@@ -379,21 +420,53 @@ async function runPhases(
       const pageNote = needsPage
         ? ` ${needsPage} search${needsPage === 1 ? "" : "es"} your buyers make want${needsPage === 1 ? "s" : ""} a landing page rather than an article; see Keywords.`
         : "";
+      // A second run for a held account plans nothing because the calendar
+      // already holds its one article, which is not the same news as "no
+      // keyword is clear enough".
+      const firstAlreadyPlanned = gated && plan.length === 0 && (await countScheduled(supabase, workspace.id)) > 0;
+      // The labels the plan carries, said in the line as well as on the cards.
+      const lower = plan.filter((p) => p.brief?.confidence === "lower").length;
+      const unmeasured = plan.filter((p) => p.brief?.demand === "unmeasured").length;
+      // A top-of-funnel topic's reader has the problem, and is not shopping
+      // yet: "a buyer" would be the wrong word for them.
+      const who = plan.some((p) => p.brief?.funnel === "audience") ? "a reader you serve" : "a buyer";
+      const labelNote = [
+        lower ? ` ${lower === plan.length ? (plan.length === 1 ? "It is" : "They are") : `${lower} of them ${lower === 1 ? "is" : "are"}`} lower confidence: fewer than three topics cleared the bar, and fewer results for ${lower === 1 ? "that search" : "those searches"} are articles than we ask for.` : "",
+        unmeasured && unmeasured === plan.length
+          ? ` No search volume is reported for ${plan.length === 1 ? "it" : "them"} in your market yet (unmeasured).`
+          : unmeasured
+            ? ` ${unmeasured} of them ${unmeasured === 1 ? "has" : "have"} no search volume reported in your market yet (unmeasured); measured topics come first.`
+            : "",
+      ].join("");
+      planningDetail =
+        plan.length > 0
+          ? held.count > 0
+            ? `Scheduled your first article. ${held.count} more topic${held.count === 1 ? " is" : "s are"} ready, each with ${who} and supporting search evidence; the trial opens them.${labelNote}${pageNote}`
+            : `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has ${who} and supporting search evidence.${labelNote}${pageNote}`
+          : firstAlreadyPlanned
+            ? `Your first article is already on the calendar; the rest of the plan opens with the trial.${pageNote}`
+            : `No keyword clear enough to plan yet.${pageNote}`;
+      // Nothing cleared the bar: which stage emptied the pool, for the row
+      // and the operator (lib/onboarding/empty-pool.ts). Not for a held
+      // account whose one article is already on the calendar - that site has
+      // a plan - and not for one whose pre-trial article was already spent
+      // (a second site): the planner returned nothing before it judged
+      // anything, and the hold, not the pool, is why (review, 2026-09-29).
+      const emptyPool =
+        plan.length === 0 && !firstAlreadyPlanned && hold !== "spent" ? await emptyPoolOrNull(supabase, workspace.id) : null;
       emit({
         phase: "planning",
         status: plan.length > 0 ? "done" : "skipped",
-        detail:
-          plan.length > 0
-            ? held.count > 0
-              ? `Scheduled your first article. ${held.count} more topic${held.count === 1 ? " is" : "s are"} ready, each with a buyer and supporting search evidence; the trial opens them.${pageNote}`
-              : `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has a buyer and supporting search evidence.${pageNote}`
-            : `No keyword clear enough to plan yet.${pageNote}`,
+        detail: planningDetail,
         planned: plan.map((p) => ({ term: p.term, date: p.date, brief: p.brief })),
+        ...(emptyPool ? { emptyPool } : {}),
       });
     } catch (err) {
-      emit({ phase: "planning", status: "failed", detail: message(err) });
+      planningDetail = message(err);
+      emit({ phase: "planning", status: "failed", detail: planningDetail });
     }
   }
+  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail });
 
   emit({ phase: "drafting", status: "active" });
   // The status and detail the drafting phase settled on. The fan-out note
@@ -426,7 +499,16 @@ async function runPhases(
       // and onboarding is where the first of them is spent. The message counts
       // off the limit rather than restating a number that has already moved.
       const quota = await getQuota(supabase, workspace.account_id);
-      if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
+      // The trial hold first (lib/billing/trial-hold.ts): an account that
+      // already has its one pre-trial article - on another site, or from a
+      // run before this one - writes nothing more until the trial starts,
+      // and the keyword research below is not bought for a draft that will
+      // not be written. A trial cancelled before its first charge (a new site
+      // added after the cancel) writes nothing either.
+      const held = draftHoldReason(quota);
+      if (held) {
+        settle("skipped", held);
+      } else if (quota.limit !== null && (quota.remaining ?? 0) <= 0) {
         // The one sentence the gates share (lib/billing/quota.ts). Written out
         // twice here, the paid half drifted: it said "Upgrade on the Billing
         // page to keep drafting", and a paid account at its limit does not
@@ -438,7 +520,7 @@ async function runPhases(
         // Not 25: the list is cut after scoring across every action, and a
         // site with 25 page-one rankings filled it with skips before any
         // writable term appeared (lib/onboarding/plan.ts has the same note).
-        const recs = await recommendKeywords(supabase, workspace.id, { limit: 1000, qualify: true });
+        const recs = await recommendKeywords(supabase, workspace.id, { limit: 1000, qualify: true, firstLook });
         // The first day of the plan is what the person just watched get
         // scheduled; writing anything else would contradict the calendar.
         const first = plan[0];
@@ -548,6 +630,24 @@ async function runPhases(
   // emits the equivalent of `ready` by settling the row when it lands.
   if (!pendingDraft) emit({ phase: "ready" });
   return { pendingDraft, fanOutSettled };
+}
+
+/**
+ * The empty pool, or null when it cannot be read. Null leaves the run
+ * `partial`, the status it had before this existed, rather than claiming a
+ * reason nobody could read; the failure is logged.
+ */
+async function emptyPoolOrNull(supabase: SupabaseClient, workspaceId: string): Promise<EmptyPool | null> {
+  // No judge this run: whatever verdicts the rows carry are some earlier
+  // run's, and "nothing cleared the bar" would be a claim this run did not
+  // test. The same precondition qualification itself has (opportunity.ts).
+  if (!modelAvailable() || !hasDataForSEOCredentials()) return null;
+  try {
+    return await readEmptyPool(supabase, workspaceId);
+  } catch (err) {
+    console.error(`[onboarding] empty-pool report for ${workspaceId}: ${message(err)}`);
+    return null;
+  }
 }
 
 function message(err: unknown): string {

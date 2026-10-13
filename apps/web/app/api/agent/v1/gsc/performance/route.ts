@@ -16,10 +16,10 @@ export const GET = withAgent(async (request, ctx) => {
   if ("envelope" in resolved) return resolved.envelope;
   const { scope } = resolved;
 
-  const rows = await gscRows(ctx, scope);
-  const performance = searchPerformance(rows, scope.today, scope.days);
-  const pages = topPages(rows, scope.today, scope.days, 10);
-  const opportunities = queryOpportunities(rows, scope.today, scope.days, 10);
+  const gsc = await gscRows(ctx, scope);
+  const performance = searchPerformance(gsc, scope.today, scope.days);
+  const pages = topPages(gsc, scope.today, scope.days, 10);
+  const opportunities = queryOpportunities(gsc, scope.today, scope.days, 10);
 
   const data = {
     workspace_id: scope.workspace.id,

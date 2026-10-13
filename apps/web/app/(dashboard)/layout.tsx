@@ -1,4 +1,4 @@
-import { cookies } from "next/headers";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { getWorkspaces } from "@/lib/queries/workspaces";
@@ -7,7 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { OnboardingProvider } from "@/components/onboarding/onboarding-provider";
 import { WorkspaceProvider } from "@/components/dashboard/workspace-context";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { ensureAccount } from "@/lib/queries/account";
+import { workingAccountId } from "@/lib/queries/account";
 import { isAdminEmail } from "@/lib/auth/operators";
 import { inCustomerPreview } from "@/lib/auth/preview";
 import { getImpersonation } from "@/lib/auth/impersonation";
@@ -15,7 +15,8 @@ import { ImpersonationBanner } from "@/components/dashboard/impersonation-banner
 import { getCompletedOnboardingSteps } from "@/lib/queries/onboarding";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { entitledToScheduledWork } from "@/lib/billing/quota";
-import { trialEndsLabel, trialGateApplies, trialGateBypassed } from "@/lib/billing/trial";
+import { trialEndsLabel, trialGateState } from "@/lib/billing/trial";
+import { openBeforeTrial, REQUEST_PATH_HEADER } from "@/lib/billing/gate-paths";
 import { usageLine } from "@/lib/billing/usage-line";
 import { siteAllowanceFrom } from "@/lib/workspaces/allowance";
 import { FeedbackWidget } from "@/components/dashboard/feedback-widget";
@@ -62,7 +63,6 @@ export default async function DashboardLayout({
     // The sidebar badge is a count. It used to fetch every article row - body
     // included - to read `.length` off the result.
     { count: articleCount },
-    cookieStore,
     // Non-null only while an operator is signed in as a customer. Everything
     // below this line then describes the customer, which is the point; the
     // banner is what says so.
@@ -82,10 +82,11 @@ export default async function DashboardLayout({
     // The scoped site's last setup run, for the banner below: a run that
     // fell short used to be visible only on the screen that ran it.
     runSnapshot,
+    // The path being served, for the trial gate below.
+    requestHeaders,
   ] = await Promise.all([
     getWorkspaces(),
     scopedArticles,
-    cookies(),
     getImpersonation(),
     supabase.auth.getUser(),
     scopedBacklinks,
@@ -95,6 +96,7 @@ export default async function DashboardLayout({
     getOperatorPreview(),
     inCustomerPreview(),
     scopeId ? latestRun(supabase, scopeId) : Promise.resolve(null),
+    headers(),
   ]);
 
   /**
@@ -129,7 +131,20 @@ export default async function DashboardLayout({
   const scopedWorkspace = scopeId ? workspaces.find((w) => w.id === scopeId) : undefined;
   const runNotice = wizardDone ? failedRunNotice(runSnapshot) : null;
 
-  const accountId = user ? await ensureAccount(user.id, meta, user.email) : null;
+  // The account of the site in view, when there is one: the trial gate below,
+  // the usage bar and the role all describe it. This used to be
+  // `ensureAccount`, which returns any one of the person's memberships, while
+  // /onboarding and the article reads answer for the scoped site's account.
+  // Someone invited to a paying account who also owns an older, never-trialed
+  // one was sent from the paying site to /onboarding, which found that site
+  // open and sent them back: a loop, and no dashboard. The reverse case opened
+  // a gated account's calendar and keywords. With no site in scope (a new
+  // person, or none left) the membership stands, and is created if missing.
+  //
+  // The scope itself is chosen with the gate in mind (lib/workspace-scope.ts):
+  // with no cookie, a person in a paying account and a never-trialed one
+  // lands on the paying account's site, not on their oldest site's gate card.
+  const accountId = user ? await workingAccountId(user) : null;
 
   /**
    * Real identity for the sidebar footer.
@@ -161,17 +176,32 @@ export default async function DashboardLayout({
       : Promise.resolve({ count: null }),
     accountId ? getRequestQuota(accountId, user?.email ?? null) : Promise.resolve(null),
   ]);
-  // The card, before the dashboard.
+  // The card, before the dashboard. No trial, no dashboard.
   //
-  // Only once the wizard is done: before that the redirect above already has
-  // the person on the run screen, which is where the ask is made. An account
-  // that is self-hosted, an operator's, or already on a plan is not gated -
-  // `trialGateApplies` says why for each.
-  // `simulation.gate` is dev-only (getSimulation returns null in production)
-  // and forces the redirect on an install with no Stripe key, which is the
-  // only way to see this flow without live keys on a laptop.
-  const gated = simulation?.gate === true || trialGateApplies(quota);
-  if (wizardDone && gated && !trialGateBypassed(user?.email)) redirect("/onboarding");
+  // Whether or not the wizard is done. It used to wait for that, to keep the
+  // wizard's Search Console tab working, and so an account with a profile
+  // saved and the wizard unfinished got the calendar, the keywords, the
+  // reports and the editor's shell - an account the profile-inference cron
+  // and the setup-unfinished email both make common. Now only the pages the
+  // wizard itself opens are let through (/connect, where Google's OAuth lands:
+  // lib/billing/gate-paths.ts), by the path the middleware forwards.
+  //
+  // Only with a site in scope. With none, /onboarding sends the person to
+  // /workspaces to add one, and gating that too was a redirect loop.
+  //
+  // `trialGateState` is the one answer (lib/billing/trial.ts): self-host,
+  // operator, plan, a finished trial and the kill switch are all "open", and
+  // a bypassed address is let through. `simulation.gate` is dev-only
+  // (getSimulation returns null in production) and forces the gate on an
+  // install with no Stripe key, which is the only way to see this flow
+  // without live keys on a laptop.
+  //
+  // This redirect is the door, not the lock. Next skips an unchanged layout
+  // on client navigation, so the article reads under it withhold the text on
+  // their own, and the database refuses it to every client token
+  // (lib/billing/body-lock.ts, migration 097).
+  const gate = trialGateState(quota, user?.email ?? null, { simulated: simulation?.gate === true });
+  if (scopeId && gate === "gated" && !openBeforeTrial(requestHeaders.get(REQUEST_PATH_HEADER))) redirect("/onboarding");
 
   // Sites the plan allows, for the switcher's "+ Add site" row. Derived from
   // the quota above and the list already loaded rather than queried again;
@@ -183,7 +213,11 @@ export default async function DashboardLayout({
   const userInitials = (userName.match(/[A-Za-z0-9]/)?.[0] ?? "A").toUpperCase();
   const role = membership?.role ?? null;
 
-  const initialWorkspaceId = cookieStore.get("active_workspace")?.value;
+  // The site the server scoped to, not the raw cookie: with no cookie the
+  // server's choice is gate-aware (lib/workspace-scope.ts), and a switcher
+  // that fell back to the first site on its own would show one site while
+  // every page answered for another.
+  const initialWorkspaceId = scopeId ?? undefined;
 
   /**
    * Nav entries for features that have nothing to show yet.

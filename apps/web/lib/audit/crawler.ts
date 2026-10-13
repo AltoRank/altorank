@@ -4,7 +4,7 @@
 // site owner can see who visited.
 import { fetchLenient, isTlsChainError } from "./lenient-fetch";
 
-const CRAWLER_UA =
+export const CRAWLER_UA =
   "Mozilla/5.0 (compatible; AltoRank-Auditor/1.0; +https://altorank.co; site audit)";
 
 /**
@@ -24,6 +24,7 @@ const CRAWLER_UA =
 export const FALLBACK_UA = "AltoRankBot/1.0 (content analysis)";
 
 import { noteRefusal, refusing } from "./host-circuit";
+import { extractFetchedPage, type SitePageExtract } from "./site-extract";
 
 /** Statuses a bot rule returns; anything else is the site's real answer. */
 const REFUSED = new Set([403, 406, 429]);
@@ -81,6 +82,19 @@ export interface CrawlResult {
   images: Array<{ src: string; alt: string }>;
   links: Array<{ href: string; text: string; isInternal: boolean }>;
   loadTimeMs: number;
+  /**
+   * What the page says about the business when it is the home, services,
+   * portfolio, about, contact or pricing page; null for any other page.
+   * Absent when the response was not HTML. Read off the body already in hand
+   * (lib/audit/site-extract.ts) so the first look can keep it in `site_pages`
+   * instead of discarding what it read.
+   */
+  extract?: SitePageExtract | null;
+  /**
+   * The URL the redirects ended on, when it is known. `extract` describes
+   * this page, not `url`, and a row kept for the writer is keyed on it.
+   */
+  finalUrl?: string;
 }
 
 /**
@@ -156,9 +170,11 @@ export async function crawlSite(
       }
 
       const html = await res.text();
-      const parsed = parseHtml(html, item.url, base.origin);
+      // `res.url` is where redirects ended; a body handed in has none.
+      const finalUrl = res.url || item.url;
+      const parsed = parseHtml(html, item.url, base.origin, finalUrl);
 
-      results.push({ url: item.url, status: res.status, loadTimeMs, ...parsed });
+      results.push({ url: item.url, status: res.status, loadTimeMs, finalUrl, ...parsed });
 
       // Enqueue internal links
       if (item.depth < maxDepth) {
@@ -184,8 +200,8 @@ export async function crawlSite(
           const r = await fetchLenient(item.url, { userAgent: CRAWLER_UA, timeoutMs: 10_000 });
           const loadTimeMs = Date.now() - start;
           if ((r.headers["content-type"] ?? "").includes("text/html")) {
-            const parsed = parseHtml(r.body, item.url, base.origin);
-            results.push({ url: item.url, status: r.status, loadTimeMs, tlsUnverified: true, ...parsed });
+            const parsed = parseHtml(r.body, item.url, base.origin, r.url);
+            results.push({ url: item.url, status: r.status, loadTimeMs, tlsUnverified: true, finalUrl: r.url, ...parsed });
             if (item.depth < maxDepth) {
               for (const link of parsed.links) {
                 if (link.isInternal && !visited.has(normalizeUrl(link.href))) {
@@ -229,6 +245,8 @@ function parseHtml(
   html: string,
   pageUrl: string,
   origin: string,
+  /** Where the redirects ended; the extract is read off this page. */
+  finalUrl: string,
 ): Omit<CrawlResult, "url" | "status" | "loadTimeMs"> {
   const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
   const title = titleMatch?.[1]?.trim() ?? "";
@@ -266,5 +284,5 @@ function parseHtml(
     }
   }
 
-  return { title, metaDescription, h1, h2, images, links };
+  return { title, metaDescription, h1, h2, images, links, extract: extractFetchedPage(html, pageUrl, finalUrl) };
 }

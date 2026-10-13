@@ -26,7 +26,9 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Quota } from "@/lib/billing/quota";
-import { isAdminEmail } from "@/lib/auth/operators";
+import { accountHasOperator } from "@/lib/billing/operator-account";
+import { accountCountingClient } from "@/lib/billing/account-client";
+import { resolveLocale } from "@/lib/i18n/locale";
 
 /** Where the link points. Bare and canonical: no query string to split. */
 export const ATTRIBUTION_URL = "https://altorank.co";
@@ -76,38 +78,34 @@ export function shouldAttribute(quota: Quota, removeBranding: boolean): boolean 
  * have put "Powered by AltoRank" on altorank.co's own articles, a footer link
  * from our domain to our domain (found 2026-09-02).
  *
- * Needs the service role to read addresses. On a request-scoped client the
- * admin call fails, and false is the right answer there anyway, because
- * `getQuota` has already resolved the signed-in operator itself.
+ * The same question getQuota asks, answered by the same function
+ * (lib/billing/operator-account.ts): an account an operator created. It had
+ * its own copy that asked "is any member an operator", which a customer
+ * could make true by adding a member (round-4 review). Asked on the
+ * account-wide service client, because the answer needs auth.users.
  */
 export async function isOperatorAccount(
   supabase: SupabaseClient,
   accountId: string,
 ): Promise<boolean> {
-  try {
-    const { data: members } = await supabase
-      .from("account_members")
-      .select("user_id")
-      .eq("account_id", accountId);
-    for (const m of members ?? []) {
-      const { data } = await supabase.auth.admin.getUserById(m.user_id as string);
-      if (isAdminEmail(data?.user?.email)) return true;
-    }
-  } catch {
-    // No service role, or the lookup failed. Fall through to the caller-based
-    // answer rather than guessing.
-  }
-  return false;
+  return accountHasOperator(accountCountingClient(supabase), accountId);
 }
 
-/** The markup itself. Kept to one paragraph so every CMS accepts it. */
-export function attributionHtml(): string {
+/**
+ * The markup itself. Kept to one paragraph so every CMS accepts it.
+ *
+ * In the article's language (`ArticleLabels.poweredBy`): the line sits under
+ * the customer's own article, and "Powered by" under a Turkish one is the
+ * same English leak as the "Contents" the locale contract was written for
+ * (a real signup, 2026-09-22). In a language the contract does not describe,
+ * the brand's link alone, which is no language's words.
+ */
+export function attributionHtml(language: string | null | undefined): string {
   const rel = ATTRIBUTION_REL ? ` rel="${ATTRIBUTION_REL}"` : "";
-  return (
-    `<p data-altorank-attribution="1">` +
-    `<small>Powered by <a href="${ATTRIBUTION_URL}"${rel}>${ATTRIBUTION_ANCHOR}</a></small>` +
-    `</p>`
-  );
+  const link = `<a href="${ATTRIBUTION_URL}"${rel}>${ATTRIBUTION_ANCHOR}</a>`;
+  const locale = resolveLocale(language);
+  const line = locale.supported ? locale.labels.poweredBy.replace("{link}", link) : link;
+  return `<p data-altorank-attribution="1"><small>${line}</small></p>`;
 }
 
 /**
@@ -117,7 +115,7 @@ export function attributionHtml(): string {
  * a second badge on top of the first, and adapters that round-trip HTML
  * through the CMS will hand back a body that already has one.
  */
-export function appendAttribution(html: string): string {
+export function appendAttribution(html: string, language: string | null | undefined): string {
   if (html.includes("data-altorank-attribution")) return html;
-  return `${html}\n${attributionHtml()}`;
+  return `${html}\n${attributionHtml(language)}`;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { factCheckArticle } from "../fact-check";
+import { approvalBlocker, autoApprovalBlocker, factCheckArticle } from "../fact-check";
 import type { ArticleResearch } from "@/lib/seo/research";
 
 const research = (competitors: Array<{ title: string; description: string; domain: string }>): ArticleResearch => ({
@@ -41,7 +41,7 @@ describe("factCheckArticle — flagging unsourced figures", () => {
     // not an appeal to an unnamed study, and flagging it trains people to
     // ignore the checker.
     const r = factCheckArticle("<p>Fix the cause your data shows first, then layer in emails.</p>");
-    expect(r.verdict).toBe("clean");
+    expect(r.counts.total).toBe(0);
   });
 
   it("still flags the same phrasing without a possessive", () => {
@@ -130,13 +130,22 @@ describe("factCheckArticle — flagging unsourced figures", () => {
     expect(r.claims[0].severity).toBe("high");
   });
 
-  it("returns a clean verdict for prose with no checkable claims", () => {
+  // Nothing found is not the same as nothing wrong. A real first article
+  // (2026-09-27) had no figures, called an association the regulator, and
+  // was reported `clean`.
+  it("returns `unchecked`, not `clean`, for prose with no checkable claims", () => {
     const r = factCheckArticle(
       "<h2>Getting started</h2><p>Most teams find the first step is the hardest. " +
         "Start small and expand once it works.</p>",
     );
-    expect(r.verdict).toBe("clean");
+    expect(r.verdict).toBe("unchecked");
+    expect(r.unchecked).toBe("nothing_to_check");
     expect(r.counts.total).toBe(0);
+    expect(r.summary).toMatch(/not the same as a clean check/);
+    // Nothing to publish unread, so auto-approve is not refused for it...
+    expect(autoApprovalBlocker(r)).toBeNull();
+    // ...and a person is never refused either.
+    expect(approvalBlocker(r)).toBeNull();
   });
 });
 
@@ -235,6 +244,52 @@ describe("factCheckArticle — attribution survives a dotted acronym", () => {
 
   it("leaves a genuinely unsourced figure alone", () => {
     const r = factCheckArticle("<p>In the U.S., 42% of clinics do this.</p>");
+    expect(r.claims[0].status).toBe("unsourced");
+  });
+});
+
+describe("factCheckArticle — a figure the business states about itself", () => {
+  // The writer is told to use the figures the business's own pages state and
+  // is not told to link them. Read as unsourced, they made a draft that did
+  // what the brief asked unapprovable (round-3 and round-4 reviews).
+  const ABOUT = "https://acme-agency.example/about";
+  const withSite = (statements: Array<{ text: string; source: string }>): ArticleResearch => ({
+    ...research([]),
+    siteStatements: statements,
+  });
+
+  it("sends it to the reviewer naming the page, and does not block approval", () => {
+    const r = factCheckArticle(
+      "<p>Acme has delivered 1,200 projects for its clients.</p>",
+      withSite([{ text: "Over 1,200 projects delivered since we opened", source: ABOUT }]),
+      "en",
+    );
+    expect(r.verdict).not.toBe("high_risk");
+    expect(r.claims[0]).toMatchObject({ status: "needs_verification", severity: "medium", sourceUrl: ABOUT });
+    expect(r.claims[0].note).toContain(ABOUT);
+  });
+
+  it("does not match a figure inside a longer number", () => {
+    // "20%" is not what a page saying "120%" states, nor "1,200".
+    const r = factCheckArticle(
+      "<p>Clients of Acme see 20% more leads.</p>",
+      withSite([{ text: "Over 1,200 projects and 120% growth", source: ABOUT }]),
+      "en",
+    );
+    expect(r.claims[0].status).toBe("unsourced");
+  });
+
+  it("needs every figure of the sentence on the site", () => {
+    const r = factCheckArticle(
+      "<p>Acme has delivered 1,200 projects and grown revenue 45% a year.</p>",
+      withSite([{ text: "Over 1,200 projects delivered", source: ABOUT }]),
+      "en",
+    );
+    expect(r.claims[0].status).toBe("unsourced");
+  });
+
+  it("changes nothing for a draft whose research has no site statements", () => {
+    const r = factCheckArticle("<p>Acme has delivered 1,200 projects for its clients.</p>", research([]), "en");
     expect(r.claims[0].status).toBe("unsourced");
   });
 });

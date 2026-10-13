@@ -66,6 +66,12 @@ export default async function InvitePage({ params }: InvitePageProps) {
     );
   }
 
+  // Ownership is never handed out by email (migration 102 refuses such an
+  // invite at the door); one written before that rule is not honoured here.
+  if (invite.role === "owner") {
+    return <Notice title="Invitation not valid">This invitation asks for owner access, which is given on the Team page, not by email. Ask the account owner to invite you as an admin.</Notice>;
+  }
+
   const { error: memberError } = await admin.from("account_members").insert({
     account_id: invite.account_id,
     user_id: user.id,

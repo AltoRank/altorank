@@ -135,6 +135,18 @@ describe("toHistoryRow", () => {
     expect(historyDate({ ...base, published_at: null, scheduled_at: null })).toBe("2026-09-03T00:00:00Z");
   });
 
+  it("marks a row live because it was found on the customer's site, and only that one", () => {
+    // Same status, same chip - it is live and counts as live - with its own
+    // label in the pill (migration 094).
+    const foundRow = toHistoryRow(
+      { ...base, published_url: "https://acme-agency.example/blog/kopya", found_on_site_at: "2026-09-23T10:00:00Z" },
+      { canPublish: false },
+    );
+    expect(foundRow.foundOnSite).toBe(true);
+    expect(foundRow.status).toBe("live");
+    expect(toHistoryRow({ ...base, published_url: "https://acme-agency.example/blog/pushed" }, { canPublish: true }).foundOnSite).toBe(false);
+  });
+
   it("recognises the chip values and nothing else", () => {
     expect(isHistoryFilter("review")).toBe(true);
     expect(isHistoryFilter("drafting")).toBe(false);

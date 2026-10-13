@@ -2,8 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
+import { sessionTrialGate } from "@/lib/billing/body-lock";
+import { trialRefusal } from "@/lib/billing/trial-refusal";
 import { DEFAULT_SCOPES, expiryFromDays, generateApiKey, type ApiKeyScope } from "@/lib/agent/api-keys";
 import { announceApiKeyCreated } from "@/lib/email/account-events";
 import { actorName } from "@/lib/email/approval-events";
@@ -14,6 +16,16 @@ import { actorName } from "@/lib/email/approval-events";
 //
 // Owner/admin only, like rotating the legacy key. The full key value leaves
 // this function exactly once, in the return value; the row keeps its hash.
+//
+// The row is written with the service role, after the checks below, and a
+// client token can no longer insert one (migration 099). The table used to
+// take inserts from any owner or admin over PostgREST, and the hash is a
+// plain sha256, so a person could choose their own key - and name any user
+// as its creator, which is whose address the agent API asks the trial gate
+// and the operator list about (lib/agent/body-lock.ts).
+//
+// An account that has not started its trial gets no key. No trial means no
+// dashboard, and the agent API is the dashboard by another door.
 
 const createSchema = z.object({
   name: z.string().trim().min(1, "Give the key a name.").max(80),
@@ -40,11 +52,12 @@ export async function createApiKey(formData: FormData): Promise<CreatedApiKey> {
     allow_write: formData.get("allow_write") === "on",
   });
   const scopes: ApiKeyScope[] = parsed.allow_write ? [...DEFAULT_SCOPES, "write"] : [...DEFAULT_SCOPES];
+  if ((await sessionTrialGate(accountId, user.email ?? null)) === "gated") throw new Error(trialRefusal("spend"));
 
   const generated = generateApiKey();
   const expiresAt = expiryFromDays(parsed.expires_in_days === "never" ? null : parsed.expires_in_days);
 
-  const supabase = await createClient();
+  const supabase = createServiceClient();
   const { data, error } = await supabase
     .from("api_keys")
     .insert({

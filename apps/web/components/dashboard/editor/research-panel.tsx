@@ -34,6 +34,8 @@ function LayerRow({ layer }: { layer: ResearchLayer }) {
     related_keywords: "Related keywords",
     gsc: "Search Console",
     competitor_length: "Competitor length",
+    site_facts: "Your site",
+    sources: "Sources",
   };
 
   const tone =
@@ -63,6 +65,21 @@ export function ResearchPanel({ research }: { research: ArticleResearch }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* What the reviewer owes before publishing: no reviewer found for a
+          health article, no figure to cite, a title that was shortened. */}
+      {research.reviewNotes && research.reviewNotes.length > 0 && (
+        <div className="rounded-[6px] border border-amber-200 bg-amber-50 px-2.5 py-2">
+          <div className="text-[12px] font-medium text-ink mb-1">Before publishing</div>
+          <ul className="flex flex-col gap-1 list-disc pl-4">
+            {research.reviewNotes.map((n) => (
+              <li key={n} className="text-[11.5px] text-ink-2 leading-[1.5]">
+                {n}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Intent */}
       <div>
         <div className="flex items-center gap-2">
@@ -183,6 +200,8 @@ const STATUS_LABEL: Record<ExtractedClaim["status"], string> = {
   corroborated: "Seen elsewhere",
   verified: "Source checked",
   contradicted: "Not on cited page",
+  unsupported: "Not named on cited page",
+  rival_source: "Competitor as source",
 };
 
 function ClaimRow({
@@ -244,6 +263,12 @@ export function FactCheckPanel({
   report: FactCheckReport;
   onLocate?: (text: string) => void;
 }) {
+  // Nothing was looked for, so there is no list and no "claims a reader
+  // would expect a source for" footnote: only what the reviewer has to do.
+  if (report.verdict === "unchecked") {
+    return <div className="text-[12.5px] text-ink-2 leading-[1.5]">{report.summary}</div>;
+  }
+
   if (report.verdict === "clean") {
     return (
       <div className="flex items-center gap-2 text-[12.5px] text-ink-2">
@@ -265,8 +290,9 @@ export function FactCheckPanel({
         <ClaimRow key={c.id} claim={c} onLocate={onLocate} />
       ))}
       <div className="text-[11px] text-ink-4 leading-[1.5] mt-1">
-        These are claims a reader would expect a source for. The check finds
-        unattributed figures; it cannot tell you whether a figure is true.
+        These are claims a reader would expect a source for: figures, and who
+        regulates or pays for something. The check finds what is unattributed
+        or missing from its cited page; it cannot tell you whether a claim is true.
       </div>
     </div>
   );

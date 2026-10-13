@@ -16,21 +16,22 @@
 
 import { decodeEntities } from "@/lib/audit/html-utils";
 import { classifyHref, extractLinks } from "@/lib/seo/links";
+import { supportedLocales } from "@/lib/i18n/locale";
 
 /**
- * Whole-heading labels that open a citation list, in the languages the
- * product writes in. Matched exactly rather than by prefix so a real section
- * called "Sources of traffic" is not mistaken for a footer.
+ * Whether a whole heading is a label that opens a citation list, in any
+ * language the locale contract describes ("Sources", "Fonti", "Kaynakça").
+ * Matched exactly rather than by prefix so a real section called "Sources of
+ * traffic" is not mistaken for a footer. Lowered by each language's own
+ * casing, so "İLERİ OKUMA" is "ileri okuma".
  */
-const FOOTER_LABELS = new Set([
-  "sources", "source", "references", "reference", "citations", "bibliography",
-  "works cited", "further reading", "sources and references", "sources & references",
-  "references and sources", "sources cited",
-  "fonti", "riferimenti", "bibliografia", "fonti e riferimenti", "note e fonti",
-  "fuentes", "referencias", "fuentes y referencias",
-  "références", "sources et références",
-  "quellen", "literatur", "quellenverzeichnis", "literaturverzeichnis", "quellen und literatur",
-]);
+function footerLabel(text: string): string | null {
+  for (const locale of supportedLocales()) {
+    const label = locale.lower(text);
+    if (locale.headings.sourcesFooter.includes(label)) return label;
+  }
+  return null;
+}
 
 export interface SourcesFooter {
   /** The label as written, lowercased, without its trailing colon. */
@@ -60,8 +61,7 @@ function labelOf(inner: string): string {
   return decodeEntities(inner.replace(/<[^>]*>/g, " "))
     .replace(/\s+/g, " ")
     .trim()
-    .replace(/[:.]+$/, "")
-    .toLowerCase();
+    .replace(/[:.]+$/, "");
 }
 
 /**
@@ -76,8 +76,8 @@ function labelOf(inner: string): string {
 export function findSourcesFooter(html: string): SourcesFooter | null {
   let found: { label: string; level: number | null; start: number; headingEnd: number } | null = null;
   for (const m of html.matchAll(/<(h[2-4]|p)\b[^>]*>([\s\S]*?)<\/\1>/gi)) {
-    const label = labelOf(m[2]);
-    if (!FOOTER_LABELS.has(label)) continue;
+    const label = footerLabel(labelOf(m[2]));
+    if (!label) continue;
     const tag = m[1].toLowerCase();
     const start = m.index ?? 0;
     found = {

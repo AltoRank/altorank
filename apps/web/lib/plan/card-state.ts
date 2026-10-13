@@ -27,6 +27,8 @@
 // could not load, or one in a status this file does not know. It renders "—",
 // never a guess (rule 5).
 
+import { liveLabel } from "@/lib/found-on-site/state";
+
 export type PlannerCardState =
   | "planned"
   | "frozen"
@@ -53,6 +55,8 @@ export type EntryFacts = {
 export type ArticleFacts = {
   status: string;
   published_url?: string | null;
+  /** Set when the nightly check found it live on the customer's own site (migration 094). */
+  found_on_site_at?: string | null;
 } | null;
 
 /** The slice of a `refresh_tasks` row the mapping reads, for an improvement square. */
@@ -182,8 +186,17 @@ export function cardActions(state: PlannerCardState): CardActions {
   }
 }
 
-/** The pill: a `STATUS_META` key for colour, and the words on it. */
-export function cardStatusPill(state: PlannerCardState): { status: string; label: string } {
+/**
+ * The pill: a `STATUS_META` key for colour, and the words on it. A live
+ * article the nightly check found on the customer's site reads "Live on your
+ * site" here as it does in the editor and the Articles list: it went live
+ * without us, and the card must not claim otherwise.
+ */
+export function cardStatusPill(state: PlannerCardState, article?: ArticleFacts): { status: string; label: string } {
+  if (state === "live" && article) {
+    const label = liveLabel({ status: article.status, published_url: article.published_url ?? null, found_on_site_at: article.found_on_site_at });
+    if (label) return { status: "live", label };
+  }
   switch (state) {
     case "planned":
       return { status: "queue", label: "Planned" };

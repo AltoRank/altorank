@@ -15,6 +15,7 @@ import type { SpendSink } from "./buyer-model";
 import { findSerpRivals, MAX_SERP_RIVALS } from "./serp-rivals";
 import { alternativeSeeds } from "./alternative-seeds";
 import { resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
+import { isGeneralPool, isGeneralSite, profileVocabulary, sharesVocabulary, type Screened } from "./hygiene";
 
 /** A candidate plus the rival that holds it, when one does. */
 export type Candidate = DiscoveredKeyword & { competitor?: string };
@@ -47,6 +48,8 @@ export interface DiscoveryResult {
   /** Recovery and expansion evidence; missing metrics never imply zero demand. */
   seedRecovery: { attempted: boolean; seeds: string[]; measured: number };
   expandedSeeds: string[];
+  /** What candidate hygiene set aside before any judge (./hygiene.ts). */
+  screened: Screened;
 }
 
 /** Rivals a first look reads. Each is one `ranked_keywords` task. */
@@ -73,6 +76,8 @@ export async function discoverBuyerKeywords(options: {
   languageCode?: string;
   locationCode?: number;
   spend?: SpendSink | null;
+  /** The site's own crawled terms, for the hygiene vocabulary (./hygiene.ts). */
+  vocabulary?: readonly string[];
 }): Promise<DiscoveryResult> {
   const languageCode = options.languageCode ?? "en";
   const locale = { languageCode, locationCode: options.locationCode };
@@ -83,9 +88,11 @@ export async function discoverBuyerKeywords(options: {
   const named = await resolveCompetitorDomains(
     (options.business?.competitors ?? []).slice(0, MAX_COMPETITORS_READ * 2),
   ).catch(() => ({ domains: [] as string[], unresolved: [] as string[] }));
-  const competitors = [...new Set(named.domains.map(host))]
-    .filter((c) => c && c !== own)
-    .slice(0, MAX_COMPETITORS_READ);
+  const screened: Screened = { generalRival: 0, offProfile: 0, generalRivals: [] };
+  // A known platform is not read at all: its rows would be the internet's.
+  const namedHosts = [...new Set(named.domains.map(host))].filter((c) => c && c !== own);
+  screened.generalRivals.push(...namedHosts.filter(isGeneralSite));
+  const competitors = namedHosts.filter((c) => !isGeneralSite(c)).slice(0, MAX_COMPETITORS_READ);
   const competitorsFailed: string[] = [];
   // Grows when rivals are read off the results pages: their brand names are
   // navigation for them, the same as a named rival's.
@@ -112,11 +119,37 @@ export async function discoverBuyerKeywords(options: {
 
   const fromCompetitors: Candidate[] = [];
   const seen = new Set<string>();
+  // Filled once the seeds are known, below; the rivals' rows are absorbed after.
+  let vocabulary = new Set<string>();
+  const screenedOut = new Set<string>();
+  const namesRival = (term: string) => {
+    const compact = term.replace(/[^\p{L}\p{N}]/gu, "");
+    return rivalsKnown.some((r) => { const label = r.split(".")[0].replace(/[^\p{L}\p{N}]/gu, ""); return label.length >= 4 && compact.includes(label); });
+  };
   const absorb = (rows: Awaited<ReturnType<typeof fetchRankedKeywords>>, competitor: string) => {
+    // Hygiene (./hygiene.ts): a pool that is mostly off-profile is a general
+    // site's, dropped whole; otherwise a row with no word of the business's
+    // is dropped alone. Counted once per phrase, for the funnel.
+    const usable = rows.filter((k) => { const key = k.keyword.trim().toLowerCase(); return key && !brand(key); });
+    if (isGeneralPool(usable.map((k) => k.keyword), vocabulary)) {
+      screened.generalRivals.push(competitor);
+      for (const k of usable) {
+        const key = k.keyword.trim().toLowerCase();
+        if (!seen.has(key) && !screenedOut.has(key)) { screenedOut.add(key); screened.generalRival++; }
+      }
+      return;
+    }
     const byPage = new Map<string, number>();
     for (const k of rows) {
       const key = k.keyword.trim().toLowerCase();
       if (!key || seen.has(key) || brand(key)) continue;
+      // A rival's name with a modifier ("x pricing", "x vs y") is a
+      // comparison, on-profile whatever its words; its bare name is a brand
+      // term and already gone.
+      if (vocabulary.size && !sharesVocabulary(key, vocabulary) && !namesRival(key)) {
+        if (!screenedOut.has(key)) { screenedOut.add(key); screened.offProfile++; }
+        continue;
+      }
       const page = k.url?.replace(/[?#].*$/, "");
       if (page && (byPage.get(page) ?? 0) >= 2) continue;
       if (page) byPage.set(page, (byPage.get(page) ?? 0) + 1);
@@ -133,7 +166,6 @@ export async function discoverBuyerKeywords(options: {
       });
     }
   };
-  perCompetitor.forEach((rows, i) => absorb(rows, competitors[i]));
 
   const fromIdeas: Candidate[] = [];
   const seedRecovery = { attempted: false, seeds: [] as string[], measured: 0 };
@@ -207,6 +239,12 @@ export async function discoverBuyerKeywords(options: {
     fromIdeas.push(...[...ideas.values()].sort((a, b) => Number(Boolean(a.unmeasured)) - Number(Boolean(b.unmeasured))));
   }
 
+  // The business's words, in its profile's language and in the market's (the
+  // seeds and the site's own pages), now that the seeds are known; then the
+  // named rivals' rows, screened against them.
+  vocabulary = profileVocabulary(options.business, [...seeds.seeds, ...seedRecovery.seeds, ...(options.vocabulary ?? [])]);
+  perCompetitor.forEach((rows, i) => absorb(rows, competitors[i]));
+
   // The rivals that hold this site's results pages, in its own locale. Read
   // after the seeds exist because the seeds are what is searched.
   const rivalSeeds = [...new Set([...seeds.seeds, ...seedRecovery.seeds])].filter((t) => !brand(t));
@@ -219,7 +257,9 @@ export async function discoverBuyerKeywords(options: {
     ...rivalSeeds.filter((t) => !((priced.get(t)?.volume ?? 0) > 0)),
   ];
   // Found once, then kept on the profile: see BusinessProfile.searchRivals.
-  const kept = [...new Set((options.business?.searchRivals ?? []).map(host))].filter((c) => c && c !== own && !competitors.includes(c));
+  const keptAll = [...new Set((options.business?.searchRivals ?? []).map(host))].filter((c) => c && c !== own && !competitors.includes(c));
+  screened.generalRivals.push(...keptAll.filter(isGeneralSite));
+  const kept = keptAll.filter((c) => !isGeneralSite(c));
   const serpRivals = kept.length
     ? { rivals: kept.slice(0, MAX_SERP_RIVALS), searched: [] as string[], failed: [] as string[], candidates: kept, vetted: true }
     : searchable.length
@@ -232,6 +272,9 @@ export async function discoverBuyerKeywords(options: {
         { business: options.business, spend: options.spend },
       )
     : { rivals: [] as string[], searched: [] as string[], failed: [] as string[], candidates: [] as string[], vetted: true };
+  // A known platform the results pages turned up is never read.
+  screened.generalRivals.push(...serpRivals.rivals.filter(isGeneralSite));
+  serpRivals.rivals = serpRivals.rivals.filter((c) => !isGeneralSite(c));
   const perSerpRival = await Promise.all(
     serpRivals.rivals.map((c) =>
       fetchRankedKeywords(c, {
@@ -249,6 +292,12 @@ export async function discoverBuyerKeywords(options: {
   const namedRows = fromCompetitors.length;
   perSerpRival.forEach((rows, i) => absorb(rows, serpRivals.rivals[i]));
   const fromSerpRivals = fromCompetitors.length - namedRows;
+  // A search rival that turned out to be a general site is not a rival:
+  // said so, and not handed back as one to be kept on the profile.
+  const general = new Set(screened.generalRivals);
+  const rivalsKeptNow = serpRivals.rivals.filter((c) => !general.has(c));
+  const keptChanged = kept.length > 0 && (rivalsKeptNow.length !== keptAll.length);
+  screened.generalRivals = [...general];
 
-  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors, alternativeSeeds: rivalPhrases, competitorsUnresolved: named.unresolved, competitorsFailed, serpRivals: serpRivals.rivals, serpRivalsKept: kept.length > 0, serpRivalsVetted: serpRivals.vetted, fromSerpRivals, serpRivalSearchesFailed: serpRivals.failed, seedRecovery, expandedSeeds };
+  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors, alternativeSeeds: rivalPhrases, competitorsUnresolved: named.unresolved, competitorsFailed, serpRivals: rivalsKeptNow, serpRivalsKept: kept.length > 0 && !keptChanged, serpRivalsVetted: serpRivals.vetted, fromSerpRivals, serpRivalSearchesFailed: serpRivals.failed, seedRecovery, expandedSeeds, screened };
 }

@@ -2,10 +2,17 @@ import { describe, expect, it, vi, beforeEach, afterAll } from "vitest";
 
 vi.mock("../resend", () => ({ sendTransactionalEmail: vi.fn() }));
 vi.mock("@/lib/observability/record", () => ({ recordEvent: vi.fn() }));
+// The trial gate as the account's mail sees it (asked as nobody). The real
+// predicate against a real account is in trial-cancel-and-gate.db.test.ts.
+const { gate, accountTrialGate } = vi.hoisted(() => {
+  const gate = { value: "open" as "open" | "gated" | "bypassed" };
+  return { gate, accountTrialGate: vi.fn(async (..._a: unknown[]) => gate.value) };
+});
+vi.mock("@/lib/billing/body-lock", () => ({ accountTrialGate: (...a: unknown[]) => accountTrialGate(...a) }));
 
 import { sendTransactionalEmail } from "../resend";
 import { fakeDraftDb } from "./fake-draft-db";
-import { HOLD_REMINDER_AFTER_MS, HOLD_WINDOW_RESET_MS, holdDigestSlot, sendHeldDigests } from "../held-digest";
+import { GATED_DIGEST_LINE, HOLD_REMINDER_AFTER_MS, HOLD_WINDOW_RESET_MS, holdDigestSlot, sendHeldDigests } from "../held-digest";
 import type { AutoApproveResult } from "@/lib/publishing/auto-approve";
 
 const send = vi.mocked(sendTransactionalEmail);
@@ -20,6 +27,8 @@ afterAll(() => {
 beforeEach(() => {
   send.mockReset();
   send.mockResolvedValue(undefined);
+  gate.value = "open";
+  accountTrialGate.mockClear();
 });
 
 const held = (id: string): AutoApproveResult =>
@@ -89,5 +98,35 @@ describe("sendHeldDigests", () => {
     const d = db([row("ws1:hold:2026-09-14", ago(3 * DAY))]);
     expect(await sendHeldDigests(d.client, [held("a1")], NOW)).toEqual(["ws1: 1 held, reminder, emailed 1"]);
     expect(send.mock.calls[0]![1]).toContain("not published automatically");
+  });
+});
+
+describe("sendHeldDigests and an account that has not started its trial", () => {
+  // Every draft of such an account is held for "no active plan", and the
+  // email links a queue and drafts the account cannot open. One real account
+  // received every one of these the product had sent (assessment 2026-09-29).
+  it("sends nothing, writes nothing to the ledger, and says why in the run", async () => {
+    gate.value = "gated";
+    const d = db();
+    expect(await sendHeldDigests(d.client, [held("a1")], NOW)).toEqual([`ws1: 1 held, ${GATED_DIGEST_LINE}`]);
+    expect(send).not.toHaveBeenCalled();
+    expect(d.tables.sent_emails).toHaveLength(0);
+    // Asked about the site's account, as nobody: a mail goes to every member.
+    expect(accountTrialGate).toHaveBeenCalledWith(expect.anything(), "ag1", null);
+  });
+
+  it("opens a fresh window once the trial starts: nothing was spent while it was gated", async () => {
+    gate.value = "gated";
+    const d = db();
+    await sendHeldDigests(d.client, [held("a1")], NOW);
+    gate.value = "open";
+    expect(await sendHeldDigests(d.client, [held("a1")], NOW)).toEqual(["ws1: 1 held, opener, emailed 1"]);
+  });
+
+  it("sends nothing when the gate cannot be read, rather than a digest the account may not be able to use", async () => {
+    accountTrialGate.mockRejectedValueOnce(new Error("quota: could not read this account's plan (timeout)"));
+    const out = await sendHeldDigests(db().client, [held("a1")], NOW);
+    expect(out).toEqual(["ws1: digest failed (quota: could not read this account's plan (timeout))"]);
+    expect(send).not.toHaveBeenCalled();
   });
 });

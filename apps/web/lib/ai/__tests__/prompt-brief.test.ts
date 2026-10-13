@@ -80,9 +80,10 @@ describe("buildSystemPrompt — the site the article is for", () => {
     expect(on).toContain('attributed to the site ("we", "our team", or the business name),');
   });
 
-  it("asks for a FAQ section only when the faq_schema switch is on", () => {
-    expect(buildSystemPrompt({ keyword: "x", output: { faq: true } })).toContain("<h2>Frequently asked questions</h2>");
-    expect(buildSystemPrompt({ keyword: "x", output: { faq: false } })).not.toContain("Frequently asked questions</h2>");
-    expect(buildSystemPrompt({ keyword: "x", output: {} })).not.toContain("Frequently asked questions</h2>");
+  // The FAQ is decided by the results page (lib/content/on-page.ts faqPlan),
+  // not by the schema switch, which governs only the FAQ's structured data.
+  it("does not ask for a FAQ section on the schema switch alone", () => {
+    expect(buildSystemPrompt({ keyword: "x", output: { faq: true } })).not.toContain("Frequently asked questions</h2>");
+    expect(buildSystemPrompt({ keyword: "x", output: { faq: true } })).toContain("Do not add a FAQ section");
   });
 });

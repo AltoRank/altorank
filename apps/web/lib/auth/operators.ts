@@ -54,3 +54,14 @@ export function operatorRecipients(): string[] {
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
 }
+
+/**
+ * Whether a customer may be told a person will write to them. Only when
+ * somebody will actually be told: the operator email and the daily digest
+ * both go to `operatorRecipients()` and nowhere else, so with ADMIN_EMAILS
+ * unset a "we will write within 24 hours" is a promise nobody hears about
+ * (review, 2026-09-29).
+ */
+export function followUpPromised(): boolean {
+  return operatorRecipients().length > 0;
+}

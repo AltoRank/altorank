@@ -21,6 +21,8 @@ import { NextResponse } from "next/server";
 import { apiKeyState, hashApiKey, looksLikeApiKey } from "@/lib/agent/api-keys";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
+import { accountTrialGate } from "@/lib/billing/body-lock";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 
 export type BlogAuth =
   | { ok: true; supabase: SupabaseClient; workspaceId: string; domain: string }
@@ -71,6 +73,15 @@ export async function authenticateBlogRequest(request: Request): Promise<BlogAut
     account = legacy ? { id: legacy.id as string } : null;
   }
   if (!account) return deny(401, "Invalid API key");
+
+  // The detail endpoint hands out the article rendered to HTML, read with the
+  // service role, so the trial gate is asked here: `status = 'live'` is not
+  // proof that anyone paid. A signed-in person writes their own articles'
+  // status through PostgREST (the editor saves through their client), and an
+  // account that had not started its trial could set its first draft to
+  // `live` and read it back from here. A key is nobody's session, so the
+  // bypass list never applies; operators resolve from the account's members.
+  if ((await accountTrialGate(supabase, account.id, null)) === "gated") return deny(403, BODY_LOCKED_MESSAGE);
 
   const { data: workspace } = await supabase
     .from("workspaces")

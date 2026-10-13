@@ -89,6 +89,7 @@ export function fakeSupabase(seed: Seed) {
     let wantCount = false;
     let head = false;
     let limit: number | null = null;
+    let offset = 0;
     let order: { col: string; asc: boolean } | null = null;
 
     const filtered = () => rows().filter((r) => filters.every((f) => matches(tables, r, f)));
@@ -111,7 +112,8 @@ export function fakeSupabase(seed: Seed) {
           return (x < y ? -1 : 1) * (asc ? 1 : -1);
         });
       }
-      if (limit !== null) out = out.slice(0, limit);
+      if (limit !== null) out = out.slice(offset, offset + limit);
+      else if (offset) out = out.slice(offset);
       return out;
     };
 
@@ -191,6 +193,9 @@ export function fakeSupabase(seed: Seed) {
       return self;
     });
     self.range = vi.fn((fromIdx: number, toIdx: number) => {
+      // Both ends, as PostgREST reads them: a paged read's second page is
+      // rows 1000-1999, not the first thousand again.
+      offset = fromIdx;
       limit = toIdx - fromIdx + 1;
       return self;
     });

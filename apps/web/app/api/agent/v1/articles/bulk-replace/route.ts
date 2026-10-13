@@ -4,6 +4,7 @@ import { fail, ok } from "@/lib/agent/envelope";
 import { articleInAccount, listArticles, workspaceInAccount } from "@/lib/agent/data";
 import { articleMutations } from "@/lib/agent/mutations";
 import { applyReplace, replaceBodySchema, type ReplaceBody } from "@/lib/agent/replace";
+import { agentBodyLocked, bodyLockedEnvelope } from "@/lib/agent/body-lock";
 import type { Article } from "@/lib/types";
 
 export const BULK_REPLACE_MAX = 10;
@@ -36,6 +37,8 @@ export const POST = withAgent(async (request, ctx) => {
   }
   const workspace = await workspaceInAccount(ctx, body.data.workspace_id);
   if (!workspace) return fail("not_found", "Workspace not found in this account.", "Call GET /workspaces and use an id from that list.");
+  // Same reason as /articles/{id}/replace: the preview quotes the text.
+  if (await agentBodyLocked(ctx)) return bodyLockedEnvelope(appBaseUrl(request));
 
   let targets: Article[];
   if (body.data.article_ids) {

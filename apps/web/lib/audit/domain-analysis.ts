@@ -31,6 +31,7 @@ import { profileIsUsable, scoreRelevance, subjectVocabulary } from "@/lib/seo/to
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { discoverBuyerKeywords } from "@/lib/keyword-research/discovery";
+import type { Screened } from "@/lib/keyword-research/hygiene";
 import { isBrandTerm } from "@/lib/keyword-research/seeds";
 import { judgeBuyerFit } from "@/lib/keyword-research/buyer-fit";
 import { contextKey, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
@@ -46,7 +47,7 @@ import {
 import { classifyIntent } from "@/lib/seo/intent";
 import { buildTopicalProfile, type TopicalProfile } from "@/lib/seo/topical-profile";
 import { detectPlatform, type Detection } from "@/lib/cms/detect";
-import { discoverUrls } from "@/lib/seo/site-crawl";
+import { discoverUrls, recordLinkedPages } from "@/lib/seo/site-crawl";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { fetchDomainMetrics } from "@/lib/seo/domain-metrics";
 import { e2eStubsEnabled, stubAnalyseDomain } from "@/lib/e2e/stubs";
@@ -67,6 +68,12 @@ export interface DomainAnalysis {
   issues: unknown[];
   pagespeed: Record<string, unknown>;
   keywordsFound: number;
+  /**
+   * What candidate hygiene set aside before any judge was asked: rows of
+   * general sites read as rivals, and rival phrases with no word of the
+   * business (lib/keyword-research/hygiene.ts). For the run's funnel.
+   */
+  screened?: Screened;
   /** Keywords the domain ranks for today, joined to the page that earns them. */
   rankedKeywords: RankedKeyword[];
   /** Of those, the ones close enough to page one to be worth a revision. */
@@ -494,6 +501,15 @@ export async function analyseDomain(options: {
       profile = buildTopicalProfile(domain, pages);
       issues = runAuditChecks(pages) as unknown[];
       auditScore = calculateAuditScore(issues as never, pages.length);
+      // The services, portfolio, about and contact pages this walk reached,
+      // kept for the writer. On a site with no sitemap nothing else ever
+      // reads them (lib/seo/site-crawl.ts recordLinkedPages). Logged, not a
+      // layer: the crawl's result stands whether or not this write lands.
+      if (supabase && workspaceId && depth === "full") {
+        const kept = await recordLinkedPages(supabase, workspaceId, pages);
+        if (kept.error) console.warn(`[analyse] could not keep the business pages the crawl read: ${kept.error}`);
+        else if (kept.inserted || kept.updated) console.log(`[analyse] kept ${kept.inserted} new and ${kept.updated} existing business page(s) for the writer`);
+      }
       layers.push({
         id: "crawl",
         status: "ok",
@@ -706,6 +722,7 @@ export async function analyseDomain(options: {
   }
 
   let keywordsFound = 0;
+  let screened: Screened | undefined;
   if (!hasDataForSeo) {
     layers.push({
       id: "keywords",
@@ -797,10 +814,13 @@ export async function analyseDomain(options: {
                 languageCode: languageCodeOf(options.locale),
                 locationCode: options.locationCode,
                 spend,
+                vocabulary: profile?.topTerms ?? [],
               })
-            : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [], alternativeSeeds: [] as string[], competitorsUnresolved: [] as string[], competitorsFailed: [] as string[], serpRivals: [] as string[], serpRivalsKept: false, serpRivalsVetted: true, fromSerpRivals: 0, serpRivalSearchesFailed: [] as string[] };
-        // Keep the rivals a fresh search found, so tomorrow reads the same market.
-        if (supabase && workspaceId && business && discovered.serpRivals?.length && !discovered.serpRivalsKept) {
+            : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [], alternativeSeeds: [] as string[], competitorsUnresolved: [] as string[], competitorsFailed: [] as string[], serpRivals: [] as string[], serpRivalsKept: false, serpRivalsVetted: true, fromSerpRivals: 0, serpRivalSearchesFailed: [] as string[], screened: undefined };
+        screened = discovered.screened;
+        // Keep the rivals a fresh search found, so tomorrow reads the same
+        // market - and drop a kept one that turned out to be a general site.
+        if (supabase && workspaceId && business && (discovered.serpRivals?.length || discovered.screened?.generalRivals.length) && !discovered.serpRivalsKept) {
           const { error: keepError } = await supabase
             .from("workspaces")
             .update({ business_profile: { ...business, searchRivals: discovered.serpRivals } })
@@ -840,7 +860,10 @@ export async function analyseDomain(options: {
         const toJudge = [...byTerm.values()]
           .sort((a, b) => rel(b.k.keyword) - rel(a.k.keyword))
           .map((c) => c.k.keyword);
-        const fit = await judgeBuyerFit(business, toJudge, { spend });
+        // Asked in the market's language, exactly as qualification asks it
+        // (judgeBuyerFitFor), so qualification can reuse these verdicts
+        // instead of buying each kept term's answer a second time.
+        const fit = await judgeBuyerFit(business ? { ...business, language: languageCodeOf(options.locale) } : business, toJudge, { spend });
         const refusedByBuyerTest = [...fit.verdicts.values()].filter((v) => !v.keep).length;
 
         // Collapse phrasings across ALL three sources, not just the seeded one.
@@ -848,18 +871,20 @@ export async function analyseDomain(options: {
         // the same shape: altorank.co came back with "seo for agency", "agency
         // for seo" and "seo agent" as three separate rows at 27,100 each.
         //
-        // Two passes, because `permutationKey` and `normalizeTarget` disagree
+        // Two passes, because `permutationKey` and `intentKey` disagree
         // about what one query is and both are right about part of it.
         // `permutationKey` keeps the words as typed, so it collapses "seo for
         // agency" and "agency for seo" but not "website design" and "website
-        // design websites". `normalizeTarget` folds plurals, gerunds, agent
-        // nouns and a silent final "e", which is what makes those one target -
-        // and it is already what `recommendKeywords` collapses on, so anything
-        // it merges downstream was a wasted row here anyway. qasimcode.com
-        // stored twenty rows that are thirteen queries; four of them were
-        // "website design" and two more were "create"/"creating".
+        // design websites". `intentKey` folds inflections in the workspace's
+        // language (the plural in English), which is what makes those one
+        // target - and it is already what `recommendKeywords` collapses on,
+        // so anything it merges downstream was a wasted row here anyway.
+        // qasimcode.com stored twenty rows that are thirteen queries; four of
+        // them were "website design". Two more were "create"/"creating",
+        // which is a verb form, not a plural: those two are left to the
+        // results page bought at qualification (lib/keyword-research/intent.ts).
         const candidatesAll = [...byTerm.values()];
-        const deduped = dedupeTargets(dedupePermutations(candidatesAll.map((c) => c.k)));
+        const deduped = dedupeTargets(dedupePermutations(candidatesAll.map((c) => c.k)), languageCodeOf(options.locale));
         const keep = new Set(deduped.map((k) => k.keyword));
         const candidates = candidatesAll.filter((c) => keep.has(c.k.keyword));
         // Overwritten below with what actually passes the quality and relevance
@@ -1057,6 +1082,14 @@ export async function analyseDomain(options: {
           refusedByBuyerTest
             ? `${refusedByBuyerTest} parked as not what your buyers would search`
             : "",
+          discovered.screened?.generalRival
+            ? `${discovered.screened.generalRival} left out from ${discovered.screened.generalRivals.join(", ")}, general sites rather than rivals`
+            : discovered.screened?.generalRivals.length
+              ? `${discovered.screened.generalRivals.join(", ")} not read: general sites rather than rivals`
+              : "",
+          discovered.screened?.offProfile
+            ? `${discovered.screened.offProfile} rival phrase${discovered.screened.offProfile === 1 ? "" : "s"} with no word of your business left out`
+            : "",
         ].filter(Boolean);
         layers.push({
           id: "keywords",
@@ -1150,6 +1183,7 @@ export async function analyseDomain(options: {
     issues,
     pagespeed,
     keywordsFound,
+    ...(screened ? { screened } : {}),
     rankedKeywords: ranked,
     strikingDistance: strikingDistance(ranked),
     layers,

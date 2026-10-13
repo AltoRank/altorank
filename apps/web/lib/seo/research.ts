@@ -26,9 +26,18 @@ import { classifyIntent, type IntentClassification } from "./intent";
 import { getLocale } from "./locales";
 import { htmlToMarkdown } from "@/lib/audit/markdown";
 import { fetchSite } from "@/lib/audit/lenient-fetch";
+import { readGsc, type ReadRow } from "@/lib/gsc/read";
+import { figureSentences, mergeSourceFigures, type SourceFigure } from "./source-figures";
+import { classOf, FIGURE_CLASSES, type SourceReview } from "./source-classes";
+// The one paid step research takes for the sources (a structured call per
+// draft). Only `generateArticle` passes `sources`, and it is gated where it
+// is called; the entitlement guard (lib/billing/__tests__/entitlement.test.ts)
+// follows this import to the spend.
+import { classifySources, type AskModel, type SourceCandidate, type SourceOwner, type SpendSink } from "@/lib/seo/source-classify";
 
 export interface ResearchLayer {
-  id: "serp" | "related_keywords" | "gsc" | "competitor_length";
+  /** `site_facts` is added by lib/content/site-facts.ts, not by `gatherArticleResearch`. */
+  id: "serp" | "related_keywords" | "gsc" | "competitor_length" | "site_facts" | "sources";
   /** `ok` loaded, `unavailable` not configured, `failed` configured but errored. */
   status: "ok" | "unavailable" | "failed";
   detail: string;
@@ -70,6 +79,44 @@ export interface ArticleResearch {
   recommendedWordCount: number;
   wordCountBasis: string;
   layers: ResearchLayer[];
+  /**
+   * What the business's own pages state that can carry a figure, as the
+   * writer was given it (lib/content/site-facts.ts): its statements, the
+   * opening of its about page, its section headings. Kept with the research
+   * so the fact check - at generation and again at approval - can tell a
+   * figure the business states about itself from one nobody sourced
+   * (lib/ai/fact-check.ts `statedBySite`). Absent on drafts written before
+   * it, and on rewrites, which get no site facts.
+   */
+  siteStatements?: Array<{ text: string; source: string }>;
+  /**
+   * Sentences from the ranking pages research fetched that state a figure,
+   * with their URLs: what the writer may cite (lib/seo/source-figures.ts).
+   * Empty when the pages were read and stated none; absent when no page
+   * could be read, and on drafts written before 2026-09-28.
+   */
+  sourceFigures?: SourceFigure[];
+  /**
+   * What each site research read IS, against the business: its own, a rival,
+   * a business selling the same service, a public source (lib/seo/source-classes.ts).
+   * Decides which figures the writer was offered, which links were removed
+   * after writing, and which claims the fact check reads as sourced from a
+   * rival. Absent on drafts written before 2026-10-01.
+   */
+  sourceReview?: SourceReview;
+  /**
+   * What a person has to do or know before publishing this draft, in
+   * sentences: no reviewer found for a health article, no figure to cite, a
+   * title shortened. Written by lib/content/generate.ts; shown at the top of
+   * the editor's research panel.
+   */
+  reviewNotes?: string[];
+  /**
+   * Whether this is a health, legal, financial or safety article, who on the
+   * site reviews it and what disclaimer it carries (lib/content/trust.ts).
+   * Read again at publish for the dateline. Absent before 2026-09-28.
+   */
+  trust?: import("@/lib/content/trust").ArticleTrust;
 }
 
 const DEFAULT_WORD_COUNT = 1500;
@@ -165,7 +212,8 @@ const UA =
  */
 async function measureCompetitorLengths(
   competitors: CompetitorPage[],
-): Promise<{ competitors: CompetitorPage[]; layer: ResearchLayer }> {
+  languageCode?: string,
+): Promise<{ competitors: CompetitorPage[]; layer: ResearchLayer; perPage?: SourceFigure[][] }> {
   const targets = competitors
     .map((c, i) => ({ c, i }))
     .filter(({ c }) => c.wordCount === null && /^https?:\/\//i.test(c.url))
@@ -185,6 +233,9 @@ async function measureCompetitorLengths(
   }
 
   const measured = [...competitors];
+  // The figure-bearing sentences of each page read, in rank order. Taken
+  // from the HTML fetched to count words, so citing costs no request.
+  const perPage: SourceFigure[][] = targets.map(() => []);
 
   const results = await Promise.allSettled(
     targets.map(async ({ c, i }) => {
@@ -198,8 +249,10 @@ async function measureCompetitorLengths(
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const html = await res.text();
-        const { words } = htmlToMarkdown(html, c.url);
+        const { words, markdown } = htmlToMarkdown(html, c.url);
         if (words > 0) measured[i] = { ...c, wordCount: words };
+        const slot = targets.findIndex((t) => t.i === i);
+        if (slot >= 0 && words > 0) perPage[slot] = figureSentences(markdown, { url: c.url, domain: c.domain }, languageCode);
         return words > 0;
       } finally {
         clearTimeout(timer);
@@ -211,6 +264,7 @@ async function measureCompetitorLengths(
 
   return {
     competitors: measured,
+    perPage: ok > 0 ? perPage : undefined,
     layer: {
       id: "competitor_length",
       status: ok > 0 ? "ok" : "failed",
@@ -224,13 +278,41 @@ async function measureCompetitorLengths(
 }
 
 /**
+ * The figures the writer may cite: those on pages whose site is a public
+ * source or the business's own, merged as before. Every other page's figures
+ * are held back, with the class that held them, for the fact check.
+ */
+export function offerableFigures(
+  perPage: SourceFigure[][],
+  review: SourceReview,
+): { figures: SourceFigure[]; heldBack: SourceReview["heldBack"] } {
+  const allowed: SourceFigure[][] = [];
+  const heldBack: SourceReview["heldBack"] = [];
+  for (const page of perPage) {
+    if (!page.length) continue;
+    const cls = classOf(page[0].url, review);
+    if (FIGURE_CLASSES.has(cls)) allowed.push(page);
+    else heldBack.push(...page.map((f) => ({ ...f, class: cls })));
+  }
+  return { figures: mergeSourceFigures(allowed), heldBack };
+}
+
+/**
  * Pull Search Console history for this keyword from the synced metrics.
  *
  * Reads `analytics_metrics`, which the analytics cron populates, rather than
  * calling Google directly: the cron already handles token refresh, and article
  * generation should not fail because an access token expired.
+ *
+ * Query rows only, through lib/gsc/read.ts. The read here used to be
+ * `.not("query", "is", null)` with no page filter, which also took the
+ * (query, page) rows: every query's clicks and impressions were counted once
+ * per shape, so "already ranking" told the writer about twice the traffic the
+ * site had. It also stopped at PostgREST's first 1,000 rows of the 90 days.
+ *
+ * Exported for the db test that pins it to the query shape.
  */
-async function fetchGscSignals(
+export async function fetchGscSignals(
   supabase: SupabaseClient,
   workspaceId: string,
   keyword: string,
@@ -243,23 +325,24 @@ async function fetchGscSignals(
     .toISOString()
     .slice(0, 10);
 
-  const { data, error } = await supabase
-    .from("analytics_metrics")
-    .select("query, clicks, impressions, avg_position")
-    .eq("workspace_id", workspaceId)
-    .eq("source", "gsc")
-    .gte("metric_date", since)
-    .not("query", "is", null);
-
-  if (error) {
+  let rows: ReadRow<"clicks" | "impressions" | "avg_position">[];
+  try {
+    const gsc = await readGsc(supabase, {
+      workspaceId,
+      shapes: ["query"],
+      since,
+      columns: ["clicks", "impressions", "avg_position"],
+    });
+    rows = gsc.query;
+  } catch (error) {
     return {
       existing: null,
       adjacent: [],
-      layer: { id: "gsc", status: "failed", detail: error.message },
+      layer: { id: "gsc", status: "failed", detail: error instanceof Error ? error.message : String(error) },
     };
   }
 
-  if (!data?.length) {
+  if (!rows.length) {
     return {
       existing: null,
       adjacent: [],
@@ -279,12 +362,7 @@ async function fetchGscSignals(
     { clicks: number; impressions: number; positionXImpressions: number }
   >();
 
-  for (const row of data as Array<{
-    query: string | null;
-    clicks: number | null;
-    impressions: number | null;
-    avg_position: number | null;
-  }>) {
+  for (const row of rows) {
     if (!row.query) continue;
     const key = row.query.toLowerCase();
     const entry = rollup.get(key) ?? {
@@ -369,6 +447,13 @@ export async function gatherArticleResearch(options: {
    * the saving. `undefined` means nobody looked, and this pays for the lookup.
    */
   relatedKeywords?: RelatedKeyword[];
+  /**
+   * Whose article this is, so the sites research reads can be classified
+   * before any of their figures is offered (lib/seo/source-classify.ts).
+   * Without it only code's classes apply - government, academic and
+   * encyclopedia sites - and every other page's figures are held back.
+   */
+  sources?: { owner: SourceOwner; ask?: AskModel; spend?: SpendSink | null };
 }): Promise<ArticleResearch> {
   const { keyword, locale, supabase, workspaceId } = options;
   const loc = getLocale(locale ?? "en");
@@ -462,19 +547,60 @@ export async function gatherArticleResearch(options: {
     wordCount: r.wordCount,
   }));
 
+  // Who each site is, asked once while the pages are fetched: the results
+  // page's own fields are all it reads, so it waits on nothing.
+  const owner: SourceOwner = options.sources?.owner ?? { ownDomain: null, rivals: [], business: null };
+  const candidates: SourceCandidate[] = [
+    ...rawCompetitors.map((c) => ({ url: c.url, title: c.title, snippet: c.description })),
+    ...(serp?.aiOverview?.citations ?? []).map((c) => ({ url: c.url, title: c.title, snippet: null })),
+  ];
+  const classesPending = candidates.length
+    ? classifySources(candidates, owner, { ask: options.sources?.ask, spend: options.sources?.spend })
+    : Promise.resolve({ classes: [], model: "skipped" as const });
+
   // Fill in the word counts the SERP provider does not supply. Only worth the
   // round trips when there are competitors to measure at all.
-  const { competitors, layer: lengthLayer } = rawCompetitors.length
-    ? await measureCompetitorLengths(rawCompetitors)
+  const { competitors, layer: lengthLayer, perPage } = rawCompetitors.length
+    ? await measureCompetitorLengths(rawCompetitors, localeParam.languageCode)
     : {
         competitors: rawCompetitors,
+        perPage: undefined,
         layer: {
           id: "competitor_length" as const,
           status: "unavailable" as const,
           detail: "no competitors to measure",
         },
       };
+  const classified = await classesPending;
+  const sourceReview: SourceReview = {
+    ownDomain: owner.ownDomain,
+    rivals: owner.rivals,
+    classes: classified.classes,
+    model: classified.model,
+    heldBack: [],
+  };
+  let sourceFigures: SourceFigure[] | undefined;
+  if (perPage) {
+    const offered = offerableFigures(perPage, sourceReview);
+    sourceFigures = offered.figures;
+    sourceReview.heldBack = offered.heldBack;
+    lengthLayer.detail +=
+      `; ${sourceFigures.length} sentence${sourceFigures.length === 1 ? "" : "s"} with a figure kept for the writer to cite` +
+      (offered.heldBack.length ? `, ${offered.heldBack.length} held back from sites that are not a public source` : "");
+  }
   layers.push(lengthLayer);
+  if (candidates.length) {
+    const count = (cls: string) => sourceReview.classes.filter((c) => c.class === cls).length;
+    const blocked = count("same_service") + count("named_rival");
+    layers.push({
+      id: "sources",
+      status: classified.model === "failed" ? "failed" : classified.model === "unavailable" ? "unavailable" : "ok",
+      detail:
+        `${sourceReview.classes.length} sites read: ${blocked} sell${blocked === 1 ? "s" : ""} what this business sells, ` +
+        `${count("information")} public source${count("information") === 1 ? "" : "s"}, ${count("unclassified")} unclassified` +
+        (classified.model === "failed" ? "; the classifier gave no usable answer" : classified.model === "unavailable" ? "; no model or business description to classify with" : ""),
+    });
+  }
 
   const { target, basis } = deriveWordCount(competitors);
 
@@ -491,5 +617,10 @@ export async function gatherArticleResearch(options: {
     recommendedWordCount: target,
     wordCountBasis: basis,
     layers,
+    ...(sourceFigures ? { sourceFigures } : {}),
+    // Whenever the owner is known, even with no results page: the rivals the
+    // owner named are code's to block, and the scrub and the fact check
+    // need them listed when the search itself failed.
+    ...(candidates.length || options.sources ? { sourceReview } : {}),
   };
 }

@@ -1,33 +1,55 @@
-# AltoRank
+# AltoRank: open-source, self-hosted AI SEO content writer (Outrank alternative)
 
-**An AI SEO content engine where every publish is somebody's decision.**
+**An open-source alternative to Outrank and Jasper.** AltoRank researches a
+keyword, writes the article, scores it and fact-checks it: a figure that cites
+a page is looked for on that page, and one with no source is flagged for the
+reviewer. Every draft can be copied as Markdown (front matter included) or
+HTML, or downloaded as a `.md` file, for you to paste wherever you publish.
+Approve it, paste it, then **Mark as published** records the live URL, and the
+article is tracked from there: indexing and rank.
 
-It researches a keyword, writes the article, scores it, checks its claims, and
-publishes it to your CMS. Who decides that it ships is yours to choose per
-workspace: approve each draft by hand, or set a rule that publishes after a hold
-unless you hold it. Either way the approval is recorded under a named person,
-and the article is tracked after - indexing, rank, AI-search visibility.
+AltoRank never publishes to your site without an approval recorded under a
+named person. Approve each draft by hand, or set a rule that approves drafts
+after a hold unless you hold them (the rule publishes through a CMS connection,
+which is built but not yet verified end to end; see [Status](#status)).
+Agents can research and draft through the MCP server and the agent API.
+Neither can approve, and neither can publish anything a person has not already
+approved (the one publish-side call retries a failed publish of an approved
+article).
 
+Self-host it free under AGPL-3.0, or use the hosted app at `app.altorank.co`.
 Open source, the whole product. No feature-gated tier, no `ee/` directory.
 
 ---
 
-## Status: pre-launch
+## Status
 
-Read this before you invest time in it.
+The hosted app at `app.altorank.co` is this repository, deployed from `main`
+([docs/deploy.md](docs/deploy.md)). A self-hosted install runs the same code
+against your own Supabase and your own API keys. Research, drafting, scoring,
+fact-checking, audits, rank tracking and Search Console / Bing sync run today;
+the table below has the detail. What is not finished yet:
 
 - **No paying customers, no case studies.** Nothing here has a growth figure
   attached to it, and that is on purpose.
+- **CMS publishing is built but not yet verified end to end.** The thirteen
+  adapters are in `apps/web/lib/cms/` and the connection form covers all of
+  them, but none has been watched publishing to a live site yet, so the
+  platform tiles on `/connect` ask you to request an integration instead of
+  offering Connect. Every draft can be copied as Markdown or HTML today.
+  Details under [What works today](#what-works-today).
+- **AI visibility tracking is built but not switched on.** The probe, the
+  weekly cron and the `/geo` page exist, but nothing in the app turns tracking
+  on for a workspace or adds the prompts it measures, so the sidebar marks it
+  "soon" (`apps/web/lib/constants.ts`).
 - **The CLI is publishable, not yet on npm.** `packages/altorank-cli` bundles
   `apps/web/scripts/cli.ts` into an `altorank` binary (`npx altorank auth
   whoami` once it is published); until then, `npm run cli` from `apps/web`
   drives the same agent API from a checkout. `skills/altorank/SKILL.md` is the
   skill file a coding agent reads, and it does install with `npx`; see below.
-- **The hosted dashboard is what runs today.** It works locally against your own
-  Supabase and your own API keys.
 
-If you want a finished product, wait. If you want to read how it works or run it
-yourself, everything is here.
+Whether you want to read how it works, run it yourself or send a patch,
+everything is here.
 
 ## The publishing decision
 
@@ -36,7 +58,7 @@ that is not `approved` (or `scheduled` with `approved_by` set), and nothing else
 in the code path writes `live`. What can write an approval:
 
 - **A person**, from the editor (`approveArticle`), recorded as `approved_by`.
-- **A rule the workspace owner set** (`auto_approve`, migration 079): the
+- **A rule a named member of the account set** (`auto_approve`, migration 079): the
   publish cron runs the same checks the Approve button runs - active plan, no
   unsourced figure, no failing audit item, SEO score at or above the floor -
   after a hold window (default 24h) during which the drafted email carries a
@@ -59,11 +81,11 @@ is checkable here: every `live` row points at a person, by click or by rule.
 | Domain audit | 9 readiness checks, crawl, PageSpeed |
 | Article generation | research → draft → score → fact-check |
 | Brand voice | per-workspace voice profiles |
-| Publishing | **13 destinations** (below) |
+| Publishing | Markdown and HTML export of every draft; **13 adapters** (below), built but not yet verified end to end |
 | Locales | **35** (`apps/web/lib/seo/locales.ts`) |
 | Rank tracking | scheduled SERP checks |
 | Search analytics | Google Search Console; Bing Webmaster Tools (clicks and impressions per day) |
-| AI visibility | whether AI answers name you, and who they name instead |
+| AI visibility | **not switched on yet**: built (`lib/geo/`, the weekly `/api/cron/geo`, the `/geo` page) to record whether AI answers name you and who they name instead, but nothing in the app turns it on for a workspace yet |
 
 **Publishing destinations** (`apps/web/lib/cms/adapter.ts`) — thirteen adapters
 covering **ten CMS platforms**; WordPress is reachable two ways, and `git` and
@@ -72,6 +94,16 @@ Notion, Shopify, Webflow, webhook, Wix, WooCommerce, WordPress, and the
 WordPress plugin — a second, recommended route to WordPress that installs a
 plugin and takes a per-site token instead of an application password
 (`apps/web/lib/cms/wordpress-plugin.ts`), which is why WordPress appears twice.
+
+None of the thirteen has yet been verified end to end against a live site, so
+`CONNECTABLE_CMS` in `apps/web/lib/cms/connectable.ts` is empty on purpose and
+every CMS tile on `/connect` offers "Request integration" instead of Connect;
+adding an id to that set brings that tile's Connect button back. The
+connection form itself is unchanged and still covers all thirteen: the
+page's "New connection" button, a draft's publish panel and
+`/connect?connect=<id>` all open it. Without a connection, the editor copies
+any draft as Markdown (front matter included) or HTML, or downloads it as a
+`.md` file.
 
 ## Install the skill
 
@@ -118,7 +150,8 @@ Other entry points:
 
 ```bash
 npm run mcp      # MCP server, for driving the engine from an AI assistant
-npm run test     # vitest
+npm run test     # vitest, unit tier: mocks only, needs no services
+npm run test:db  # vitest, db tier: *.db.test.ts against the local Supabase only
 npm run smoke    # research → prompt → model → fact check, against real APIs
 ```
 
@@ -194,23 +227,6 @@ docker/                 container setup for self-hosting
 tools/agent-readiness/  standalone agent-readiness scanner
 ```
 
-The marketing site (altorank.co) lives in its own private repository,
-`AltoRank/altorank-marketing`. It moved out of this tree on 2026-09-06 so the
-product stays open while positioning and pricing copy do not. Nothing here
-imports it; the two are coupled only by the plan limits noted in
-`apps/web/lib/stripe.ts` and `apps/web/lib/billing/quota.ts`, which must be
-changed in both places together.
-
-Two conventions worth knowing before you send a patch:
-
-1. **Never render an unknown as zero.** A number nobody measured, displayed as a
-   measurement, is a fabricated claim even when no human typed it. Use
-   `number | null`, render an em dash, and average only over rows that have a
-   value.
-2. **One implementation per behaviour.** Generation lives in
-   `lib/content/generate.ts`; the streaming route and the cron both call it.
-   Resist the second copy.
-
 ## Licence
 
 **GNU AGPL-3.0-only.** Full text in [LICENSE](LICENSE).
@@ -234,3 +250,6 @@ regardless of how good the code is:
   canonical example.
 - Adding a claim the repository cannot support. If `grep` cannot find the
   feature, the README does not get to mention it.
+
+The code conventions a patch is read against, and how this repository relates
+to the marketing site, are in [CONTRIBUTING.md](CONTRIBUTING.md).

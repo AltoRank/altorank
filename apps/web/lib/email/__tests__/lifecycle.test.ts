@@ -15,6 +15,9 @@ import {
   renderNothingWritten,
   renderSetupUnfinished,
   renderSetupFailed,
+  renderTrialStarted,
+  renderNothingPlannedOps,
+  notifyOperatorsNothingPlanned,
   isoWeek,
 } from "../lifecycle";
 import { graceEndsAt } from "@/lib/billing/dunning";
@@ -180,6 +183,15 @@ describe("subscription cancelled", () => {
     expect(e.html).toContain("stays readable and exportable");
   });
 
+  it("tells a trial cancelled before its first charge that drafting stopped now, not at the date", () => {
+    const e = renderSubscriptionCancelled({ accountName: "Acme", planLabel: "Managed", endsAt: "2026-10-06T12:00:00Z", trial: true });
+    expect(e.subject).toBe("Your trial is cancelled; nothing will be charged");
+    expect(e.html).toContain("Nothing new is drafted from now on");
+    expect(e.html).toContain("stay readable until October 6, 2026");
+    expect(e.html).toContain("Keep the plan instead");
+    expect(e.html).not.toContain("Until then everything works");
+  });
+
   it("stays honest when Stripe gave no date", () => {
     const e = renderSubscriptionCancelled({ accountName: null, planLabel: "Managed", endsAt: null });
     expect(e.subject).toBe("Your plan is set to end");
@@ -238,7 +250,7 @@ describe("plan changed", () => {
 
 describe("account emails", () => {
   it("welcomes without promising a ranking", () => {
-    const e = renderWelcome({ name: "Dana", domain: "acme.com" });
+    const e = renderWelcome({ name: "Dana", domain: "acme.com", beforeTrial: false });
     expect(e.subject).toBe("Your AltoRank account is live");
     expect(e.html).toContain("You are in, Dana");
     // Was `toContain("<strong>Nothing publishes without you.</strong>")`, the
@@ -254,7 +266,7 @@ describe("account emails", () => {
   });
 
   it("works with no name and no site yet", () => {
-    const e = renderWelcome({ name: null, domain: null });
+    const e = renderWelcome({ name: null, domain: null, beforeTrial: false });
     expect(e.html).toContain("You are in<");
     expect(e.html).toContain("Add a workspace");
   });
@@ -354,7 +366,7 @@ describe("setup fell short", () => {
 });
 
 describe("setup was never finished", () => {
-  const base = { domain: "acme.com", draft: null, keywordCount: 0, unreadable: null };
+  const base = { domain: "acme.com", draft: null, keywordCount: 0, unreadable: null, beforeTrial: false };
   const draft = { articleId: "art-1", title: "How to choose a CRM", keyword: "best crm" };
 
   it("with a draft: leads with the article, links to it and back to the last setup step, and says nothing publishes unapproved", () => {
@@ -400,5 +412,78 @@ describe("setup was never finished", () => {
     const e = renderSetupUnfinished({ ...base, draft: { ...draft, title: "<img src=x>" } });
     expect(e.html).not.toContain("<img");
     expect(e.html).toContain("&lt;img");
+  });
+});
+
+describe("trial started", () => {
+  const base = { planLabel: "Managed", planPrice: "€69/mo", endsAt: "2026-10-02T10:00:00.000Z" };
+
+  it("leads with the week going to the writer when the trial is what lifted the hold", () => {
+    const e = renderTrialStarted({ ...base, weekHandedOff: true });
+    expect(e.preheader).toMatch(/^The rest of this week goes to the writer now\./);
+    expect(e.html).toContain("<strong>The rest of this week goes to the writer now.</strong>");
+    // The hand-off, which is true when this is sent - never "being written",
+    // which is not known yet (the email goes out before any draft starts).
+    expect(e.html).not.toMatch(/being written|drafting has started/i);
+    expect(e.html).toContain("We email you when they are there.");
+    // The charge date is still the one thing a card trial must say.
+    expect(e.html).toContain("October 2");
+    expect(e.html.indexOf("goes to the writer")).toBeLessThan(e.html.indexOf("the first charge"));
+  });
+
+  it("says only what the plan opens when nothing was handed to the writer", () => {
+    const e = renderTrialStarted(base);
+    expect(e.html).not.toContain("goes to the writer");
+    expect(e.preheader).toBe("First charge on October 2 unless you cancel before then.");
+  });
+});
+
+describe("a first look planned nothing: the operators' email", () => {
+  const pool = {
+    stage: "qualification" as const,
+    cause: "buyer_mismatch",
+    keywords: 144,
+    qualified: 0,
+    rejected: { buyer_mismatch: 117 },
+    pending: { unjudged: 27 },
+    summary: "None of 144 searches qualified; the largest group: not a buyer search.",
+  };
+
+  it("says whose site, whom to write to, and which stage emptied the pool", () => {
+    const e = renderNothingPlannedOps({ runId: "run-1", domain: "acme-clinic.example", contacts: ["owner@acme-clinic.example"], pool, preTrial: true });
+    expect(e.subject).toBe("Follow up within 24 hours: nothing planned for acme-clinic.example");
+    expect(e.html).toContain("owner@acme-clinic.example");
+    expect(e.html).toContain("Stage that emptied the pool: qualification (largest group: buyer_mismatch)");
+    expect(e.html).toContain("144 keyword rows, 0 qualified");
+    expect(e.html).toContain(pool.summary);
+    expect(e.html).toContain("within 24 hours");
+    expect(e.html).toContain("run-1");
+    expect(e.footerNote).toContain("ADMIN_EMAILS");
+  });
+
+  it("says no reply was promised to an account that never saw the trial step", () => {
+    const e = renderNothingPlannedOps({ runId: "run-1", domain: "acme-clinic.example", contacts: [], pool, preTrial: false });
+    expect(e.subject).toBe("Nothing planned for acme-clinic.example");
+    expect(e.html).toContain("was not promised a reply");
+    expect(e.html).not.toContain("was told the team would write");
+    const unknown = renderNothingPlannedOps({ runId: "run-1", domain: "acme-clinic.example", contacts: [], pool, preTrial: null });
+    expect(unknown.html).toContain("could not be read");
+  });
+
+  it("still sends, and says so, when the run recorded no reason", () => {
+    const e = renderNothingPlannedOps({ runId: "run-1", domain: null, contacts: [], pool: null, preTrial: true });
+    expect(e.html).toContain("did not record which stage emptied the pool");
+    expect(e.html).toContain("No member address was found");
+  });
+
+  it("sends nothing, and reads nothing, when no operator is configured", async () => {
+    const saved = process.env.ADMIN_EMAILS;
+    delete process.env.ADMIN_EMAILS;
+    try {
+      const unreachable = { from: () => { throw new Error("must not read"); } } as never;
+      expect(await notifyOperatorsNothingPlanned(unreachable, { accountId: "a", workspaceId: "w" }, { runId: "r", domain: null, pool, preTrial: true })).toEqual({ sent: 0, skipped: 0, failed: 0 });
+    } finally {
+      if (saved !== undefined) process.env.ADMIN_EMAILS = saved;
+    }
   });
 });

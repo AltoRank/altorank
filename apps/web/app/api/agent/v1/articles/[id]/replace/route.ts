@@ -3,6 +3,7 @@ import { fail, ok } from "@/lib/agent/envelope";
 import { articleInAccount } from "@/lib/agent/data";
 import { articleMutations } from "@/lib/agent/mutations";
 import { applyReplace, replaceBodySchema, type ReplaceBody } from "@/lib/agent/replace";
+import { agentBodyLocked, bodyLockedEnvelope } from "@/lib/agent/body-lock";
 
 const bodySchema = replaceBodySchema;
 
@@ -29,6 +30,9 @@ export const POST = withAgent<{ id: string }>(async (request, ctx, { id }) => {
 
   const article = await articleInAccount(ctx, id);
   if (!article) return fail("not_found", "Article not found in this account.", "Call GET /articles?workspace_id= and use an id from that list.");
+  // A preview answers with every hit and the sentence around it, so a search
+  // for "the" returns the article. Locked before the trial like the body.
+  if (await agentBodyLocked(ctx)) return bodyLockedEnvelope(appBaseUrl(request));
   const { replace } = articleMutations(article);
   if (!replace.allowed) {
     return fail("not_available", replace.reason ?? "This article cannot be edited.", "Tell the human why; do not retry. allowed_mutations on the record says what is possible.");

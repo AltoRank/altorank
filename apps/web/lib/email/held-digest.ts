@@ -11,6 +11,18 @@
 //
 // Hold-window skips and "held by a person" are not in it. The first is the
 // rule working; the second is a decision already taken by the reader.
+//
+// Nor is it sent to an account that has not started its trial. The rule holds
+// every one of its drafts for "no active plan", and the account can neither
+// open the review queue the email links (the dashboard redirects to the setup
+// screen) nor read the drafts it lists (lib/billing/trial.ts,
+// draftBodyLocked). A real account was sent all nine of these digests the
+// product ever sent, a daily billing nag with links that did not open
+// (assessment 2026-09-29). Nothing replaces it: the first-article email
+// (lib/email/article-emails.ts, beforeTrial) already said the article is
+// written and what the trial opens, and the setup screen says it again. Once
+// the trial starts the rule has a plan to approve under, and the digest
+// covers whatever it still holds.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { AutoApproveResult } from "@/lib/publishing/auto-approve";
@@ -18,6 +30,10 @@ import { accountRecipients } from "./account-recipients";
 import { describeSendOutcome, sendOnce } from "./send-once";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_3 } from "./layout";
 import { articleUrl } from "./article-emails";
+import { accountTrialGate } from "@/lib/billing/body-lock";
+
+/** The run line for a workspace whose account has not started its trial. */
+export const GATED_DIGEST_LINE = "not sent: the account has not started its trial, so it cannot open the drafts or the queue";
 
 const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
@@ -135,16 +151,22 @@ export async function sendHeldDigests(
   const lines: string[] = [];
   for (const [workspaceId, held] of byWorkspace) {
     try {
+      const { data: ws, error: wsError } = await supabase.from("workspaces").select("account_id, domain").eq("id", workspaceId).maybeSingle();
+      if (wsError) throw new Error(wsError.message);
+      if (!ws) continue;
+      // Asked as nobody, as every mail to an account's members is: a read
+      // that fails throws to the catch below and nothing is sent, rather than
+      // a digest the account cannot use.
+      if ((await accountTrialGate(supabase, ws.account_id as string, null)) === "gated") {
+        lines.push(`${workspaceId}: ${held.length} held, ${GATED_DIGEST_LINE}`);
+        continue;
+      }
       const slot = await holdDigestSlot(supabase, workspaceId, now);
       if (slot.kind === "skip") {
         lines.push(`${workspaceId}: ${held.length} held, ${slot.reason}`);
         continue;
       }
-      const [{ data: ws }, { data: articles }] = await Promise.all([
-        supabase.from("workspaces").select("account_id, domain").eq("id", workspaceId).maybeSingle(),
-        supabase.from("articles").select("id, title").in("id", held.map((h) => h.articleId)),
-      ]);
-      if (!ws) continue;
+      const { data: articles } = await supabase.from("articles").select("id, title").in("id", held.map((h) => h.articleId));
       const titles = new Map((articles ?? []).map((a) => [a.id as string, (a.title as string) || "Untitled draft"]));
       const drafts: HeldDraft[] = held.map((h) => ({ articleId: h.articleId, title: titles.get(h.articleId) ?? "Untitled draft", reason: h.detail ?? "" }));
       const to = await accountRecipients(supabase, ws.account_id as string, workspaceId);

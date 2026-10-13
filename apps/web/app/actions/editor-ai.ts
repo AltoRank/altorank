@@ -9,6 +9,7 @@ import { generateImage } from "@/lib/ai/image-generator";
 import { outputFromRow, resolveFeaturedImage, type OutputSettingsRow } from "@/lib/onboarding/output-settings";
 import { uploadImageBuffer } from "@/lib/storage/images";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
+import { articleBodyForSession } from "@/lib/billing/body-lock";
 
 // ---------------------------------------------------------------------------
 // The editor's AI actions
@@ -34,17 +35,28 @@ export type MicroActionResult =
   | { ok: false; error: string };
 
 /**
- * Load the article through the caller's own client, so RLS answers whether
- * they may see it. Returns the few columns the prompts read.
+ * Load the article for the caller: their own client answers whether they may
+ * see it (RLS), the trial gate whether its account may be handed the text,
+ * and only then is the row read on the server. Returns the few columns the
+ * prompts read.
+ *
+ * Every action here is the editor's, and the editor is what the trial opens.
+ * The Markdown export also hands back the stored meta description, which the
+ * model wrote from the body, and a client token cannot select that column at
+ * all since migration 097 (lib/billing/body-lock.ts).
  */
 async function loadArticle(articleId: string) {
   const supabase = await createClient();
-  const { data: article } = await supabase
-    .from("articles")
-    .select("id, workspace_id, title, keyword, slug, meta_description, featured_image_url, published_at")
-    .eq("id", articleId)
-    .single();
-  if (!article) throw new Error("Article not found");
+  const article = await articleBodyForSession<{
+    id: string;
+    workspace_id: string;
+    title: string;
+    keyword: string;
+    slug: string;
+    meta_description: string | null;
+    featured_image_url: string | null;
+    published_at: string | null;
+  }>(articleId, "id, workspace_id, title, keyword, slug, meta_description, featured_image_url, published_at");
   const { data: workspace } = await supabase
     .from("workspaces")
     .select("id, domain, brand_style")

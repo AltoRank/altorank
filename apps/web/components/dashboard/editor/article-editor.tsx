@@ -17,7 +17,7 @@ import { StatusPill } from "@/components/ui/status-pill";
 import { ConnectPrompt } from "@/components/ui/connect-prompt";
 import { ConnectCmsDialog } from "@/components/dashboard/connect-cms-dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { PLATFORM_HINT, PLATFORM_LABEL, PLATFORM_CONNECT_TYPE, platformState } from "@/lib/cms/detect";
+import { PLATFORM_HINT, PLATFORM_LABEL, PLATFORM_CONNECT_TYPE, platformState } from "@/lib/cms/platforms";
 import { updateArticle } from "@/app/actions/articles";
 import { publishArticle, approveArticle, requestChanges, markPublishedManually, retryPublish, holdArticle, releaseHold } from "@/app/actions/publish";
 import { renderArticleMarkdown } from "@/lib/publishing/export";
@@ -34,6 +34,7 @@ import { IndexingStatus } from "@/components/dashboard/check-indexing-button";
 import { inspectionFrom } from "@/lib/google/inspection";
 import { TabRow } from "@/components/ui/tab-row";
 import { auditArticle } from "@/lib/seo/article-audit";
+import { removeTitleHeading } from "@/lib/content/on-page";
 import { ArticleImage } from "@/lib/editor/image-node";
 import { NO_CHANGES, pendingCount, pendingLabel, outlineOf, type PendingChanges } from "@/lib/editor/proposals";
 import { EditorAiContext, type EditorMode } from "@/components/dashboard/editor/editor-ai-context";
@@ -43,6 +44,9 @@ import { SelectionBar } from "@/components/dashboard/editor/selection-bar";
 import { LinkPopover } from "@/components/dashboard/editor/link-popover";
 import { RewritePanel } from "@/components/dashboard/editor/rewrite-panel";
 import { ExportMenu } from "@/components/dashboard/editor/export-menu";
+import { FoundOnSiteNotice, FoundOnSiteBlindNote } from "@/components/dashboard/editor/found-on-site-notice";
+import { notFoundOnSite } from "@/app/actions/found-on-site";
+import { blindNote, foundOnSiteView } from "@/lib/found-on-site/state";
 import type { Article, Workspace, PublishingCadence, Integration } from "@/lib/types";
 
 // The body's image node, drawn with the per-image toolbar. Defined once at
@@ -125,6 +129,16 @@ export function ArticleEditor({
   const [publishing, setPublishing] = useState(false);
   const [manualUrl, setManualUrl] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
+  // Live because the nightly check found it on the site, not because we
+  // published it (lib/found-on-site). Null for everything else.
+  const foundOnSite = foundOnSiteView(article);
+  const [undoError, setUndoError] = useState<string | null>(null);
+  // With nothing connected, the nightly check is the only way a copy the
+  // person publishes by hand gets counted. When it cannot see the site, say
+  // so here, where the draft is copied out, rather than leave "not published"
+  // standing as a silent guess.
+  const blind =
+    destinations.length === 0 && !foundOnSite && article.status !== "live" ? blindNote(workspace, article.status) : null;
 
   // What the first analysis observed, so the empty state can name the platform
   // and its credential, or say plainly that the site runs nothing we can post
@@ -623,7 +637,10 @@ export function ArticleEditor({
       // The staged title, description and image, not the saved ones: the
       // audit should answer for what the person is about to save.
       auditArticle({
-        html: docHtml,
+        // As it will publish: the publisher takes the title's <h1> out of the
+        // body, and the title is the page's H1 (lib/content/on-page.ts).
+        html: removeTitleHeading(docHtml, title).html,
+        titleIsPageH1: true,
         keyword: article.keyword,
         siteDomain: workspace.domain,
         title,
@@ -635,6 +652,9 @@ export function ArticleEditor({
         // not in it fails the item rather than counting towards a pass.
         knownPages: knownPages ?? linkTargets,
         linkChecks: article.link_checks,
+        // Prose items read the site's language; one the locale contract does
+        // not describe gets "not checked" rather than English rules.
+        language: workspace.language,
       }),
     [
       docHtml,
@@ -645,6 +665,7 @@ export function ArticleEditor({
       featured,
       article.link_checks,
       workspace.domain,
+      workspace.language,
       linkableArticles,
       linkTargets,
     ],
@@ -939,7 +960,26 @@ export function ArticleEditor({
 
         {/* Publish to */}
         <SidebarSection title="Publish to" last>
-          {destinations.length > 0 ? (
+          {foundOnSite ? (
+            <FoundOnSiteNotice
+              view={foundOnSite}
+              pending={publishing}
+              error={undoError}
+              onUndo={async () => {
+                setPublishing(true);
+                setUndoError(null);
+                try {
+                  await notFoundOnSite(article.id);
+                  toast.success("Put back as it was. That page will not be matched to this article again.");
+                  router.refresh();
+                } catch (err) {
+                  setUndoError(err instanceof Error ? err.message : "Could not undo it");
+                } finally {
+                  setPublishing(false);
+                }
+              }}
+            />
+          ) : destinations.length > 0 ? (
             <>
               {destinations.length === 1 ? (
                 <div className="flex items-center gap-2.5 p-2.5 bg-bg border border-line rounded-[7px]">
@@ -1077,6 +1117,7 @@ export function ArticleEditor({
               cta="Connect a CMS"
             />
           )}
+          {blind && <FoundOnSiteBlindNote text={blind} />}
 
           {article.status === "review" && needsPlan && (
             <div className="mt-3">
@@ -1198,7 +1239,7 @@ export function ArticleEditor({
               )}
             </div>
           )}
-          {article.published_url && (
+          {article.published_url && !foundOnSite && (
             <a
               href={article.published_url}
               target="_blank"

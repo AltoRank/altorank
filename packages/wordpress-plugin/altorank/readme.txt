@@ -27,7 +27,7 @@ What the plugin does with an incoming article:
 What the plugin does not do:
 
 * It adds nothing to your public site. No scripts, no styles, no "powered by" link, no credit, no meta tag, no footprint of any kind. Your visitors cannot tell it is installed.
-* It never publishes on its own. Every article has passed a human approval step in the dashboard before it is sent, and by default it still lands here as a draft for an editor on your site to publish.
+* It never publishes on its own. Every article has been approved in the dashboard before it is sent, either by a person or by an automatic-publishing rule a named member of your account turned on for the site, and by default it still lands here as a draft for an editor on your site to publish.
 * It does not phone home. The plugin only ever answers requests; it makes no outbound request except downloading the images of an article it has just been sent.
 * It does not need a WordPress user account or password. The dashboard authenticates with a single token you paste into the settings page.
 

@@ -3,40 +3,29 @@
 // ---------------------------------------------------------------------------
 //
 // Thin on purpose: fetch the rows for one workspace, hand them to the pure
-// functions in ./analysis. One row fetch feeds every block on the dashboard,
-// so the page pays for the window once rather than once per card.
+// functions in ./analysis. One read of every shape feeds every block on the
+// dashboard, so the page pays for the window once rather than once per card.
 //
-// Paginated because PostgREST caps a response at 1,000 rows and says nothing
-// when it does. A site with 500 queries a day over 56 days is 28,000 rows;
-// the old traffic query read the first thousand and charted them as the
-// whole month.
+// The reading itself is lib/gsc/read.ts, the only place a Search Console row
+// is read from: it partitions by shape and pages past PostgREST's 1,000-row
+// cap. A site with 500 queries a day over 56 days is 28,000 rows; the old
+// traffic query read the first thousand and charted them as the whole month.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { inspectionFrom, type UrlInspection } from "@/lib/google/inspection";
-import { WINDOW_DAYS, windows, type GscRow, type KnownPage } from "./analysis";
+import { ROW_SHAPES, WINDOW_DAYS, windows, type GscShapes, type KnownPage } from "./analysis";
+import { lastGscWriteAt, latestGscDate, readGsc, type ReadRow } from "./read";
 
-const PAGE = 1000;
-
-type Page<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
-
-async function fetchAll<T>(make: (from: number, to: number) => Page<T>): Promise<T[]> {
-  const out: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await make(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    const batch = data ?? [];
-    out.push(...batch);
-    if (batch.length < PAGE) return out;
-  }
-}
+/** What the dashboard blocks read: every shape, with the columns the analysis uses. */
+export type DashboardGscRows = GscShapes<ReadRow<"clicks" | "impressions" | "avg_position" | "article_id">>;
 
 /**
- * Every Search Console row for the two windows. Optional workspace for the
- * same reason its siblings are: a caller with no scope (operator views) sees
- * the account; every page passes one.
+ * Every Search Console row for the two windows, by shape. Optional workspace
+ * for the same reason its siblings are: a caller with no scope (operator
+ * views) sees the account; every page passes one.
  */
-export async function loadGscRows(workspaceId?: string, today: Date = new Date(), days = WINDOW_DAYS): Promise<GscRow[]> {
+export async function loadGscRows(workspaceId?: string, today: Date = new Date(), days = WINDOW_DAYS): Promise<DashboardGscRows> {
   return loadGscRowsFrom(await createClient(), workspaceId, today, days);
 }
 
@@ -51,19 +40,13 @@ export async function loadGscRowsFrom(
   workspaceId: string | undefined,
   today: Date = new Date(),
   days = WINDOW_DAYS,
-): Promise<GscRow[]> {
+): Promise<DashboardGscRows> {
   const { since } = windows(today, days);
-  return fetchAll<GscRow>((from, to) => {
-    let q = supabase
-      .from("analytics_metrics")
-      .select("metric_date, clicks, impressions, avg_position, page_url, query, article_id")
-      .eq("source", "gsc")
-      .gte("metric_date", since)
-      .order("metric_date", { ascending: true })
-      .order("id", { ascending: true })
-      .range(from, to);
-    if (workspaceId) q = q.eq("workspace_id", workspaceId);
-    return q;
+  return readGsc(supabase, {
+    workspaceId: workspaceId ?? null,
+    shapes: ROW_SHAPES,
+    since,
+    columns: ["clicks", "impressions", "avg_position", "article_id"],
   });
 }
 
@@ -88,35 +71,23 @@ export async function syncHealthFor(workspaceId: string): Promise<SyncHealth> {
 }
 
 export async function syncHealthFrom(supabase: SupabaseClient, workspaceId: string): Promise<SyncHealth> {
-  const [conn, newest, latestDay] = await Promise.all([
+  const [conn, lastSyncAt, latestMetricDate] = await Promise.all([
     supabase
       .from("workspace_integrations")
       .select("connected_at, config, needs_reconnect, last_sync_error")
       .eq("workspace_id", workspaceId)
       .eq("integration_id", "gsc")
       .maybeSingle(),
-    supabase
-      .from("analytics_metrics")
-      .select("created_at")
-      .eq("workspace_id", workspaceId)
-      .eq("source", "gsc")
-      .order("created_at", { ascending: false })
-      .limit(1),
-    supabase
-      .from("analytics_metrics")
-      .select("metric_date")
-      .eq("workspace_id", workspaceId)
-      .eq("source", "gsc")
-      .order("metric_date", { ascending: false })
-      .limit(1),
+    lastGscWriteAt(supabase, workspaceId),
+    latestGscDate(supabase, workspaceId),
   ]);
   const config = (conn.data?.config as { gscSiteUrl?: string } | null) ?? null;
   return {
     connected: Boolean(conn.data),
     connectedAt: (conn.data?.connected_at as string | null) ?? null,
     siteUrl: config?.gscSiteUrl ?? null,
-    lastSyncAt: ((newest.data?.[0] as { created_at?: string } | undefined)?.created_at as string | undefined) ?? null,
-    latestMetricDate: ((latestDay.data?.[0] as { metric_date?: string } | undefined)?.metric_date as string | undefined) ?? null,
+    lastSyncAt,
+    latestMetricDate,
     needsReconnect: Boolean(conn.data?.needs_reconnect),
     lastSyncError: (conn.data?.last_sync_error as string | null | undefined) ?? null,
   };

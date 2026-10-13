@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   anthropicModel,
+  replyText,
   openaiModel,
   openaiImageModel,
   MODEL_DEFAULTS,
@@ -112,5 +113,18 @@ describe("malformed environment values", () => {
   it("trims surrounding whitespace rather than passing it through", () => {
     process.env.OPENAI_MODEL = "  gpt-4.1  ";
     expect(openaiModel()).toBe("gpt-4.1");
+  });
+});
+
+describe("replyText", () => {
+  it("reads the first text block, past a thinking block a model puts first", () => {
+    expect(replyText([{ type: "thinking", thinking: "..." } as { type: string }, { type: "text", text: "{\"keep\":true}" } as { type: string }])).toBe("{\"keep\":true}");
+  });
+  it("reads a plain reply", () => {
+    expect(replyText([{ type: "text", text: "ok" } as { type: string }])).toBe("ok");
+  });
+  it("is null when there is no text at all", () => {
+    expect(replyText([])).toBeNull();
+    expect(replyText([{ type: "thinking" }])).toBeNull();
   });
 });

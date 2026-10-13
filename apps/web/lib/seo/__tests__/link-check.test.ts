@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { verifyOutboundLinks, isUnsafeHost, type LinkFetcher } from "../link-check";
+import {
+  verifyOutboundLinks,
+  isUnsafeHost,
+  classifyLinkResponse,
+  classifyLinkError,
+  botChallengeOf,
+  defaultFetcher,
+  type LinkFetcher,
+} from "../link-check";
+import { FetchFailedError, UnsafeUrlError, type SafeFetch, type SafeFetchOptions } from "@/lib/public-tools/safe-fetch";
 
 // Nothing in the pipeline had ever opened a URL the model wrote. This module
 // does, once. The policy under test: gone is removed, guarded is kept and
@@ -125,5 +134,205 @@ describe("isUnsafeHost", () => {
       "http://[::1]/", "http://8.8.8.8/", "http://files.internal/", "not a url",
     ]) expect(isUnsafeHost(u)).toBe(true);
     for (const u of ["https://www.gartner.com/x", "https://example.org"]) expect(isUnsafeHost(u)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// What counts as dead. A real signup's draft (2026-09-22, Turkish web/mobile
+// agency) lost a valid Google Play source to this checker. Only a definitive
+// answer removes a link: 404/410 to a GET, a name that does not exist, a
+// refused connection. Bot walls, rate limits, challenges and timeouts keep it.
+// ---------------------------------------------------------------------------
+
+const PLAY = "https://play.google.com/store/apps/details?id=com.example.cargo&hl=tr";
+
+describe("classifyLinkResponse", () => {
+  it("keeps a Play-style 403 or 429 as unverified", () => {
+    for (const status of [403, 429]) {
+      expect(classifyLinkResponse(PLAY, { status, method: "GET" })).toEqual({
+        verdict: "unverified",
+        reason: `HTTP ${status}, could not verify`,
+      });
+    }
+  });
+
+  it("keeps every bot-wall, login-wall and rate-limit status", () => {
+    for (const status of [401, 403, 405, 429, 451, 999, 500, 503, 400]) {
+      expect(classifyLinkResponse("https://guarded.example/x", { status, method: "GET" }).verdict).toBe("unverified");
+    }
+  });
+
+  it("removes a 404 or 410 to a GET", () => {
+    expect(classifyLinkResponse("https://gone.example/x", { status: 404, method: "GET" })).toEqual({ verdict: "dead", reason: "HTTP 404, page gone" });
+    expect(classifyLinkResponse("https://gone.example/x", { status: 410 })).toEqual({ verdict: "dead", reason: "HTTP 410, page gone" });
+  });
+
+  it("does not take a 404 to HEAD as final", () => {
+    expect(classifyLinkResponse("https://gone.example/x", { status: 404, method: "HEAD" }).verdict).toBe("unverified");
+  });
+
+  it("keeps a 404 from a store that hides listings by country, and says an invented app id looks the same", () => {
+    const out = classifyLinkResponse(PLAY, { status: 404, method: "GET" });
+    expect(out.verdict).toBe("unverified");
+    expect(out.reason).toMatch(/not sold in the country/);
+    expect(out.reason).toMatch(/app id that does not exist/);
+  });
+
+  it("keeps a Cloudflare or Akamai challenge page whatever its status says", () => {
+    const cf = { status: 403, headers: { server: "cloudflare", "cf-mitigated": "challenge" }, body: "", method: "GET" as const };
+    expect(classifyLinkResponse("https://guarded.example/x", cf)).toEqual({
+      verdict: "unverified",
+      reason: "HTTP 403, a Cloudflare challenge page; could not verify",
+    });
+    // A challenge served with 200 is still not the page.
+    const js = { status: 200, body: "<html><head><title>Just a moment...</title></head></html>", method: "GET" as const };
+    expect(classifyLinkResponse("https://guarded.example/x", js).verdict).toBe("unverified");
+    // And one served with 404 is not the page being gone.
+    const akamai = {
+      status: 404,
+      headers: { server: "AkamaiGHost" },
+      body: "<html><head><title>Access Denied</title></head><body>Reference&#32;#18.abc</body></html>",
+      method: "GET" as const,
+    };
+    expect(classifyLinkResponse("https://guarded.example/x", akamai).verdict).toBe("unverified");
+  });
+
+  it("recognises no challenge on an ordinary page", () => {
+    expect(botChallengeOf({ server: "nginx" }, "<html><head><title>Annual report</title></head></html>")).toBeNull();
+  });
+
+  // The same vendors put a sensor on every page they protect. A sensor is not
+  // a challenge: the page it rides on is live or gone like any other.
+  const CF_JSD =
+    "<script>(function(){var a=document.createElement('script');" +
+    "a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.head.appendChild(a)})();</script>";
+
+  it("takes a Cloudflare page carrying the JavaScript-detections script at its status", () => {
+    const live = `<html><head><title>Annual report 2025</title></head><body><h1>Report</h1>${CF_JSD}</body></html>`;
+    const gone = `<html><head><title>Page not found</title></head><body><h1>404</h1>${CF_JSD}</body></html>`;
+    const headers = { server: "cloudflare", "cf-ray": "8c0ffee-IST" };
+    expect(classifyLinkResponse("https://guarded.example/r", { status: 200, headers, body: live, method: "GET" })).toEqual({ verdict: "live" });
+    expect(classifyLinkResponse("https://guarded.example/r", { status: 404, headers, body: gone, method: "GET" })).toEqual({
+      verdict: "dead",
+      reason: "HTTP 404, page gone",
+    });
+  });
+
+  it("takes a DataDome 404 as gone: the header is on every response, not only on its challenge", () => {
+    const res = {
+      status: 404,
+      headers: { "x-datadome": "protected", "x-datadome-cid": "AHrlqAAAAAMA" },
+      body: '<html><head><title>Not found</title><script src="https://js.datadome.co/tags.js"></script></head><body>Not found</body></html>',
+      method: "GET" as const,
+    };
+    expect(classifyLinkResponse("https://shop.example/gone", res).verdict).toBe("dead");
+  });
+
+  it("takes a PerimeterX or Imperva page with only its sensor as live", () => {
+    const px = '<html><head><title>Pricing</title><script>window._pxAppId="PXabc123";</script></head><body>Plans</body></html>';
+    const imperva = '<html><head><title>Pricing</title><script src="/_Incapsula_Resource?SWJIYLWA=719d34d31c8e"></script></head></html>';
+    for (const body of [px, imperva]) {
+      expect(botChallengeOf({}, body, 200)).toBeNull();
+      expect(classifyLinkResponse("https://vendor.example/pricing", { status: 200, body, method: "GET" }).verdict).toBe("live");
+    }
+  });
+
+  it("names the vendor from a challenge-only marker on a blocking status", () => {
+    const dd = '<html><head><title>example.com</title></head><body><script>var dd={"host":"geo.captcha-delivery.com"}</script></body></html>';
+    expect(classifyLinkResponse("https://shop.example/x", { status: 403, headers: { "x-datadome": "protected" }, body: dd, method: "GET" })).toEqual({
+      verdict: "unverified",
+      reason: "HTTP 403, a DataDome challenge page; could not verify",
+    });
+    const cf = "<html><head><title>example.com</title></head><body><script>window._cf_chl_opt={cvId:'3'}</script></body></html>";
+    expect(botChallengeOf({}, cf, 403)).toBe("Cloudflare");
+    // The same marker on a 200 is not taken on its own.
+    expect(botChallengeOf({}, cf, 200)).toBeNull();
+    expect(botChallengeOf({}, '<div id="px-captcha"></div>', 403)).toBe("PerimeterX");
+  });
+
+  it("recognises Akamai's block page with its encoded reference, and Imperva's block text", () => {
+    const akamai =
+      "<HTML><HEAD>\n<TITLE>Access Denied</TITLE>\n</HEAD><BODY>\n<H1>Access Denied</H1>\n" +
+      "Reference&#32;&#35;18&#46;5e0f1b2&#46;1727000000&#46;abc\n<P>https&#58;&#47;&#47;errors&#46;edgesuite&#46;net&#47;18</P></BODY></HTML>";
+    expect(botChallengeOf({ server: "AkamaiGHost" }, akamai, 403)).toBe("Akamai");
+    // An article titled "Access Denied" is not a block page.
+    expect(botChallengeOf({ server: "AkamaiGHost" }, "<title>Access Denied</title><p>A film review.</p>", 200)).toBeNull();
+    const incap = '<html><body><iframe src="/_Incapsula_Resource?CWUDNSAI=9">Request unsuccessful. Incapsula incident ID: 123-456</iframe></body></html>';
+    expect(botChallengeOf({}, incap, 200)).toBe("Imperva");
+  });
+});
+
+describe("classifyLinkError", () => {
+  const net = (code: string, message = "the request failed") =>
+    Object.assign(new FetchFailedError(message, "https://x.example/"), { cause: { code } });
+
+  it("removes a name that does not exist and a refused connection", () => {
+    expect(classifyLinkError(net("ENOTFOUND"))).toEqual({ verdict: "dead", reason: "host not found" });
+    expect(classifyLinkError(net("ECONNREFUSED"))).toEqual({ verdict: "dead", reason: "connection refused" });
+  });
+
+  it("keeps a timeout, a reset and a temporary DNS failure", () => {
+    expect(classifyLinkError(new FetchFailedError("timed out", "https://x.example/"))).toEqual({ verdict: "unverified", reason: "timed out" });
+    expect(classifyLinkError(net("ECONNRESET")).verdict).toBe("unverified");
+    expect(classifyLinkError(net("EAI_AGAIN")).verdict).toBe("unverified");
+  });
+
+  it("removes a name that resolves to a private address, and only records a port it will not open", () => {
+    expect(classifyLinkError(new UnsafeUrlError("evil.example resolves to a private or local address. Only public websites can be checked."))).toEqual({
+      verdict: "dead",
+      reason: "not a public host",
+    });
+    expect(classifyLinkError(new UnsafeUrlError("Port 8000 is not fetched. Public websites answer on 80 or 443.")).verdict).toBe("unverified");
+  });
+});
+
+describe("defaultFetcher", () => {
+  function fake(routes: Record<string, { status: number; headers?: Record<string, string>; body?: string } | Error>) {
+    const calls: string[] = [];
+    const fn: SafeFetch = async (url: string, opts: SafeFetchOptions = {}) => {
+      const method = opts.method ?? "GET";
+      calls.push(method);
+      const r = routes[method];
+      if (r instanceof Error) throw r;
+      return {
+        requestedUrl: url, url, status: r.status, headers: r.headers ?? {}, body: method === "HEAD" ? "" : r.body ?? "",
+        bodyBuffer: Buffer.from(""), bytes: 0, truncated: false, redirects: [], tlsUnverified: false, timeMs: 1,
+      };
+    };
+    return { fn, calls };
+  }
+
+  it("stops at a HEAD that answers", async () => {
+    const { fn, calls } = fake({ HEAD: { status: 200 }, GET: new Error("should not GET") });
+    expect(await defaultFetcher(1000, fn)(PLAY)).toMatchObject({ status: 200, method: "HEAD" });
+    expect(calls).toEqual(["HEAD"]);
+  });
+
+  it("asks again with GET when HEAD says 404, and believes the GET", async () => {
+    const { fn, calls } = fake({ HEAD: { status: 404 }, GET: { status: 200, body: "<html>app</html>" } });
+    const res = await defaultFetcher(1000, fn)("https://apps.example/app/1");
+    expect(calls).toEqual(["HEAD", "GET"]);
+    expect(classifyLinkResponse("https://apps.example/app/1", res).verdict).toBe("live");
+  });
+
+  it("hands the GET's headers and body to the classifier, so a challenge is recognised", async () => {
+    const { fn } = fake({ HEAD: { status: 405 }, GET: { status: 403, headers: { "cf-mitigated": "challenge" }, body: "" } });
+    const res = await defaultFetcher(1000, fn)("https://guarded.example/x");
+    expect(classifyLinkResponse("https://guarded.example/x", res).reason).toMatch(/Cloudflare/);
+  });
+
+  it("does not ask a name that does not resolve twice", async () => {
+    const dns = Object.assign(new FetchFailedError("the domain does not resolve", "https://nowhere.invalid/"), { cause: { code: "ENOTFOUND" } });
+    const { fn, calls } = fake({ HEAD: dns, GET: new Error("should not GET") });
+    await expect(defaultFetcher(1000, fn)("https://nowhere.invalid/")).rejects.toBe(dns);
+    expect(calls).toEqual(["HEAD"]);
+  });
+
+  it("keeps a Play source through the whole pipeline when Play rate-limits the check", async () => {
+    const { fn } = fake({ HEAD: { status: 429 }, GET: { status: 429 } });
+    const html = `<p>The app is <a href="${PLAY.replace("&", "&amp;")}">on Google Play</a>.</p>`;
+    const { html: out, checks } = await verifyOutboundLinks(html, "ornek-ajans.example", { fetcher: defaultFetcher(1000, fn) });
+    expect(out).toBe(html);
+    expect(checks).toEqual([expect.objectContaining({ url: PLAY, status: 429, ok: false, verdict: "unverified", removed: false })]);
   });
 });

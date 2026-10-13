@@ -28,6 +28,8 @@ import {
   type SetupUnfinishedEmail,
 } from "./lifecycle";
 import { describeSendOutcome } from "./send-once";
+import { setupFinishedElsewhere } from "@/lib/onboarding/setup-state";
+import { accountTrialGate } from "@/lib/billing/body-lock";
 
 /** How long before a pause lifts the reminder goes out. */
 export const PAUSE_REMINDER_DAYS = 3;
@@ -125,6 +127,11 @@ export async function announceNothingWritten(
     // keywords" to somebody who has not seen the plan screen yet sends them to
     // the wrong page for the wrong reason; what they left undone is setup.
     if (await setupUnfinished(supabase, scope.workspaceId)) return SETUP_UNFINISHED_LINE;
+    // Every reason this email gives is fixed on a settings or keywords page,
+    // and an account that has not started its trial cannot open either: the
+    // dashboard redirects it to the setup screen, which already says what
+    // the trial opens. Same rule as the held-drafts digest.
+    if ((await accountTrialGate(supabase, scope.accountId, null)) === "gated") return GATED_NOTHING_WRITTEN_LINE;
     const out = await notifyNothingWritten(
       supabase,
       { accountId: scope.accountId, workspaceId: scope.workspaceId },
@@ -187,8 +194,14 @@ export async function announcePausedSites(supabase: SupabaseClient, now: Date = 
 // keep working on the site regardless: analyze reads it and finds keywords,
 // generate writes a draft. The setup email is how they learn that.
 
+/** What `announceNothingWritten` reports for an account that has not started its trial. */
+export const GATED_NOTHING_WRITTEN_LINE = "not sent: the account has not started its trial, so it cannot open the page that fixes this";
+
 /** What `announceNothingWritten` reports when it stood down for the setup email. */
 export const SETUP_UNFINISHED_LINE = "setup never finished; the setup email covers it";
+
+/** What `announceSetupUnfinished` reports when the person finished setup on another site. */
+export const SETUP_FINISHED_ELSEWHERE_LINE = "not sent: setup is finished on another of this person's sites";
 
 /** How long a stalled wizard is left alone before the no-draft email goes out. */
 export const SETUP_FOLLOWUP_HOURS = 24;
@@ -225,7 +238,7 @@ export async function setupUnfinishedFacts(
       .limit(1)
       .maybeSingle(),
     supabase.from("keywords").select("id", { count: "exact", head: true }).eq("workspace_id", workspaceId),
-    supabase.from("workspaces").select("topical_profile").eq("id", workspaceId).maybeSingle(),
+    supabase.from("workspaces").select("topical_profile, account_id").eq("id", workspaceId).maybeSingle(),
     supabase
       .from("domain_audits")
       .select("pages_crawled")
@@ -241,6 +254,16 @@ export async function setupUnfinishedFacts(
   if (audit && audit.pages_crawled === 0) unreadable = "not one page answered";
   else if (!readable && keywordCount === 0) unreadable = "too little of its text could be read to find keywords";
 
+  // Whether the draft can be opened at all: before the trial it cannot, and
+  // the mail must not say "Read the draft" (lib/billing/trial.ts). Asked as
+  // nobody, because the mail goes to every member. A site with no account
+  // row, or a gate that cannot be read, throws: announceSetupUnfinished then
+  // reports the failure and the next sweep tries again, rather than sending
+  // a link the account cannot use.
+  const accountId = ws?.account_id as string | undefined;
+  if (!accountId) throw new Error("setup email: could not read the site's account");
+  const beforeTrial = (await accountTrialGate(supabase, accountId, null)) === "gated";
+
   return {
     domain,
     draft: article
@@ -248,18 +271,42 @@ export async function setupUnfinishedFacts(
       : null,
     keywordCount,
     unreadable,
+    beforeTrial,
   };
 }
+
+/** What `announceSetupUnfinished` reports when the site already has an article live. */
+export const SETUP_ALREADY_LIVE_LINE = "an article is already live on the site; the setup email would say otherwise";
 
 /**
  * Send the setup email for one site, with whatever is true of it right now.
  * Once per site ever; `sendOnce` holds that.
+ *
+ * Not for a site with an article already live. A real signup (2026-09-22)
+ * published our draft on their own site without finishing setup; the nightly
+ * check now marks such a draft live (lib/found-on-site), and both versions of
+ * this email - "your draft is waiting for review", "no article has been
+ * written yet" - would then be false about the one site that used us most.
  */
 export async function announceSetupUnfinished(
   supabase: SupabaseClient,
   scope: { accountId: string; workspaceId: string; domain: string | null },
 ): Promise<string> {
   try {
+    // About the person, not only the site (lib/onboarding/setup-state.ts):
+    // somebody who finished setup on another site knows where setup is.
+    if (await setupFinishedElsewhere(supabase, scope.accountId, scope.workspaceId)) return SETUP_FINISHED_ELSEWHERE_LINE;
+    const { data: live, error: liveError } = await supabase
+      .from("articles")
+      .select("id")
+      .eq("workspace_id", scope.workspaceId)
+      .eq("status", "live")
+      .limit(1)
+      .maybeSingle();
+    // Not knowing is not "nothing is live": sent on a failed read, this is
+    // the false email the check exists to stop. The next sweep asks again.
+    if (liveError) return `not sent: could not check for a live article (${liveError.message})`;
+    if (live) return SETUP_ALREADY_LIVE_LINE;
     const facts = await setupUnfinishedFacts(supabase, scope.workspaceId, scope.domain);
     const out = await notifySetupUnfinished(supabase, { accountId: scope.accountId, workspaceId: scope.workspaceId }, facts);
     return describeSendOutcome(out);
@@ -309,7 +356,9 @@ export async function sweepUnfinishedSetups(supabase: SupabaseClient, now: Date 
         workspaceId: ws.id as string,
         domain: (ws.domain as string | null) ?? null,
       });
-      if (line && line !== "nobody to email") lines.push(`${ws.domain ?? ws.id}: ${line}`);
+      // Not reported: nothing is claimed for it, so it would repeat on every
+      // run for as long as the twin site or the live article exists.
+      if (line && line !== "nobody to email" && line !== SETUP_FINISHED_ELSEWHERE_LINE && line !== SETUP_ALREADY_LIVE_LINE) lines.push(`${ws.domain ?? ws.id}: ${line}`);
     }
   } catch (err) {
     console.error(`[setup-unfinished] sweep: ${err instanceof Error ? err.message : err}`);

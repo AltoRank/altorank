@@ -16,8 +16,22 @@ type Filter = [string, string, unknown];
 /** Every `.update(row).eq(col, val)` this request made, per table. */
 const writes: { table: string; row: Row; col: string; val: unknown; filters: Filter[] }[] = [];
 let workspaceRows: Row[] = [];
+/** When set, the webhook's write of what a checkout owes each site fails. */
+let oweFails = false;
+/** When set, the checkout's write to `accounts` fails with this message. */
+let accountWriteFails: string | null = null;
 /** The one account row any single-row read of `accounts` returns; null = no match. */
 let accountRow: Row | null = null;
+/** When set, every read of `accounts` fails with this message. */
+let accountReadFails: string | null = null;
+/** When set, the read of the account's sites fails with this message. */
+let sitesReadFails: string | null = null;
+/** When set, the write of a site's pace fails with this message. */
+let paceWriteFails: string | null = null;
+/** When set, a write of `payment_failed_at` alone (the grace window's start) fails. */
+let graceWriteFails: string | null = null;
+/** When set, the lookup of the account whose pause ended (`select("id")`) fails. */
+let pauseTargetReadFails: string | null = null;
 
 /**
  * A chainable fake of the PostgREST builder: filters are recorded, the
@@ -26,22 +40,40 @@ let accountRow: Row | null = null;
  * `workspaceRows`; updates are recorded and, when `.select()`ed, report
  * `workspaceRows` back as the touched rows.
  */
-function query(table: string, op: "select" | "update", row?: Row) {
+function query(table: string, op: "select" | "update", row?: Row, columns?: string) {
   const filters: Filter[] = [];
   let single = false;
   const q = {
     eq: (c: string, v: unknown) => (filters.push([c, "eq", v]), q),
     not: (c: string, o: string, v: unknown) => (filters.push([c, `not ${o}`, v]), q),
+    or: (expr: string) => (filters.push(["or", "or", expr]), q),
     select: () => q,
     single: () => ((single = true), q),
     maybeSingle: () => ((single = true), q),
     then: (resolve: (v: unknown) => unknown) => {
       if (op === "update") {
+        if (accountWriteFails && table === "accounts") {
+          return resolve({ data: null, error: { message: accountWriteFails } });
+        }
+        if (graceWriteFails && table === "accounts" && row && Object.keys(row).join() === "payment_failed_at") {
+          return resolve({ data: null, error: { message: graceWriteFails } });
+        }
+        if (paceWriteFails && table === "workspaces" && row && "auto_generate_weekly_limit" in row) {
+          return resolve({ data: null, error: { message: paceWriteFails } });
+        }
+        if (oweFails && table === "workspaces" && row && "trial_resume_key" in row) {
+          return resolve({ data: null, error: { message: "column workspaces.trial_resume_key does not exist" } });
+        }
         writes.push({ table, row: row!, col: filters[0]?.[0], val: filters[0]?.[2], filters });
         return resolve({ data: workspaceRows, error: null });
       }
-      if (table === "accounts") return resolve({ data: single ? accountRow : accountRow ? [accountRow] : [] });
-      return resolve({ data: workspaceRows });
+      if (table === "accounts") {
+        if (pauseTargetReadFails && columns === "id") return resolve({ data: null, error: { message: pauseTargetReadFails } });
+        if (accountReadFails) return resolve({ data: null, error: { message: accountReadFails } });
+        return resolve({ data: single ? accountRow : accountRow ? [accountRow] : [], error: null });
+      }
+      if (sitesReadFails && table === "workspaces") return resolve({ data: null, error: { message: sitesReadFails } });
+      return resolve({ data: workspaceRows, error: null });
     },
   };
   return q;
@@ -50,13 +82,42 @@ function query(table: string, op: "select" | "update", row?: Row) {
 const { topUp } = vi.hoisted(() => ({ topUp: vi.fn(async (..._a: unknown[]) => [] as unknown[]) }));
 vi.mock("@/lib/onboarding/plan", () => ({ schedulePlan: (...a: unknown[]) => topUp(...a) }));
 const { trialStarted, order } = vi.hoisted(() => ({ order: [] as string[], trialStarted: vi.fn(async (..._a: unknown[]) => { order.push("email"); return { sent: 1, skipped: 0, failed: 0 }; }) }));
-vi.mock("@/lib/email/lifecycle", async (importOriginal) => ({ ...await importOriginal<object>(), notifyTrialStarted: (...a: unknown[]) => trialStarted(...a) }));
+// What the checkout opens is handed to its own invocation from `after()`
+// (lib/plan/resume-dispatch.ts). `after()` needs a request scope; here it
+// queues the callback, so a test can tell "during the request" from "after
+// Stripe had its answer".
+const { deferred, resume } = vi.hoisted(() => ({
+  deferred: [] as Array<() => unknown>,
+  resume: vi.fn<(...a: unknown[]) => Promise<void>>(async () => { order.push("resume"); }),
+}));
+vi.mock("next/server", async () => {
+  const real = await vi.importActual<typeof import("next/server")>("next/server");
+  return { ...real, after: (fn: () => unknown) => { deferred.push(fn); } };
+});
+vi.mock("@/lib/plan/resume-dispatch", () => ({ dispatchResume: (...a: unknown[]) => resume(...a) }));
+async function runDeferred() {
+  while (deferred.length) await deferred.shift()!();
+}
+const { trialEnding, cancelledEmail, planChangedEmail, paymentFailedEmail } = vi.hoisted(() => ({
+  trialEnding: vi.fn(async (..._a: unknown[]) => ({ sent: 1, skipped: 0, failed: 0 })),
+  cancelledEmail: vi.fn(async (..._a: unknown[]) => ({ sent: 1, skipped: 0, failed: 0 })),
+  planChangedEmail: vi.fn(async (..._a: unknown[]) => ({ sent: 1, skipped: 0, failed: 0 })),
+  paymentFailedEmail: vi.fn(async (..._a: unknown[]) => ({ sent: 1, skipped: 0, failed: 0 })),
+}));
+vi.mock("@/lib/email/lifecycle", async (importOriginal) => ({
+  ...await importOriginal<object>(),
+  notifyTrialStarted: (...a: unknown[]) => trialStarted(...a),
+  notifyTrialEnding: (...a: unknown[]) => trialEnding(...a),
+  notifySubscriptionCancelled: (...a: unknown[]) => cancelledEmail(...a),
+  notifyPlanChanged: (...a: unknown[]) => planChangedEmail(...a),
+  notifyPaymentFailed: (...a: unknown[]) => paymentFailedEmail(...a),
+}));
 
 vi.mock("@/lib/supabase/server", () => ({
   createServiceClient: () => ({
     from: (table: string) => ({
       update: (row: Row) => query(table, "update", row),
-      select: () => query(table, "select"),
+      select: (columns?: string) => query(table, "select", undefined, columns),
     }),
   }),
 }));
@@ -159,7 +220,17 @@ function invoiceEvent(type: "payment_failed" | "paid", overrides: Record<string,
 beforeEach(() => {
   writes.length = 0;
   workspaceRows = [];
+  oweFails = false;
   accountRow = null;
+  accountReadFails = null;
+  sitesReadFails = null;
+  paceWriteFails = null;
+  graceWriteFails = null;
+  pauseTargetReadFails = null;
+  accountWriteFails = null;
+  cancelledEmail.mockClear();
+  planChangedEmail.mockClear();
+  paymentFailedEmail.mockClear();
   constructEvent.mockReset();
   retrieveSubscription.mockReset();
   retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: GROWTH } }] } });
@@ -171,14 +242,70 @@ beforeEach(() => {
 });
 
 describe("checkout.session.completed", () => {
-  it("opens the month the trial gate held: a top-up per site, as soon as the card is taken", async () => {
+  it("hands the month's top-up to its own invocation, keyed by the checkout, and answers Stripe first", async () => {
     topUp.mockClear();
+    resume.mockClear();
+    deferred.length = 0;
     workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 7 }];
-    await deliver(checkoutCompleted());
-    // One call per workspace on the account, in top-up mode; a failure here
-    // is logged and the nightly cron does the same, so it never fails the event.
-    expect(topUp).toHaveBeenCalled();
-    expect(topUp.mock.calls[0][3]).toMatchObject({ mode: "top-up" });
+    const res = await deliver(checkoutCompleted());
+    expect(res.status).toBe(200);
+    // Nothing paid runs inside the request Stripe is waiting on.
+    expect(topUp).not.toHaveBeenCalled();
+    expect(resume).not.toHaveBeenCalled();
+    // What the checkout owes each site is written before Stripe gets its
+    // answer, so a hand-off or a resume that is cut off leaves a record the
+    // scheduled writer finishes from (lib/plan/resume-sweep.ts).
+    const owed = writes.filter((w) => w.table === "workspaces" && "trial_resume_key" in w.row);
+    expect(owed).toHaveLength(1);
+    expect(owed[0].row).toEqual({ trial_resume_key: "sub_1", trial_resume_claimed_at: null, trial_resumed_at: null });
+    expect(owed[0].filters[0]).toEqual(["account_id", "eq", "account-1"]);
+    await runDeferred();
+    // No trial on this checkout: the month is topped up, and drafting keeps
+    // the scheduled writer's pace, as it always did.
+    expect(resume).toHaveBeenCalledWith({ accountId: "account-1", key: "sub_1", draftWeek: false });
+  });
+
+  it("answers 500 when it cannot write what the checkout owes, so Stripe delivers the event again", async () => {
+    resume.mockClear();
+    deferred.length = 0;
+    oweFails = true;
+    workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 7 }];
+    await expect(deliver(checkoutCompleted())).rejects.toThrow(/could not record what the checkout opens/);
+    // The plan and its status were written first and stand; nothing was handed off.
+    expect(accountWrite().row).toMatchObject({ plan_status: "active" });
+    expect(deferred).toHaveLength(0);
+  });
+
+  it("answers 500 when it cannot read the subscription, instead of recording a trial as a paid plan", async () => {
+    // A null from a failed read used to mean "no trial": the checkout was
+    // written as `active` with no trial end and the week was never drafted.
+    resume.mockClear();
+    deferred.length = 0;
+    workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 7 }];
+    retrieveSubscription.mockRejectedValue(new Error("connect ETIMEDOUT"));
+    await expect(deliver(checkoutCompleted())).rejects.toThrow(/could not read subscription sub_1/);
+    expect(writes.filter((w) => w.table === "accounts")).toHaveLength(0);
+    expect(deferred).toHaveLength(0);
+    // Bounded, so one slow read cannot outlast Stripe's wait for the webhook.
+    expect(retrieveSubscription.mock.calls.at(-1)?.[2]).toMatchObject({ timeout: expect.any(Number) });
+  });
+
+  it("answers 500 when it cannot record the subscription, and owes and dispatches nothing", async () => {
+    // Everything after this write assumes it happened: a resume dispatched
+    // against a still-gated account records "waiting for your trial" on every
+    // owed entry and spends the checkout's one burst, and Stripe, told 200,
+    // would never send the event again.
+    resume.mockClear();
+    deferred.length = 0;
+    accountWriteFails = "connection reset";
+    workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 7 }];
+    try {
+      await expect(deliver(checkoutCompleted())).rejects.toThrow(/could not record the subscription on the account/);
+      expect(writes.filter((w) => w.table === "workspaces" && "trial_resume_key" in w.row)).toHaveLength(0);
+      expect(deferred).toHaveLength(0);
+    } finally {
+      accountWriteFails = null;
+    }
   });
 
   it("writes the tier the subscription's price sells, not the column default", async () => {
@@ -215,12 +342,6 @@ describe("checkout.session.completed", () => {
     expect(accountWrite().row.plan).toBe("growth");
   });
 
-  it("falls back to the metadata hint when the subscription read fails", async () => {
-    retrieveSubscription.mockRejectedValue(new Error("stripe down"));
-    await deliver(checkoutCompleted());
-    expect(accountWrite().row.plan).toBe("growth");
-  });
-
   it("falls back to the metadata hint when the price id is not one we sell", async () => {
     retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: "price_legacy" } }] } });
     await deliver(checkoutCompleted());
@@ -237,7 +358,9 @@ describe("checkout.session.completed", () => {
   });
 
   it("ignores a metadata plan that is not a tier we sell", async () => {
-    retrieveSubscription.mockRejectedValue(new Error("stripe down"));
+    // A failed read no longer falls back (it answers 500 for a retry, above);
+    // a price we do not sell is where the metadata hint is still read.
+    retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: "price_legacy" } }] } });
     await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "enterprise" } }));
     expect(accountWrite().row).not.toHaveProperty("plan");
   });
@@ -270,7 +393,7 @@ describe("checkout.session.completed", () => {
       { id: "ws-5", auto_generate_weekly_limit: 25 },
     ];
     await deliver(checkoutCompleted());
-    const paced = writes.filter((w) => w.table === "workspaces");
+    const paced = writes.filter((w) => w.table === "workspaces" && "auto_generate_weekly_limit" in w.row);
     expect(paced.map((w) => w.val).sort()).toEqual(["ws-1", "ws-4"]);
     for (const w of paced) expect(w.row).toEqual({ auto_generate_weekly_limit: 21 });
   });
@@ -396,6 +519,23 @@ describe("customer.subscription.updated / deleted", () => {
     accountRow = { id: "account-1", plan_status: "past_due", payment_failed_at: "2026-09-01T00:00:00.000Z" };
     await deliver(subscriptionEvent("updated", { status: "past_due" }));
     expect(writes.filter((w) => w.table === "accounts")).toHaveLength(1);
+  });
+
+  it("reads the period end from the subscription item when the top level has none", async () => {
+    // Since API 2025-03-31.basil the period end is on each item. Read only at
+    // the top level, the column stayed null and the Billing page lost the date.
+    await deliver(
+      subscriptionEvent("updated", { items: { data: [{ price: { id: GROWTH }, current_period_end: 1_800_000_000 }] } }),
+    );
+    expect(accountWrite().row.current_period_end).toBe(new Date(1_800_000_000 * 1000).toISOString());
+  });
+
+  it("records an end set by a date alone, without cancel-at-period-end", async () => {
+    // A dashboard cancel, or `cancel_at` through the API, reports
+    // cancel_at_period_end: false. Unrecorded, a trial ended this way drafted
+    // on to its last day and the Billing page showed no end date.
+    await deliver(subscriptionEvent("updated", { cancel_at_period_end: false, cancel_at: 1_800_000_000 }));
+    expect(accountWrite().row.cancels_at).toBe(new Date(1_800_000_000 * 1000).toISOString());
   });
 
   it("does not report a paused subscription as a failed payment", async () => {
@@ -569,19 +709,57 @@ describe("the seven-day card trial", () => {
     });
   });
 
-  it("sends the trial-started email BEFORE buying the month's plan, and budgets the route for it", async () => {
-    // The top-up buys results pages and verdicts and can run for minutes;
-    // a timeout inside it used to take the one email that says when the
-    // card is charged down with it. Now the email is sent first, and the
-    // route has the same budget the other callers of that pipeline run under.
+  it("starts the rest of the week off the request, and the trial email says the week goes to the writer", async () => {
+    // The top-up buys results pages and verdicts and can run for minutes; it
+    // used to run inside this request, which Stripe times out and redelivers.
+    // Now the email is sent in the request and the month and the week are
+    // handed off after it, with the budget the inline fallback needs.
+    process.env.CRON_SECRET = "cron-secret";
+    process.env.NEXT_PUBLIC_APP_URL = "https://app.example";
     order.length = 0;
-    topUp.mockClear();
-    topUp.mockImplementation(async () => { order.push("top-up"); return []; });
-    workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 7 }];
+    deferred.length = 0;
+    resume.mockClear();
+    trialStarted.mockClear();
+    workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 7, auto_generate: true, status: "on" }];
     retrieveSubscription.mockResolvedValue({ status: "trialing", trial_end: TRIAL_END, items: { data: [{ price: { id: STARTER } }] } });
-    await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter" } }));
-    expect(order).toEqual(["email", "top-up"]);
+    try {
+      await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter" } }));
+      await runDeferred();
+    } finally {
+      delete process.env.CRON_SECRET;
+      delete process.env.NEXT_PUBLIC_APP_URL;
+    }
+    expect(order).toEqual(["email", "resume"]);
+    expect(resume).toHaveBeenCalledWith({ accountId: "account-1", key: "sub_1", draftWeek: true });
+    expect(trialStarted.mock.calls[0][2]).toMatchObject({ weekHandedOff: true });
     expect((await import("../route")).maxDuration).toBe(300);
+  });
+
+  it("does not tell the person the week went to the writer when nothing will write it", async () => {
+    // The claim the email makes is checked, not assumed: no site set to write
+    // automatically (or every one paused), or an install that cannot hand a
+    // draft off, and the email says only what the plan opens.
+    retrieveSubscription.mockResolvedValue({ status: "trialing", trial_end: TRIAL_END, items: { data: [{ price: { id: STARTER } }] } });
+    const cases: Array<{ rows: Row[]; env: boolean }> = [
+      { rows: [{ id: "ws-1", auto_generate_weekly_limit: 7, auto_generate: false, status: "on" }], env: true },
+      { rows: [{ id: "ws-1", auto_generate_weekly_limit: 7, auto_generate: true, status: "paused" }], env: true },
+      { rows: [{ id: "ws-1", auto_generate_weekly_limit: 7, auto_generate: true, status: "on" }], env: false },
+    ];
+    for (const c of cases) {
+      trialStarted.mockClear();
+      workspaceRows = c.rows;
+      if (c.env) {
+        process.env.CRON_SECRET = "cron-secret";
+        process.env.NEXT_PUBLIC_APP_URL = "https://app.example";
+      }
+      try {
+        await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter" } }));
+      } finally {
+        delete process.env.CRON_SECRET;
+        delete process.env.NEXT_PUBLIC_APP_URL;
+      }
+      expect(trialStarted.mock.calls[0][2]).toMatchObject({ weekHandedOff: false });
+    }
   });
 
   it("records a checkout with no trial as active, with no trial end", async () => {
@@ -606,5 +784,204 @@ describe("the seven-day card trial", () => {
     const { row } = accountWrite();
     expect(row.plan_status).toBe("active");
     expect(row).not.toHaveProperty("trial_ends_at");
+  });
+});
+
+describe("customer.subscription.trial_will_end", () => {
+  // Read `agencies` after migration 085 renamed it: the read failed, the
+  // handler took that for "no account" and the reminder three days before
+  // the first charge never went out.
+  it("finds the account in `accounts` and sends the reminder", async () => {
+    trialEnding.mockClear();
+    accountRow = { id: "account-1", plan_status: "trialing", payment_failed_at: null, plan: "starter", trial_ends_at: null };
+    const res = await deliver({ ...subscriptionEvent("updated", { status: "trialing", trial_end: 1_790_604_800 }), type: "customer.subscription.trial_will_end" });
+    expect(res.status).toBe(200);
+    expect(trialEnding).toHaveBeenCalledTimes(1);
+    expect(trialEnding.mock.calls[0][1]).toBe("account-1");
+    expect(trialEnding.mock.calls[0][2]).toMatchObject({ endsAt: new Date(1_790_604_800 * 1000).toISOString() });
+    expect(trialEnding.mock.calls[0][3]).toBe("sub_1");
+  });
+
+  it("sends nothing for a trial ended by a date on or before its end", async () => {
+    trialEnding.mockClear();
+    accountRow = { id: "account-1", plan_status: "trialing", payment_failed_at: null, plan: "starter", trial_ends_at: null };
+    await deliver({
+      ...subscriptionEvent("updated", { status: "trialing", trial_end: 1_790_604_800, cancel_at: 1_790_604_800 }),
+      type: "customer.subscription.trial_will_end",
+    });
+    expect(trialEnding).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing once the trial is set to cancel", async () => {
+    trialEnding.mockClear();
+    accountRow = { id: "account-1", plan_status: "trialing", payment_failed_at: null, plan: "starter", trial_ends_at: null };
+    await deliver({ ...subscriptionEvent("updated", { status: "trialing", cancel_at_period_end: true }), type: "customer.subscription.trial_will_end" });
+    expect(trialEnding).not.toHaveBeenCalled();
+  });
+});
+
+describe("a write that fails answers 500 before anything follows it", () => {
+  // checkout.session.completed already checked its account write; every other
+  // write here dropped its error and answered 200, so Stripe never delivered
+  // the event again and the account kept its old state - drafting on after a
+  // trial cancel, a paid tier after a downgrade - while the emails that
+  // follow the write went out as if it had landed.
+  const account = { id: "account-1", plan: "starter", plan_status: "active", payment_failed_at: null, name: "Acme", cancels_at: null, trial_ends_at: null };
+
+  it("customer.subscription.updated: the cancellation is not recorded, and nobody is emailed that it was", async () => {
+    accountRow = { ...account };
+    accountWriteFails = "connection reset";
+    await expect(
+      deliver(subscriptionEvent("updated", { cancel_at_period_end: true, cancel_at: 1_800_000_000 })),
+    ).rejects.toThrow(/customer\.subscription\.updated: could not record the subscription on the account \(connection reset\)/);
+    expect(cancelledEmail).not.toHaveBeenCalled();
+    expect(planChangedEmail).not.toHaveBeenCalled();
+  });
+
+  it("customer.subscription.updated: a plan switch that did not land sends no plan-changed email", async () => {
+    accountRow = { ...account };
+    accountWriteFails = "connection reset";
+    await expect(deliver(subscriptionEvent("updated"))).rejects.toThrow(/could not record the subscription/);
+    expect(planChangedEmail).not.toHaveBeenCalled();
+  });
+
+  it("customer.subscription.updated and deleted: the same, matched by subscription id", async () => {
+    accountWriteFails = "connection reset";
+    await expect(deliver(subscriptionEvent("deleted", { metadata: {} }))).rejects.toThrow(/customer\.subscription\.deleted: could not record/);
+  });
+
+  it("customer.subscription.updated: a read of the account that failed is not an account with nothing to compare", async () => {
+    accountReadFails = "timeout";
+    await expect(deliver(subscriptionEvent("updated", { cancel_at_period_end: true, cancel_at: 1_800_000_000 }))).rejects.toThrow(/could not read the account \(timeout\)/);
+    expect(writes).toHaveLength(0);
+  });
+
+  it("customer.subscription.updated: a grace window that did not start is delivered again, and no email quotes it", async () => {
+    accountRow = { ...account };
+    // The status write lands; the grace window's own write after it fails.
+    graceWriteFails = "connection reset";
+    await expect(deliver(subscriptionEvent("updated", { status: "past_due" }))).rejects.toThrow(/could not start the grace window/);
+    expect(accountWrite().row.plan_status).toBe("past_due");
+    expect(paymentFailedEmail).not.toHaveBeenCalled();
+  });
+
+  it("customer.subscription.updated: a grace window that did not start holds back the plan-changed and cancellation emails too", async () => {
+    // The retry of this event reads the row the first delivery wrote. Had the
+    // change emails gone out before the failing write, and failed themselves,
+    // the retry would see no change and never send them.
+    accountRow = { ...account };
+    graceWriteFails = "connection reset";
+    await expect(
+      deliver(subscriptionEvent("updated", { status: "past_due", cancel_at_period_end: true, cancel_at: 1_800_000_000 })),
+    ).rejects.toThrow(/could not start the grace window/);
+    expect(planChangedEmail).not.toHaveBeenCalled();
+    expect(cancelledEmail).not.toHaveBeenCalled();
+  });
+
+  it("customer.subscription.updated: a failed lookup of the account whose pause ended sends no email first", async () => {
+    accountRow = { ...account };
+    pauseTargetReadFails = "timeout";
+    await expect(
+      deliver(
+        subscriptionEvent(
+          "updated",
+          { metadata: {}, pause_collection: null, cancel_at_period_end: true, cancel_at: 1_800_000_000 },
+          { pause_collection: { behavior: "void" } },
+        ),
+      ),
+    ).rejects.toThrow(/could not find the account whose pause ended \(timeout\)/);
+    expect(planChangedEmail).not.toHaveBeenCalled();
+    expect(cancelledEmail).not.toHaveBeenCalled();
+  });
+
+  it("invoice.payment_failed: the failure is not recorded, and no email quotes a window that was never started", async () => {
+    accountRow = { ...account };
+    accountWriteFails = "connection reset";
+    await expect(deliver(invoiceEvent("payment_failed"))).rejects.toThrow(/invoice\.payment_failed: could not record the failed payment/);
+    expect(paymentFailedEmail).not.toHaveBeenCalled();
+  });
+
+  it("invoice.paid: a reinstatement that did not land is delivered again", async () => {
+    accountRow = { ...account, plan_status: "past_due", payment_failed_at: "2026-09-20T00:00:00Z" };
+    accountWriteFails = "connection reset";
+    await expect(deliver(invoiceEvent("paid"))).rejects.toThrow(/invoice\.paid: could not reinstate the plan/);
+  });
+
+  it("invoice events: a failed read of the account is not an invoice nobody owns", async () => {
+    accountReadFails = "timeout";
+    await expect(deliver(invoiceEvent("paid"))).rejects.toThrow(/could not read the account by id \(timeout\)/);
+    await expect(deliver(invoiceEvent("payment_failed"))).rejects.toThrow(/could not read the account/);
+  });
+
+  it("customer.subscription.trial_will_end: a failed read is not a trial with no account", async () => {
+    accountReadFails = "timeout";
+    await expect(
+      deliver({ ...subscriptionEvent("updated", { status: "trialing" }), type: "customer.subscription.trial_will_end" }),
+    ).rejects.toThrow(/could not read the account/);
+    expect(trialEnding).not.toHaveBeenCalledWith(expect.anything(), "account-1", expect.anything(), expect.anything());
+  });
+
+  it("checkout.session.completed: a site left at the free pace owes and dispatches nothing", async () => {
+    resume.mockClear();
+    deferred.length = 0;
+    workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 7 }];
+    paceWriteFails = "connection reset";
+    await expect(deliver(checkoutCompleted())).rejects.toThrow(/could not raise a site to the plan's pace/);
+    expect(writes.filter((w) => w.table === "workspaces" && "trial_resume_key" in w.row)).toHaveLength(0);
+    expect(deferred).toHaveLength(0);
+  });
+
+  it("checkout.session.completed: a failed read of the sites is not an account with none", async () => {
+    resume.mockClear();
+    deferred.length = 0;
+    sitesReadFails = "timeout";
+    await expect(deliver(checkoutCompleted())).rejects.toThrow(/could not read the account's sites/);
+    expect(deferred).toHaveLength(0);
+  });
+});
+
+describe("the cancellation email for a trial", () => {
+  it("says the trial is cancelled before its first charge when the cancel lands at the trial's end", async () => {
+    accountRow = { id: "account-1", plan: "starter", plan_status: "trialing", payment_failed_at: null, name: "Acme", cancels_at: null, trial_ends_at: null };
+    await deliver(subscriptionEvent("updated", { status: "trialing", trial_end: 1_800_000_000, cancel_at_period_end: true, cancel_at: 1_800_000_000 }));
+    expect(cancelledEmail).toHaveBeenCalledTimes(1);
+    expect(cancelledEmail.mock.calls[0][2]).toMatchObject({ trial: true, endsAt: new Date(1_800_000_000 * 1000).toISOString() });
+  });
+
+  it("is sent for the Billing page's own cancel, whose write reached the row before the event", async () => {
+    // `cancelPlan` records `cancels_at` the moment Stripe answers; Stripe's
+    // event follows. Compared only with the row, the change was invisible and
+    // the in-app cancel sent nothing. The event says what it changed.
+    const cancelsAt = new Date(1_800_000_000 * 1000).toISOString();
+    accountRow = { id: "account-1", plan: "starter", plan_status: "trialing", payment_failed_at: null, name: "Acme", cancels_at: cancelsAt, trial_ends_at: cancelsAt };
+    await deliver(
+      subscriptionEvent(
+        "updated",
+        { status: "trialing", trial_end: 1_800_000_000, cancel_at_period_end: true, cancel_at: 1_800_000_000 },
+        { cancel_at_period_end: false, cancel_at: null },
+      ),
+    );
+    expect(cancelledEmail).toHaveBeenCalledTimes(1);
+    expect(cancelledEmail.mock.calls[0][2]).toMatchObject({ trial: true, endsAt: cancelsAt });
+    expect(cancelledEmail.mock.calls[0][3]).toBe("sub_1");
+  });
+
+  it("is not sent again by a later update that leaves the cancellation as it was", async () => {
+    const cancelsAt = new Date(1_800_000_000 * 1000).toISOString();
+    accountRow = { id: "account-1", plan: "starter", plan_status: "trialing", payment_failed_at: null, name: "Acme", cancels_at: cancelsAt, trial_ends_at: cancelsAt };
+    await deliver(
+      subscriptionEvent(
+        "updated",
+        { status: "trialing", trial_end: 1_800_000_000, cancel_at_period_end: true, cancel_at: 1_800_000_000 },
+        { metadata: {} },
+      ),
+    );
+    expect(cancelledEmail).not.toHaveBeenCalled();
+  });
+
+  it("is the paid plan's email for a paid subscription set to end", async () => {
+    accountRow = { id: "account-1", plan: "growth", plan_status: "active", payment_failed_at: null, name: "Acme", cancels_at: null, trial_ends_at: null };
+    await deliver(subscriptionEvent("updated", { cancel_at_period_end: true, cancel_at: 1_800_000_000 }));
+    expect(cancelledEmail.mock.calls[0][2]).toMatchObject({ trial: false });
   });
 });

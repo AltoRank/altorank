@@ -194,7 +194,7 @@ nowhere else.
 | `/api/cron/exchange` | `0 5 * * *` | backlink exchange |
 | `/api/cron/reports` | `0 6 1 * *` | monthly PDF reports |
 | `/api/cron/generate` | `0 7 * * *` | autonomous drafts (bounded, see above) |
-| `/api/cron/geo` | `0 8 * * 1` | AI-visibility measurement, weekly |
+| `/api/cron/geo` | `0 8 * * 1` | AI-visibility measurement, weekly; measures only workspaces with `geo_tracking` on and prompts in `geo_prompts`, which nothing in the app sets yet |
 | `/api/cron/publish` | `0 9 * * *` | scheduled publishing |
 
 **The Vercel account is on Hobby.** Hobby's documented rule is one run per day
@@ -366,8 +366,13 @@ email Supabase itself would send. The app's own emails go through Resend and
 locally the signup / reset / invite actions fail at the send step unless you set
 one (a Resend test key works).
 
-`npm run test` is vitest and needs no services. `npm run build` type-checks
-and compiles with no env at all, which is exactly what CI does.
+`npm run test` is vitest and needs no services; a network guard fails any test
+that opens a connection. `npm run test:db` runs the `*.db.test.ts` files against
+the stack from `supabase start`. It takes the Supabase URL and keys (and
+nothing else) from the files `next dev` reads, refuses to run at all if any
+database URL is not on this machine, and refuses every connection that leaves
+it (lib/__tests__/support/). `npm run build` type-checks and compiles with no
+env at all, which is exactly what CI does.
 
 ## Rollback
 

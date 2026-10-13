@@ -9,6 +9,7 @@ import {
   type QueryStats,
   type PageInput,
 } from "../detect";
+import { partitionByShape } from "@/lib/gsc/analysis";
 
 const stats = (q: string, over: Partial<QueryStats>): [string, QueryStats] => [
   q,
@@ -160,12 +161,12 @@ describe("headingsOf", () => {
 
 describe("aggregateQueries", () => {
   it("sums clicks and impressions and weights position by impressions", () => {
-    const m = aggregateQueries([
+    const m = aggregateQueries(partitionByShape([
       { metric_date: "2026-08-01", query: "Booking Software", page_url: null, article_id: null, clicks: 10, impressions: 100, avg_position: "5.0" },
       { metric_date: "2026-08-02", query: "booking software", page_url: null, article_id: null, clicks: 0, impressions: 1, avg_position: 40 },
       // A page row, not a query row.
       { metric_date: "2026-08-02", query: null, page_url: "https://x/y", article_id: "a", clicks: 99, impressions: 99, avg_position: 1 },
-    ]);
+    ]));
     const s = m.get("booking software")!;
     expect(s.clicks).toBe(10);
     expect(s.impressions).toBe(101);
@@ -175,9 +176,9 @@ describe("aggregateQueries", () => {
   });
 
   it("drops a query that never had a position", () => {
-    const m = aggregateQueries([
-      { metric_date: "2026-08-01", query: "q", page_url: null, article_id: null, clicks: 0, impressions: 5, avg_position: null },
-    ]);
+    const m = aggregateQueries({
+      query: [{ metric_date: "2026-08-01", query: "q", page_url: null, article_id: null, clicks: 0, impressions: 5, avg_position: null }],
+    });
     expect(m.size).toBe(0);
   });
 });

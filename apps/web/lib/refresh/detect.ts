@@ -19,6 +19,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { tiptapToHtml } from "@/lib/cms/html";
+import type { GscShapes } from "@/lib/gsc/analysis";
+import { readGsc } from "@/lib/gsc/read";
 import type { Detection, Evidence, Opportunity } from "./types";
 
 // ── Inputs ──────────────────────────────────────────────────────────────────
@@ -229,12 +231,15 @@ export interface MetricRow {
   avg_position: number | string | null;
 }
 
-/** Total per-day query rows into one QueryStats per query. */
-export function aggregateQueries(rows: readonly MetricRow[]): Map<string, QueryStats> {
+/**
+ * Total per-day query rows into one QueryStats per query. Takes the query
+ * partition (lib/gsc/read.ts) and nothing else: a page or query_page row has
+ * no way in, so none needs filtering out here.
+ */
+export function aggregateQueries(gsc: GscShapes<MetricRow, "query">): Map<string, QueryStats> {
   const acc = new Map<string, { clicks: number; impressions: number; posWeight: number; weight: number }>();
-  for (const r of rows) {
-    // Query rows only. Page rows carry a URL and no query.
-    if (!r.query || r.page_url) continue;
+  for (const r of gsc.query) {
+    if (!r.query) continue;
     const key = r.query.trim().toLowerCase();
     const a = acc.get(key) ?? { clicks: 0, impressions: 0, posWeight: 0, weight: 0 };
     const imp = r.impressions ?? 0;
@@ -319,10 +324,18 @@ const normUrl = (u: string) => {
  * page with no impressions data is not "getting no impressions", it is
  * unmeasured.
  */
+/**
+ * How analyzeWorkspace reads the text of the site's own articles:
+ * `readArticlesWhole` from lib/articles/body-read.ts, passed in by the server
+ * callers. Passed rather than imported because this file's pure helpers are
+ * also used by client components, and the reader holds the service role.
+ */
+export type ArticleBodyReader = (ids: string[], columns: string) => Promise<{ id: string; content?: unknown }[]>;
+
 export async function analyzeWorkspace(
   supabase: SupabaseClient,
   workspaceId: string,
-  opts: { now?: Date } = {},
+  opts: { now?: Date; readBodies: ArticleBodyReader },
 ): Promise<AnalyzeResult> {
   const now = opts.now ?? new Date();
 
@@ -336,36 +349,28 @@ export async function analyzeWorkspace(
   if (!gsc?.length) return { reason: "gsc_not_connected" };
 
   const since = new Date(now.getTime() - 56 * 86_400_000).toISOString().slice(0, 10);
-  // Paged: PostgREST caps a single select at 1,000 rows and says nothing. A
-  // site with a hundred queries a day passes that inside the 56-day window,
-  // and once per-page rows are stored too (four shapes a day) it passes it in
-  // a week. A truncated window makes "declining" a comparison of two random
-  // slices, so read until a page comes back short.
-  const metricRows: MetricRow[] = [];
-  const PAGE = 1000;
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
-      .from("analytics_metrics")
-      .select("metric_date, query, page_url, article_id, clicks, impressions, avg_position")
-      .eq("workspace_id", workspaceId)
-      .eq("source", "gsc")
-      .gte("metric_date", since)
-      .order("metric_date", { ascending: true })
-      .range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    metricRows.push(...((data ?? []) as MetricRow[]));
-    if (!data || data.length < PAGE) break;
-  }
-  const windows = splitWindows(metricRows, now);
-  const current = aggregateQueries(windows.current);
-  const previous = aggregateQueries(windows.previous);
+  // Query rows, every one in the 56 days. PostgREST caps a single select at
+  // 1,000 rows and says nothing; a truncated window makes "declining" a
+  // comparison of two random slices. lib/gsc/read.ts pages past the cap in a
+  // unique order - this loop used to order by date alone, so rows sharing a
+  // date could fall between two pages or land in both - and reads only the
+  // query shape, the one partition the detectors use.
+  const metrics = await readGsc(supabase, {
+    workspaceId,
+    shapes: ["query"],
+    since,
+    columns: ["article_id", "clicks", "impressions", "avg_position"],
+  });
+  const windows = splitWindows(metrics.query, now);
+  const current = aggregateQueries({ query: windows.current });
+  const previous = aggregateQueries({ query: windows.previous });
 
   const serp = await loadSerpHistory(supabase, workspaceId, now);
 
-  const [{ data: articles }, { data: sitePages }] = await Promise.all([
+  const [{ data: articles, error: articlesError }, { data: sitePages }] = await Promise.all([
     supabase
       .from("articles")
-      .select("id, keyword, word_count, content, published_url")
+      .select("id, keyword, word_count, published_url")
       .eq("workspace_id", workspaceId)
       .eq("status", "live")
       .not("published_url", "is", null),
@@ -376,13 +381,24 @@ export async function analyzeWorkspace(
       .eq("page_type", "article")
       .not("keyword", "is", null),
   ]);
+  // No articles because the read failed is not "no articles": the pass would
+  // report a site with nothing to improve.
+  if (articlesError) throw new Error(`refresh: could not read this site's articles (${articlesError.message})`);
+
+  // The headings come from the text, which is read on the server: a client
+  // token cannot select it since migration 097 (lib/articles/body-read.ts).
+  // The rows are the ones the caller's client returned; only headings leave.
+  const bodies = new Map(
+    (await opts.readBodies((articles ?? []).map((a) => a.id as string), "content")).map((b) => [b.id, b.content]),
+  );
 
   const pages: PageInput[] = [];
   const seen = new Set<string>();
   for (const a of articles ?? []) {
     const url = a.published_url as string;
     seen.add(normUrl(url));
-    const html = a.content ? tiptapToHtml(a.content as Record<string, unknown>) : "";
+    const content = bodies.get(a.id as string);
+    const html = content ? tiptapToHtml(content as Record<string, unknown>) : "";
     const keyword = (a.keyword as string | null) ?? null;
     pages.push({
       url,

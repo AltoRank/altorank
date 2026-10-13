@@ -43,9 +43,23 @@ export function validateCancellation(a: CancellationAnswers): CancellationValida
  * period end is unknown it says "the end of the current billing period"
  * rather than inventing a day.
  */
-export function cancellationSummary(periodEnd: string | null | undefined): string {
+export function cancellationSummary(periodEnd: string | null | undefined, opts: { trial?: boolean } = {}): string {
   const when = periodEnd
     ? new Date(periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
     : "the end of the current billing period";
+  // A trial cancelled before its first charge stops drafting at once
+  // (lib/billing/trial-hold.ts, trialCancelledReason); only reading carries
+  // on to the date. "You keep access" alone would promise the week's drafts.
+  if (opts.trial) {
+    return `Nothing is charged, and nothing new is drafted from now on. The drafts already written stay readable until ${when}.`;
+  }
   return `You keep access until ${when}. Your articles stay readable and exportable afterwards.`;
+}
+
+/** The cancel button's label: what the click does, and when. */
+export function cancelButtonLabel(periodEnd: string | null | undefined, opts: { trial?: boolean } = {}): string {
+  if (opts.trial) return "Cancel trial — drafting stops now";
+  return periodEnd
+    ? `Cancel plan — writing stops ${new Date(periodEnd).toLocaleDateString("en-US", { month: "long", day: "numeric" })}`
+    : "Cancel plan — writing stops at the period end";
 }

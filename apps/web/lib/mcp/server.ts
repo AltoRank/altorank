@@ -12,8 +12,8 @@
  * dashboards; "point Claude at a roster and it audits and generates the fixes"
  * is the sentence none of them can write.
  *
- * Tools are namespaced `altorank_*` so they compose cleanly alongside
- * `openseo_*` in the same agent session, per the pivot plan.
+ * Tools are namespaced `altorank_*` so they stay distinct from the tools of
+ * any other MCP server loaded in the same agent session.
  *
  * Two groups of tools:
  *

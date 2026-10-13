@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Quota } from "../quota";
 import { FREE_DRAFTS, spentUnderOldMonthlyRule } from "../quota";
+import { TRIAL_HOLD_MESSAGE, TRIAL_SETUP_MESSAGE, TRIAL_SPEND_MESSAGE } from "../trial-refusal";
 
 // ---------------------------------------------------------------------------
 // The spend gate, branch by branch
@@ -40,12 +41,27 @@ const freeTier = (used: number, over: Partial<Quota> = {}): Quota =>
     ...over,
   });
 
-/** A client whose only job is answering the workspace pause lookup. */
-function client(paused: { status: string; paused_until: string | null } | null = null): SupabaseClient {
+/**
+ * A client whose job is answering the workspace pause lookup, and the count
+ * of the account's setup runs (onboarding_runs) for the pre-trial bound.
+ */
+function client(
+  paused: { status: string; paused_until: string | null } | null = null,
+  setupRuns = 0,
+  siteAccount = "a",
+): SupabaseClient {
   return {
-    from: () => ({
+    from: (table: string) => ({
       select: () => ({
-        eq: () => ({ maybeSingle: async () => ({ data: paused }) }),
+        eq: () =>
+          table === "onboarding_runs"
+            ? Promise.resolve({ count: setupRuns, error: null })
+            : {
+                maybeSingle: async () => ({
+                  data: { account_id: siteAccount, status: "active", paused_until: null, ...(paused ?? {}) },
+                  error: null,
+                }),
+              },
       }),
     }),
   } as unknown as SupabaseClient;
@@ -248,5 +264,86 @@ describe("the mid-month rule change is explained, not silent", () => {
     expect(spentUnderOldMonthlyRule(quota({ limit: 100, used: 100, monthUsed: 1 }))).toBe(false);
     expect(spentUnderOldMonthlyRule(quota({ reason: "self-host", limit: null, plan: null }))).toBe(false);
     expect(spentUnderOldMonthlyRule(freeTier(2))).toBe(false);
+  });
+});
+
+describe("a trial-gated account spends on setup and nothing after it", () => {
+  // Every paid door outside drafting asked this gate, and for an account
+  // that had not started its trial it answered "free allowance, six left":
+  // the editor's whole-article rewrite, keyword suggestions over the agent
+  // API and a re-crawl all ran before the trial.
+  const gated = (used: number) => freeTier(used, { trialEligible: true });
+
+  it("allows setup: nothing is written yet", async () => {
+    getQuota.mockResolvedValue(gated(0));
+    expect(await canSpend(client(), "a", { action: "keyword-research" })).toMatchObject({ allowed: true, reason: "free-allowance" });
+  });
+
+  it("refuses everything once the first article exists, in the trial's words", async () => {
+    getQuota.mockResolvedValue(gated(1));
+    for (const action of ["keyword-research", "site-audit", "refresh"] as const) {
+      expect(await canSpend(client(), "a", { action })).toMatchObject({ allowed: false, reason: "trial-required", message: TRIAL_SPEND_MESSAGE });
+    }
+    // Setup's own sentence, true whether the first draft was written or failed.
+    expect(await canSpend(client(), "a", { action: "setup" })).toMatchObject({ allowed: false, reason: "trial-required", message: TRIAL_SETUP_MESSAGE });
+    expect(await canSpend(client(), "a", { action: "draft" })).toMatchObject({ allowed: false, reason: "trial-required", message: TRIAL_HOLD_MESSAGE });
+  });
+
+  it("allows a second setup run, for one that failed, and refuses a third", async () => {
+    // Round-4 review: a setup that ended without attempting a draft left
+    // `used` at 0, so the site read and the research (about $0.22) were
+    // bought again each time the last run finished.
+    getQuota.mockResolvedValue(gated(0));
+    expect(await canSpend(client(null, 1), "a", { action: "setup" })).toMatchObject({ allowed: true });
+    expect(await canSpend(client(null, 2), "a", { action: "setup" })).toMatchObject({
+      allowed: false,
+      reason: "trial-required",
+      message: TRIAL_SETUP_MESSAGE,
+    });
+    // The bound is on setup only: the draft inside the second run still asks
+    // the draft counter.
+    expect(await canSpend(client(null, 2), "a", { action: "draft" })).toMatchObject({ allowed: true });
+  });
+
+  it("does not bound setup runs for an account that is not trial-gated", async () => {
+    getQuota.mockResolvedValue(freeTier(0, { trialEligible: false }));
+    expect(await canSpend(client(null, 9), "a", { action: "setup" })).toMatchObject({ allowed: true });
+  });
+
+  it("leaves a no-plan account that already had its trial on the allowance", async () => {
+    getQuota.mockResolvedValue(freeTier(1, { trialEligible: false }));
+    expect(await canSpend(client(), "a", { action: "keyword-research" })).toMatchObject({ allowed: true, reason: "free-allowance" });
+  });
+
+  it("follows the kill switch", async () => {
+    vi.stubEnv("TRIAL_GATE_DISABLED", "1");
+    try {
+      getQuota.mockResolvedValue(gated(1));
+      expect(await canSpend(client(), "a", { action: "keyword-research" })).toMatchObject({ allowed: true, reason: "free-allowance" });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("canSpend — whose account", () => {
+  // Round-4 review: the editor, scoring, research, voice, refresh and audit
+  // passed `requireAuth`'s account, and for a person in a paying account and
+  // a never-trialed one that was often not the account of the site they were
+  // working on. The site's own account is what the gate answers for.
+  it("answers for the account that owns the site, not the one the caller passed", async () => {
+    getQuota.mockImplementation(async (_c: unknown, accountId: unknown) =>
+      accountId === "paying" ? quota() : freeTier(1, { trialEligible: true }),
+    );
+    const d = await canSpend(client(null, 0, "paying"), "own-gated-account", { workspaceId: "w", action: "keyword-research" });
+    expect(getQuota.mock.calls[0][1]).toBe("paying");
+    expect(d).toMatchObject({ allowed: true, reason: "plan" });
+  });
+
+  it("refuses to answer for a site the caller cannot read", async () => {
+    const hidden = {
+      from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }),
+    } as unknown as SupabaseClient;
+    await expect(canSpend(hidden, "a", { workspaceId: "someone-elses" })).rejects.toThrow(/not found/);
   });
 });

@@ -11,8 +11,8 @@
 // Everything served is what the nightly sync already stored and the dashboard
 // already renders (lib/gsc/analysis.ts). Nothing here calls Google.
 
-import { WINDOW_DAYS, type GscRow } from "@/lib/gsc/analysis";
-import { loadGscRowsFrom, syncHealthFrom, type SyncHealth } from "@/lib/gsc/queries";
+import { WINDOW_DAYS } from "@/lib/gsc/analysis";
+import { loadGscRowsFrom, syncHealthFrom, type DashboardGscRows, type SyncHealth } from "@/lib/gsc/queries";
 import type { Workspace } from "@/lib/types";
 import type { AgentContext } from "./auth";
 import { workspaceInAccount } from "./data";
@@ -65,7 +65,8 @@ export async function gscScope(
   return { scope: { workspace, health, days: daysParam(daysRaw), today } };
 }
 
-export async function gscRows(ctx: AgentContext, scope: GscScope): Promise<GscRow[]> {
+/** The stored rows for the scope's windows, partitioned by shape (lib/gsc/read.ts). */
+export async function gscRows(ctx: AgentContext, scope: GscScope): Promise<DashboardGscRows> {
   return loadGscRowsFrom(ctx.supabase, scope.workspace.id, scope.today, scope.days);
 }
 

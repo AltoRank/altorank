@@ -130,9 +130,10 @@ export const PLAN_ARTICLE_LIMITS: Record<PlanTier, number | null> = {
  * dashboard still trials, and a plan switch on an existing subscription
  * (which never goes through checkout) never re-trials.
  *
- * The trial is offered after onboarding, once the account has read its first
- * drafts; see lib/billing/trial.ts for who is eligible and lib/billing/quota.ts
- * for what it unlocks.
+ * The trial is offered after onboarding, once setup has written the account's
+ * first article and shown its shape (title, outline, length, sources); the
+ * text opens with the trial. See lib/billing/trial.ts for who is eligible and
+ * what it unlocks.
  */
 export const TRIAL_DAYS = 7;
 

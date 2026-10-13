@@ -15,7 +15,7 @@ import type { BillingOutcome } from "@/lib/billing/failure";
 export async function startDomainAudit(
   workspaceId: string,
 ): Promise<BillingOutcome<{ auditId: string }>> {
-  const { accountId, user } = await requireAuth();
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const supabase = await createClient();
 
   // A re-crawl is up to 40 page fetches plus a PageSpeed run, and /api/audit

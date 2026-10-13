@@ -21,9 +21,12 @@
 // `runAutoApprovals` is the cron's entry point.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { factCheckArticle, approvalBlocker } from "@/lib/ai/fact-check";
+import { factCheckArticle, autoApprovalBlocker } from "@/lib/ai/fact-check";
 import { tiptapToHtml } from "@/lib/cms/html";
 import { auditArticle } from "@/lib/seo/article-audit";
+import { removeTitleHeading } from "@/lib/content/on-page";
+import { storedTrust } from "@/lib/content/trust";
+import { stripTags, decode } from "@/lib/content/enrich/html";
 import type { ArticleResearch } from "@/lib/seo/research";
 import { getQuota } from "@/lib/billing/quota";
 import { getDestinations } from "./destinations";
@@ -46,7 +49,11 @@ export type AutoApproveCandidate = {
   created_at: string | null;
   seo_score: number | null;
   aeo_score: number | null;
-  /** Message from `approvalBlocker`, or null when the fact check passed. */
+  /**
+   * Message from `autoApprovalBlocker`, or null when the fact check passed.
+   * Unlike a person's approve, a draft in a language the checker cannot read
+   * is held here: nothing looked at its figures.
+   */
   factCheckBlocker: string | null;
   /** Titles of audit items with status `fail`. */
   auditFailures: readonly string[];
@@ -61,11 +68,27 @@ export type AutoApproveCandidate = {
   hasDestination: boolean;
   /** True when `auto_approve_set_by` is still a member of the account. */
   ruleOwnerIsMember: boolean;
+  /**
+   * The person the body names as its reviewer (lib/content/trust.ts), when
+   * it names one. The line is a proposal: that person has to have read it.
+   */
+  reviewerToConfirm?: string | null;
 };
 
 export type AutoApproveDecision =
   | { approve: true }
   | { approve: false; reason: string };
+
+/**
+ * The reviewer the draft names, when its body still carries the name the
+ * generator wrote in (lib/content/trust.ts). Null when the trust decision
+ * named nobody, or a person has since taken the line out.
+ */
+export function reviewerNamedIn(html: string, research: unknown): string | null {
+  const name = storedTrust(research)?.reviewer?.name;
+  if (!name || !html) return null;
+  return decode(stripTags(html)).replace(/\s+/g, " ").includes(name.replace(/\s+/g, " ")) ? name : null;
+}
 
 /**
  * Should this draft be approved now?
@@ -112,6 +135,16 @@ export function decideAutoApproval(
     };
   }
   if (a.factCheckBlocker) return { approve: false, reason: a.factCheckBlocker };
+  // "Reviewed by" on a page nobody opened is a credential the named person
+  // never gave. The generator writes the line from the site's own team page
+  // and asks for that person's sign-off; auto-approve cannot get it. No
+  // reviewer found is a review note, not a hold (decided 2026-09-28).
+  if (a.reviewerToConfirm) {
+    return {
+      approve: false,
+      reason: `names ${a.reviewerToConfirm} as its reviewer; approve it yourself once they have reviewed it, or remove the line`,
+    };
+  }
   if (a.auditFailures.length) return { approve: false, reason: `audit: ${a.auditFailures.join("; ")}` };
 
   const seo = a.seo_score ?? 0;
@@ -134,7 +167,14 @@ export type AutoApproveResult = {
   detail?: string;
 };
 
-type WorkspaceRow = AutoApproveRule & { id: string; account_id: string; domain: string | null; status: string };
+type WorkspaceRow = AutoApproveRule & {
+  id: string;
+  account_id: string;
+  domain: string | null;
+  status: string;
+  /** Read so the fact check and the audit use the site's language rules. */
+  language: string | null;
+};
 
 type ArticleRow = {
   id: string;
@@ -170,7 +210,7 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
 
   const { data: wsRows, error: wsError } = await supabase
     .from("workspaces")
-    .select("id, account_id, domain, status, auto_approve, auto_approve_hold_hours, auto_approve_min_seo, auto_approve_min_aeo, auto_approve_set_by")
+    .select("id, account_id, domain, language, status, auto_approve, auto_approve_hold_hours, auto_approve_min_seo, auto_approve_min_aeo, auto_approve_set_by")
     .eq("auto_approve", true)
     .eq("status", "on");
   if (wsError) throw new Error(`auto-approve: workspaces: ${wsError.message}`);
@@ -224,22 +264,26 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
     for (const article of articles as ArticleRow[]) {
       try {
         const html = article.content ? tiptapToHtml(article.content) : "";
-        const report = html ? factCheckArticle(html, article.research ?? undefined) : null;
+        const report = html ? factCheckArticle(html, article.research ?? undefined, ws.language) : null;
         if (report) {
           await supabase
             .from("articles")
             .update({ fact_checks: report, fact_check_verdict: report.verdict })
             .eq("id", article.id);
         }
+        // Audited as it will publish: the publisher takes the title's <h1>
+        // out of the body (lib/content/on-page.ts), and the title is the H1.
         const audit = html
           ? auditArticle({
-              html,
+              html: removeTitleHeading(html, article.title).html,
               keyword: article.keyword ?? "",
               siteDomain: ws.domain,
               title: article.title,
               metaDescription: article.meta_description,
               slug: article.slug,
               featuredImageUrl: article.featured_image_url,
+              language: ws.language,
+              titleIsPageH1: true,
             })
           : null;
 
@@ -247,11 +291,12 @@ export async function runAutoApprovals(supabase: SupabaseClient, now: Date): Pro
           ws,
           {
             ...article,
-            factCheckBlocker: report ? approvalBlocker(report) : "draft has no content",
+            factCheckBlocker: report ? autoApprovalBlocker(report) : "draft has no content",
             auditFailures: audit ? audit.items.filter((i) => i.status === "fail").map((i) => i.label) : [],
             needsPlan,
             hasDestination,
             ruleOwnerIsMember,
+            reviewerToConfirm: reviewerNamedIn(html, article.research),
           },
           now,
         );

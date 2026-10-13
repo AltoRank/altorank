@@ -112,7 +112,8 @@ async function main(): Promise<void> {
   console.log(`  meta         ${result.metaDescription.slice(0, 90)}`);
 
   heading("5. Fact check");
-  const fc = factCheckArticle(result.html, research);
+  // The smoke run writes in English (see the prompt above).
+  const fc = factCheckArticle(result.html, research, "en");
   console.log(`  verdict: ${fc.verdict} — ${fc.summary}`);
   for (const c of fc.claims.slice(0, 10)) {
     console.log(`    ${c.severity.padEnd(6)} ${c.status.padEnd(19)} "${c.text}"`);

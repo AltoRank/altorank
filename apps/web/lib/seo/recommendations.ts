@@ -1,9 +1,14 @@
-import { readOpportunity, contextKey, serpOverlap, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
+import { readAllPages } from "@/lib/supabase/read-all";
+import { readOpportunity, contextKey, duplicateVerdict, OPPORTUNITY_VERSION, type FirstLook, type Opportunity, type OpportunityCause } from "@/lib/keyword-research/opportunity";
+import { rivalNamed } from "@/lib/keyword-research/results-page";
+import { clusterByIntent, intentKey, intentLanguage, sameIntent, storedSerp, unfoldedNote, type IntentFollower, type IntentStage, type StagedTopic } from "@/lib/keyword-research/intent";
+import { articleStage, leadersFrom, type IntentLeader, type KeywordRow, type OnCalendar } from "@/lib/keyword-research/intent-leaders";
 import { ensureBusinessProfile } from "@/lib/keyword-research/business-context";
 import { causeLabel } from "@/lib/keyword-research/opportunity";
 import { funnelOf, type FitVerdict, type Funnel } from "@/lib/keyword-research/buyer-fit";
-import { isParked, isParkedForGood, isRequalifiable, queueTarget, refillQualifiedQueue, type QueueRow } from "@/lib/keyword-research/queue";
+import { isJudgeable, isParked, isParkedForGood, isRequalifiable, parkKeywords, queueTarget, refillQualifiedQueue, RefillRefusedError, type QueueRow } from "@/lib/keyword-research/queue";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
+import { pageReadsOf, stageOfVerdict, tallyFunnel, type FunnelOutcome, type FunnelStage, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 // ---------------------------------------------------------------------------
 // What to write next
 // ---------------------------------------------------------------------------
@@ -31,6 +36,7 @@ import { languageCodeOf } from "@/lib/keyword-research/locale";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { KeywordIntent } from "@/lib/types";
+import { readGsc } from "@/lib/gsc/read";
 import { scoreRelevance, subjectVocabulary, type TopicalProfile } from "./topical-profile";
 import { commercialFit } from "./commercial-fit";
 import { relativeDifficulty, isOutOfReach } from "./difficulty";
@@ -79,6 +85,18 @@ export interface KeywordRecommendation {
   opportunity?: Opportunity;
   /** "audience" for a top-of-funnel topic; null when no buyer verdict is saved. */
   funnel: Funnel | null;
+  /**
+   * "unmeasured": no provider volume, no impressions, no position, and kept
+   * by the buyer test. Judged and plannable, never ranked above a measured
+   * row (`demandFirst`), and labelled so wherever it is shown.
+   */
+  demand?: "unmeasured";
+  /**
+   * The free gate that first took this row off "write", for the run's funnel
+   * (lib/keyword-research/topic-funnel.ts). Descriptive only: the action and
+   * the reasons are what every caller acts on.
+   */
+  skippedBy?: FunnelStage;
 }
 
 /**
@@ -206,76 +224,9 @@ export function assessKeywordQuality(
 
 const GSC_LOOKBACK_DAYS = 90;
 
-/** Words that carry no targeting signal, so two terms differing only by these are one target. */
-const STOPWORDS = new Set([
-  "a", "an", "the", "for", "and", "or", "of", "to", "in", "on", "with", "is", "are", "my", "your",
-  // "website about design" and "website design" are one results page.
-  // qasimcode.com was given both, and both were scheduled.
-  "about",
-]);
-
-/**
- * Collapse a keyword to the target it actually competes for.
- *
- * "agency seo", "agency for seo" and "seo for agencies" are one query with one
- * set of results. Deduping on the raw string treats them as three, and an
- * unattended run will happily write all three, splitting the ranking across
- * pages that cannibalise each other. That is worse than writing nothing: it
- * spends budget to compete with yourself.
- *
- * Caught in a live run, where the cron wrote "agency seo" and then "agency for
- * seo" on consecutive firings.
- *
- * Deliberately crude. Real stemming would need a dictionary per language and
- * this has to work across 36 locales; dropping stopwords, folding common plural
- * endings and sorting catches the overwhelmingly common case, which is word
- * order and connecting words.
- */
 /** "/alternatives/rankingcoach/" for a full URL; the URL itself when it will not parse. */
 function pathOf(url: string): string {
   try { return new URL(url).pathname || "/"; } catch { return url; }
-}
-
-export function normalizeTarget(term: string): string {
-  return term
-    .toLowerCase()
-    .split(/[^\p{L}\p{N}]+/u)
-    .filter((t) => t && !STOPWORDS.has(t))
-    .map((t) =>
-      t.endsWith("ies") && t.length > 4
-        ? `${t.slice(0, -3)}y`
-        : t.endsWith("es") && t.length > 4
-          ? t.slice(0, -2)
-          : t.endsWith("s") && !t.endsWith("ss") && t.length > 3
-            ? t.slice(0, -1)
-            : t,
-    )
-    // Agent and verbal-noun endings, after the plural fold so "writers" has
-    // already become "writer": "content writing" and "content writer" are one
-    // results page, and the queue planned both (2026-09-04). The stem must
-    // keep at least four letters, or "user" is "us" and "thing" is "th".
-    .map((t) =>
-      t.endsWith("ing") && t.length > 6
-        ? t.slice(0, -3)
-        : t.endsWith("er") && t.length > 5
-          ? t.slice(0, -2)
-          : t,
-    )
-    // A silent final "e", after the folds above so they have already run.
-    // Without it the folds only half-work and the halves never meet:
-    // "websites" folded to "websit" while "website" stayed "website", and
-    // "creating" folded to "creat" while "create" stayed "create". So
-    // qasimcode.com kept "website design" and "website design websites" as two
-    // targets, and "create business websites" and "creating business websites"
-    // as two more - four calendar slots for two queries.
-    .map((t) => (t.endsWith("e") && t.length > 4 ? t.slice(0, -1) : t))
-    // One target, not one target per repetition. "business ideas for small
-    // businesses" folds to business/idea/small/business, which is the same
-    // query as "idea for small businesses" said twice; both were stored, both
-    // were scheduled.
-    .filter((t, i, all) => all.indexOf(t) === i)
-    .sort()
-    .join(" ");
 }
 
 /**
@@ -434,20 +385,60 @@ const SINGLE_WORD_PENALTY = 0.5;
  */
 const AUDIENCE_BOOST = 1.75;
 
+/**
+ * The rows of a read the duplicate-intent rule depends on, or a throw naming
+ * the table. A rejected promise and a PostgREST error are both a read that did
+ * not happen, and an empty list in their place is a leader nobody checks.
+ */
+function leaderRows<T>(res: PromiseSettledResult<unknown[]>, table: string): T[] {
+  if (res.status === "rejected") {
+    throw new Error(`recommendations: could not read ${table} (${res.reason instanceof Error ? res.reason.message : String(res.reason)})`);
+  }
+  return res.value as T[];
+}
+
 export async function recommendKeywords(
   supabase: SupabaseClient,
   workspaceId: string,
-  options?: { limit?: number; qualify?: boolean; qualifyBatches?: number },
+  options?: {
+    limit?: number;
+    qualify?: boolean;
+    qualifyBatches?: number;
+    /**
+     * A first look (lib/onboarding/pipeline.ts): approvals are asked twice,
+     * qualification stops before the run's spend ceiling, and the floor may
+     * fill the plan to PLAN_FLOOR. Nothing else passes it: the nightly passes
+     * and the planner's top-up plan only what cleared the bar.
+     */
+    firstLook?: FirstLook;
+    /**
+     * Handed where every keyword read went, once this pass has decided
+     * (lib/keyword-research/topic-funnel.ts), with the ids of the rows it
+     * counted as qualified so a planner can say where each one went. Also
+     * called just before a spend refusal is thrown: the verdicts gathered
+     * until the refusal are counted as they are, the rows still waiting for
+     * one as `spend_refused`.
+     */
+    onFunnel?: (funnel: TopicFunnel, qualifiedIds: ReadonlySet<string>) => void;
+  },
 ): Promise<KeywordRecommendation[]> {
   const limit = options?.limit ?? 25;
 
-  const { data: keywords, error } = await supabase
-    .from("keywords")
-    .select("id, term, volume, difficulty, intent, status, source, source_type, source_ref, source_url, opportunity, buyer_fit, plan_excluded_at")
-    .eq("workspace_id", workspaceId);
-
-  if (error) throw new Error(`Could not read keywords: ${error.message}`);
-  if (!keywords?.length) return [];
+  // Every keyword, paged (lib/supabase/read-all.ts): the server stops at
+  // 1,000 rows without saying so, and the rest were neither scored nor
+  // compared as leaders.
+  const keywords = await readAllPages<Record<string, unknown>>("recommendations: reading keywords", (from, to, count) =>
+    supabase
+      .from("keywords")
+      .select(
+        "id, term, volume, difficulty, intent, status, source, source_type, source_ref, source_url, opportunity, buyer_fit, plan_excluded_at",
+        { count },
+      )
+      .eq("workspace_id", workspaceId)
+      .order("id")
+      .range(from, to),
+  );
+  if (!keywords.length) return [];
 
   // What this business is actually about. Without it, scoring optimises volume
   // and difficulty alone and will happily recommend a keyword from a completely
@@ -468,63 +459,116 @@ export async function recommendKeywords(
     description?: string | null;
     audiences?: string[] | null;
     competitors?: string[] | null;
+    searchRivals?: string[] | null;
   } | null;
   const subject = subjectVocabulary(business, profile);
+  // The businesses a phrase may name: an unmeasured phrase naming one is a
+  // model's idea of a comparison search, not a measured one (below).
+  const rivals = [...(business?.competitors ?? []), ...(business?.searchRivals ?? [])].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  // Markets where the keyword provider's index is thin enough that a real
+  // search often has no volume row: every market but the two it covers best.
+  const thinMarket = ![2840, 2826].includes((workspace?.location_code as number | null | undefined) ?? 2840);
   // Null when never measured, which relativeDifficulty treats as "do not
   // judge" rather than "zero authority".
   const authority = (workspace?.dr as number | null) ?? null;
 
   const keywordIds = keywords.map((k) => k.id as string);
   const allTerms = new Set(keywords.map((k) => (k.term as string).trim().toLowerCase()));
+  // The language the keywords are searched in, for telling two phrasings of
+  // one search apart (lib/keyword-research/intent.ts).
+  const language = intentLanguage(workspace?.language as string | null | undefined);
 
   // --- Signals ------------------------------------------------------------
-  // Each of these is optional: a workspace with no rank history and no Search
-  // Console still gets a usable queue from volume, difficulty and intent alone.
+  // Rankings and Search Console are optional: a workspace with no rank
+  // history and no Search Console still gets a usable queue from volume,
+  // difficulty and intent alone, so a failed read of either is a missing
+  // signal. Articles, site pages and calendar entries are not signals. They
+  // are the leaders the duplicate-intent rule checks every candidate against
+  // (lib/keyword-research/intent-leaders.ts), and this function both parks
+  // topics and picks the next draft from the crons, the onboarding pipeline
+  // and the plan top-up. A failed read of one of them used to become an empty
+  // list, and the next draft was a search the site already had an article
+  // or a page for, with nothing in the log. So those three throw, naming the
+  // table, the rule `readIntentLeaders` already follows.
 
-  const [rankRes, articleRes, gscRes, pagesRes] = await Promise.allSettled([
-    supabase
-      .from("keyword_rankings")
-      .select("keyword_id, position, checked_at")
-      .in("keyword_id", keywordIds)
-      .order("checked_at", { ascending: false }),
-    supabase
-      .from("articles")
-      .select("id, keyword")
-      .eq("workspace_id", workspaceId)
-      .not("keyword", "is", null),
-    supabase
-      .from("analytics_metrics")
-      .select("query, impressions")
-      .eq("workspace_id", workspaceId)
-      .eq("source", "gsc")
-      .gte(
-        "metric_date",
-        new Date(Date.now() - GSC_LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10),
-      )
-      .not("query", "is", null)
-      // Query-only rows. Search Console is also stored as query+page rows
-      // (lib/gsc/rows.ts), and reading those here counted every impression
-      // twice and, worse, turned "Google once showed the homepage for this"
-      // into "a page of yours already targets this" - which skipped exactly
-      // the striking-distance rows the scorer multiplies by 2.5 (altorank.co,
-      // 2026-09-22). The seeder guards the same way (lib/gsc/seed.ts).
-      .is("page_url", null),
+  // The two signals are paged too (rankings by readAllPages, Search Console by
+  // readGsc), and read only over the lookback:
+  // capped at the first thousand rows they were an arbitrary thousand (no
+  // unique order), so on a site with more Search Console rows or rank checks
+  // than that the "proven demand" boost and the latest position were read
+  // off whichever page came back first (round-5 review, 1,100 rows seeded:
+  // 1,000 read). Ordered with `id` last, so a page boundary cannot repeat or
+  // drop a row. Rank checks run nightly, so the window keeps the read to a
+  // bounded number of pages rather than every check a keyword ever had; a
+  // position older than the window is not this keyword's latest standing.
+  const lookbackStart = new Date(Date.now() - GSC_LOOKBACK_DAYS * 86_400_000);
+  const [rankRes, articleRes, gscRes, pagesRes, entriesRes] = await Promise.allSettled([
+    readAllPages("rank history", (from, to, count) =>
+      supabase
+        .from("keyword_rankings")
+        .select("keyword_id, position, checked_at", { count })
+        .in("keyword_id", keywordIds)
+        .gte("checked_at", lookbackStart.toISOString())
+        .order("checked_at", { ascending: false })
+        .order("id")
+        .range(from, to),
+    ),
+    // The leaders, paged like `readIntentLeaders`: a site past 1,000 of any
+    // of them compared its candidates against the first thousand.
+    readAllPages("articles", (from, to, count) =>
+      supabase
+        .from("articles")
+        .select("id, keyword, keyword_id, status", { count })
+        .eq("workspace_id", workspaceId)
+        .not("keyword", "is", null)
+        .order("id")
+        .range(from, to),
+    ),
+    // Query rows only, all of them over the lookback (lib/gsc/read.ts pages
+    // past the 1,000-row cap by the count Postgres reports). Search Console is
+    // also stored as query+page rows (lib/gsc/rows.ts), and reading those here
+    // counted every impression twice and, worse, turned "Google once showed
+    // the homepage for this" into "a page of yours already targets this" -
+    // which skipped exactly the striking-distance rows the scorer multiplies
+    // by 2.5 (a real workspace, 2026-09-22). The seeder reads the same
+    // partition (lib/gsc/seed.ts).
+    readGsc(supabase, {
+      workspaceId,
+      shapes: ["query"],
+      since: lookbackStart.toISOString().slice(0, 10),
+      columns: ["impressions"],
+    }),
     // The site's own pages and the query each one targets (lib/seo/site-crawl.ts
     // fills `keyword` from the heading or from a ranking). An article written
     // for a query one of these pages already holds is a second page on one
     // query: altorank.co drafted "rankingcoach alternative" while
     // /alternatives/rankingcoach/ sat at position 28 for it (2026-09-18).
-    supabase
-      .from("site_pages")
-      .select("url, keyword")
-      .eq("workspace_id", workspaceId)
-      .not("keyword", "is", null),
+    readAllPages("site pages", (from, to, count) =>
+      supabase
+        .from("site_pages")
+        .select("url, keyword", { count })
+        .eq("workspace_id", workspaceId)
+        .not("keyword", "is", null)
+        .order("id")
+        .range(from, to),
+    ),
+    // When each planned keyword is due: of two planned phrasings of one
+    // search, the one due first is the one kept.
+    readAllPages("calendar entries", (from, to, count) =>
+      supabase
+        .from("calendar_entries")
+        .select("keyword_id, scheduled_date", { count })
+        .eq("workspace_id", workspaceId)
+        .in("status", ["queue", "scheduled"])
+        .order("id")
+        .range(from, to),
+    ),
   ]);
 
   // Most recent position per keyword; the query is already newest-first.
   const latestPosition = new Map<string, number>();
   if (rankRes.status === "fulfilled") {
-    for (const row of (rankRes.value.data ?? []) as Array<{
+    for (const row of rankRes.value as Array<{
       keyword_id: string;
       position: number | null;
     }>) {
@@ -535,16 +579,13 @@ export async function recommendKeywords(
     }
   }
 
-  // Keyed by normalised target, so an article about "agency seo" is also found
-  // when scoring "agency for seo".
-  const articleByTerm = new Map<string, string>();
-  if (articleRes.status === "fulfilled") {
-    for (const a of (articleRes.value.data ?? []) as Array<{
-      id: string;
-      keyword: string | null;
-    }>) {
-      if (a.keyword) articleByTerm.set(normalizeTarget(a.keyword), a.id);
-    }
+  // Keyed by the words a keyword competes on, so an article about "agency
+  // seo" is also found when scoring "agency for seo".
+  type ArticleRow = { id: string; keyword: string | null; keyword_id: string | null; status: string | null };
+  const articleRows = leaderRows<ArticleRow>(articleRes, "articles");
+  const articleByTerm = new Map<string, ArticleRow>();
+  for (const a of articleRows) {
+    if (a.keyword) articleByTerm.set(intentKey(a.keyword, language), a);
   }
 
   // The page on this site that targets a query: a crawled page whose keyword
@@ -552,19 +593,17 @@ export async function recommendKeywords(
   // phrasings meet. Not the page Search Console shows for the query: that is
   // where Google happened to land an impression, and for a term at position
   // 34 it is usually the homepage - a page that targets nothing.
+  const pageRows = leaderRows<{ url: string; keyword: string | null }>(pagesRes, "site_pages");
   const pageByTarget = new Map<string, string>();
-  if (pagesRes.status === "fulfilled") {
-    for (const p of (pagesRes.value.data ?? []) as Array<{ url: string; keyword: string | null }>) {
-      if (p.keyword && p.url) pageByTarget.set(normalizeTarget(p.keyword), p.url);
-    }
+  for (const p of pageRows) {
+    if (p.keyword && p.url) pageByTarget.set(intentKey(p.keyword, language), p.url);
   }
+
+  const entryRows = leaderRows<{ keyword_id: string | null; scheduled_date: string | null }>(entriesRes, "calendar_entries");
 
   const impressionsByTerm = new Map<string, number>();
   if (gscRes.status === "fulfilled") {
-    for (const row of (gscRes.value.data ?? []) as Array<{
-      query: string | null;
-      impressions: number | null;
-    }>) {
+    for (const row of gscRes.value.query) {
       if (!row.query) continue;
       const key = row.query.toLowerCase().trim();
       impressionsByTerm.set(key, (impressionsByTerm.get(key) ?? 0) + (row.impressions ?? 0));
@@ -595,8 +634,8 @@ export async function recommendKeywords(
     const intent: KeywordIntent = labelled === "navigational" && kept ? (kept === "buyer" ? "commercial" : "info") : labelled;
 
     const position = latestPosition.get(k.id as string) ?? null;
-    const existingArticleId = articleByTerm.get(normalizeTarget(term)) ?? null;
-    const existingPageUrl = pageByTarget.get(normalizeTarget(term)) ?? null;
+    const existingArticleId = articleByTerm.get(intentKey(term, language))?.id ?? null;
+    const existingPageUrl = pageByTarget.get(intentKey(term, language)) ?? null;
     const impressions = impressionsByTerm.get(term) ?? null;
 
     const reasons: string[] = [];
@@ -631,14 +670,18 @@ export async function recommendKeywords(
     }
 
     let action: RecommendedAction = "write";
+    // The first gate that takes the row off "write", for the funnel.
+    let skippedBy: FunnelStage | undefined;
 
     const band = positionBand(position, impressions);
     if (band === "won") {
       action = "skip";
+      skippedBy = "covered";
       score *= 0.15;
       reasons.push(`already ranking at position ${position}, leave it alone`);
     } else if (band === "striking") {
       action = existingArticleId ? "refresh" : "write";
+      if (existingArticleId) skippedBy = "covered";
       score *= 2.5;
       reasons.push(
         position! <= STRIKING_MAX
@@ -654,12 +697,14 @@ export async function recommendKeywords(
       // Writing a second article for a term we already cover splits the ranking
       // between two pages instead of concentrating it on one.
       action = "refresh";
+      skippedBy ??= "covered";
       score *= 0.8;
       reasons.push("an article already targets this, refresh rather than duplicate");
     } else if (existingPageUrl && !existingArticleId && (action === "write" || action === "refresh")) {
       // A page this product did not write and cannot revise. The honest
       // answer is the page, not a competing post: say which one.
       action = "skip";
+      skippedBy ??= "covered";
       reasons.push(`your page ${pathOf(existingPageUrl)} already targets this; update that page rather than add a second one`);
     }
 
@@ -766,7 +811,7 @@ export async function recommendKeywords(
     // still be one it should not be writing more about.
     const fit = commercialFit(k.term as string, subject, business?.description ?? null);
     if (fit.fit === "absence") {
-      if (action === "write") action = "skip";
+      if (action === "write") { action = "skip"; skippedBy = "off_topic"; }
       score *= 0.1;
       reasons.push(fit.reason);
     } else if (fit.fit === "substitute") {
@@ -782,14 +827,38 @@ export async function recommendKeywords(
     // three is a model's idea of what buyers type: fitsuite.co's first plan
     // (2026-09-19) was four such phrases and one keyword anyone searches.
     // Refused here, before qualification, so no results page is bought for it.
+    //
+    // Unmeasured is not measured-zero. A phrase the provider has no row for
+    // (volume null) that the buyer test kept goes on to the judge, labelled
+    // "unmeasured" (founder decision 2026-09-29, amending "unmeasured never
+    // planned" for small markets): in a small city or a Turkish market the
+    // index simply does not know most of what a small business's buyers
+    // type, and the skip removed 21 of 31 kept terms before any judge ran.
+    // It never outranks a measured topic: every ordering below puts measured
+    // first (`demandFirst`), and the label follows it onto the screen.
+    //
+    // Not every unmeasured phrase (review, 2026-09-30): only in a market the
+    // provider covers thinly (not the US or the UK, where no volume row means
+    // nobody searches it), and never a phrase naming a rival. "<rival>
+    // alternative(s)" is made up from the rival's name (lib/keyword-research/
+    // alternative-seeds.ts), and unmeasured it is exactly the model's guess
+    // this skip was written for; two first looks planned both phrasings of
+    // one such guess as two of five slots.
     const measuredDemand = (volume ?? 0) > 0 || (impressions ?? 0) > 0 || position !== null;
+    const unmeasured = !measuredDemand && volume === null && kept !== null && thinMarket && !rivalNamed(term, rivals);
     if (action === "write" && !measuredDemand) {
-      action = "skip";
-      reasons.push("no measured demand: no search volume, no impressions, no ranking");
+      if (unmeasured) {
+        reasons.push("unmeasured: no provider reports searches for it and the site has no impressions or position; judged, and ranked below every measured topic");
+      } else {
+        action = "skip";
+        skippedBy = "no_demand";
+        reasons.push("no measured demand: no search volume, no impressions, no ranking");
+      }
     }
 
     if (action === "write" && !proven && isOutOfReach(difficulty, authority)) {
       action = "skip";
+      skippedBy = "out_of_reach";
       reasons.push(
         authority === null
           ? `difficulty ${difficulty} is out of reach for any site without existing authority`
@@ -830,34 +899,151 @@ export async function recommendKeywords(
       funnel,
       quality,
       qualityNote: note,
+      ...(skippedBy ? { skippedBy } : {}),
+      ...(unmeasured ? { demand: "unmeasured" as const } : {}),
     };
   });
 
-  // Collapse variants of one target to their best-scoring representative.
-  // Without this the queue shows "agency seo", "agency for seo" and "seo for
-  // accounts" as three separate opportunities worth 27,100 searches each, which
-  // triple-counts a single one.
-  const byTarget = new Map<string, KeywordRecommendation>();
-  for (const rec of recommendations.sort((a, b) => b.score - a.score)) {
-    const target = normalizeTarget(rec.term);
-    const held = byTarget.get(target);
-    if (!held) {
-      byTarget.set(target, rec);
-    } else if (!held.reasons.some((r) => r.startsWith("also covers"))) {
-      held.reasons.push(`also covers "${rec.term}" and other phrasings of the same query`);
-    }
-  }
-
-  const sorted = [...byTarget.values()];
+  // --- One article per search ------------------------------------------
+  // Every keyword row, and every article and page the site already has, goes
+  // through one clustering pass (lib/keyword-research/intent.ts): the same
+  // results page where both were bought, the same words otherwise. A cluster
+  // is led by whatever is furthest along - live, drafted, on the calendar and
+  // still to be written - then by the date it is due, then by what can still
+  // be written, then by score.
+  //
+  //   led by a candidate   the followers are phrasings of one query. They
+  //                        leave the list, and the leader says it covers them:
+  //                        "agency seo", "agency for seo" and "seo for
+  //                        agencies" were three rows worth 27,100 searches
+  //                        each, one query triple-counted.
+  //   led by something     the search is taken. The follower stays on the
+  //   already written      list as a skip with the owner named, and a
+  //   or scheduled         qualifying caller parks it, so it is not judged or
+  //                        planned again: a real signup (2026-09-22) had one
+  //                        Turkish search drafted, queued for the next day and
+  //                        held for the trial under three spellings.
+  //
+  // A row parked for good owns nothing and joins nothing: it is out of the
+  // plan, and a refused phrasing must not swallow the one that would pass.
+  //
+  // Nor does a planned row this pass will not write. The calendar is a
+  // promise, and one the recommender has refused, or that has no current
+  // approval (nothing judges a planned row again), is not kept: led by it, a
+  // writable phrasing of its search was parked as "on the calendar" while the
+  // cron overruled the calendar entry itself, and the search was lost until a
+  // person noticed. Such a row is ranked as a candidate that cannot be
+  // written, so any phrasing that can leads its search, and once that one is
+  // approved the planned row is taken off the calendar.
+  const rowOf = new Map(keywords.map((k) => [k.id as string, k as unknown as QueueRow]));
+  const recOf = new Map(recommendations.map((r) => [r.keywordId, r]));
   // A qualifying caller is about to spend on verdicts, and a verdict needs a
   // profile to judge against. A workspace older than the wizard has none;
   // read the site for one now, once, rather than stamping every term
   // "pending" for want of a column (lib/keyword-research/business-context.ts).
+  // Read before the clustering, which needs to know what is approved.
   const ensured = options?.qualify
     ? await ensureBusinessProfile(supabase, workspaceId, workspace?.domain, business)
     : { business, inferred: false, missing: null };
   const context = { business: ensured.business, domain: workspace?.domain ?? "", languageCode: languageCodeOf(workspace?.language), locationCode: workspace?.location_code ?? 2840 };
   const fingerprint = contextKey(context);
+  const current = (id: string) => readOpportunity(rowOf.get(id)?.opportunity, fingerprint);
+  const writable = (r: KeywordRecommendation) => r.action === "write" && r.quality === "ok";
+  // A planned row still to be written: writable today and approved under
+  // today's profile. Its stored verdict is the whole answer; the refill does
+  // not buy a planned row a new one (lib/keyword-research/queue.ts).
+  const onCalendar: OnCalendar = (row) => {
+    const rec = recOf.get(row.id);
+    return Boolean(rec && writable(rec) && current(row.id)?.status === "qualified");
+  };
+  // What can still be written, known before anything is bought: approved, or
+  // not refused and a row the refill will judge.
+  const mayBeWritten = (r: KeywordRecommendation) => {
+    if (!writable(r)) return false;
+    const o = current(r.keywordId);
+    const row = rowOf.get(r.keywordId);
+    return o?.status === "qualified" || (o?.status !== "rejected" && Boolean(row && isJudgeable(row)));
+  };
+
+  type Topic = StagedTopic & { rec?: KeywordRecommendation; owner?: IntentLeader };
+  const leaders = leadersFrom({
+    keywords: keywords as unknown as KeywordRow[],
+    articles: articleRows,
+    pages: pageRows,
+    entries: entryRows,
+  }, onCalendar);
+  const articleById = new Map(articleRows.map((a) => [a.id, a]));
+  const inFlight = new Map(leaders.filter((l) => l.kind === "keyword" && l.keywordId).map((l) => [l.keywordId as string, l]));
+  const STAGES: IntentStage[] = ["candidate", "scheduled", "drafted", "live"];
+  const further = (a: IntentStage, b: IntentStage | null): IntentStage => (b && STAGES.indexOf(b) > STAGES.indexOf(a) ? b : a);
+  const topics: Topic[] = [];
+  // Best score first, but a phrasing that can be written ahead of one that
+  // cannot: a search is not given up because its highest-volume spelling is
+  // provider noise, out of reach, refused, or a calendar entry nobody will
+  // write.
+  const standing = (r: KeywordRecommendation) => (mayBeWritten(r) ? 0 : 1);
+  recommendations.sort(demandFirst);
+  for (const rec of [...recommendations].sort((a, b) => standing(a) - standing(b))) {
+    const row = rowOf.get(rec.keywordId);
+    if (row && isParkedForGood(row)) continue;
+    // In flight on its own row, or covered by an article or a page found by
+    // its words: either way the search is already taken.
+    const covering = rec.existingArticleId ? articleById.get(rec.existingArticleId) : undefined;
+    const own = inFlight.get(rec.keywordId);
+    let stage: IntentStage = own?.stage ?? "candidate";
+    stage = further(stage, covering ? articleStage(covering.status) : null);
+    stage = further(stage, rec.existingPageUrl ? "live" : null);
+    topics.push({ term: rec.term, organicUrls: storedSerp(row?.opportunity), stage, date: own?.date ?? null, rec });
+  }
+  // Articles and pages with no keyword row of their own lead too; in-flight
+  // rows are already in the list above, as recommendations.
+  for (const owner of leaders) if (owner.kind !== "keyword") topics.push({ ...owner, owner });
+  const followers = clusterByIntent(topics, language);
+  const dropped = new Set<KeywordRecommendation>();
+  const taken: Array<{ rec: KeywordRecommendation; stage: IntentStage; follow: IntentFollower<Topic> }> = [];
+  // Planned rows that will not be written, behind a phrasing of their search
+  // that may be. Settled after the evidence pass, when it is known whether
+  // that phrasing is approved.
+  const displaced: Array<{ rec: KeywordRecommendation; follow: IntentFollower<Topic> }> = [];
+  for (const [topic, follow] of followers) {
+    const rec = topic.rec;
+    if (!rec) continue;
+    const leader = follow.leader;
+    if (leader.stage === "candidate" && leader.rec) {
+      dropped.add(rec);
+      if (!leader.rec.reasons.some((r) => r.startsWith("also covers"))) {
+        leader.rec.reasons.push(`also covers "${rec.term}" and other phrasings of the same query`);
+      }
+      if (rowOf.get(rec.keywordId)?.status === "planned" && mayBeWritten(leader.rec)) displaced.push({ rec, follow });
+      continue;
+    }
+    taken.push({ rec, stage: topic.stage, follow });
+  }
+  const sorted = recommendations.filter((rec) => !dropped.has(rec));
+  const baseVerdict = (row: QueueRow | undefined): Opportunity => ({
+    ...(row?.opportunity && typeof row.opportunity === "object" ? row.opportunity as Opportunity : { reason: "" } as Opportunity),
+    version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString(),
+  });
+
+  // The searches already taken. Said on the row either way; parked, after
+  // the evidence pass below, when this caller is about to plan or write,
+  // exactly as a refused verdict is.
+  const toPark: Array<{ id: string; verdict: Opportunity }> = [];
+  for (const { rec, stage, follow } of taken) {
+    const leader = follow.leader;
+    const row = rowOf.get(rec.keywordId);
+    const verdict = duplicateVerdict(
+      baseVerdict(row),
+      { term: leader.term, keywordId: leader.rec?.keywordId ?? leader.owner?.keywordId ?? null, stage: leader.stage },
+      follow.match,
+    );
+    rec.reasons.unshift(verdict.reason);
+    // Something already written stays written; the reason is all it gets.
+    if (stage === "drafted" || stage === "live") continue;
+    if (rec.action === "write") { rec.action = "skip"; rec.skippedBy = "duplicate"; }
+    rec.opportunity = verdict;
+    if (row && !isParkedForGood(row)) toPark.push({ id: rec.keywordId, verdict });
+  }
   // Only explicit scheduling/generation requests buy fresh evidence. List pages
   // consume saved briefs without triggering provider work during rendering.
   //
@@ -865,7 +1051,6 @@ export async function recommendKeywords(
   // a person. Parked by a person: where they put it. Parked for want of a
   // verdict (the pre-qualification sweep): a candidate again, judged when the
   // queue needs topics (lib/keyword-research/queue.ts).
-  const rowOf = new Map(keywords.map((k) => [k.id as string, k as unknown as QueueRow]));
   const eligible = sorted.filter((rec) => rec.action === "write" && rec.quality === "ok");
   for (const rec of eligible) {
     const row = rowOf.get(rec.keywordId);
@@ -877,39 +1062,230 @@ export async function recommendKeywords(
   }
   const candidateRows = eligible
     .filter((rec) => rec.action === "write")
-    .map((rec) => ({ ...rowOf.get(rec.keywordId)!, id: rec.keywordId, term: rec.term }));
-  const evidence: Map<string, Opportunity> = options?.qualify
-    ? ensured.missing
-      // Nothing to judge against and nothing bought: every eligible term
-      // carries the same verdict in memory, and the log can say why.
-      ? new Map<string, Opportunity>(candidateRows.map((row) => [row.id, {
-          version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString(),
-          status: "pending", cause: "no_profile", reason: `Topic qualification is blocked: ${ensured.missing}.`,
-        }]))
-      // Buy verdicts for the best candidates only until the queue holds
-      // what the pace will use; a rejection parks the row as it goes.
-      : (await refillQualifiedQueue(supabase, workspaceId, candidateRows, context, {
-          target: queueTarget(workspace?.auto_generate_weekly_limit as number | null | undefined),
-          ...(options.qualifyBatches ? { maxBatches: options.qualifyBatches } : {}),
-        })).verdicts
-    : new Map(candidateRows.flatMap((row) => { const o = readOpportunity(row.opportunity, fingerprint); return o ? [[row.id, o] as const] : []; }));
+    .map((rec) => ({ ...rowOf.get(rec.keywordId)!, id: rec.keywordId, term: rec.term, ...(rec.demand ? { unmeasured: true } : {}) }));
+  // Where every row went, for the caller's funnel: the first stage, in the
+  // order this pass applies them, that set it aside (see
+  // lib/keyword-research/topic-funnel.ts). Read from this pass's own
+  // decisions; changes none of them.
+  const funnelOutcome = (rec: KeywordRecommendation, verdicts: ReadonlyMap<string, Opportunity>, refused: boolean): FunnelOutcome => {
+    const row = rowOf.get(rec.keywordId);
+    if (row && isParkedForGood(row)) {
+      const cause = (row.opportunity as { cause?: OpportunityCause } | null)?.cause;
+      return cause ? stageOfVerdict({ status: "rejected", cause }) : "removed_by_person";
+    }
+    if (dropped.has(rec)) return "duplicate";
+    if (rec.skippedBy) return rec.skippedBy;
+    if (rec.quality !== "ok") return "quality";
+    const o = verdicts.get(rec.keywordId);
+    if (o) return stageOfVerdict(o);
+    return refused ? "spend_refused" : "not_judged";
+  };
+  const reportFunnel = (verdicts: ReadonlyMap<string, Opportunity>, refused: boolean, judged?: number) => {
+    if (!options?.onFunnel) return;
+    const outcomes = recommendations.map((rec) => ({ id: rec.keywordId, outcome: funnelOutcome(rec, verdicts, refused) }));
+    const qualifiedIds = new Set(outcomes.filter((o) => o.outcome === "qualified").map((o) => o.id));
+    // Of the qualified, how many the floor planned and how many carry no
+    // measured demand: labels on the count, not stages of their own.
+    const labelled = (test: (o: Opportunity | undefined, rec: KeywordRecommendation | undefined) => boolean) =>
+      [...qualifiedIds].filter((id) => test(verdicts.get(id), recOf.get(id))).length;
+    const lowerConfidence = labelled((o) => o?.confidence === "lower");
+    const unmeasured = labelled((o, rec) => o?.demand === "unmeasured" || rec?.demand === "unmeasured");
+    // What each judged results page was, counts only (the page-type rule).
+    const pages = pageReadsOf(recommendations.flatMap((rec) => { const o = verdicts.get(rec.keywordId); return o ? [o] : []; }));
+    options.onFunnel(tallyFunnel(outcomes.map((o) => o.outcome), {
+      ...pages,
+      ...(judged === undefined ? {} : { judged }),
+      ...(lowerConfidence ? { lowerConfidence } : {}),
+      ...(unmeasured ? { unmeasured } : {}),
+    }), qualifiedIds);
+  };
+
+  let evidence: Map<string, Opportunity>;
+  let judged: number | undefined;
+  if (!options?.qualify) {
+    evidence = new Map(candidateRows.flatMap((row) => { const o = readOpportunity(row.opportunity, fingerprint); return o ? [[row.id, o] as const] : []; }));
+  } else if (ensured.missing) {
+    // Nothing to judge against and nothing bought: every eligible term
+    // carries the same verdict in memory, and the log can say why.
+    evidence = new Map<string, Opportunity>(candidateRows.map((row) => [row.id, {
+      version: OPPORTUNITY_VERSION, context: fingerprint, checkedAt: new Date().toISOString(),
+      status: "pending", cause: "no_profile", reason: `Topic qualification is blocked: ${ensured.missing}.`,
+    }]));
+    judged = 0;
+  } else {
+    // Buy verdicts for the best candidates only until the queue holds
+    // what the pace will use; a rejection parks the row as it goes. The
+    // owners are this pass's, so qualification does not refuse a phrasing
+    // as the duplicate of a planned row this pass has already set aside.
+    try {
+      const refill = await refillQualifiedQueue(supabase, workspaceId, candidateRows, context, {
+        target: queueTarget(workspace?.auto_generate_weekly_limit as number | null | undefined),
+        owners: leaders,
+        ...(options.qualifyBatches ? { maxBatches: options.qualifyBatches } : {}),
+        ...(options.firstLook ? { firstLook: options.firstLook } : {}),
+      });
+      evidence = refill.verdicts;
+      judged = refill.judged;
+    } catch (err) {
+      // The refusal still ends the pass, as it always has; the funnel says
+      // where the rows stood when it came, so an empty plan is not read as
+      // "nothing qualified" (#256's spend gate, 2026-09-27). Counted from the
+      // refill's own verdicts: batches bought before the refusal are saved,
+      // and the rows as read at the start of this pass do not have them.
+      if (err instanceof RefillRefusedError) reportFunnel(err.verdicts, true, err.judged);
+      throw err;
+    }
+  }
+  // Fresh approvals, ranked against each other: the first of a search is
+  // the one written, the rest wait behind it in memory and are parked once it
+  // is on the calendar (the pass above, next time round).
   const clusters: KeywordRecommendation[] = [];
+  // Owners with no results page of their own (a crawled page, an article
+  // with no keyword row) are only ever compared by words, and in a language
+  // without a rule set that means the exact words. Said on every approval it
+  // applies to, not assumed away.
+  const unfolded = leaders.some((l) => !l.organicUrls?.length) ? unfoldedNote(language) : null;
   for (const rec of eligible) {
     if (rec.action !== "write") continue;
-    const o = evidence.get(rec.keywordId);
+    const found = evidence.get(rec.keywordId);
+    // The label goes with the verdict wherever it is shown, however old.
+    const o = found && rec.demand ? { ...found, demand: rec.demand } : found;
     rec.opportunity = o;
     if (o?.status === "qualified") {
-      const duplicate = clusters.find((other) => serpOverlap(o.organicUrls ?? [], other.opportunity?.organicUrls ?? []) >= 0.5);
+      const topic = { term: rec.term, organicUrls: o.organicUrls ?? null };
+      const duplicate = clusters.find((other) => sameIntent(topic, { term: other.term, organicUrls: other.opportunity?.organicUrls ?? null }, language).same);
       if (duplicate) {
         rec.action = "skip";
-        rec.reasons.push(`Same search intent as “${duplicate.term}”; keep one article for this cluster.`);
-      } else { clusters.push(rec); rec.reasons.unshift(o.reason); }
+        rec.skippedBy = "duplicate";
+        rec.reasons.push(`Same search as “${duplicate.term}”, which is ahead of it in the queue; one article per search.`);
+      } else {
+        clusters.push(rec);
+        rec.reasons.unshift(o.reason);
+        if (unfolded) rec.reasons.push(`Checked against your existing pages by exact words: ${unfolded}.`);
+      }
     } else if (options?.qualify || o) {
       rec.action = o?.existingUrl ? "refresh" : "skip";
       rec.reasons.unshift(o?.reason ?? "Topic qualification pending: buyer fit and live search evidence are required before automatic writing.");
     }
   }
+  // The floor. A first look (and only a first look: `firstLook` is passed by
+  // lib/onboarding/pipeline.ts and nothing else, so a nightly pass never
+  // plans a lower-confidence topic for the autopilot to write) that clears
+  // fewer than PLAN_FLOOR topics fills up
+  // to it from the best searches a served buyer makes that fell short of the
+  // bar only because too few results are articles (lib/keyword-research/
+  // opportunity.ts keeps their brief and the observed article, `floor`).
+  // Planned as "lower confidence", said on the row, the calendar, the first
+  // article's card and the run's funnel; measured before unmeasured, best
+  // score first; never a search already approved. Nothing refused for the
+  // searcher (brand, navigation, another city, a service not offered) and
+  // nothing the free gates removed can reach it: those carry other causes.
+  const floorPicks: KeywordRecommendation[] = [];
+  if (options?.qualify && options.firstLook && clusters.length < PLAN_FLOOR) {
+    const floorable = sorted.filter((rec) => {
+      if (rec.quality !== "ok" || rec.skippedBy || dropped.has(rec)) return false;
+      const o = evidence.get(rec.keywordId) ?? current(rec.keywordId);
+      return Boolean(o && isFloorable(o));
+    });
+    for (const rec of floorable) {
+      if (clusters.length + floorPicks.length >= PLAN_FLOOR) break;
+      const o = (evidence.get(rec.keywordId) ?? current(rec.keywordId))!;
+      const topic = { term: rec.term, organicUrls: o.organicUrls ?? null };
+      if ([...clusters, ...floorPicks].some((other) => sameIntent(topic, { term: other.term, organicUrls: other.opportunity?.organicUrls ?? null }, language).same)) continue;
+      const promoted = floorVerdict(o, rec.demand);
+      floorPicks.push(rec);
+      rec.action = "write";
+      rec.opportunity = promoted;
+      rec.reasons = [promoted.reason, ...rec.reasons.filter((r) => r !== o.reason && !r.startsWith("Parked:"))];
+      evidence.set(rec.keywordId, promoted);
+      const row = rowOf.get(rec.keywordId);
+      if (row) { row.opportunity = promoted; row.plan_excluded_at = null; row.status = row.status === "stored" ? "new" : row.status; }
+    }
+    if (floorPicks.length) await saveFloorPicks(supabase, workspaceId, floorPicks);
+  }
+  // A lower-confidence topic is planned after every topic that cleared the bar.
+  if (floorPicks.length) sorted.sort((a, b) => Number(a.opportunity?.confidence === "lower") - Number(b.opportunity?.confidence === "lower"));
+
+  // A planned row that will not be written, behind a phrasing of its search
+  // that may be, comes off the calendar: refused, with its own refusal, the
+  // way the refill parks every refusal it buys; otherwise as that phrasing's
+  // duplicate, once the phrasing is approved and will be written. While the
+  // phrasing is still unjudged the entry stays, and on its day the cron
+  // writes the best topic in its place (app/api/cron/generate/route.ts).
+  for (const { rec, follow } of displaced) {
+    const row = rowOf.get(rec.keywordId);
+    const leader = follow.leader.rec;
+    if (!row || !leader || isParkedForGood(row)) continue;
+    const own = current(rec.keywordId);
+    if (own?.status === "rejected") {
+      toPark.push({ id: rec.keywordId, verdict: own });
+    } else if (leader.action === "write" && leader.opportunity?.status === "qualified") {
+      toPark.push({
+        id: rec.keywordId,
+        verdict: duplicateVerdict(baseVerdict(row), { term: leader.term, keywordId: leader.keywordId, stage: "candidate" }, follow.match),
+      });
+    }
+  }
+  reportFunnel(evidence, false, judged);
+  if (options?.qualify && toPark.length) {
+    await parkKeywords(supabase, workspaceId, toPark);
+    for (const { id, verdict } of toPark) {
+      const row = rowOf.get(id);
+      if (row) { row.opportunity = verdict; row.plan_excluded_at = new Date().toISOString(); }
+    }
+  }
   return sorted.slice(0, limit);
+}
+
+/** Topics a first look plans before the floor steps in (see recommendKeywords). */
+export const PLAN_FLOOR = 3;
+
+/**
+ * A verdict the floor may take: a not_editorial page whose searcher the
+ * judge said the business serves, with the brief written and at least one
+ * observed article. Anything else - a refusal of the searcher, a landing-page
+ * search, an existing page, a duplicate - is not.
+ */
+export function isFloorable(o: Opportunity): boolean {
+  return o.status === "rejected" && o.cause === "not_editorial" && o.floor === true &&
+    [o.audience, o.buyingJob, o.offering, o.angle].every((v) => typeof v === "string" && v.trim().length > 0) &&
+    Array.isArray(o.evidenceUrls) && o.evidenceUrls.length >= 1;
+}
+
+/** The floor's verdict: planned, and saying why it is lower confidence. */
+export function floorVerdict(o: Opportunity, demand?: "unmeasured"): Opportunity {
+  const { cause: _cause, floor: _floor, ...rest } = o;
+  void _cause; void _floor;
+  return {
+    ...rest,
+    status: "qualified",
+    confidence: "lower",
+    format: "article",
+    ...(demand ? { demand } : {}),
+    checkedAt: new Date().toISOString(),
+    reason: `Lower confidence: fewer articles hold this search than the bar asks for, and it is planned because fewer than ${PLAN_FLOOR} topics cleared it. ${o.reason}`.slice(0, 400),
+  };
+}
+
+/** Save the floor's picks and return them to the queue (unparked, status new). */
+async function saveFloorPicks(supabase: SupabaseClient, workspaceId: string, picks: readonly KeywordRecommendation[]): Promise<void> {
+  for (const rec of picks) {
+    const { error } = await supabase
+      .from("keywords")
+      .update({ opportunity: rec.opportunity, status: "new", plan_excluded_at: null })
+      .eq("id", rec.keywordId)
+      .eq("workspace_id", workspaceId)
+      .in("status", ["new", "stored"]);
+    if (error) throw new Error(`Could not save a lower-confidence topic: ${error.message}`);
+  }
+}
+
+/**
+ * The order every ranking of recommendations uses: a measured topic before an
+ * unmeasured one, whatever the scores, then the higher score.
+ */
+export function demandFirst(a: Pick<KeywordRecommendation, "demand" | "score">, b: Pick<KeywordRecommendation, "demand" | "score">): number {
+  return Number(a.demand === "unmeasured") - Number(b.demand === "unmeasured") || b.score - a.score;
 }
 
 /**

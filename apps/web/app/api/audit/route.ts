@@ -49,16 +49,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: member } = await supabase
-    .from("account_members")
-    .select("account_id")
-    .eq("user_id", user.id)
-    .single();
-
-  if (!member) {
-    return NextResponse.json({ error: "No account membership" }, { status: 403 });
-  }
-
   let body: { auditId: string; workspaceId: string };
   try {
     body = await request.json();
@@ -68,13 +58,17 @@ export async function POST(request: NextRequest) {
 
   const { auditId, workspaceId } = body;
 
-  // Verify workspace belongs to the user's account
+  // The site, and the account that owns it, through the caller's client: RLS
+  // shows a site only to members of its account. This read the membership
+  // with `.single()` first, which PostgREST refuses for a person in two
+  // accounts, so anyone who had accepted a second invitation got "No account
+  // membership" here - and the site was then checked against that one
+  // membership rather than against the account that owns it.
   const { data: wsCheck } = await supabase
     .from("workspaces")
-    .select("id")
+    .select("id, account_id")
     .eq("id", workspaceId)
-    .eq("account_id", member.account_id)
-    .single();
+    .maybeSingle();
 
   if (!wsCheck) {
     return NextResponse.json({ error: "Workspace not found" }, { status: 403 });
@@ -101,7 +95,7 @@ export async function POST(request: NextRequest) {
   // gate in `startDomainAudit` refuses the button, this one refuses the POST.
   // 402 rather than 403, and the sentence travels in `error` so a caller that
   // renders it is telling the truth about why.
-  const gate = await canSpend(supabase, member.account_id as string, {
+  const gate = await canSpend(supabase, wsCheck.account_id as string, {
     userEmail: user.email ?? undefined,
     workspaceId,
     action: "site-audit",

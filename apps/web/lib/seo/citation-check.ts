@@ -26,12 +26,27 @@
 
 import { stripTags } from "@/lib/audit/html-utils";
 import { isUnsafeHost } from "@/lib/seo/link-check";
+import { bareHost, isBlockedSource, type SourceReview } from "@/lib/seo/source-classes";
 import type { ExtractedClaim, FactCheckReport } from "@/lib/ai/fact-check";
-import { summarise } from "@/lib/ai/fact-check";
+import { ENTITY_KINDS, summarise } from "@/lib/ai/fact-check";
+import {
+  resolveLocale,
+  supportedLocales,
+  parseNumber,
+  escapeRegex,
+  phrasePattern,
+  type SupportedLocale,
+} from "@/lib/i18n/locale";
 
 export type PageFetcher = (url: string) => Promise<{ status: number; body: string }>;
 
 export interface VerifyCitationsOptions {
+  /**
+   * What research decided about the sites it read (`research.sourceReview`).
+   * A claim citing a business that sells the same service is high risk
+   * whatever its page says, and its page is not opened.
+   */
+  sourceReview?: SourceReview | null;
   fetcher?: PageFetcher;
   timeoutMs?: number;
   concurrency?: number;
@@ -77,53 +92,151 @@ export function readablePageText(html: string): string {
     .toLowerCase();
 }
 
+/** Currency spellings that name the same money. */
+const CURRENCY_ALIASES: Record<string, string[]> = {
+  "$": ["$", "usd", "dollars", "dolar", "dollari", "dólares"],
+  "€": ["€", "eur", "euro", "euros"],
+  "£": ["£", "gbp"],
+  "¥": ["¥", "jpy", "yen"],
+  "₺": ["₺", "tl", "try", "lira"],
+};
+const CURRENCY_OF: Record<string, string> = Object.fromEntries(
+  Object.entries(CURRENCY_ALIASES).flatMap(([sym, names]) => names.map((n) => [n, sym])),
+);
+
+/**
+ * A value written every way a page might write it: grouped with commas,
+ * dots or spaces, or not at all, with the decimal part (if any) after a dot
+ * or a comma. The page may be in any language - a Turkish article citing an
+ * English source is the ordinary case - so all of them.
+ */
+function renderings(value: number, decimals: number): string[] {
+  const fixed = value.toFixed(decimals);
+  const [int, frac] = fixed.split(".");
+  const grouped = (sep: string) => int.replace(/\B(?=(\d{3})+(?!\d))/g, sep);
+  const out = new Set<string>();
+  for (const [group, dec] of [[",", "."], [".", ","], [" ", ","], ["", "."], ["", ","]] as const) {
+    const whole = group ? grouped(group) : int;
+    out.add(frac ? `${whole}${dec}${frac}` : whole);
+  }
+  return [...out];
+}
+
+/** The digits of a figure as a number, read with the article's separators. */
+function valueOf(digits: string, locale: SupportedLocale): { value: number; decimals: number } | null {
+  const value = parseNumber(digits, locale);
+  if (value === null) return null;
+  const frac = digits.split(locale.numbers.decimal)[1];
+  return { value, decimals: frac && /^\d+$/.test(frac) ? frac.length : 0 };
+}
+
 /**
  * Every way a page might write the same figure.
  *
  * "8%" and "8 percent" are the same claim; so are "$30,000", "30,000" and
- * "30000". A page that writes the number differently from the article has not
- * contradicted it, and matching only the article's spelling would report that
- * as a contradiction.
+ * "30000", and so are "%8", "yüzde 8" and "8 Prozent". A page that writes
+ * the number differently from the article has not contradicted it, and
+ * matching only the article's spelling would report that as a
+ * contradiction. The figure is read with the article's language (`1.500,50`
+ * is 1500.5 in Turkish) and written back in every supported language's
+ * spelling, because the cited page need not share the article's language.
  */
-export function figureVariants(figure: string): string[] {
+export function figureVariants(figure: string, language?: string | null): string[] {
   const raw = figure.trim().toLowerCase();
   const out = new Set<string>([raw]);
+  const locale = resolveLocale(language);
+  if (!locale.supported) return [...out];
 
-  const pct = raw.match(/^(\d+(?:[.,]\d+)?)\s*(?:%|percent|per cent)$/);
+  const all = supportedLocales();
+  const percentAfter = [...new Set(all.flatMap((l) => l.numbers.percentWordsAfter))];
+  const percentBefore = [...new Set(all.flatMap((l) => l.numbers.percentWordsBefore))];
+  const own = locale.numbers;
+  const num = String.raw`(\d[\d.,]*)`;
+
+  const pct =
+    raw.match(new RegExp(String.raw`^${num}\s*(?:%|${phrasePattern([...percentAfter])})$`, "u")) ??
+    raw.match(new RegExp(String.raw`^%\s*${num}$`, "u")) ??
+    (own.percentWordsBefore.length
+      ? raw.match(new RegExp(String.raw`^(?:${phrasePattern(own.percentWordsBefore)})\s+${num}$`, "u"))
+      : null);
   if (pct) {
-    const n = pct[1];
-    out.add(`${n}%`);
-    out.add(`${n} %`);
-    out.add(`${n} percent`);
-    out.add(`${n} per cent`);
-  }
-
-  const money = raw.match(/^([$€£])\s?([\d.,]+)$/);
-  if (money) {
-    const [, sign, digits] = money;
-    const bare = digits.replace(/,/g, "");
-    for (const d of new Set([digits, bare])) {
-      out.add(`${sign}${d}`);
-      out.add(`${sign} ${d}`);
-      out.add(d);
+    const parsed = valueOf(pct[1], locale);
+    const spellings = new Set([pct[1], ...(parsed ? renderings(parsed.value, parsed.decimals) : [])]);
+    for (const n of spellings) {
+      if (/\s/.test(n)) continue;
+      out.add(`${n}%`);
+      out.add(`${n} %`);
+      out.add(`%${n}`);
+      out.add(`% ${n}`);
+      for (const w of percentAfter) out.add(`${n} ${w}`);
+      for (const w of percentBefore) out.add(`${w} ${n}`);
     }
+    return [...out].filter(Boolean);
   }
 
-  const plain = raw.match(/^[\d.,]+$/);
-  if (plain) {
-    out.add(raw.replace(/,/g, ""));
-    // 30000 -> 30,000, so a bare number in the article still matches a page
-    // that groups its thousands.
-    const digits = raw.replace(/[.,]/g, "");
-    if (digits.length > 3) out.add(digits.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+  const currencies = Object.keys(CURRENCY_OF).map(escapeRegex).join("|");
+  const money =
+    raw.match(new RegExp(String.raw`^(${currencies})\s?${num}$`, "u")) ??
+    raw.match(new RegExp(String.raw`^${num}\s?(${currencies})$`, "u"));
+  if (money) {
+    const [symbolRaw, digits] = /^\d/.test(money[1]) ? [money[2], money[1]] : [money[1], money[2]];
+    const names = CURRENCY_ALIASES[CURRENCY_OF[symbolRaw] ?? symbolRaw] ?? [symbolRaw];
+    const parsed = valueOf(digits, locale);
+    // Read with the article's separators when they can be; otherwise the old
+    // rule, commas out, which is right for the English grouping it assumed.
+    const spellings = new Set([digits, ...(parsed ? renderings(parsed.value, parsed.decimals) : [digits.replace(/,/g, "")])]);
+    for (const d of spellings) {
+      out.add(d);
+      for (const name of names) {
+        out.add(`${name}${d}`);
+        out.add(`${name} ${d}`);
+        out.add(`${d}${name}`);
+        out.add(`${d} ${name}`);
+      }
+    }
+    return [...out].filter(Boolean);
+  }
+
+  if (/^[\d.,]+$/.test(raw)) {
+    const parsed = valueOf(raw, locale);
+    if (parsed) {
+      for (const r of renderings(parsed.value, parsed.decimals)) out.add(r);
+    } else {
+      out.add(raw.replace(/,/g, ""));
+      // 30000 -> 30,000, so a bare number in the article still matches a page
+      // that groups its thousands.
+      const digits = raw.replace(/[.,]/g, "");
+      if (digits.length > 3) out.add(digits.replace(/\B(?=(\d{3})+(?!\d))/g, ","));
+    }
   }
 
   return [...out].filter(Boolean);
 }
 
+/**
+ * Does the page name this body? Its full name, its name without a bracketed
+ * acronym, or the acronym alone ("College of Physiotherapists of Ontario
+ * (CPO)" is named by either). `pageText` is `readablePageText`'s: one
+ * lower-case line.
+ */
+export function pageNamesEntity(pageText: string, entity: string): boolean {
+  const clean = entity.replace(/\s+/g, " ").trim().replace(/[\s.,;:!?]+$/u, "");
+  const acronym = clean.match(/\(([^)]+)\)\s*$/)?.[1] ?? null;
+  const bare = clean.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  return [clean, bare, acronym]
+    .filter((v): v is string => Boolean(v && v.length >= 2))
+    .some((v) => pageText.includes(v.toLowerCase()));
+}
+
+/**
+ * The most cited pages one draft opens. Each is one GET with an 8-second
+ * ceiling; a draft that cites more than this leaves the rest for a person.
+ */
+const MAX_CITED_PAGES = 12;
+
 /** Does the page carry this figure, written any of the usual ways? */
-export function pageHasFigure(pageText: string, figure: string): boolean {
-  return figureVariants(figure).some((v) => pageText.includes(v));
+export function pageHasFigure(pageText: string, figure: string, language?: string | null): boolean {
+  return figureVariants(figure, language).some((v) => pageText.includes(v));
 }
 
 /**
@@ -137,16 +250,47 @@ export async function verifyCitedFigures(
   report: FactCheckReport,
   opts: VerifyCitationsOptions = {},
 ): Promise<FactCheckReport> {
+  // A report in a language the checker does not read has no claims to open
+  // pages for, and its verdict must survive this pass.
+  if (report.verdict === "unchecked") return report;
+  const language = report.language?.code;
   const timeoutMs = opts.timeoutMs ?? 8_000;
   const fetcher = opts.fetcher ?? defaultPageFetcher(timeoutMs);
   const concurrency = Math.max(1, opts.concurrency ?? 3);
+
+  // A figure on a rival's page is still the rival's figure: finding it there
+  // must not turn the claim `verified`. `factCheckArticle` already marks the
+  // claims it can see are a rival's (`rival_source`), and those are never
+  // re-judged here, because only `needs_verification` is touched. This
+  // catches the rest - a report built without the research - before any
+  // page is opened.
+  const rivalSourced = report.claims.filter(
+    (c) => c.status === "needs_verification" && c.sourceUrl && isBlockedSource(c.sourceUrl, opts.sourceReview),
+  );
+  if (rivalSourced.length) {
+    report = summarise(
+      report.claims.map((c) =>
+        rivalSourced.includes(c)
+          ? {
+              ...c,
+              status: "rival_source" as const,
+              severity: "high" as const,
+              note:
+                `Sourced from ${bareHost(c.sourceUrl!)}, a business that sells what this business sells. Do not send the reader ` +
+                `to a competitor or quote it as an authority: replace the source with a public body, research or an association, or cut the claim.`,
+            }
+          : c,
+      ),
+      resolveLocale(language),
+    );
+  }
 
   const checkable = report.claims.filter(
     (c) => c.status === "needs_verification" && c.sourceUrl && !isUnsafeHost(c.sourceUrl),
   );
   if (checkable.length === 0) return report;
 
-  const urls = [...new Set(checkable.map((c) => c.sourceUrl!))];
+  const urls = [...new Set(checkable.map((c) => c.sourceUrl!))].slice(0, MAX_CITED_PAGES);
   const pages = new Map<string, string | null>();
 
   const read = async (url: string): Promise<void> => {
@@ -172,7 +316,31 @@ export async function verifyCitedFigures(
     // Unreadable: leave the claim exactly as it was, for a person to open.
     if (!text) return c;
 
-    const missing = c.figures.filter((f) => !pageHasFigure(text, f));
+    // A claim about a named body: does the page it cites name that body?
+    // Named is not proof it is the regulator, so found is `verified` at low
+    // and not found is `unsupported` at medium - for review, never a block,
+    // because the page may name it in a form this search cannot see.
+    if (ENTITY_KINDS.has(c.kind)) {
+      const entity = c.figures[0];
+      if (!entity) return c;
+      return pageNamesEntity(text, entity)
+        ? {
+            ...c,
+            status: "verified" as const,
+            severity: "low" as const,
+            note: `The page it cites (${c.sourceUrl}) names ${entity}. That the page names it is not proof of the claim, but the citation is on topic.`,
+          }
+        : {
+            ...c,
+            status: "unsupported" as const,
+            severity: "medium" as const,
+            note:
+              `The cited page loaded and does not name ${entity}. Open ${c.sourceUrl} and check who it says ` +
+              `regulates or pays for this, then correct the sentence or cut it.`,
+          };
+    }
+
+    const missing = c.figures.filter((f) => !pageHasFigure(text, f, language));
     if (missing.length === 0) {
       return {
         ...c,
@@ -195,5 +363,5 @@ export async function verifyCitedFigures(
     };
   });
 
-  return summarise(claims);
+  return summarise(claims, resolveLocale(language));
 }

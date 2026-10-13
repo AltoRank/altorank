@@ -15,7 +15,7 @@ vi.mock("../opportunity", async (original) => ({ ...(await original<object>()), 
 // the order reversed this file's own import of "../opportunity" resolved
 // first and queue.ts received the unmocked function (measured 2026-09-15).
 
-import { countReady, isParkedForGood, isRequalifiable, parkKeywords, queueTarget, refillQualifiedQueue, unjudgedVerdict, QUEUE_MIN, type QueueRow } from "../queue";
+import { countReady, isJudgeable, isParkedForGood, isRequalifiable, parkKeywords, TTL_CAUSES, queueTarget, refillQualifiedQueue, unjudgedVerdict, QUEUE_MIN, type QueueRow } from "../queue";
 import { contextKey, OPPORTUNITY_VERSION, type Opportunity } from "../opportunity";
 
 const context = { domain: "x.co", languageCode: "en", locationCode: 2840, business: { description: "X sells order picking software to Shopify merchants." } };
@@ -68,6 +68,40 @@ describe("parked rows", () => {
     expect(isRequalifiable(row("d"))).toBe(false);
     // A rejection whose TTL lapsed is still a rejection.
     expect(isParkedForGood(row("e", { plan_excluded_at: now(), opportunity: verdict("rejected", "buyer_mismatch", { checkedAt: "2020-01-01T00:00:00.000Z" }) }))).toBe(true);
+  });
+
+  it("asks a results-page refusal again after 30 days; a refusal of the searcher, and a person's park, stay", () => {
+    const DAY = 86_400_000;
+    const at = (daysAgo: number) => new Date(Date.now() - daysAgo * DAY).toISOString();
+    const parkedBy = (cause: Opportunity["cause"], daysAgo: number, parkedDaysAgo = daysAgo) =>
+      row(cause!, { status: "stored", plan_excluded_at: at(parkedDaysAgo), opportunity: verdict("rejected", cause, { checkedAt: at(daysAgo) }) });
+    for (const cause of ["not_editorial", "needs_page", "thin_serp"] as const) {
+      expect(isRequalifiable(parkedBy(cause, 29))).toBe(false);
+      expect(isRequalifiable(parkedBy(cause, 31))).toBe(true);
+      expect(isParkedForGood(parkedBy(cause, 31))).toBe(false);
+      expect(isJudgeable(parkedBy(cause, 31))).toBe(true);
+    }
+    for (const cause of ["buyer_mismatch", "existing_page", "duplicate"] as const) expect(isRequalifiable(parkedBy(cause, 90))).toBe(false);
+    // Judged 40 days ago, taken off the plan by a person 5 days ago: theirs.
+    expect(isRequalifiable(parkedBy("needs_page", 40, 5))).toBe(false);
+    expect(TTL_CAUSES.has("buyer_mismatch")).toBe(false);
+    // Two reads that disagreed are asked again whatever the refusing read's cause.
+    const contested = (daysAgo: number) => row("contested", { status: "stored", plan_excluded_at: at(daysAgo), opportunity: verdict("rejected", "buyer_mismatch", { checkedAt: at(daysAgo), contested: true }) });
+    expect(isRequalifiable(contested(29))).toBe(false);
+    expect(isRequalifiable(contested(31))).toBe(true);
+  });
+
+  it("re-judges an expired results-page refusal in the refill, and returns it to the queue when it qualifies now", async () => {
+    qualify.mockImplementation(async (_db: unknown, _ws: string, asked: Array<{ id: string }>) => new Map(asked.map((c) => [c.id, verdict("qualified")])));
+    const old = new Date(Date.now() - 40 * 86_400_000).toISOString();
+    const candidates = [
+      row("expired", { status: "stored", plan_excluded_at: old, opportunity: verdict("rejected", "not_editorial", { checkedAt: old }) }),
+      row("refused", { status: "stored", plan_excluded_at: old, opportunity: verdict("rejected", "buyer_mismatch", { checkedAt: old }) }),
+    ];
+    const out = await refillQualifiedQueue(db, "ws", candidates, context, { target: 1 });
+    expect((qualify.mock.calls[0][2] as Array<{ id: string }>).map((c) => c.id)).toEqual(["expired"]);
+    expect(out.ready).toBe(1);
+    expect(writes.find((w) => (w.patch as { status?: string }).status === "new")?.patch).toEqual({ status: "new", plan_excluded_at: null });
   });
 
   it("parkKeywords takes the row off the calendar, stamps it, and keeps the verdict", async () => {

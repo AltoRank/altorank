@@ -16,8 +16,19 @@
 // nothing here has seen the image, so nothing here can describe it.
 
 import { decodeEntities } from "@/lib/audit/html-utils";
+import { resolveLocale, scaleWords, foldCase, type Locale, type SupportedLocale } from "@/lib/i18n/locale";
 
+/** The floor in English words. Other languages scale it: see `minAltWords`. */
 export const MIN_ALT_WORDS = 6;
+
+/**
+ * The floor in this language's words. Six English words is about five
+ * Turkish ones, because Turkish suffixes carry what English spells as
+ * separate words; holding a Turkish alt to six would ask it to say more.
+ */
+export function minAltWords(locale: SupportedLocale = resolveLocale("en") as SupportedLocale): number {
+  return scaleWords(MIN_ALT_WORDS, locale);
+}
 
 export type AltTextProblem =
   /** No alt attribute, or an empty one. */
@@ -36,18 +47,25 @@ export interface AltTextFinding {
 /**
  * Lowercase, punctuation gone, whitespace collapsed: what two strings look
  * like when only their words matter. Unicode-aware because the product writes
- * Italian and German alt text as often as English.
+ * Italian and German alt text as often as English, and folded with
+ * `foldCase` so it needs no language: a Turkish "İstanbul" is "istanbul".
+ * Plain `toLowerCase` made "İ" an "i" plus a combining dot, the dot became a
+ * word break, and "İzmir İş İlanları" counted five words and passed the floor.
  */
 function normaliseWords(text: string): string {
-  return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  return foldCase(text).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 /**
  * Openers that dress a keyword up as a description without adding one.
- * "Screenshot of email marketing software" is the keyword with a hat on.
+ * "Screenshot of email marketing software" is the keyword with a hat on. The
+ * hat is language-dependent ("web tasarımı görseli" wears it at the end), so
+ * it comes from the locale contract.
  */
-const PICTURE_OF =
-  /^(?:an?\s+|the\s+)?(?:image|picture|photo|photograph|illustration|graphic|screenshot|diagram|chart|infographic|icon|logo)\s+(?:of|showing|about|for)\s+(?:an?\s+|the\s+)?/i;
+function withoutPictureOf(text: string, locale: Locale): string {
+  if (!locale.supported) return text;
+  return locale.lower(text).replace(locale.prose.pictureOf, "");
+}
 
 export function altWordCount(alt: string): number {
   const words = normaliseWords(alt);
@@ -59,16 +77,23 @@ export function altWordCount(alt: string): number {
  *
  * Ordered by specificity: an alt that is the keyword alone is also short, and
  * "it repeats the keyword" is the finding a writer can act on.
+ *
+ * In a language the locale contract does not describe, only the two findings
+ * that need no language are made - missing, and the keyword alone. Whether a
+ * sentence is long enough, or wrapped in "image of", is not guessed at with
+ * English rules.
  */
 export function checkAltText(
   alt: string | null | undefined,
   keyword: string,
+  language?: string | null,
 ): AltTextProblem | null {
+  const locale = resolveLocale(language);
   const text = (alt ?? "").trim();
   if (!text) return "missing";
   const kw = normaliseWords(keyword);
-  if (kw && normaliseWords(text.replace(PICTURE_OF, "")) === kw) return "keyword";
-  if (altWordCount(text) < MIN_ALT_WORDS) return "short";
+  if (kw && normaliseWords(withoutPictureOf(text, locale)) === kw) return "keyword";
+  if (locale.supported && altWordCount(text) < minAltWords(locale)) return "short";
   return null;
 }
 
@@ -81,11 +106,11 @@ function attrValue(attrs: string, name: string): string | null {
 }
 
 /** Every `<img>` in `html` whose alt text is missing, the keyword alone, or too short to describe anything. */
-export function findWeakAltText(html: string, keyword: string): AltTextFinding[] {
+export function findWeakAltText(html: string, keyword: string, language?: string | null): AltTextFinding[] {
   const out: AltTextFinding[] = [];
   for (const m of html.matchAll(/<img\b([^>]*)>/gi)) {
     const alt = attrValue(m[1], "alt");
-    const problem = checkAltText(alt, keyword);
+    const problem = checkAltText(alt, keyword, language);
     if (problem) out.push({ src: attrValue(m[1], "src") ?? "", alt: alt ?? "", problem });
   }
   return out;

@@ -57,12 +57,15 @@ export async function recordSpend(
  * and dated, because a stale rate produces a confident wrong margin, which is
  * worse than no margin at all.
  *
- * Last checked 2026-08-30.
+ * Last checked 2026-09-30, against Anthropic's model table: Sonnet 5 is $2/$10
+ * and Opus 5 $5/$25. Until then Sonnet 5 was billed here at $3/$15 (the
+ * Sonnet 4.6 rate) and Opus 5 at $15/$75, so every Sonnet spend row read 1.5x
+ * what was paid.
  */
 export const ANTHROPIC_RATES: Record<string, { input: number; output: number }> = {
-  "claude-sonnet-5": { input: 3, output: 15 },
+  "claude-sonnet-5": { input: 2, output: 10 },
   "claude-haiku-4-5-20251001": { input: 1, output: 5 },
-  "claude-opus-5": { input: 15, output: 75 },
+  "claude-opus-5": { input: 5, output: 25 },
 };
 
 /** Cost of a call in USD, or null when the model's rate is not known here. */

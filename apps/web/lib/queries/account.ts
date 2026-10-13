@@ -1,26 +1,74 @@
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { getScope } from "@/lib/workspace-scope";
 import type { Account } from "@/lib/types";
 
+/**
+ * The account the signed-in person is working in: the one that owns the site
+ * in scope (lib/workspace-scope.ts), or their oldest membership when they can
+ * see no site. It used to read the membership with `.single()`, which
+ * PostgREST refuses for a person in two accounts, so Settings said "No
+ * account found" to anyone who had accepted a second invitation.
+ */
 export async function getAccount(): Promise<Account | null> {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: member } = await supabase
-    .from("account_members")
-    .select("account_id")
-    .eq("user_id", user.id)
-    .single();
-
-  if (!member) return null;
+  let accountId = (await getScope())?.accountId ?? null;
+  if (!accountId) {
+    const { data: member } = await supabase
+      .from("account_members")
+      .select("account_id")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    accountId = (member?.account_id as string | undefined) ?? null;
+  }
+  if (!accountId) return null;
 
   const { data } = await supabase
     .from("accounts")
     .select("*")
-    .eq("id", member.account_id)
+    .eq("id", accountId)
     .single();
 
   return (data as Account) ?? null;
+}
+
+/**
+ * The account a signed-in person is working in, created if they have none:
+ * the account of the site in scope, else their oldest membership, else a new
+ * account. What the dashboard layout gates on and what "Add site" adds to,
+ * so the site a person adds lands in the account they are looking at.
+ */
+export async function workingAccountId(user: {
+  id: string;
+  user_metadata?: Record<string, unknown> | null;
+  email?: string | null;
+}): Promise<string> {
+  return (await getScope())?.accountId ?? ensureAccount(user.id, user.user_metadata ?? {}, user.email);
+}
+
+/**
+ * The free drafts this person has already used in accounts they created, for
+ * an account made for them again.
+ *
+ * This path runs when somebody has no membership left, and a person can
+ * arrive here after being removed from an account they made: a co-owner
+ * deletes their membership, and their next page load lands here. The new
+ * account started at zero, so a pre-trial article and the free drafts behind
+ * it were handed out again - as often as two addresses took turns removing
+ * each other (round-5 review; migration 102 keeps anyone but an owner from
+ * removing an owner, which leaves this pair). The allowance belongs to the
+ * person who created the account (`accounts.created_by`, migration 101), so
+ * the count comes with them. Read with the service role; a failed read throws
+ * rather than starting them at zero.
+ */
+async function draftsAlreadyUsed(admin: ReturnType<typeof createServiceClient>, userId: string): Promise<number> {
+  const { data, error } = await admin.from("accounts").select("free_drafts_used").eq("created_by", userId);
+  if (error) throw new Error(`Could not read the accounts this person created: ${error.message}`);
+  return Math.max(0, ...(data ?? []).map((a) => (a.free_drafts_used as number | null) ?? 0));
 }
 
 /**
@@ -44,6 +92,11 @@ export async function ensureAccount(
     .from("account_members")
     .select("account_id")
     .eq("user_id", userId)
+    // The oldest, so the answer is the same on every call. Without an order
+    // it was whichever row PostgREST returned first, and for a person in two
+    // accounts that was not stable. Callers that know which site is being
+    // worked on ask about that site's account instead (lib/workspace-scope.ts).
+    .order("created_at", { ascending: true })
     .limit(1)
     .single();
 
@@ -94,7 +147,7 @@ export async function ensureAccount(
 
   const { data: account } = await admin
     .from("accounts")
-    .insert({ name, slug: `${slug}-${Date.now()}` })
+    .insert({ name, slug: `${slug}-${Date.now()}`, free_drafts_used: await draftsAlreadyUsed(admin, userId) })
     .select("id")
     .single();
 

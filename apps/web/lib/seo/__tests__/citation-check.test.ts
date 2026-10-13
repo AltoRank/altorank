@@ -68,7 +68,9 @@ describe("verifyCitedFigures — the figure the cited page does not carry", () =
     });
     expect(report.claims[0].status).toBe("verified");
     expect(report.claims[0].severity).toBe("low");
-    expect(report.verdict).toBe("review");
+    // Every claim checked against its cited page and found there: the one
+    // case `clean` now names (lib/ai/fact-check.ts, summarise).
+    expect(report.verdict).toBe("clean");
     expect(approvalBlocker(report)).toBeNull();
   });
 

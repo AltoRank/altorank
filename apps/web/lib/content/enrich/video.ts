@@ -14,7 +14,7 @@
 // no video rather than someone else's.
 
 import { searchYouTubeVideos, type YouTubeVideo } from "@/lib/youtube/search";
-import { labelsFor } from "./labels";
+import { resolveLocale, matchesAnyHeading } from "@/lib/i18n/locale";
 import { splitSections, firstParagraph, hasVideoEmbed, escapeAttr, escapeHtml } from "./html";
 
 export interface VideoOptions {
@@ -26,22 +26,30 @@ export interface VideoOptions {
   channel?: string | null;
 }
 
-const HOW_TO_HEADING =
-  /^(how to|how do|how can|how should|steps? to|step[- ]by[- ]step|setting up|getting started|installing|configuring|come (fare|si|installare|configurare)|cómo|comment|wie (man|du|sie))\b|\b(tutorial|walkthrough|guida passo|paso a paso|étape par étape|schritt für schritt)\b/i;
-
 /**
  * Whether a section reads as instructions: a how-to heading, or a numbered
  * list of at least three steps under it.
+ *
+ * The heading is recognised in every language the locale contract describes
+ * ("How to…", "Come fare…", "…nasıl kurulur?"); the numbered list is the
+ * rule that holds in any language.
  */
 export function isHowToSection(headingText: string, body: string): boolean {
-  if (HOW_TO_HEADING.test(headingText.trim())) return true;
+  if (matchesAnyHeading("howTo", headingText.trim())) return true;
   const ol = body.match(/<ol\b[^>]*>([\s\S]*?)<\/ol>/i);
   return !!ol && (ol[1].match(/<li\b/gi) ?? []).length >= 3;
 }
 
+/**
+ * The embed, captioned "Video: <title> (<channel>, YouTube)" with the prefix
+ * in the article's language. Where the contract has no word for "Video" the
+ * caption is the title and channel alone: both are the video's own words, and
+ * YouTube is a name.
+ */
 export function renderVideoFigure(video: YouTubeVideo, language?: string | null): string {
-  const labels = labelsFor(language);
-  const caption = `${labels.video}: ${video.title} (${video.channelTitle}, ${labels.onYouTube.replace(/^(on|su|en|sur|auf)\s+/i, "")})`;
+  const locale = resolveLocale(language);
+  const credit = `${video.title} (${video.channelTitle}, YouTube)`;
+  const caption = locale.supported ? `${locale.labels.video}: ${credit}` : credit;
   return (
     `<figure class="video-embed">` +
     `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(video.videoId)}" ` +

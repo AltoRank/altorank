@@ -57,14 +57,21 @@ function client(
   const empty = { data: [] as unknown[] };
   const chain = (value: unknown): Record<string, unknown> => {
     const self: Record<string, unknown> = {};
-    for (const m of ["eq", "in", "order", "gte", "not", "select", "is"]) {
+    for (const m of ["eq", "in", "order", "range", "gte", "not", "select", "is"]) {
       self[m] = (...args: unknown[]) => {
         seenFilters.push([m, ...args]);
+        // A select asked for its count (every paged read is, lib/supabase/read-all.ts)
+        // reports it the way PostgREST does: the rows the query matched.
+        if (m === "select" && (args[1] as { count?: string } | undefined)?.count) {
+          value = { ...(value as object), count: ((value as { data?: unknown[] }).data ?? []).length };
+        }
         return Object.assign(Promise.resolve(value), self);
       };
     }
     self.single = async () => ({
-      data: { topical_profile: PROFILE, dr, business_profile: null },
+      // `workspaces.language` is NOT NULL DEFAULT 'en'; which phrasings are
+      // one search depends on it (lib/keyword-research/intent.ts).
+      data: { topical_profile: PROFILE, dr, business_profile: null, language: "en" },
     });
     return self;
   };

@@ -37,7 +37,27 @@ const recordSpendByDefault = vi.fn();
 vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: (e: unknown) => recordSpendByDefault(e) }));
 const plan = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
 const held = vi.fn(async () => ({ count: 0, dates: [] as string[] }));
-vi.mock("../plan", () => ({ schedulePlan: (...a: unknown[]) => plan(...a), heldTopics: () => held(), fulfilPlannedEntry: vi.fn(async () => undefined) }));
+const scheduled = vi.fn(async () => 0);
+vi.mock("../plan", () => ({ schedulePlan: (...a: unknown[]) => plan(...a), heldTopics: () => held(), countScheduled: () => scheduled(), fulfilPlannedEntry: vi.fn(async () => undefined) }));
+// Whether the planner holds this account's calendar is the planner's own
+// question (lib/billing/trial-hold.ts); the pipeline only words the screen
+// from it. The draft-side predicate stays real.
+// true/false are "held"/"open"; "spent" is passed as itself.
+const planHold = vi.fn(async (): Promise<boolean | "open" | "held" | "spent"> => false);
+vi.mock("@/lib/billing/trial-hold", async () => {
+  const real = await vi.importActual<typeof import("@/lib/billing/trial-hold")>("@/lib/billing/trial-hold");
+  const hold = async () => {
+    const v = await planHold();
+    return v === true ? "held" : v === false ? "open" : v;
+  };
+  return { ...real, planHold: hold, planHoldApplies: async () => (await hold()) !== "open" };
+});
+// Whether a judge could run this time; the empty pool is only read when one could.
+const model = vi.fn(() => true);
+vi.mock("@/lib/keyword-research/buyer-model", async () => {
+  const real = await vi.importActual<typeof import("@/lib/keyword-research/buyer-model")>("@/lib/keyword-research/buyer-model");
+  return { ...real, modelAvailable: () => model() };
+});
 const fanOut = vi.fn(() => ({ dispatched: 0, settled: Promise.resolve() }));
 vi.mock("@/lib/content/fan-out", async () => {
   const real = await vi.importActual<typeof import("@/lib/content/fan-out")>("@/lib/content/fan-out");
@@ -57,6 +77,17 @@ vi.mock("@/lib/linking/detect", () => ({ detectLinks: (...a: unknown[]) => detec
 // reaches the network is a unit test that fails on a train.
 const assess = vi.fn(async () => ({ status: "done" as const, detail: "Read 12 pages. Found 30 technical issues on 9 of them.", summary: null }));
 vi.mock("../site-assessment", () => ({ assessExistingPages: (...a: unknown[]) => assess(...(a as [])) }));
+
+// The funnel event's shape is tested on its own (funnel-event.test.ts); here
+// only that every run hands it over, and with what.
+const recordFunnel = vi.fn(async (_e: unknown) => undefined);
+vi.mock("../funnel-event", () => ({ recordPlanFunnel: (e: unknown) => recordFunnel(e) }));
+// The tally itself is tested on its own (empty-pool.test.ts) and against a
+// real database (run-store.db.test.ts); here the question is when the
+// pipeline asks for it and where it puts the answer.
+const EMPTY_POOL = { stage: "qualification" as const, cause: "buyer_mismatch", keywords: 94, qualified: 0, rejected: { buyer_mismatch: 94 }, pending: {}, summary: "None of 94 searches qualified." };
+const emptyPool = vi.fn(async (..._a: unknown[]) => EMPTY_POOL);
+vi.mock("../empty-pool", () => ({ readEmptyPool: (...a: unknown[]) => emptyPool(...a) }));
 
 import { runOnboarding } from "../pipeline";
 import type { OnboardingEvent } from "../events";
@@ -454,13 +485,20 @@ describe("runOnboarding", () => {
 });
 
 describe("the trial gate and the first plan", () => {
-  it("schedules one article and reports what the trial opens, for an account that will be asked for a card", async () => {
+  beforeEach(() => {
+    planHold.mockReset().mockResolvedValue(false);
+    scheduled.mockReset().mockResolvedValue(0);
+  });
+  it("reports what the trial opens, for an account that will be asked for a card", async () => {
+    planHold.mockResolvedValue(true);
     quota.mockResolvedValue({ limit: 7, used: 0, remaining: 7, reason: "no-plan", trialEligible: true });
     plan.mockResolvedValue([{ keywordId: "k1", term: "seo agent", date: "2026-09-21" }]);
     held.mockResolvedValue({ count: 3, dates: ["2026-09-23", "2026-09-25", "2026-09-27"] });
     const events = await collect();
     const planning = events.find((e) => e.phase === "planning" && e.status === "done") as { detail?: string };
-    expect(plan.mock.calls[0][3]).toMatchObject({ maxEntries: 1 });
+    // The cap is the planner's (it plans the one article for a held account
+    // whatever it is asked for); the pipeline no longer passes a hold.
+    expect(plan.mock.calls[0][3]).toMatchObject({ maxEntries: 5 });
     expect(planning.detail).toContain("Scheduled your first article. 3 more topics are ready");
   });
   it("plans the month for everyone else", async () => {
@@ -470,5 +508,151 @@ describe("the trial gate and the first plan", () => {
     await collect();
     expect(plan.mock.calls[0][3]).toMatchObject({ maxEntries: 5 });
     expect(held).not.toHaveBeenCalled();
+  });
+  it("says the first article is already planned when a held account runs again, not that nothing qualifies", async () => {
+    planHold.mockResolvedValue(true);
+    scheduled.mockResolvedValue(1);
+    quota.mockResolvedValue({ limit: 7, used: 1, remaining: 6, reason: "no-plan", trialEligible: true });
+    plan.mockResolvedValue([]);
+    const events = await collect();
+    const planning = events.filter((e) => e.phase === "planning").at(-1) as { status: string; detail?: string };
+    expect(planning.status).toBe("skipped");
+    expect(planning.detail).toContain("Your first article is already on the calendar; the rest of the plan opens with the trial.");
+    // That site has a plan: it is not an empty pool.
+    expect(planning).not.toHaveProperty("emptyPool");
+  });
+  it("writes nothing more for a held account that already has its article, and buys no research for it", async () => {
+    quota.mockResolvedValue({ limit: 7, used: 1, remaining: 6, reason: "no-plan", trialEligible: true });
+    plan.mockResolvedValue([]);
+    const events = await collect();
+    const drafting = events.filter((e) => e.phase === "drafting").at(-1) as { status: string; detail?: string };
+    expect(drafting.status).toBe("skipped");
+    expect(drafting.detail).toMatch(/^Waiting for your trial to start\./);
+    expect(recommend).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+  it("still writes the first article of a held account", async () => {
+    quota.mockResolvedValue({ limit: 7, used: 0, remaining: 7, reason: "no-plan", trialEligible: true });
+    plan.mockResolvedValue([]);
+    recommend.mockResolvedValue([{ term: "seo agent", keywordId: "k1", action: "write", quality: "ok", reasons: ["r"], score: 1, difficulty: 1, volume: 10 }]);
+    pick.mockImplementation((recs: unknown[]) => recs[0]);
+    generate.mockResolvedValue({ articleId: "a1", title: "T", wordCount: 900, factCheck: { verdict: "clean" } });
+    await collect();
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
+  it("writes nothing for a site added after the trial was cancelled, and buys no research for it", async () => {
+    const TRIAL_END = "2026-10-06T12:00:00.000Z";
+    quota.mockResolvedValue({ limit: 100, used: 5, remaining: 95, reason: "plan", plan: "starter", trial: { endsAt: TRIAL_END, daysLeft: 5, cancelsAt: TRIAL_END } });
+    plan.mockResolvedValue([]);
+    const events = await collect();
+    const drafting = events.filter((e) => e.phase === "drafting").at(-1) as { status: string; detail?: string };
+    expect(drafting.status).toBe("skipped");
+    expect(drafting.detail).toMatch(/^Your trial is cancelled, so nothing new is drafted\./);
+    expect(recommend).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+  });
+});
+
+describe("runOnboarding: the topic funnel", () => {
+  const FUNNEL = { found: 12, removed: { buyer_fit: 8, not_editorial: 2 }, qualified: 2, planned: 1, judged: 4 };
+  beforeEach(() => recordFunnel.mockReset());
+
+  it("writes down the funnel the planner reported, with the run and the account", async () => {
+    plan.mockImplementation(async (...a: unknown[]) => {
+      (a[3] as { onFunnel?: (f: unknown) => void }).onFunnel?.(FUNNEL);
+      return [];
+    });
+    await runOnboarding(richClient(0), WS, () => undefined, { firstDraft: "dispatch", runId: "run-9" });
+    expect(recordFunnel).toHaveBeenCalledOnce();
+    expect(recordFunnel).toHaveBeenCalledWith({
+      runId: "run-9", workspaceId: "ws1", accountId: "ag1", funnel: FUNNEL,
+      planningDetail: "No keyword clear enough to plan yet.",
+    });
+  });
+
+  it("still writes it when the planner throws after counting, with the failure as the reason", async () => {
+    plan.mockImplementation(async (...a: unknown[]) => {
+      (a[3] as { onFunnel?: (f: unknown) => void }).onFunnel?.({ ...FUNNEL, planned: 0 });
+      throw new Error("Start your trial to keep going.");
+    });
+    await runOnboarding(richClient(0), WS, () => undefined, { firstDraft: "dispatch" });
+    expect(recordFunnel).toHaveBeenCalledWith(expect.objectContaining({ runId: null, funnel: { ...FUNNEL, planned: 0 }, planningDetail: "Start your trial to keep going." }));
+  });
+
+  it("writes a run with no keywords as one the planner never read", async () => {
+    analyse.mockResolvedValue({ keywordsFound: 0, layers: [] });
+    await runOnboarding(richClient(0), WS, () => undefined, { firstDraft: "dispatch" });
+    expect(plan).not.toHaveBeenCalled();
+    expect(recordFunnel).toHaveBeenCalledWith(expect.objectContaining({ funnel: null, planningDetail: "Nothing to schedule until there are keywords." }));
+  });
+});
+
+// A first look that ran and found nothing clear enough: the planning event
+// carries which stage emptied the pool, which is what makes the run
+// `nothing_planned` rather than a setup that fell short (2026-09-28).
+describe("the empty pool", () => {
+  beforeEach(() => {
+    emptyPool.mockClear();
+    planHold.mockReset().mockResolvedValue(false);
+    scheduled.mockReset().mockResolvedValue(0);
+  });
+  const planningEvent = (events: OnboardingEvent[]) => events.filter((e) => e.phase === "planning").at(-1) as { status: string; emptyPool?: unknown };
+
+  it("is attached to the planning event when keywords were found and none was planned", async () => {
+    plan.mockResolvedValue([]);
+    const events = await collect();
+    expect(planningEvent(events)).toMatchObject({ status: "skipped", emptyPool: EMPTY_POOL });
+    expect(emptyPool).toHaveBeenCalledWith(expect.anything(), "ws1");
+  });
+
+  it("is not read when the plan has something on it", async () => {
+    plan.mockResolvedValue([{ keywordId: "k1", term: "seo agent", date: "2026-09-21" }]);
+    const events = await collect();
+    expect(planningEvent(events)).not.toHaveProperty("emptyPool");
+    expect(emptyPool).not.toHaveBeenCalled();
+  });
+
+  it("is attached when research looked and found nothing", async () => {
+    analyse.mockResolvedValue({ keywordsFound: 0, layers: [] });
+    const events = await collect();
+    expect(planningEvent(events)).toMatchObject({ status: "skipped", emptyPool: EMPTY_POOL });
+  });
+
+  it("is not attached when the site could not be read: that setup fell short", async () => {
+    analyse.mockResolvedValue({ keywordsFound: 0, layers: [{ id: "crawl", status: "failed", detail: "HTTP 403" }] });
+    const events = await collect();
+    expect(planningEvent(events)).not.toHaveProperty("emptyPool");
+    expect(emptyPool).not.toHaveBeenCalled();
+  });
+
+  it("is not attached when keyword research is not configured", async () => {
+    creds.mockReturnValue(false);
+    const events = await collect();
+    expect(planningEvent(events)).not.toHaveProperty("emptyPool");
+  });
+
+  it("is not read when no model could judge this run: old verdicts are not this run's answer", async () => {
+    plan.mockResolvedValue([]);
+    model.mockReturnValueOnce(false);
+    const events = await collect();
+    expect(planningEvent(events)).toMatchObject({ status: "skipped" });
+    expect(planningEvent(events)).not.toHaveProperty("emptyPool");
+    expect(emptyPool).not.toHaveBeenCalled();
+  });
+
+  it("is not read when the trial hold, not the pool, emptied the plan (the pre-trial article is spent)", async () => {
+    plan.mockResolvedValue([]);
+    planHold.mockResolvedValue("spent");
+    const events = await collect();
+    expect(planningEvent(events)).not.toHaveProperty("emptyPool");
+    expect(emptyPool).not.toHaveBeenCalled();
+  });
+
+  it("leaves the run as it was when the tally cannot be read", async () => {
+    plan.mockResolvedValue([]);
+    emptyPool.mockRejectedValueOnce(new Error("keywords read failed"));
+    const events = await collect();
+    expect(planningEvent(events)).toMatchObject({ status: "skipped" });
+    expect(planningEvent(events)).not.toHaveProperty("emptyPool");
   });
 });

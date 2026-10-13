@@ -1,0 +1,339 @@
+{
+  "id": "sample-altorank",
+  "domain": "altorank.co",
+  "languageCode": "en",
+  "locationCode": 2840,
+  "today": "2026-09-29",
+  "business": {
+    "name": "AltoRank",
+    "description": "AltoRank is an open-source (AGPL) SEO and AI-search content tool: it finds topics a business can win, drafts articles, and publishes only what a person approved. Self-hosting is free; hosted plans are paid.",
+    "offerings": [
+      "SEO article drafting with an approval gate",
+      "Keyword and topic qualification",
+      "Self-hosted open-source install"
+    ],
+    "audiences": [
+      "Founders of small software companies",
+      "SEO agencies managing several client sites"
+    ],
+    "competitors": [
+      "outrank.so"
+    ],
+    "buyingJobs": [
+      "Publish SEO articles without losing editorial control"
+    ],
+    "differentiators": [
+      "Nothing publishes without an approval",
+      "Open source and self-hostable"
+    ],
+    "country": "United States",
+    "language": "English"
+  },
+  "terms": [
+    {
+      "term": "best ai seo writing tools",
+      "volume": 900,
+      "storedFit": {
+        "keep": true,
+        "reason": "A buyer comparing AI SEO writing tools.",
+        "funnel": "buyer"
+      },
+      "serp": {
+        "organic": [
+          {
+            "rank": 1,
+            "title": "12 Best AI SEO Writing Tools in 2026 (Tested)",
+            "url": "https://reviews.example/best-ai-seo-writing-tools",
+            "description": "We tested twelve tools.",
+            "domain": "reviews.example",
+            "wordCount": null
+          },
+          {
+            "rank": 2,
+            "title": "The 9 best AI writing tools for SEO",
+            "url": "https://blog.example/ai-writing-tools-seo",
+            "description": "Ranked list with pricing.",
+            "domain": "blog.example",
+            "wordCount": null
+          },
+          {
+            "rank": 3,
+            "title": "Best AI SEO tools compared",
+            "url": "https://compare.example/ai-seo-tools",
+            "description": "Side-by-side comparison.",
+            "domain": "compare.example",
+            "wordCount": null
+          },
+          {
+            "rank": 4,
+            "title": "AI Writer - Try free",
+            "url": "https://vendor.example/ai-writer",
+            "description": "Sign up today.",
+            "domain": "vendor.example",
+            "wordCount": null
+          }
+        ],
+        "capturedAt": "2026-09-29T00:00:00.000Z"
+      },
+      "label": {
+        "fit": "keep",
+        "verdict": "qualified",
+        "shape": "listicle",
+        "note": "Three of four results are ranked lists of tools."
+      }
+    },
+    {
+      "term": "outrank alternatives",
+      "volume": 300,
+      "storedFit": {
+        "keep": true,
+        "reason": "A buyer replacing a competitor.",
+        "funnel": "buyer"
+      },
+      "serp": {
+        "organic": [
+          {
+            "rank": 1,
+            "title": "Top 7 Outrank alternatives",
+            "url": "https://reviews.example/outrank-alternatives",
+            "description": "",
+            "domain": "reviews.example",
+            "wordCount": null
+          },
+          {
+            "rank": 2,
+            "title": "Outrank vs other AI SEO writers",
+            "url": "https://blog.example/outrank-vs",
+            "description": "",
+            "domain": "blog.example",
+            "wordCount": null
+          },
+          {
+            "rank": 3,
+            "title": "Outrank alternatives: an honest review",
+            "url": "https://compare.example/outrank-alternatives",
+            "description": "",
+            "domain": "compare.example",
+            "wordCount": null
+          },
+          {
+            "rank": 4,
+            "title": "Outrank - official site",
+            "url": "https://outrank.example/",
+            "description": "",
+            "domain": "outrank.example",
+            "wordCount": null
+          }
+        ],
+        "capturedAt": "2026-09-29T00:00:00.000Z"
+      },
+      "label": {
+        "fit": "keep",
+        "verdict": "qualified",
+        "shape": "comparison",
+        "note": "Editorial alternatives lists and a versus page."
+      }
+    },
+    {
+      "term": "seo content approval workflow",
+      "volume": 50,
+      "storedFit": {
+        "keep": true,
+        "reason": "A team that needs editorial sign-off.",
+        "funnel": "buyer"
+      },
+      "serp": {
+        "organic": [
+          {
+            "rank": 1,
+            "title": "How to build a content approval workflow",
+            "url": "https://guide.example/content-approval-workflow",
+            "description": "",
+            "domain": "guide.example",
+            "wordCount": null
+          },
+          {
+            "rank": 2,
+            "title": "Content approval process: steps and templates",
+            "url": "https://blog.example/content-approval-process",
+            "description": "",
+            "domain": "blog.example",
+            "wordCount": null
+          },
+          {
+            "rank": 3,
+            "title": "A 5-step SEO content review workflow",
+            "url": "https://agency.example/seo-review-workflow",
+            "description": "",
+            "domain": "agency.example",
+            "wordCount": null
+          }
+        ],
+        "capturedAt": "2026-09-29T00:00:00.000Z"
+      },
+      "label": {
+        "fit": "keep",
+        "verdict": "qualified",
+        "shape": "howTo",
+        "note": "How-to guides: a guide IS editorial."
+      }
+    },
+    {
+      "term": "ai seo software pricing plans",
+      "volume": 40,
+      "storedFit": {
+        "keep": true,
+        "reason": "A buyer checking prices.",
+        "funnel": "buyer"
+      },
+      "serp": {
+        "organic": [
+          {
+            "rank": 1,
+            "title": "Pricing - Vendor One",
+            "url": "https://vendor-one.example/pricing",
+            "description": "",
+            "domain": "vendor-one.example",
+            "wordCount": null
+          },
+          {
+            "rank": 2,
+            "title": "Plans and pricing | Vendor Two",
+            "url": "https://vendor-two.example/pricing",
+            "description": "",
+            "domain": "vendor-two.example",
+            "wordCount": null
+          },
+          {
+            "rank": 3,
+            "title": "Pricing - Vendor Three",
+            "url": "https://vendor-three.example/pricing",
+            "description": "",
+            "domain": "vendor-three.example",
+            "wordCount": null
+          },
+          {
+            "rank": 4,
+            "title": "Compare plans - Vendor Four",
+            "url": "https://vendor-four.example/plans",
+            "description": "",
+            "domain": "vendor-four.example",
+            "wordCount": null
+          }
+        ],
+        "capturedAt": "2026-09-29T00:00:00.000Z"
+      },
+      "label": {
+        "fit": "keep",
+        "verdict": "needs_page",
+        "note": "Every result is a vendor's pricing page."
+      }
+    },
+    {
+      "term": "open source seo content tool",
+      "volume": 30,
+      "storedFit": {
+        "keep": true,
+        "reason": "A buyer who wants to self-host.",
+        "funnel": "buyer"
+      },
+      "serp": {
+        "organic": [
+          {
+            "rank": 1,
+            "title": "AltoRank - open-source SEO content",
+            "url": "https://altorank.co/",
+            "description": "",
+            "domain": "altorank.co",
+            "wordCount": null
+          },
+          {
+            "rank": 2,
+            "title": "5 open-source SEO tools",
+            "url": "https://blog.example/open-source-seo-tools",
+            "description": "",
+            "domain": "blog.example",
+            "wordCount": null
+          },
+          {
+            "rank": 3,
+            "title": "Self-hosted SEO tools list",
+            "url": "https://list.example/self-hosted-seo",
+            "description": "",
+            "domain": "list.example",
+            "wordCount": null
+          }
+        ],
+        "capturedAt": "2026-09-29T00:00:00.000Z"
+      },
+      "label": {
+        "fit": "keep",
+        "verdict": "existing_page",
+        "note": "The site's own home page is the top result."
+      }
+    },
+    {
+      "term": "altorank login",
+      "volume": 10,
+      "storedFit": {
+        "keep": false,
+        "reason": "Brand navigation.",
+        "funnel": "buyer"
+      },
+      "serp": {
+        "organic": [
+          {
+            "rank": 1,
+            "title": "Sign in - AltoRank",
+            "url": "https://app.altorank.example/signin",
+            "description": "",
+            "domain": "app.altorank.example",
+            "wordCount": null
+          },
+          {
+            "rank": 2,
+            "title": "AltoRank on GitHub",
+            "url": "https://github.example/altorank",
+            "description": "",
+            "domain": "github.example",
+            "wordCount": null
+          },
+          {
+            "rank": 3,
+            "title": "AltoRank reviews",
+            "url": "https://reviews.example/altorank",
+            "description": "",
+            "domain": "reviews.example",
+            "wordCount": null
+          }
+        ],
+        "capturedAt": "2026-09-29T00:00:00.000Z"
+      },
+      "label": {
+        "fit": "reject",
+        "verdict": "buyer_mismatch",
+        "note": "Navigational: an existing user signing in."
+      }
+    },
+    {
+      "term": "how to cook pasta al dente",
+      "volume": 5000,
+      "serp": null,
+      "label": {
+        "fit": "reject",
+        "verdict": "buyer_mismatch",
+        "note": "Unrelated industry."
+      }
+    },
+    {
+      "term": "seo agency near me",
+      "volume": 2000,
+      "serp": null,
+      "label": {
+        "fit": "reject",
+        "verdict": "needs_serp",
+        "note": "Labelled for the buyer test only: no results page stored."
+      }
+    }
+  ]
+}
