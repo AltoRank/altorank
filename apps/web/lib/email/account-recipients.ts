@@ -94,6 +94,37 @@ export async function accountBillingRecipients(
   return [...found];
 }
 
+/**
+ * The account's owners: the people who can start its trial or choose its plan
+ * (`canManageBilling` is owner-only, lib/team/access.ts).
+ *
+ * For the one email that is both news about a site and an ask only an owner
+ * can answer: "we found your article live", which carries the trial line on an
+ * account that has not started it. An owner sees every site, so this needs no
+ * workspace scope. Throws when the member list cannot be read.
+ */
+export async function accountOwnerRecipients(
+  supabase: SupabaseClient,
+  accountId: string,
+): Promise<string[]> {
+  const found = new Set<string>();
+  // Throws when the member list cannot be read: "no owners" and "could not
+  // look" are different answers, and the one caller raises the second.
+  const { data: members, error } = await supabase
+    .from("account_members")
+    .select("user_id, role")
+    .eq("account_id", accountId)
+    .eq("role", "owner");
+  if (error) throw new Error(`could not read the account's owners: ${error.message}`);
+
+  for (const m of members ?? []) {
+    const { data } = await supabase.auth.admin.getUserById(m.user_id as string);
+    const email = data?.user?.email?.trim().toLowerCase();
+    if (email) found.add(email);
+  }
+  return [...found];
+}
+
 /** One member's address, for the emails that are about that person only. */
 export async function userEmail(supabase: SupabaseClient, userId: string): Promise<string | null> {
   try {

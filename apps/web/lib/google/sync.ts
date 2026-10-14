@@ -34,16 +34,21 @@ export type SyncResult = { workspaceId: string; ga4: number; gsc: number; error?
 export const NEEDS_RECONNECT_MESSAGE = "Google disconnected: the stored token was refused. Reconnect Google to resume syncing.";
 
 /**
- * Record that Google refused this workspace's token. The gsc and ga4 rows
- * hold the same token (one consent grants both, see the OAuth callback), so
- * both are marked; the callback clears both when it writes fresh tokens.
+ * Record that Google refused the token on this one connection row.
+ *
+ * Only the row whose token was refused. A site's gsc and ga4 rows can hold
+ * tokens from different Google users now: a consent writes only the rows it
+ * was granted (see the OAuth callback), so a GA4 connect by someone who never
+ * granted Search Console leaves the gsc row on the token it had. Marking both
+ * flagged a healthy GA4 row with another person's refusal, and reconnecting
+ * Search Console would not have cleared it. The callback clears the rows it
+ * writes fresh tokens to.
  */
-export async function markGoogleNeedsReconnect(supabase: SupabaseClient, workspaceId: string, message: string): Promise<void> {
+export async function markGoogleNeedsReconnect(supabase: SupabaseClient, integrationId: string, message: string): Promise<void> {
   await supabase
     .from("workspace_integrations")
     .update({ needs_reconnect: true, last_sync_error: message.slice(0, 500) })
-    .eq("workspace_id", workspaceId)
-    .in("integration_id", ["gsc", "ga4"]);
+    .eq("id", integrationId);
 }
 
 /**
@@ -103,16 +108,26 @@ export async function syncWorkspaceAnalytics(
     let ga4Count = 0;
     let gscCount = 0;
 
+    // GA4 failing is GA4's problem, not Search Console's: Analytics is its
+    // own consent now (lib/google/oauth.ts), so a token can read one and not
+    // the other, and a GA4 refusal used to abandon the Search Console pull
+    // below with it. The refused-refresh case cannot land here; it is thrown
+    // by getValidAccessToken above.
+    let ga4Error: string | undefined;
     if (integration.config?.ga4PropertyId) {
-      const metrics = await fetchGA4Metrics(accessToken, integration.config.ga4PropertyId, dateStr, dateStr);
-      const rows = metrics.map((m) => ({ workspace_id: ws.id, source: "ga4" as const, metric_date: dateStr, pageviews: m.pageviews, sessions: m.sessions, page_url: m.pageUrl }));
-      // An empty answer means the provider has not written that day yet, not
-      // that the day was empty. Now that the cron re-asks for recent days,
-      // deleting before checking would wipe a day that already landed.
-      if (rows.length) {
-        await supabase.from("analytics_metrics").delete().eq("workspace_id", ws.id).eq("source", "ga4").eq("metric_date", dateStr);
-        await supabase.from("analytics_metrics").insert(rows);
-        ga4Count = rows.length;
+      try {
+        const metrics = await fetchGA4Metrics(accessToken, integration.config.ga4PropertyId, dateStr, dateStr);
+        const rows = metrics.map((m) => ({ workspace_id: ws.id, source: "ga4" as const, metric_date: dateStr, pageviews: m.pageviews, sessions: m.sessions, page_url: m.pageUrl }));
+        // An empty answer means the provider has not written that day yet, not
+        // that the day was empty. Now that the cron re-asks for recent days,
+        // deleting before checking would wipe a day that already landed.
+        if (rows.length) {
+          await supabase.from("analytics_metrics").delete().eq("workspace_id", ws.id).eq("source", "ga4").eq("metric_date", dateStr);
+          await supabase.from("analytics_metrics").insert(rows);
+          ga4Count = rows.length;
+        }
+      } catch (err) {
+        ga4Error = err instanceof Error ? err.message : "GA4 sync failed";
       }
     }
 
@@ -151,7 +166,7 @@ export async function syncWorkspaceAnalytics(
       }
     }
 
-    return { workspaceId: ws.id, ga4: ga4Count, gsc: gscCount };
+    return { workspaceId: ws.id, ga4: ga4Count, gsc: gscCount, ...(ga4Error ? { error: ga4Error } : {}) };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown error";
     // invalid_grant / 401 from the refresh: the connection needs the person,
@@ -159,7 +174,7 @@ export async function syncWorkspaceAnalytics(
     // Any other failure (a 5xx, a property that vanished) is the night's
     // error and nothing more; tomorrow's run tries again.
     if (isGoogleReconnectError(err)) {
-      await markGoogleNeedsReconnect(supabase, ws.id, message);
+      await markGoogleNeedsReconnect(supabase, integration.id, message);
       return { workspaceId: ws.id, ga4: 0, gsc: 0, error: message, needsReconnect: true };
     }
     return { workspaceId: ws.id, ga4: 0, gsc: 0, error: message };
