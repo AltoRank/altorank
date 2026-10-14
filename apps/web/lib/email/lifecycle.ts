@@ -530,13 +530,38 @@ export type PlanChangedEmail = {
   /** Included articles a month on the new tier; null for a plan with no ceiling. */
   articleLimit: number | null;
   upgrade: boolean;
+  /**
+   * The switch happened during the card trial. Nothing has been charged, so
+   * there is no difference to bill and no unused part to credit.
+   */
+  trialing?: boolean;
 };
+
+/**
+ * The money sentence said "Stripe has charged the difference" on an upgrade.
+ * The switch is prorated onto the NEXT invoice (`create_prorations`), so
+ * nothing was charged then, and during a trial nothing is charged at all.
+ * The downgrade line promised that a site writing above the new pace "will
+ * slow to it" when nothing changed the pace; the webhook now does
+ * (paceOnDowngrade), and the sentence says so.
+ */
+function planChangeMoney(a: PlanChangedEmail): string {
+  if (a.trialing) {
+    return `Nothing has been charged: your trial carries on, and its first charge is at the ${a.toLabel} price. The new allowance applies from now.`;
+  }
+  return a.upgrade
+    ? `The difference for the rest of this billing period, prorated, is added to your next invoice, and the new allowance applies from now.`
+    : `The unused part of the old price is credited against your next invoice. The new allowance applies from now.`;
+}
 
 export function renderPlanChanged(a: PlanChangedEmail): RenderedEmail {
   const allowance =
     a.articleLimit === null
       ? `There is no metered article ceiling on ${a.toLabel}.`
       : `That is ${a.articleLimit} articles a month.`;
+  const slowed = a.upgrade
+    ? ""
+    : ` Any workspace that was set to write faster than ${a.toLabel} includes has been slowed to fit it.`;
   return {
     subject: `Your plan is now ${a.toLabel}`,
     preheader: `Changed from ${a.fromLabel}. ${allowance}`,
@@ -546,13 +571,11 @@ export function renderPlanChanged(a: PlanChangedEmail): RenderedEmail {
       emailParagraph(
         `The plan changed from <strong>${esc(a.fromLabel)}</strong> to <strong>${esc(a.toLabel)}</strong>. ${esc(allowance)}`,
       ) +
-      emailParagraph(
-        a.upgrade
-          ? `Stripe has charged the difference for the rest of this billing period, prorated, and the new allowance applies from now.`
-          : `Stripe has credited the unused part of the old price against the next invoice. The new allowance applies from now, so a workspace already writing above the new pace will slow to it.`,
-      ) +
+      emailParagraph(esc(planChangeMoney(a) + slowed)) +
       emailButton(appLink("/settings/billing"), "See what is included") +
-      emailParagraph(`The invoice for this change is in the Stripe billing portal, linked from that page.`),
+      (a.trialing
+        ? ""
+        : emailParagraph(`The change shows on your next invoice, in the Stripe billing portal linked from that page.`)),
   };
 }
 

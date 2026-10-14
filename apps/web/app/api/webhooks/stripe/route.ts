@@ -16,6 +16,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { recordEvent } from "@/lib/observability/record";
 import { describe as describeError } from "@/lib/observability/event";
 import { paceOnActivation } from "@/lib/content/pace";
+import { paceOnDowngrade } from "@/lib/plan/pace-options";
 import { dispatchResume } from "@/lib/plan/resume-dispatch";
 import { oweResume } from "@/lib/plan/resume-week";
 import { canSelfInvoke } from "@/lib/content/fan-out";
@@ -632,6 +633,22 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
       // delivery wrote, see nothing changed, and an email that failed the
       // first time would never be tried again.
       const previous = event.data.previous_attributes as Partial<Stripe.Subscription> | undefined;
+
+      /**
+       * The tier the subscription moved from, when this event moved it.
+       *
+       * The event's own `previous_attributes` first: the in-app switch writes
+       * the new tier to the row the moment Stripe accepts it (actions/billing.ts),
+       * and Stripe delivers this event after that, so the row read above
+       * usually already held the new tier and the change email - which the
+       * comment below promises for "our own in-place switch" - was skipped.
+       * The row's tier stays the answer for a portal change, whose event the
+       * row has not seen.
+       */
+      const previousTier = planForPriceId(previous?.items?.data?.[0]?.price?.id);
+      const fromTier = (previousTier ?? before?.plan ?? null) as PlanTier | null;
+      const tierMoved = Boolean(before && plan && fromTier && fromTier !== plan && status !== "canceled");
+      const trialingNow = status === "trialing";
       const failedAt = new Date(event.created * 1000);
       const pastDue = event.type === "customer.subscription.updated" && status === "past_due";
       if (event.type === "customer.subscription.updated") {
@@ -667,6 +684,28 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
           }
           if (target) await resumePausedWorkspaces(supabase, target);
         }
+
+        // A downgrade slows every site to what the new tier includes. Nothing
+        // did: a site at 25 a week on Agency kept that pace on Managed until
+        // the month's 100 were used and scheduled writing stopped dead, while
+        // the downgrade email said it "will slow to" the new pace. Only a
+        // pace above the new ceiling moves, and only down.
+        if (tierMoved && before && plan && fromTier && rungOf(plan) < rungOf(fromTier)) {
+          const { data: sites, error: sitesError } = await supabase
+            .from("workspaces")
+            .select("id, auto_generate_weekly_limit")
+            .eq("account_id", before.id);
+          if (sitesError) throw new Error(`${event.type}: could not read the sites to slow to the new plan (${sitesError.message})`);
+          for (const site of sites ?? []) {
+            const next = paceOnDowngrade(site.auto_generate_weekly_limit as number | null, plan);
+            if (next === null) continue;
+            const { error: paceError } = await supabase
+              .from("workspaces")
+              .update({ auto_generate_weekly_limit: next })
+              .eq("id", site.id);
+            if (paceError) throw new Error(`${event.type}: could not slow a site to the new plan's pace (${paceError.message})`);
+          }
+        }
       }
 
       /**
@@ -679,8 +718,8 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
        * while the several `customer.subscription.updated` events one switch
        * produces collapse into one email.
        */
-      if (before && plan && before.plan && before.plan !== plan && status !== "canceled") {
-        const from = before.plan as PlanTier;
+      if (tierMoved && before && plan && fromTier) {
+        const from = fromTier;
         const day = new Date(event.created * 1000).toISOString().slice(0, 10);
         try {
           await notifyPlanChanged(
@@ -691,6 +730,7 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
               toLabel: PLAN_LABELS[plan] ?? plan,
               articleLimit: PLAN_ARTICLE_LIMITS[plan] ?? null,
               upgrade: rungOf(plan) > rungOf(from),
+              trialing: trialingNow,
             },
             `${from}->${plan}:${day}`,
           );

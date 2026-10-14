@@ -590,6 +590,51 @@ describe("the final period's overage", () => {
   });
 });
 
+describe("a plan change", () => {
+  // The in-app switch writes the new tier to the row as soon as Stripe accepts
+  // it, so the event arrived to a row that already said Agency and the change
+  // email was skipped. The event's previous price says where it came from.
+  it("emails an in-app switch whose row already carries the new tier", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "growth" };
+    await deliver(subscriptionEvent("updated", {}, { items: { data: [{ price: { id: STARTER } }] } }));
+    expect(planChangedEmail).toHaveBeenCalledOnce();
+    expect(planChangedEmail.mock.calls[0][2]).toMatchObject({ fromLabel: "Managed", toLabel: "Agency", upgrade: true, trialing: false });
+  });
+
+  it("sends nothing for a monthly/yearly switch on the same tier", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "growth" };
+    await deliver(subscriptionEvent("updated", { items: { data: [{ price: { id: GROWTH_YEARLY } }] } }, { items: { data: [{ price: { id: GROWTH } }] } }));
+    expect(planChangedEmail).not.toHaveBeenCalled();
+  });
+
+  it("says it happened during the trial, when it did", async () => {
+    accountRow = { id: "account-1", plan_status: "trialing", payment_failed_at: null, plan: "starter" };
+    await deliver(subscriptionEvent("updated", { status: "trialing", trial_end: 1_790_604_800 }));
+    expect(planChangedEmail.mock.calls[0][2]).toMatchObject({ trialing: true });
+  });
+
+  // An Agency site at 25 a week kept that pace on Managed until the month's
+  // 100 were used and scheduled writing stopped dead.
+  it("slows every site above the new tier's ceiling on a downgrade, and only those", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "growth" };
+    workspaceRows = [
+      { id: "ws-fast", auto_generate_weekly_limit: 25 },
+      { id: "ws-slow", auto_generate_weekly_limit: 3 },
+    ];
+    await deliver(subscriptionEvent("updated", { items: { data: [{ price: { id: STARTER } }] } }, { items: { data: [{ price: { id: GROWTH } }] } }));
+    const paceWrites = writes.filter((w) => w.table === "workspaces" && "auto_generate_weekly_limit" in w.row);
+    expect(paceWrites).toEqual([expect.objectContaining({ row: { auto_generate_weekly_limit: 23 }, val: "ws-fast" })]);
+    expect(planChangedEmail.mock.calls[0][2]).toMatchObject({ upgrade: false });
+  });
+
+  it("leaves the pace alone on an upgrade", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "starter" };
+    workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 3 }];
+    await deliver(subscriptionEvent("updated"));
+    expect(writes.filter((w) => w.table === "workspaces")).toEqual([]);
+  });
+});
+
 describe("the account pause ending on Stripe's side", () => {
   it("resumes the billing-paused workspaces when pause_collection is lifted", async () => {
     // Stripe's `resumes_at` clears the pause on the date and reports the old
