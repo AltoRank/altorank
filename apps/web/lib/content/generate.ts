@@ -409,13 +409,22 @@ export async function generateArticle(
   // Stripe invoice item here, before the row, the research or the model call,
   // so a Write-now that then failed billed €0.60 for no article, and the
   // failed row (`error`) was not even in the count (round-5 review).
-  let recordOverage: (() => Promise<void>) | null = null;
+  //
+  // Once per article, not once per generation. Regenerating an article that
+  // already has text adds no article - below the limit it is free and not
+  // counted - so at the limit it is not billed either; it used to bill
+  // "Additional article beyond the monthly included volume" every time, so
+  // three regenerations of one draft over the agent API were three charges.
+  // The article's id rides on the charge, so deleting the draft in the same
+  // period takes the pending charge back with the slot (removePendingOverage).
+  let recordOverage: ((articleId: string | null) => Promise<void>) | null = null;
   const targetCounted = await writesIntoCountedRow(supabase, workspaceId, articleId, Boolean(refreshOf));
   if (pastIncludedVolume(quota, { targetCounted })) {
     if (quota.reason === "no-plan" || autonomous) {
       throw new Error(quotaExceededMessage(quota));
     }
-    recordOverage = () => recordOverageArticle(supabase, billedAccountId, quota);
+    const regenerating = regeneratingText || (Boolean(articleId) && !refreshOf && (await articleHasText(supabase, articleId as string)));
+    if (!regenerating) recordOverage = (id) => recordOverageArticle(supabase, billedAccountId, quota, id);
   }
 
   let topicBrief: Opportunity | null = null;
@@ -1186,7 +1195,7 @@ export async function generateArticle(
         })
         .eq("id", job.id);
       if (recordFreeDraft) await recordFreeDraft();
-      if (recordOverage) await recordOverage();
+      if (recordOverage) await recordOverage(article.id);
 
       return {
         articleId: article.id,
@@ -1268,7 +1277,7 @@ export async function generateArticle(
       throw new Error(`Could not save the generated article: ${saveError.message}`);
     }
     if (recordFreeDraft) await recordFreeDraft();
-    if (recordOverage) await recordOverage();
+    if (recordOverage) await recordOverage(article.id);
 
     await supabase
       .from("generation_jobs")
