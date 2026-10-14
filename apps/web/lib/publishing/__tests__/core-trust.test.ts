@@ -14,6 +14,11 @@ vi.mock("@/lib/articles/body-read", () => ({
   readVisibleArticle: async (client: { article: unknown }) => client.article,
 }));
 
+// The post-publish status is a service-role write (migration 109); the fake
+// plays that client too, so its recorded updates stay the ones asserted on.
+const svc = vi.hoisted(() => ({ client: null as unknown }));
+vi.mock("@/lib/supabase/server", () => ({ createServiceClient: () => svc.client }));
+
 import { publishArticleCore } from "../core";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import type { PublishPayload } from "@/lib/cms/types";
@@ -47,6 +52,7 @@ function fake(article: Record<string, unknown>, workspace: Record<string, unknow
       return {};
     }),
   };
+  svc.client = client;
   return client;
 }
 
