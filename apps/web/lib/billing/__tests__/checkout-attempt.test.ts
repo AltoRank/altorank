@@ -53,6 +53,14 @@ it("releases the reservation when Stripe refuses the create, so the next press s
   // Only while it still has no session: a parallel create that saved one is kept.
   expect(deletes[0]).toEqual([["eq","account_id","account"],["eq","id","attempt-one"],["is","stripe_session_id",null]]);
 });
+it("keeps the reservation when the refusal is a concurrent create under the same key", async () => {
+  // A double click: the first create is still running and will save its
+  // session on this row. Releasing it would let a third press open a second
+  // checkout beside the first.
+  create.mockRejectedValueOnce(Object.assign(new Error("Keys for idempotent requests can only be used ..."), {code:"idempotency_key_in_use"}));
+  await expect(createPendingCheckout("account",parameters)).rejects.toThrow("idempotent");
+  expect(deletes).toHaveLength(0);
+});
 it("treats a reservation that never got a session as abandoned after a few minutes, and starts over", async () => {
   rpc.mockResolvedValueOnce({data:[{id:"attempt-old",expires_at:reservedAgo(ABANDONED_ATTEMPT_MS + 1000),parameters:{...parameters,expires_at:1}}]})
     .mockResolvedValueOnce({data:[{id:"attempt-new",expires_at:reservedAgo(0),parameters:{...parameters,expires_at:99999}}]});

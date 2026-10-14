@@ -35,6 +35,11 @@ export function attemptAbandoned(attempt: Pick<AttemptRow, "expires_at" | "strip
 export const CHECKOUT_OPENING_MESSAGE =
   "A checkout is still opening in another tab or window. Wait a moment and try again.";
 
+/** Stripe's 409 for a request whose idempotency key another request is using right now. */
+function idempotencyKeyInUse(err: unknown): boolean {
+  return (err as { code?: unknown } | null)?.code === "idempotency_key_in_use";
+}
+
 /** The guard against a delete that did not take: never more than this many fresh starts in one call. */
 const MAX_RESTARTS = 2;
 
@@ -102,10 +107,17 @@ export async function createPendingCheckout(
     // Stripe refused or could not be reached. Release the reservation so the
     // next press starts over with a fresh key and a fresh `expires_at`,
     // instead of replaying this exact request into the same refusal.
-    try {
-      await clear(true);
-    } catch {
-      // The abandoned-row rule above releases it in a few minutes anyway.
+    //
+    // Except when the refusal is "this key is in use": a double click or a
+    // second tab whose create is still running under the same key. That
+    // create will save its session on this row; releasing the row under it
+    // would let the next press open a second checkout beside it.
+    if (!idempotencyKeyInUse(err)) {
+      try {
+        await clear(true);
+      } catch {
+        // The abandoned-row rule above releases it in a few minutes anyway.
+      }
     }
     throw err;
   }
