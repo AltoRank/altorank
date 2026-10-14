@@ -122,14 +122,14 @@ describe("Organization proposal", () => {
     expect(org.jsonLd.name).toBe("Agenzia Web Marketing Milano");
   });
 
-  it("takes the first segment, not the shortest (regression: Prima Posizione)", () => {
-    const org = orgOf(page(`<title>Prima Posizione | Agenzia SEO</title>`))!;
-    expect(org.jsonLd.name).toBe("Prima Posizione");
+  it("takes the first segment, not the shortest (regression: a two-word agency name)", () => {
+    const org = orgOf(page(`<title>Acme Posizione | Agenzia SEO</title>`))!;
+    expect(org.jsonLd.name).toBe("Acme Posizione");
   });
 
   it("does not split hyphenated brand names", () => {
-    const org = orgOf(page(`<title>Prima-Posizione</title>`))!;
-    expect(org.jsonLd.name).toBe("Prima-Posizione");
+    const org = orgOf(page(`<title>Acme-Posizione</title>`))!;
+    expect(org.jsonLd.name).toBe("Acme-Posizione");
   });
 
   it("reports unsourceable fields as missing rather than inventing them", () => {
