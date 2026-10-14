@@ -135,3 +135,14 @@ export function paceOptions(quota: Pick<Quota, "limit" | "reason">): PaceOption[
     };
   });
 }
+
+/**
+ * The pace a site moves to when the account drops to `tier`: the highest the
+ * new tier includes, when the site is set above it. Null when nothing should
+ * change - a pace already inside the new allowance, or none set.
+ */
+export function paceOnDowngrade(current: number | null | undefined, tier: PlanTier): number | null {
+  if (current === null || current === undefined) return null;
+  const ceiling = maxAllowedPace({ reason: "plan", limit: PLAN_ARTICLE_LIMITS[tier] });
+  return current > ceiling ? ceiling : null;
+}

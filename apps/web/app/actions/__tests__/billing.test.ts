@@ -111,6 +111,12 @@ describe("first purchase", () => {
     expect(subUpdate).not.toHaveBeenCalled();
   });
 
+  it("sends a cancelled checkout back with the destination it was opened for", async () => {
+    const { createCheckoutSession } = await import("../billing");
+    await createCheckoutSession("growth", "month", "/connect/google");
+    expect(checkoutCreate.mock.calls[0][0].cancel_url).toMatch(/\/checkout\/cancelled\?next=%2Fconnect%2Fgoogle$/);
+  });
+
   it("opens Checkout again when the stored subscription is canceled", async () => {
     // The id is stale: Stripe will not bill it again, so there is nothing to
     // update and a new subscription is the right thing.

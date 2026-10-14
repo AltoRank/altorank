@@ -23,6 +23,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
 import { canAddWorkspace } from "@/lib/team/access";
+import { accountPauseAddSiteMessage } from "@/lib/billing/pause";
+import { isoDay } from "@/lib/billing/resume";
 
 export type InsertWorkspaceResult = { ok: true; id: string } | { ok: false; error: string };
 
@@ -55,7 +57,25 @@ export async function insertWorkspaceAsServer(
     return { ok: false, error: ADD_SITE_ROLE_MESSAGE };
   }
 
-  const { data, error } = await createServiceClient()
+  const service = createServiceClient();
+
+  // The account pause: "nothing is drafted or billed until then". A site added
+  // during it used to draft normally, so it is refused until the pause is
+  // lifted - on Billing, or by the date passing. A pause whose date has passed
+  // is over even before the cron writes it back.
+  const { data: paused, error: pauseError } = await service
+    .from("workspaces")
+    .select("paused_until")
+    .eq("account_id", accountId)
+    .eq("status", "paused")
+    .gt("paused_until", isoDay(new Date()))
+    .order("paused_until", { ascending: false })
+    .limit(1);
+  if (pauseError) return { ok: false, error: `Could not check whether this account is paused: ${pauseError.message}` };
+  const pausedUntil = (paused?.[0]?.paused_until as string | undefined) ?? null;
+  if (pausedUntil) return { ok: false, error: accountPauseAddSiteMessage(pausedUntil) };
+
+  const { data, error } = await service
     .from("workspaces")
     .insert({ ...row, account_id: accountId })
     .select("id")

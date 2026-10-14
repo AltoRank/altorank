@@ -96,6 +96,8 @@ describe("frozenReason", () => {
     expect(r).toMatch(/100 included articles/);
     expect(r).toMatch(/Upgrade/);
     expect(r).toMatch(/next month/);
+    // And the third: a frozen card cannot be written as overage, New article can.
+    expect(r).toMatch(/New article on the Articles page/);
   });
 });
 
