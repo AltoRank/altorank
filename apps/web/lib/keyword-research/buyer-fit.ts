@@ -3,9 +3,20 @@
 
 import type { AskModel, SpendSink } from "./buyer-model";
 import { askStructured, describeBusiness, extractJson, modelAvailable } from "./buyer-model";
+import { mapLimit } from "@/lib/concurrency";
+import { isBudgetRefusal, watchRefusals } from "@/lib/billing/spend-scope";
 
 /** Maximum phrases per model request, not a limit on total coverage. */
 export const MAX_JUDGED = 40; // Per request, not a cap on coverage.
+
+/**
+ * Batches asked side by side. They were asked one at a time: six batches of
+ * about fifteen seconds, back to back, were a minute and a half of a
+ * production first look (2026-10-09). The batches are the same either way -
+ * sorted, cut at MAX_JUDGED - so the answers are too; every request still
+ * claims its cost from the run's budget before it is sent.
+ */
+export const BUYER_FIT_CONCURRENCY = 5;
 
 /**
  * Who the search belongs to. "buyer": someone weighing this kind of product.
@@ -205,7 +216,7 @@ export function parseVerdicts(raw: string | null, asked: readonly string[]): Map
 export async function judgeBuyerFit(
   business: FitProfile | null,
   terms: readonly string[],
-  options: { spend?: SpendSink | null; ask?: AskModel } = {},
+  options: { spend?: SpendSink | null; ask?: AskModel; concurrency?: number } = {},
 ): Promise<FitJudgement> {
   // Sorted, so the same set of phrases is asked in the same batches in the
   // same order whatever order discovery returned them in: a borderline
@@ -220,14 +231,57 @@ export async function judgeBuyerFit(
   const ask = options.ask ?? askStructured;
   const asked = askedKey(business);
   // Bounded batches avoid truncated JSON. Retry only missing decisions once.
-  for (let offset = 0; offset < termsToJudge.length; offset += MAX_JUDGED) {
-    let missing = termsToJudge.slice(offset, offset + MAX_JUDGED);
+  const batches: string[][] = [];
+  for (let offset = 0; offset < termsToJudge.length; offset += MAX_JUDGED) batches.push(termsToJudge.slice(offset, offset + MAX_JUDGED));
+  // Side by side, every batch claims its most (BUYER_FIT_MAX_TOKENS) from a
+  // first look's budget before it is sent, and settles at what it cost -
+  // about a third of that. So near the end of the room the batch that claims
+  // last is refused while the others still hold their estimates, and a
+  // refused batch used to be asked again at once, refused again, and its
+  // phrases - the end of the alphabet - left out of the pool with no verdict
+  // (round-1 review: 7 phrases on one site, all w and y). A refusal while
+  // another batch is still asking now waits for that one to settle and asks
+  // again; refused with nobody else asking is the budget's real end, as it
+  // was one at a time. Every attempt still claims before it is sent.
+  let asking = 0;
+  let waiters: Array<() => void> = [];
+  const wake = () => { const w = waiters; waiters = []; for (const f of w) f(); };
+  const askPatiently = async (prompt: string): Promise<string | null> => {
+    for (;;) {
+      asking += 1;
+      let raw: string | null = null;
+      let refused = false;
+      try {
+        const got = await watchRefusals(() => ask("keyword-research/buyer-fit", prompt, { maxTokens: BUYER_FIT_MAX_TOKENS, spend: options.spend, tier: "decision", schema: BUYER_FIT_SCHEMA }));
+        raw = got.value;
+        refused = got.refused;
+      } catch (err) {
+        if (!isBudgetRefusal(err)) {
+          asking -= 1;
+          wake();
+          throw err;
+        }
+        refused = true;
+      }
+      asking -= 1;
+      if (!refused) { wake(); return raw; }
+      // Nobody else holds a claim that could settle lower: the room is gone.
+      if (asking === 0) { wake(); return null; }
+      await new Promise<void>((r) => waiters.push(r));
+    }
+  };
+  const answered = await mapLimit(batches, options.concurrency ?? BUYER_FIT_CONCURRENCY, async (batch) => {
+    const got = new Map<string, FitVerdict>();
+    let missing = batch;
     for (let attempt = 0; attempt < 2 && missing.length; attempt++) {
       const prompt = buyerFitPrompt(described, missing);
-      const raw = await ask("keyword-research/buyer-fit", prompt, { maxTokens: BUYER_FIT_MAX_TOKENS, spend: options.spend, tier: "decision", schema: BUYER_FIT_SCHEMA });
-      for (const [term, decision] of parseVerdicts(raw, missing)) verdicts.set(term, { ...decision, asked });
-      missing = missing.filter((term) => !verdicts.has(term));
+      const raw = await askPatiently(prompt);
+      for (const [term, decision] of parseVerdicts(raw, missing)) got.set(term, { ...decision, asked });
+      missing = missing.filter((term) => !got.has(term));
     }
-  }
+    return got;
+  });
+  // Merged in batch order, as the one-at-a-time loop did.
+  for (const got of answered) for (const [term, v] of got) verdicts.set(term, v);
   return { verdicts, basis: verdicts.size ? "model" : "none" };
 }

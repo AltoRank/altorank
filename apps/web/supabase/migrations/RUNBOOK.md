@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site) and **109** (approval written by server), each with its section at the end. **101, 104 and 105 go in BEFORE their code is deployed; 097, 099, 100 and 109 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record) and **109** (approval written by server), each with its section at the end. **101, 104, 105, 106 and 107 go in BEFORE their code is deployed; 097, 099, 100 and 109 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -156,6 +156,8 @@ m(file, applied) as (values
   ('101_account_creator',                    exists (select 1 from col where t='accounts' and c='created_by') and not has_table_privilege('authenticated', 'public.account_members', 'INSERT')),
   ('104_onboarding_nothing_planned',         exists (select 1 from col where t='onboarding_runs' and c='empty_pool') and exists (select 1 from chk where conname='onboarding_runs_status_check' and def like '%nothing_planned%')),
   ('105_publish_log_found_on_site',          exists (select 1 from col where t='publish_log' and c='source') and exists (select 1 from col where t='publish_log' and c='url') and to_regclass('public.publish_log_found_on_site_once') is not null),
+  ('106_run_budgets',                        to_regclass('public.run_budgets') is not null and exists (select 1 from col where t='provider_spend' and c='stage') and to_regprocedure('public.run_budget_claim(uuid,text,numeric,numeric)') is not null),
+  ('107_fast_first_look',                    exists (select 1 from col where t='onboarding_runs' and c='timings') and exists (select 1 from col where t='articles' and c='body_stream') and not has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT') and to_regclass('public.owed_bodies') is not null and exists (select 1 from pg_trigger where tgname = 'articles_body_stream_server_only')),
   ('109_approval_written_by_server',         exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'articles_guard_approval' and c.relname = 'articles') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'workspaces_guard_auto_approve' and c.relname = 'workspaces'))
 )
 select file, applied from m order by file;
@@ -370,6 +372,8 @@ no code in the repo references either).
 | 101_account_creator.sql | `integration/root-causes-2026-09-25` | 085; **applied before its code is deployed** | yes | yes, see its section (an owner can again add any user as a member) |
 | 104_onboarding_nothing_planned.sql | `fix/onboarding-no-empty-gate` | 076; **applied before its code is deployed** | yes | only after its code is reverted and no row holds `nothing_planned`: see its section |
 | 105_publish_log_found_on_site.sql | `feat/found-live-receipt` | 003, 094; **applied before its code is merged** | yes | only after its code is reverted: see its section |
+| 106_run_budgets.sql | `fix/first-look-spend-reserve` | 025, 076; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section |
+| 107_fast_first_look.sql | `feat/fast-first-look` | 076, 097, 106; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section (loses the timing tables, any body mid-stream and the record of bodies owed) |
 | 109_approval_written_by_server.sql | `fix/approval-integrity` | 002, 003, 005, 013, 079, 094; **its code deployed first** | yes | yes, see its section (a member can again forge an approval over PostgREST) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
@@ -1304,6 +1308,122 @@ today's publish and skips the scheduled post).
 
 Test: `lib/publishing/__tests__/on-article-live.db.test.ts` (db tier). Green
 2026-10-02 on the local stack with 105 applied twice.
+
+## 106 — run budgets
+
+Adds `run_budgets` (one row per onboarding run: the ceiling, the reserves
+for the draft and an outline swap, what is committed, the per-stage split),
+the three functions the code claims and settles through
+(`run_budget_room`, `run_budget_claim`, `run_budget_settle`, service role
+only) and a nullable `provider_spend.stage`. The first look's $1 used to be
+checked after the fact against provider_spend, so calls in flight landed
+over it (2 of 9 live runs: $1.031, $1.004) and a process-global spend
+reporter let concurrent runs bill each other. Now every paid call of a first
+look claims its estimate before it is made, and a refused claim buys
+nothing.
+
+**Apply BEFORE its code is deployed.** The new code opens a budget row at
+the start of every run and writes `stage` on first-look spend rows. On a
+database without the file the row cannot be written, so the worker bounds
+the run in its own memory instead and the draft route holds the draft to its
+reserve (logged as `[spend] ... bounded in memory` / `no budget row`): never
+unbounded, but the split is then only in the log. A spend row whose insert
+names `stage` is retried without it, so no row is lost. **Merging deploys**
+(Vercel builds `main`), so run the post-flight below before the merge, not
+after. Old code never reads the table or the column, so applying early is
+harmless. Re-running is a no-op (`if not exists`, `create or replace`).
+
+Post-flight (expect `t`, `t`, `f`):
+
+```sql
+select to_regclass('public.run_budgets') is not null,
+       exists (select 1 from information_schema.columns
+                where table_name = 'provider_spend' and column_name = 'stage'),
+       has_function_privilege('authenticated', 'public.run_budget_claim(uuid,text,numeric,numeric)', 'EXECUTE');
+```
+
+What a run spent, by stage, once it has run:
+
+```sql
+select stage, count(*), sum(cost_usd) from provider_spend
+ where run_id = '<onboarding run id>' group by stage order by 3 desc;
+select ceiling_usd, committed_usd, refused, stages from run_budgets where run_id = '<onboarding run id>';
+```
+
+Rollback, only after the code is reverted:
+`drop function public.run_budget_settle(uuid,text,numeric,numeric); drop function public.run_budget_claim(uuid,text,numeric,numeric); drop function public.run_budget_room(uuid,text); drop table public.run_budgets; drop index if exists idx_provider_spend_run_stage; alter table provider_spend drop column stage;`
+(the last loses the stage tags only).
+
+Test: `lib/billing/__tests__/run-budget.db.test.ts` (db tier). Applied twice
+on the local stack 2026-10-01.
+
+## 107 — a first look's timings, its first article's streamed body, and the bodies it owes
+
+Three things, all new, none read by old code:
+
+- `onboarding_runs.timings` (jsonb): every stage of a first look in
+  milliseconds since `started_at`, written by the worker and merged by the
+  draft route (`apps/web/lib/onboarding/timings.ts`). Written in an update of
+  its own and never selected by the polling screen, so a database without it
+  loses only the table (`[timings] ... could not write timings` in the log).
+- `articles.body_stream` (text): the first article's body as the writer
+  streams it, for the gate's reader when `PRETRIAL_FULL_ARTICLE=1`. A body
+  column: no client grant (097 granted the columns that existed then; a new
+  column has none), revoked again here to say so. Written by the server only:
+  097 left UPDATE on the whole table to clients, so the trigger
+  `articles_body_stream_server_only` refuses a client token (`anon`,
+  `authenticated`) that sets it. Written only with the switch on; cleared
+  when the body is saved or fails.
+- `owed_bodies` (table, server only: RLS on, no policy, client privileges
+  revoked): a first article whose outline the gate is showing and whose body
+  is still owed. Inserted by `/api/internal/draft` when the gate opens,
+  deleted when the body is saved or given up; the body's retries and the
+  nightly sweep (`apps/web/lib/content/owed-bodies.ts`) read only this, never
+  the article row, which a client can write.
+
+**Apply before its code is deployed.** Without `owed_bodies` a body that
+fails after the gate is not tried again, and the reader's column is missing.
+Re-running is a no-op (`if not exists`, `create or replace`, drop-then-create
+for the trigger).
+
+Post-flight (expect `t`, `t`, `f`, `t`, `t`, `f`):
+
+```sql
+select exists (select 1 from information_schema.columns where table_name = 'onboarding_runs' and column_name = 'timings'),
+       exists (select 1 from information_schema.columns where table_name = 'articles' and column_name = 'body_stream'),
+       has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT'),
+       to_regclass('public.owed_bodies') is not null,
+       exists (select 1 from pg_trigger where tgname = 'articles_body_stream_server_only'),
+       has_table_privilege('authenticated', 'public.owed_bodies', 'SELECT');
+```
+
+Where a first look's time went, once it has run:
+
+```sql
+select timings->'marks', timings->'stages' from onboarding_runs where id = '<onboarding run id>';
+```
+
+What is owed right now:
+
+```sql
+select article_id, attempts, allowance_usd, owed_since, last_tried_at from owed_bodies order by owed_since;
+```
+
+Rollback, only after the code is reverted:
+
+```sql
+drop table if exists public.owed_bodies;
+drop trigger if exists articles_body_stream_server_only on public.articles;
+drop function if exists public.articles_body_stream_server_only();
+alter table public.onboarding_runs drop column if exists timings;
+alter table public.articles drop column if exists body_stream;
+```
+
+Tests: `lib/onboarding/__tests__/first-look-gate.db.test.ts` and
+`lib/content/__tests__/owed-bodies.db.test.ts` (db tier: the columns and the
+table refused to a client token, the trigger, the reader's checks, a re-armed
+article buying nothing, a try claimed once, the one top-up). Applied on the
+local stack 2026-10-11, and again with `owed_bodies` and the trigger.
 
 ## 109 — an approval is written by the server
 

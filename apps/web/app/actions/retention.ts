@@ -5,11 +5,12 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { createClient } from "@/lib/supabase/server";
 import { billingEnabled, getStripe } from "@/lib/stripe";
 import { isPauseMonths, pausedUntil, resumesAtUnix } from "@/lib/billing/pause";
-import { liftStripePause, resumePausedWorkspaces } from "@/lib/billing/resume";
+import { endStripePauseEarly, resumePausedWorkspaces } from "@/lib/billing/resume";
 import { validateCancellation } from "@/lib/billing/cancellation";
 import { billingFailure, type BillingOutcome } from "@/lib/billing/failure";
 import { createServiceClient } from "@/lib/supabase/server";
 import { notifyAccountPaused } from "@/lib/email/lifecycle";
+import { invoicePendingCharges } from "@/lib/billing/invoice-pending";
 
 // `accounts.cancels_at` is a billing column. Migration 072 guards it with a
 // trigger that raises 42501 for any signed-in user - owner included - because
@@ -33,12 +34,16 @@ async function ownerAccount() {
   const supabase = await createClient();
   const { data: account } = await supabase
     .from("accounts")
-    .select("id, name, plan, stripe_subscription_id, current_period_end")
+    .select("id, name, plan, plan_status, stripe_customer_id, stripe_subscription_id, current_period_end")
     .eq("id", accountId)
     .single();
   if (!account) throw new Error("No account found.");
   return { supabase, account, user };
 }
+
+/** Why a trial has no pause. Shown on the card too (retention-card.tsx). */
+const TRIAL_PAUSE_MESSAGE =
+  "A trial cannot be paused: nothing has been charged yet. Cancel the trial before it ends and nothing will be.";
 
 /**
  * Pause for 1, 2 or 3 months. Every workspace on the account goes to
@@ -49,7 +54,25 @@ async function ownerAccount() {
 export async function pauseAccount(months: unknown): Promise<BillingOutcome<{ pausedUntil: string }>> {
   if (!isPauseMonths(months)) return { ok: false, error: "Choose 1, 2 or 3 months." };
   const { supabase, account } = await ownerAccount();
+  // Nothing has been charged during a trial, so there is no billing to pause,
+  // and what Stripe does with the trial's first invoice under a voiding pause
+  // is not something to find out on a customer. Cancelling the trial is the
+  // way to stop before the first charge.
+  if (account.plan_status === "trialing") return { ok: false, error: TRIAL_PAUSE_MESSAGE };
   const until = pausedUntil(new Date(), months);
+
+  // The month's overage, billed before the pause: it waits for the next
+  // renewal invoice, which the pause voids, so it used to be voided with the
+  // fee. First, so a refusal here has changed nothing.
+  if (billingEnabled && account.stripe_subscription_id && account.stripe_customer_id) {
+    try {
+      await invoicePendingCharges(getStripe(), account.stripe_customer_id as string, {
+        subscriptionId: account.stripe_subscription_id as string,
+      });
+    } catch (err) {
+      return billingFailure(err, "The pause could not be started");
+    }
+  }
 
   const { data: paused, error } = await supabase
     .from("workspaces")
@@ -119,7 +142,9 @@ export async function resumeAccount(): Promise<BillingOutcome> {
 
   if (billingEnabled && account.stripe_subscription_id) {
     try {
-      await liftStripePause(getStripe(), account.stripe_subscription_id);
+      // Bills the renewal the pause voided, when one fell inside it: resuming
+      // early must not keep a period free that the pause only covered in part.
+      await endStripePauseEarly(getStripe(), account.stripe_subscription_id);
     } catch (err) {
       // Writing is back either way; Stripe resumes on `resumes_at` by itself,
       // and the generate cron lifts the rows again if it has to

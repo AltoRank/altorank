@@ -170,3 +170,43 @@ describe("resumeExpiredPauses only lifts the pauses that have expired", () => {
     expect(workspaceWrite?.filters.filter((f) => f[1] === "lte")).toHaveLength(0);
   });
 });
+
+// Resuming early kept the renewal the pause had voided: pause the day before
+// a renewal, resume the day after, and that whole period went unpaid.
+describe("endStripePauseEarly", () => {
+  async function run(sub: Record<string, unknown>) {
+    const { endStripePauseEarly } = await import("../resume");
+    const retrieve = vi.fn(async () => sub);
+    const upd = vi.fn(async () => ({}));
+    const outcome = await endStripePauseEarly({ subscriptions: { retrieve, update: upd } } as unknown as Stripe, "sub_1");
+    return { outcome, retrieve, upd };
+  }
+
+  it("restarts the period today when a renewal fell inside the pause and was voided", async () => {
+    const { outcome, retrieve, upd } = await run({
+      pause_collection: { behavior: "void" },
+      latest_invoice: { status: "void", billing_reason: "subscription_cycle" },
+    });
+    expect(retrieve).toHaveBeenCalledWith("sub_1", { expand: ["latest_invoice"] });
+    expect(outcome).toBe("rebilled");
+    expect(upd).toHaveBeenCalledWith("sub_1", { pause_collection: "", billing_cycle_anchor: "now", proration_behavior: "none" });
+  });
+
+  it("only clears the pause while the paid period is still running", async () => {
+    const { outcome, upd } = await run({
+      pause_collection: { behavior: "void" },
+      latest_invoice: { status: "paid", billing_reason: "subscription_cycle" },
+    });
+    expect(outcome).toBe("lifted");
+    expect(upd).toHaveBeenCalledWith("sub_1", { pause_collection: "" });
+  });
+
+  it("does not restart the period of a subscription Stripe already resumed", async () => {
+    const { outcome, upd } = await run({
+      pause_collection: null,
+      latest_invoice: { status: "void", billing_reason: "subscription_cycle" },
+    });
+    expect(outcome).toBe("lifted");
+    expect(upd).toHaveBeenCalledWith("sub_1", { pause_collection: "" });
+  });
+});

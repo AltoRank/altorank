@@ -28,13 +28,11 @@ vi.mock("@/lib/seo/recommendations", () => ({
   recommendKeywords: (...a: unknown[]) => recommend(...a),
   pickNextKeyword: (...a: unknown[]) => pick(...a),
 }));
-const setSpendReporter = vi.fn();
 vi.mock("@/lib/seo/client", () => ({
   hasDataForSEOCredentials: () => creds(),
-  setSpendReporter: (fn: unknown) => setSpendReporter(fn),
 }));
 const recordSpendByDefault = vi.fn();
-vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: (e: unknown) => recordSpendByDefault(e) }));
+vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: (e: unknown) => recordSpendByDefault(e), spendClient: () => null }));
 const plan = vi.fn(async (..._a: unknown[]) => [] as unknown[]);
 const held = vi.fn(async () => ({ count: 0, dates: [] as string[] }));
 const scheduled = vi.fn(async () => 0);
@@ -90,6 +88,8 @@ const emptyPool = vi.fn(async (..._a: unknown[]) => EMPTY_POOL);
 vi.mock("../empty-pool", () => ({ readEmptyPool: (...a: unknown[]) => emptyPool(...a) }));
 
 import { runOnboarding } from "../pipeline";
+import { BudgetRefusedError, claimSpend, currentSpendScope } from "@/lib/billing/spend-scope";
+import { FIRST_DRAFT_MIN_USD, firstLookReserves } from "@/lib/billing/run-budget";
 import type { OnboardingEvent } from "../events";
 
 const WS = { id: "ws1", domain: "example.com", account_id: "ag1", language: "en" };
@@ -116,6 +116,18 @@ const phases = (events: OnboardingEvent[]) =>
   events.map((e) => ("status" in e ? `${e.phase}:${e.status}` : e.phase));
 
 /**
+ * The events phase by phase, each phase's own in the order it emitted them.
+ * The voice and the existing pages run beside the keyword phase, so the
+ * interleaving across phases is the scheduler's; within one it is the run's.
+ */
+const RANK = ["scanning", "keywords", "pages", "planning", "drafting", "ready", "error"];
+const byPhase = (events: OnboardingEvent[]) =>
+  phases(events)
+    .map((p, i) => ({ p, i, r: RANK.indexOf(p.split(":")[0]) }))
+    .sort((a, b) => a.r - b.r || a.i - b.i)
+    .map((x) => x.p);
+
+/**
  * A client that answers the whole run, not just the "already has a draft?"
  * count: the fan-out reads calendar_entries too, and a thin mock made that
  * branch untestable.
@@ -133,7 +145,7 @@ const richClient = (existing: number) =>
   ({ from: (table: string) => (table === "articles" ? chain({ count: existing }) : chain({ data: [] })) }) as never;
 
 beforeEach(() => {
-  for (const m of [scrape, voice, analyse, generate, quota, recommend, pick, creds, setSpendReporter, recordSpendByDefault]) m.mockReset();
+  for (const m of [scrape, voice, analyse, generate, quota, recommend, pick, creds, recordSpendByDefault]) m.mockReset();
   fanOut.mockReset();
   fanOut.mockReturnValue({ dispatched: 0, settled: Promise.resolve() });
   relatedBatch.mockReset();
@@ -200,7 +212,7 @@ describe("runOnboarding", () => {
 
   it("emits every boundary of a full run, in order, ending in ready", async () => {
     const events = await collect();
-    expect(phases(events)).toEqual([
+    expect(byPhase(events)).toEqual([
       "scanning:active", "scanning:done",
       "keywords:active", "keywords:done",
       "pages:active", "pages:done",
@@ -247,6 +259,59 @@ describe("runOnboarding", () => {
    * drift again. It named a reset date until 2026-09-07; the allowance is
    * one-time since migration 083, so it no longer does.
    */
+  it("skips the draft, and does not fail the run, when the budget refuses a claim part-way through it", async () => {
+    generate.mockRejectedValue(new BudgetRefusedError("claude-sonnet-5", "draft", 0.42));
+    const events = await collect();
+    const drafting = events.find((e) => e.phase === "drafting" && "status" in e && e.status !== "active");
+    expect(drafting).toMatchObject({ status: "skipped" });
+    expect((drafting as { detail: string }).detail).toContain("A person picks the first article up.");
+    expect(events.some((e) => "status" in e && e.status === "failed")).toBe(false);
+    expect(events.at(-1)).toEqual({ phase: "ready" });
+  });
+
+  it("buys no related keywords and dispatches no draft that the run's budget cannot write", async () => {
+    // A run whose research used its room: the draft stage has $0.10 left.
+    const base = richClient(0) as unknown as { from: (t: string) => unknown };
+    const budgetTable = { upsert: async () => ({ error: null }), select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+    const db = { from: (t: string) => (t === "run_budgets" ? budgetTable : base.from(t)), rpc: async () => ({ data: 0.1, error: null }) } as never;
+    plan.mockResolvedValue([{ term: NEXT.term }]);
+    const events: OnboardingEvent[] = [];
+    const result = await runOnboarding(db, WS, (e) => events.push(e), { firstDraft: "dispatch", runId: "run-7" });
+    expect(relatedBatch).not.toHaveBeenCalled();
+    expect(result.pendingDraft).toBeNull();
+    expect(events.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
+      .toMatchObject({ detail: expect.stringContaining("budget has $0.10 left") });
+    expect(events.at(-1)).toEqual({ phase: "ready" });
+  });
+
+  it("buys no related list in the worker for a dispatched draft, whatever the room: the draft route decides from its own", async () => {
+    const base = richClient(0) as unknown as { from: (t: string) => unknown };
+    const budgetTable = { upsert: async () => ({ error: null }), select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+    const db = { from: (t: string) => (t === "run_budgets" ? budgetTable : base.from(t)), rpc: async () => ({ data: FIRST_DRAFT_MIN_USD + 0.01, error: null }) } as never;
+    plan.mockResolvedValue([{ term: NEXT.term }]);
+    const result = await runOnboarding(db, WS, () => undefined, { firstDraft: "dispatch", runId: "run-8" });
+    expect(relatedBatch).not.toHaveBeenCalled();
+    expect(result.pendingDraft).toMatchObject({ term: NEXT.term });
+    expect(result.pendingDraft?.relatedKeywords).toBeUndefined();
+  });
+
+  it("blames the budget, not the site, when discovery's buyer test was refused and nothing was stored", async () => {
+    emptyPool.mockClear();
+    const base = richClient(0) as unknown as { from: (t: string) => unknown };
+    const budgetTable = { upsert: async () => ({ error: null }), select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+    // Every claim refused: the buyer test inside discovery buys nothing.
+    const db = { from: (t: string) => (t === "run_budgets" ? budgetTable : base.from(t)), rpc: async () => ({ data: null, error: null }) } as never;
+    analyse.mockImplementation(async () => {
+      await claimSpend("keyword-research/buyer-fit", 0.05).catch(() => null);
+      return { keywordsFound: 0, layers: [] };
+    });
+    const events: OnboardingEvent[] = [];
+    await runOnboarding(db, WS, (e) => events.push(e), { firstDraft: "dispatch", runId: "run-6" });
+    const keywords = events.find((e) => e.phase === "keywords" && "status" in e && e.status === "skipped");
+    expect((keywords as { detail: string }).detail).toMatch(/budget ran out before its keyword research finished/);
+    expect(emptyPool).not.toHaveBeenCalled();
+  });
+
   it("skips the draft, with the reason, when the free allowance is used", async () => {
     quota.mockResolvedValue({ limit: 7, used: 7, remaining: 0, reason: "no-plan" });
     const events = await collect();
@@ -275,7 +340,7 @@ describe("runOnboarding", () => {
     expect(paid.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
       .toMatchObject({ detail: expect.stringContaining("This month's included 100 articles are used") });
     expect(paid.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
-      .toMatchObject({ detail: expect.stringContaining("write one by hand") });
+      .toMatchObject({ detail: expect.stringContaining("New article on the Articles page") });
   });
 
   /**
@@ -319,11 +384,41 @@ describe("runOnboarding", () => {
     expect(phases(events)).toContain("drafting:skipped");
   });
 
+  it("reads the voice beside the keyword phase, and the existing pages beside the buyer test, and plans only once both are in", async () => {
+    const order: string[] = [];
+    let release!: () => void;
+    const buyerTest = new Promise<void>((r) => { release = r; });
+    scrape.mockImplementation(async () => { order.push("voice:start"); await buyerTest; order.push("voice:end"); return "word ".repeat(80); });
+    assess.mockImplementation(async () => { order.push("pages"); return { status: "done", detail: "Read 3 pages.", summary: null }; });
+    analyse.mockImplementation(async (opts: { onRead?: (r: { ranked: unknown[] }) => void }) => {
+      order.push("keywords:start");
+      // The site is read: the pages may start while the buyer test runs.
+      opts.onRead?.({ ranked: [] });
+      await new Promise((r) => setTimeout(r, 5));
+      order.push("buyer-test");
+      release();
+      return { keywordsFound: 0, layers: [] };
+    });
+    plan.mockImplementation(async () => { order.push("plan"); return []; });
+    await collect();
+    // Both started before either finished.
+    expect(order.indexOf("keywords:start")).toBeLessThan(order.indexOf("voice:end"));
+    // The pages ran during the keyword phase, not after it.
+    expect(order.indexOf("pages")).toBeLessThan(order.indexOf("buyer-test"));
+    expect(assess).toHaveBeenCalledTimes(1);
+  });
+
+  it("still reads the existing pages, once, when the keyword phase never got as far as the site", async () => {
+    creds.mockReturnValue(false);
+    await collect();
+    expect(assess).toHaveBeenCalledTimes(1);
+  });
+
   /** One phase breaking must not cost the account the phases after it. */
   it("continues to the draft when keyword analysis throws", async () => {
     analyse.mockRejectedValue(new Error("DataForSEO 40101"));
     const events = await collect();
-    expect(phases(events)).toEqual([
+    expect(byPhase(events)).toEqual([
       "scanning:active", "scanning:done",
       "keywords:active", "keywords:failed",
       "pages:active", "pages:done",
@@ -338,7 +433,7 @@ describe("runOnboarding", () => {
     scrape.mockResolvedValue("just a few words");
     const events = await collect();
     expect(voice).not.toHaveBeenCalled();
-    expect(phases(events)[1]).toBe("scanning:skipped");
+    expect(byPhase(events)[1]).toBe("scanning:skipped");
     expect(events.at(-1)).toEqual({ phase: "ready" });
   });
 
@@ -352,26 +447,19 @@ describe("runOnboarding", () => {
   /**
    * Discovery is the expensive phase and it ran with no reporter armed, so its
    * DataForSEO rows fell through to the unattributed default: fourteen rows
-   * from one onboarding, none with a workspace_id. The reporter is armed for
-   * the whole run, stamps every call with this workspace, and is cleared
-   * however the run ends - including an abort partway through.
+   * from one onboarding, none with a workspace_id. Then the reporter was a
+   * process global, and a concurrent run billed this one's calls. Every call
+   * in the run now sees the run's spend scope - its workspace, and the stage
+   * it is in - and nothing outside the run does.
    */
-  it("attributes every DataForSEO call in the run to the workspace, then disarms", async () => {
-    analyse.mockImplementation(async () => {
-      // What lib/seo/client does after each response, while discovery runs.
-      const armed = setSpendReporter.mock.calls.at(-1)?.[0] as (e: unknown) => void;
-      armed({ operation: "/dataforseo_labs/google/ranked_keywords/live", costUsd: 0.0132 });
-      return { keywordsFound: 94 };
-    });
+  it("attributes every call in the run to the workspace and its stage, and nothing outside the run", async () => {
+    const seen: Array<ReturnType<typeof currentSpendScope>> = [];
+    scrape.mockImplementation(async () => { seen.push(currentSpendScope()); return "word ".repeat(80); });
+    voice.mockImplementation(async () => { seen.push(currentSpendScope()); });
+    analyse.mockImplementation(async () => { seen.push(currentSpendScope()); return { keywordsFound: 0, layers: [] }; });
     await collect();
-    expect(recordSpendByDefault).toHaveBeenCalledWith({
-      provider: "dataforseo",
-      operation: "/dataforseo_labs/google/ranked_keywords/live",
-      costUsd: 0.0132,
-      workspaceId: "ws1",
-    });
-    expect(setSpendReporter.mock.calls[0][0]).toEqual(expect.any(Function));
-    expect(setSpendReporter.mock.calls.at(-1)).toEqual([null]);
+    expect(seen.map((s) => `${s?.workspaceId}:${s?.stage}`).sort()).toEqual(["ws1:discovery", "ws1:voice", "ws1:voice"]);
+    expect(currentSpendScope()).toBeUndefined();
   });
 
   it("skips everything that needs a domain when there is none", async () => {
@@ -397,7 +485,7 @@ describe("runOnboarding", () => {
         keywordId: null,
         selection: { reasons: ["27,100 searches/mo"], score: 35.5, difficulty: 19, volume: 27100 },
       });
-      expect(phases(events)).toEqual([
+      expect(byPhase(events)).toEqual([
         "scanning:active", "scanning:done",
         "keywords:active", "keywords:done",
         "pages:active", "pages:done",
@@ -436,7 +524,7 @@ describe("runOnboarding", () => {
      * (round4 §4, W2), so the run buys the week once and carries each draft's
      * share to the invocation that writes it.
      */
-    it("buys related keywords for the one draft it writes, not for the week", async () => {
+    it("leaves the related keywords to the draft, off the way to its gate", async () => {
       plan.mockResolvedValue([
         { term: "seo agent", date: "2026-09-07", keywordId: "k1" },
         { term: "seo tools", date: "2026-09-08", keywordId: "k2" },
@@ -444,9 +532,8 @@ describe("runOnboarding", () => {
       recommend.mockResolvedValue([{ ...NEXT, keywordId: "k1" }]);
       relatedBatch.mockResolvedValue(new Map([["seo agent", [{ keyword: "seo agents", searchVolume: 100, competition: null }]]]));
       const { result } = await collectDispatch();
-      expect(relatedBatch).toHaveBeenCalledTimes(1);
-      expect(relatedBatch.mock.calls[0][0]).toEqual(["seo agent"]);
-      expect(result.pendingDraft?.relatedKeywords).toEqual([{ keyword: "seo agents", searchVolume: 100, competition: null }]);
+      expect(relatedBatch).not.toHaveBeenCalled();
+      expect(result.pendingDraft?.relatedKeywords).toBeUndefined();
       expect(fanOut).not.toHaveBeenCalled();
     });
 
@@ -457,6 +544,24 @@ describe("runOnboarding", () => {
       const { result } = await collectDispatch();
       expect(result.pendingDraft?.term).toBe("seo agent");
       expect(result.pendingDraft?.relatedKeywords).toBeUndefined();
+    });
+
+    it("hands the draft the results page the plan judged its topic on, and keeps the planned topics' questions off the way to the gate", async () => {
+      const PAGE = { organic: [{ rank: 1, title: "A guide", url: "https://guide.example/a", description: "", domain: "guide.example", wordCount: null }], peopleAlsoAsk: [], aiOverview: null };
+      let questions: unknown = null;
+      plan.mockImplementation(async (...a: unknown[]) => {
+        const opts = a[3] as { firstLook: { serps: Map<string, unknown> }; questionsInBackground?: (p: Promise<unknown>) => void };
+        opts.firstLook.serps.set("seo agent", PAGE);
+        questions = opts.questionsInBackground;
+        opts.questionsInBackground?.(new Promise((r) => setTimeout(r, 5)));
+        return [{ term: "seo agent", date: "2026-09-07", keywordId: "k1" }];
+      });
+      recommend.mockResolvedValue([{ ...NEXT, keywordId: "k1" }]);
+      const { result } = await collectDispatch();
+      expect(result.pendingDraft?.serp).toEqual(PAGE);
+      expect(typeof questions).toBe("function");
+      // The questions are the run's tail, kept alive, not waited for.
+      await expect(result.tailSettled).resolves.toBeUndefined();
     });
 
     it("dispatches exactly one draft, the first", async () => {
@@ -562,11 +667,24 @@ describe("runOnboarding: the topic funnel", () => {
       (a[3] as { onFunnel?: (f: unknown) => void }).onFunnel?.(FUNNEL);
       return [];
     });
-    await runOnboarding(richClient(0), WS, () => undefined, { firstDraft: "dispatch", runId: "run-9" });
+    // The run's budget row, as the worker opened it and the run spent it.
+    const ROW = { ceiling_usd: 1, committed_usd: 0.42, refused: 2, stages: { discovery: { spent: 0.3, calls: 5, committed: 0.3 }, judge: { spent: 0.12, calls: 4, refused: 2, committed: 0.12 } } };
+    const opened: unknown[] = [];
+    const base = richClient(0) as unknown as { from: (t: string) => unknown };
+    const budgetTable = {
+      upsert: async (row: unknown) => { opened.push(row); return { error: null }; },
+      select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: ROW, error: null }) }) }),
+    };
+    const db = { from: (t: string) => (t === "run_budgets" ? budgetTable : base.from(t)), rpc: async () => ({ data: 0.01, error: null }) } as never;
+    await runOnboarding(db, WS, () => undefined, { firstDraft: "dispatch", runId: "run-9" });
+    expect(opened).toEqual([{ run_id: "run-9", workspace_id: "ws1", ceiling_usd: 1, reserves: firstLookReserves() }]);
     expect(recordFunnel).toHaveBeenCalledOnce();
     expect(recordFunnel).toHaveBeenCalledWith({
       runId: "run-9", workspaceId: "ws1", accountId: "ag1", funnel: FUNNEL,
       planningDetail: "No keyword clear enough to plan yet.",
+      spend: { ceilingUsd: 1, committedUsd: 0.42, refused: 2, stages: { discovery: { spent: 0.3, calls: 5, committed: 0.3, refused: 0 }, judge: { spent: 0.12, calls: 4, refused: 2, committed: 0.12 } } },
+      draftIncluded: false,
+      timings: null,
     });
   });
 

@@ -641,11 +641,23 @@ export async function stampRun(
   supabase: SupabaseClient,
   runId: string,
   event: OnboardingEvent,
-  opts: { article?: OnboardingArticle | null; finish?: boolean } = {},
+  opts: { article?: OnboardingArticle | null; finish?: boolean; amend?: boolean } = {},
 ): Promise<boolean> {
   const { data } = await supabase.from("onboarding_runs").select(RUN_COLUMNS_WITH_AGENCY).eq("id", runId).maybeSingle();
   const run = data as OnboardingRunRow | null;
-  if (!run || run.status !== "running") return false;
+  if (!run) return false;
+  // A run that finished at its gate, on its first article's outline: the
+  // body landing later rewrites that one phase's sentence and nothing else -
+  // not the status, not the times, and nobody is announced to again.
+  if (run.status !== "running") {
+    // Only a run that ended on its first article (done, or partial with no
+    // plan beside it), and only that article's phase.
+    const endedOnArticle = (run.status === "done" || run.status === "partial") && Boolean(run.article_id);
+    if (!opts.amend || !endedOnArticle || event.phase !== "drafting") return false;
+    const amended = reduceOnboarding({ ...initialOnboardingState(), steps: run.phases }, event).steps;
+    const { error: amendError } = await supabase.from("onboarding_runs").update({ phases: amended }).eq("id", runId).eq("status", run.status);
+    return !amendError;
+  }
 
   const before: OnboardingState = {
     ...initialOnboardingState(),

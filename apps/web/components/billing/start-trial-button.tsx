@@ -4,24 +4,28 @@ import { useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui";
 import { createCheckoutSession } from "@/app/actions/billing";
-import type { BillingInterval } from "@/lib/stripe";
+import type { BillingInterval, SelfServePlan } from "@/lib/stripe";
 
 /**
- * The one button that opens the trial's checkout: Managed, monthly, card
- * required, seven days before the first charge. Everywhere the trial is
- * offered renders this so the offer and the checkout it opens cannot drift.
- * Yearly and Agency are a click away on Billing, where the ladder is.
+ * The one button that opens the trial's checkout: card required, seven days
+ * before the first charge, Managed and monthly unless told otherwise.
+ * Everywhere the trial is offered renders this so the offer and the checkout
+ * it opens cannot drift. TrialOffer passes the plan and interval chosen on it.
  */
 export function StartTrialButton({
   returnTo,
+  plan = "starter",
   interval = "month",
   label = "Start 7-day trial",
   variant = "accent",
   className,
   onError,
+  onStart,
 }: {
   /** Same-origin path to land on after the card is taken. */
   returnTo?: string;
+  /** Which plan to trial: Managed by default, Agency when chosen. */
+  plan?: SelfServePlan;
   /** Which price to open checkout on. Yearly is two months free (lib/stripe). */
   interval?: BillingInterval;
   label?: string;
@@ -33,6 +37,8 @@ export function StartTrialButton({
    * the error needs somewhere to stay.
    */
   onError?: (message: string) => void;
+  /** Told when the button is pressed, before checkout opens: instrumentation (onboarding.step). */
+  onStart?: () => void;
 }) {
   const [pending, start] = useTransition();
   return (
@@ -40,7 +46,8 @@ export function StartTrialButton({
       variant={variant}
       disabled={pending}
       className={className}
-      onClick={() =>
+      onClick={() => {
+        onStart?.();
         start(async () => {
           // The action returns {ok:false} for the failures it predicts, and
           // throws for the ones it does not - no Stripe key, a price id that
@@ -50,7 +57,7 @@ export function StartTrialButton({
           // the trial gate it is the only control on a screen the person
           // cannot leave, so a silent failure locks them out of the product.
           try {
-            const result = await createCheckoutSession("starter", interval, returnTo);
+            const result = await createCheckoutSession(plan, interval, returnTo);
             if (!result.ok) {
               onError?.(result.error);
               toast.error(result.error);
@@ -62,8 +69,8 @@ export function StartTrialButton({
             onError?.(message);
             toast.error(message);
           }
-        })
-      }
+        });
+      }}
     >
       {pending ? "Opening checkout…" : label}
     </Button>

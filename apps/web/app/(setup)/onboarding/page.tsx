@@ -17,6 +17,8 @@ import { canSpend } from "@/lib/billing/spend-gate";
 import { PRE_TRIAL_DRAFTS } from "@/lib/billing/trial-hold";
 import { OPEN_SETUP, type PreTrialSetup } from "@/lib/onboarding/setup-retry";
 import { followUpPromised } from "@/lib/auth/operators";
+import { TrackStep } from "@/components/onboarding/track-step";
+import { fullArticleOn } from "@/lib/onboarding/first-article-body";
 
 export const metadata: Metadata = { title: "Set up your site" };
 
@@ -139,6 +141,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
 
   return (
     <>
+    {status === "cancelled" && <TrackStep step="checkout_cancelled" workspaceId={workspace.id as string} />}
     {status === "cancelled" && <p role="status" className="p-4 text-center text-sm">Checkout was cancelled. Nothing was charged, and your first article and plan are saved. Start the trial below whenever you are ready.</p>}
     <OnboardingWizard
       canBuy={auth.role === "owner"}
@@ -160,6 +163,9 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       trialEligible={preTrial}
       firstArticle={firstArticle?.article ?? null}
       firstArticleWriting={firstArticle?.writing ?? false}
+      // The switch, and only for the owner: the reader's route checks both
+      // again, and the article, before it hands over a word.
+      fullArticle={preTrial && fullArticleOn() && auth.role === "owner"}
       preTrialSetup={preTrialSetup}
       initialProfile={(workspace.business_profile as BusinessProfile | null) ?? null}
       initialSite={{

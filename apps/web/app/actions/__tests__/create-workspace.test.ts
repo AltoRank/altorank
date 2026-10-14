@@ -49,6 +49,12 @@ vi.mock("@/lib/supabase/server", () => ({
   // The site itself is written with the service role (migration 100).
   createServiceClient: () => ({
     from: () => ({
+      // The account-pause check before the insert (lib/workspaces/insert.ts):
+      // no site of this account is paused.
+      select: () => {
+        const q = { eq: () => q, gt: () => q, order: () => q, limit: async () => ({ data: [], error: null }) };
+        return q;
+      },
       insert: (row: unknown) => {
         inserted(row);
         return { select: () => ({ single: async () => insertResult }) };

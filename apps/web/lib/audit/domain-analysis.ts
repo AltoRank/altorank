@@ -34,6 +34,7 @@ import { discoverBuyerKeywords } from "@/lib/keyword-research/discovery";
 import type { Screened } from "@/lib/keyword-research/hygiene";
 import { isBrandTerm } from "@/lib/keyword-research/seeds";
 import { judgeBuyerFit } from "@/lib/keyword-research/buyer-fit";
+import { withStage } from "@/lib/billing/spend-scope";
 import { contextKey, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { isOutOfReach, isHopeless } from "@/lib/seo/difficulty";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -51,6 +52,7 @@ import { discoverUrls, recordLinkedPages } from "@/lib/seo/site-crawl";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { fetchDomainMetrics } from "@/lib/seo/domain-metrics";
 import { e2eStubsEnabled, stubAnalyseDomain } from "@/lib/e2e/stubs";
+import { timed } from "@/lib/onboarding/timings";
 
 export interface AnalysisLayer {
   id: "readiness" | "crawl" | "pagespeed" | "platform" | "keywords" | "ranked_keywords" | "backlinks" | "authority" | "category";
@@ -93,6 +95,12 @@ export interface DomainAnalysis {
    * for the read-only callers that pass neither.
    */
   firstLook?: FirstLookDecision;
+  /**
+   * With `deferPageSpeed`: settles once the speed test has answered and its
+   * result is on the audit row this run wrote. The caller keeps its
+   * invocation alive for it; nothing waits on it otherwise.
+   */
+  pageSpeedSettled?: Promise<void>;
 }
 
 /** A discovered keyword plus, for a gap row, the rival that holds it. */
@@ -123,6 +131,9 @@ const MAX_KEYWORDS_STORED = 100;
  * from it is the interesting case (see `rankedOnOwnPages`).
  */
 export const SITEMAP_TRUST_MIN = 100;
+
+/** What the audit says about speed while a deferred speed test is still running. */
+export const SPEED_PENDING = "The speed test is still running; its result is added to this audit when it answers.";
 
 function pathOf(url: string): string | null {
   try {
@@ -422,6 +433,19 @@ export async function analyseDomain(options: {
    * that run once per workspace (onboarding), which is the same as 0.
    */
   analysisAttempts?: number;
+  /**
+   * Called once the site is read and its rankings are in, before the keyword
+   * work: the onboarding run starts reading the existing pages then, beside
+   * the buyer test, instead of after it. Its own errors are its own.
+   */
+  onRead?: (read: { ranked: RankedKeyword[] }) => void;
+  /**
+   * Do not wait for the speed test. Google's PageSpeed answers in up to a
+   * minute a try, twice, and nothing in the keyword work or the plan reads
+   * it: a first look stores the audit with the speed test pending, and the
+   * result lands on that row when it comes (`pageSpeedSettled`).
+   */
+  deferPageSpeed?: boolean;
 }): Promise<DomainAnalysis> {
   // E2E_STUBS: fixture keywords, no crawl, no provider, nothing measured (lib/e2e/stubs.ts).
   if (e2eStubsEnabled()) return stubAnalyseDomain(options);
@@ -438,7 +462,7 @@ export async function analyseDomain(options: {
   const recorded = recordingFetcher();
   let readiness: ReadinessResult | null = null;
   try {
-    const result = await runAgentReadiness(domain, recorded);
+    const result = await timed("readiness", () => runAgentReadiness(domain, recorded));
     if (result.error) {
       layers.push({ id: "readiness", status: "failed", detail: result.error });
     } else {
@@ -466,94 +490,114 @@ export async function analyseDomain(options: {
   let auditScore: number | null = null;
   let issues: unknown[] = [];
   let profile: TopicalProfile | null = null;
-  try {
-    const home = recorded.resources.get(`${baseUrl}/`) ?? recorded.resources.get(baseUrl);
-    const seedHtml = home && home.status >= 200 && home.status < 300 && /<html/i.test(home.body) ? home.body : null;
-    // The homepage's own account of itself, off the bytes already fetched.
-    // Persisted with the audit for the onboarding report (page-facts.ts).
-    if (seedHtml && home) homeFacts = pageFacts(seedHtml, home.headers, home.status);
-    const { fetched, attempts, rateLimited } = await crawlWithRetry(
-      baseUrl,
-      depth === "quick" ? 1 : Math.min(options.maxPages ?? MAX_PAGES, MAX_PAGES),
-      depth === "quick" ? 0 : MAX_DEPTH,
-      CRAWL_DELAY_MS,
-      options.crawlRetryDelaysMs ?? CRAWL_RETRY_DELAYS_MS,
-      { seedHtml },
-      depth === "quick" ? null : (options.rateBanWaitMs ?? RATE_BAN_WAIT_MS),
-    );
-    crawlAttempts = attempts;
-    crawlRateLimited = rateLimited;
-    const pages = usablePages(fetched);
-    pagesCrawled = pages.length;
-    if (!pages.length && fetched.length) {
-      // Every fetch failed. Say why, and score nothing: the first version of
-      // this gave www.lully.ai a 95/100 on-page score and a topical profile of
-      // {"www"} from a fetch that never got a response.
-      const why = fetched.find((p) => p.error)?.error ?? `HTTP ${fetched[0].status}`;
-      layers.push({
-        id: "crawl",
-        status: "failed",
-        detail: `no page could be fetched: ${why}` + (crawlAttempts > 1 ? ` (${crawlAttempts} attempts)` : ""),
-      });
-    } else if (pages.length) {
-      // Built here because this is the only point that holds the page content.
-      // Recommendations need it on every run and must not re-crawl to get it.
-      profile = buildTopicalProfile(domain, pages);
-      issues = runAuditChecks(pages) as unknown[];
-      auditScore = calculateAuditScore(issues as never, pages.length);
-      // The services, portfolio, about and contact pages this walk reached,
-      // kept for the writer. On a site with no sitemap nothing else ever
-      // reads them (lib/seo/site-crawl.ts recordLinkedPages). Logged, not a
-      // layer: the crawl's result stands whether or not this write lands.
-      if (supabase && workspaceId && depth === "full") {
-        const kept = await recordLinkedPages(supabase, workspaceId, pages);
-        if (kept.error) console.warn(`[analyse] could not keep the business pages the crawl read: ${kept.error}`);
-        else if (kept.inserted || kept.updated) console.log(`[analyse] kept ${kept.inserted} new and ${kept.updated} existing business page(s) for the writer`);
+  // The crawl, the speed test, the platform, the rankings and the authority
+  // are independent of each other: each one is a request to its own host or
+  // provider, and none reads another's answer. They used to run one after
+  // another, about twenty seconds of a first look's critical path; now they
+  // run side by side, and their layers are pushed in the order they always
+  // were, so the run screen reads the same.
+  const crawlLayers: AnalysisLayer[] = [];
+  const crawlDone = (async () => {
+    try {
+      const home = recorded.resources.get(`${baseUrl}/`) ?? recorded.resources.get(baseUrl);
+      const seedHtml = home && home.status >= 200 && home.status < 300 && /<html/i.test(home.body) ? home.body : null;
+      // The homepage's own account of itself, off the bytes already fetched.
+      // Persisted with the audit for the onboarding report (page-facts.ts).
+      if (seedHtml && home) homeFacts = pageFacts(seedHtml, home.headers, home.status);
+      const { fetched, attempts, rateLimited } = await timed("crawl", () => crawlWithRetry(
+        baseUrl,
+        depth === "quick" ? 1 : Math.min(options.maxPages ?? MAX_PAGES, MAX_PAGES),
+        depth === "quick" ? 0 : MAX_DEPTH,
+        CRAWL_DELAY_MS,
+        options.crawlRetryDelaysMs ?? CRAWL_RETRY_DELAYS_MS,
+        { seedHtml },
+        depth === "quick" ? null : (options.rateBanWaitMs ?? RATE_BAN_WAIT_MS),
+      ));
+      crawlAttempts = attempts;
+      crawlRateLimited = rateLimited;
+      const pages = usablePages(fetched);
+      pagesCrawled = pages.length;
+      if (!pages.length && fetched.length) {
+        // Every fetch failed. Say why, and score nothing: the first version of
+        // this gave www.lully.ai a 95/100 on-page score and a topical profile of
+        // {"www"} from a fetch that never got a response.
+        const why = fetched.find((p) => p.error)?.error ?? `HTTP ${fetched[0].status}`;
+        crawlLayers.push({
+          id: "crawl",
+          status: "failed",
+          detail: `no page could be fetched: ${why}` + (crawlAttempts > 1 ? ` (${crawlAttempts} attempts)` : ""),
+        });
+      } else if (pages.length) {
+        // Built here because this is the only point that holds the page content.
+        // Recommendations need it on every run and must not re-crawl to get it.
+        profile = await timed("topical_profile", () => buildTopicalProfile(domain, pages));
+        issues = runAuditChecks(pages) as unknown[];
+        auditScore = calculateAuditScore(issues as never, pages.length);
+        // The services, portfolio, about and contact pages this walk reached,
+        // kept for the writer. On a site with no sitemap nothing else ever
+        // reads them (lib/seo/site-crawl.ts recordLinkedPages). Logged, not a
+        // layer: the crawl's result stands whether or not this write lands.
+        if (supabase && workspaceId && depth === "full") {
+          const kept = await recordLinkedPages(supabase, workspaceId, pages);
+          if (kept.error) console.warn(`[analyse] could not keep the business pages the crawl read: ${kept.error}`);
+          else if (kept.inserted || kept.updated) console.log(`[analyse] kept ${kept.inserted} new and ${kept.updated} existing business page(s) for the writer`);
+        }
+        crawlLayers.push({
+          id: "crawl",
+          status: "ok",
+          detail:
+            `${pages.length} pages crawled, ${issues.length} issues, ` +
+            (auditScore === null ? "not scored" : `score ${auditScore}/100`) +
+            (crawlRateLimited ? "; the site rate-limits crawlers, so this run read fewer pages and the nightly pass reads the rest" : ""),
+        });
+      } else {
+        crawlLayers.push({
+          id: "crawl",
+          status: "failed",
+          detail: "no pages could be crawled (blocked, redirected off-domain, or JavaScript-rendered)",
+        });
       }
-      layers.push({
-        id: "crawl",
-        status: "ok",
-        detail:
-          `${pages.length} pages crawled, ${issues.length} issues, ` +
-          (auditScore === null ? "not scored" : `score ${auditScore}/100`) +
-          (crawlRateLimited ? "; the site rate-limits crawlers, so this run read fewer pages and the nightly pass reads the rest" : ""),
-      });
-    } else {
-      layers.push({
+    } catch (err) {
+      crawlLayers.push({
         id: "crawl",
         status: "failed",
-        detail: "no pages could be crawled (blocked, redirected off-domain, or JavaScript-rendered)",
+        detail: err instanceof Error ? err.message : "crawl failed",
       });
     }
-  } catch (err) {
-    layers.push({
-      id: "crawl",
-      status: "failed",
-      detail: err instanceof Error ? err.message : "crawl failed",
-    });
-  }
+  })();
 
   // --- PageSpeed -----------------------------------------------------------
   let pagespeed: Record<string, unknown> = {};
-  const ps = depth === "full" ? await fetchPageSpeedDetailed(baseUrl) : { ok: false as const, kind: "unavailable" as const, detail: "not run on a quick look" };
-  if (ps.ok) {
-    // PageSpeedResult is a fixed shape; the column is jsonb, so it is stored
-    // as a plain object rather than reshaped.
-    pagespeed = { ...ps.result };
-    layers.push({
-      id: "pagespeed",
-      status: "ok",
-      detail:
-        `performance ${ps.result.performanceScore}/100, ` +
-        `LCP ${(ps.result.largestContentfulPaint / 1000).toFixed(1)}s, ` +
-        `CLS ${ps.result.cumulativeLayoutShift.toFixed(3)}`,
-    });
-  } else {
-    // Why it did not run, kept with the audit so the report can say so
-    // instead of showing an empty card.
-    pagespeed = { unavailable: ps.detail };
-    layers.push({ id: "pagespeed", status: ps.kind, detail: ps.detail });
+  const psLayers: AnalysisLayer[] = [];
+  const deferSpeed = options.deferPageSpeed === true && depth === "full";
+  const speedTest = depth === "full"
+    ? timed("pagespeed", () => fetchPageSpeedDetailed(baseUrl))
+    : Promise.resolve({ ok: false as const, kind: "unavailable" as const, detail: "not run on a quick look" });
+  if (deferSpeed) {
+    pagespeed = { unavailable: SPEED_PENDING };
+    psLayers.push({ id: "pagespeed", status: "unavailable", detail: SPEED_PENDING });
   }
+  const pagespeedDone = deferSpeed ? Promise.resolve() : (async () => {
+    const ps = await speedTest;
+    if (ps.ok) {
+      // PageSpeedResult is a fixed shape; the column is jsonb, so it is stored
+      // as a plain object rather than reshaped.
+      pagespeed = { ...ps.result };
+      psLayers.push({
+        id: "pagespeed",
+        status: "ok",
+        detail:
+          `performance ${ps.result.performanceScore}/100, ` +
+          `LCP ${(ps.result.largestContentfulPaint / 1000).toFixed(1)}s, ` +
+          `CLS ${ps.result.cumulativeLayoutShift.toFixed(3)}`,
+      });
+    } else {
+      // Why it did not run, kept with the audit so the report can say so
+      // instead of showing an empty card.
+      pagespeed = { unavailable: ps.detail };
+      psLayers.push({ id: "pagespeed", status: ps.kind, detail: ps.detail });
+    }
+  })();
 
   // --- What the site publishes with ----------------------------------------
   //
@@ -561,22 +605,25 @@ export async function analyseDomain(options: {
   // the question onboarding used to make the user answer from a dropdown of
   // twelve, and the site can usually answer it itself.
   let detection: Detection | null = null;
-  try {
-    detection = await detectPlatform(domain);
-    layers.push({
-      id: "platform",
-      status: detection ? "ok" : "unavailable",
-      detail: detection
-        ? `${detection.platform} (${detection.confidence} confidence, ${detection.evidence})`
-        : "could not identify the platform from public signals",
-    });
-  } catch {
-    layers.push({
-      id: "platform",
-      status: "failed",
-      detail: "platform detection failed",
-    });
-  }
+  const platformLayers: AnalysisLayer[] = [];
+  const platformDone = (async () => {
+    try {
+      detection = await timed("platform", () => detectPlatform(domain));
+      platformLayers.push({
+        id: "platform",
+        status: detection ? "ok" : "unavailable",
+        detail: detection
+          ? `${detection.platform} (${detection.confidence} confidence, ${detection.evidence})`
+          : "could not identify the platform from public signals",
+      });
+    } catch {
+      platformLayers.push({
+        id: "platform",
+        status: "failed",
+        detail: "platform detection failed",
+      });
+    }
+  })();
 
   const hasDataForSeo = hasDataForSEOCredentials();
 
@@ -593,37 +640,40 @@ export async function analyseDomain(options: {
   // ran". Persisted as [] versus NULL, because a domain nobody could look up is
   // not a domain that ranks for nothing.
   let rankedLayerRan = false;
-  if (!hasDataForSeo) {
-    layers.push({
-      id: "ranked_keywords",
-      status: "unavailable",
-      detail: "DataForSEO credentials not configured",
-    });
-  } else {
-    try {
-      ranked = await fetchRankedKeywords(domain, { languageCode: languageCodeOf(options.locale), locationCode: options.locationCode });
-      rankedLayerRan = true;
-      rankedPages = groupByPage(ranked).size;
-      const close = strikingDistance(ranked);
+  const rankedLayers: AnalysisLayer[] = [];
+  const rankedDone = (async () => {
+    if (!hasDataForSeo) {
+      rankedLayers.push({
+        id: "ranked_keywords",
+        status: "unavailable",
+        detail: "DataForSEO credentials not configured",
+      });
+    } else {
+      try {
+        ranked = await timed("ranked", () => fetchRankedKeywords(domain, { languageCode: languageCodeOf(options.locale), locationCode: options.locationCode }));
+        rankedLayerRan = true;
+        rankedPages = groupByPage(ranked).size;
+        const close = strikingDistance(ranked);
 
-      layers.push({
-        id: "ranked_keywords",
-        status: "ok",
-        detail: ranked.length
-          ? `${ranked.length} ranking keywords across ${rankedPages} pages` +
-            (close.length ? `, ${close.length} in striking distance` : "")
-          : // Zero rows is the failure mode two sibling parsers hid for months,
-            // so it is reported as its own state rather than as a quiet success.
-            "no ranking keywords returned for this domain",
-      });
-    } catch (err) {
-      layers.push({
-        id: "ranked_keywords",
-        status: "failed",
-        detail: err instanceof Error ? err.message : "rank lookup failed",
-      });
+        rankedLayers.push({
+          id: "ranked_keywords",
+          status: "ok",
+          detail: ranked.length
+            ? `${ranked.length} ranking keywords across ${rankedPages} pages` +
+              (close.length ? `, ${close.length} in striking distance` : "")
+            : // Zero rows is the failure mode two sibling parsers hid for months,
+              // so it is reported as its own state rather than as a quiet success.
+              "no ranking keywords returned for this domain",
+        });
+      } catch (err) {
+        rankedLayers.push({
+          id: "ranked_keywords",
+          status: "failed",
+          detail: err instanceof Error ? err.message : "rank lookup failed",
+        });
+      }
     }
-  }
+  })();
 
   // --- What to write next --------------------------------------------------
   //
@@ -660,42 +710,51 @@ export async function analyseDomain(options: {
   let traffic: number | null = null;
   let referringDomains: number | null = null;
   let authorityLayer: AnalysisLayer | null = null;
-  if (hasDataForSeo) {
-    try {
-      // Location travels with language or the pair is rejected. This passed
-      // the workspace's language and let the location default to the United
-      // States, so an Italian site asked for Italian results in the US and
-      // DataForSEO answered "Invalid Field: 'language_code'" - which reads
-      // like the field is wrong rather than the combination. Traffic was
-      // therefore null on every non-English workspace (2026-09-04).
-      const m = await fetchDomainMetrics(domain, {
-        languageCode: languageCodeOf(options.locale),
-        locationCode: options.locationCode,
-      });
-      authority = m.authority;
-      traffic = m.traffic;
-      referringDomains = m.referringDomains;
-      if (supabase && workspaceId && (m.authority !== null || m.traffic !== null)) {
-        await supabase
-          .from("workspaces")
-          .update({
-            ...(m.authority !== null ? { dr: m.authority } : {}),
-            ...(m.traffic !== null ? { traffic: m.traffic } : {}),
-          })
-          .eq("id", workspaceId);
+  const authorityDone = (async () => {
+    if (hasDataForSeo) {
+      try {
+        // Location travels with language or the pair is rejected. This passed
+        // the workspace's language and let the location default to the United
+        // States, so an Italian site asked for Italian results in the US and
+        // DataForSEO answered "Invalid Field: 'language_code'" - which reads
+        // like the field is wrong rather than the combination. Traffic was
+        // therefore null on every non-English workspace (2026-09-04).
+        const m = await timed("authority", () => fetchDomainMetrics(domain, {
+          languageCode: languageCodeOf(options.locale),
+          locationCode: options.locationCode,
+        }));
+        authority = m.authority;
+        traffic = m.traffic;
+        referringDomains = m.referringDomains;
+        if (supabase && workspaceId && (m.authority !== null || m.traffic !== null)) {
+          await supabase
+            .from("workspaces")
+            .update({
+              ...(m.authority !== null ? { dr: m.authority } : {}),
+              ...(m.traffic !== null ? { traffic: m.traffic } : {}),
+            })
+            .eq("id", workspaceId);
+        }
+        authorityLayer = {
+          id: "authority",
+          status: m.authority === null && m.traffic === null ? "unavailable" : "ok",
+          detail:
+            m.authority === null && m.traffic === null
+              ? "no authority or traffic estimate returned for this domain"
+              : `authority ${m.authority ?? "—"}, ${m.traffic?.toLocaleString() ?? "—"} organic visits a month`,
+        };
+      } catch (err) {
+        authorityLayer = { id: "authority", status: "failed", detail: err instanceof Error ? err.message : "authority lookup failed" };
       }
-      authorityLayer = {
-        id: "authority",
-        status: m.authority === null && m.traffic === null ? "unavailable" : "ok",
-        detail:
-          m.authority === null && m.traffic === null
-            ? "no authority or traffic estimate returned for this domain"
-            : `authority ${m.authority ?? "—"}, ${m.traffic?.toLocaleString() ?? "—"} organic visits a month`,
-      };
-    } catch (err) {
-      authorityLayer = { id: "authority", status: "failed", detail: err instanceof Error ? err.message : "authority lookup failed" };
     }
-  }
+  })();
+
+  await Promise.all([crawlDone, pagespeedDone, platformDone, rankedDone, authorityDone]);
+  layers.push(...crawlLayers, ...psLayers, ...platformLayers, ...rankedLayers);
+  // The site is read and its rankings are in: what a reader of its existing
+  // pages needs. Said now, so the caller can start that while the keyword
+  // work below runs (lib/onboarding/pipeline.ts).
+  options.onRead?.({ ranked });
 
   // What the person confirmed in the wizard: what they sell, who to, and
   // against whom.
@@ -720,6 +779,19 @@ export async function analyseDomain(options: {
       business = null;
     }
   }
+
+  // Only when there is a workspace to store into; the sales-side "check any
+  // domain" path does not need it and should not pay for it.
+  const backlinksDone: Promise<AnalysisLayer | null> = depth === "full" && hasDataForSeo && supabase && workspaceId
+    ? timed("backlinks", () => syncBacklinks(supabase, workspaceId, domain)).then(
+        (r): AnalysisLayer => ({
+          id: "backlinks",
+          status: "ok",
+          detail: r.total !== null ? `${r.total.toLocaleString()} backlinks in the index, ${r.fetched} referring domains stored` : `${r.fetched} referring domains stored`,
+        }),
+        (err: unknown): AnalysisLayer => ({ id: "backlinks", status: "failed", detail: err instanceof Error ? err.message : "backlink lookup failed" }),
+      )
+    : Promise.resolve(null);
 
   let keywordsFound = 0;
   let screened: Screened | undefined;
@@ -808,14 +880,14 @@ export async function analyseDomain(options: {
         const spend = supabase && workspaceId ? { supabase, workspaceId } : null;
         const discovered =
           depth === "full"
-            ? await discoverBuyerKeywords({
+            ? await timed("discovery", () => discoverBuyerKeywords({
                 domain,
                 business,
                 languageCode: languageCodeOf(options.locale),
                 locationCode: options.locationCode,
                 spend,
                 vocabulary: profile?.topTerms ?? [],
-              })
+              }))
             : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [], alternativeSeeds: [] as string[], competitorsUnresolved: [] as string[], competitorsFailed: [] as string[], serpRivals: [] as string[], serpRivalsKept: false, serpRivalsVetted: true, fromSerpRivals: 0, serpRivalSearchesFailed: [] as string[], screened: undefined };
         screened = discovered.screened;
         // Keep the rivals a fresh search found, so tomorrow reads the same
@@ -863,7 +935,9 @@ export async function analyseDomain(options: {
         // Asked in the market's language, exactly as qualification asks it
         // (judgeBuyerFitFor), so qualification can reuse these verdicts
         // instead of buying each kept term's answer a second time.
-        const fit = await judgeBuyerFit(business ? { ...business, language: languageCodeOf(options.locale) } : business, toJudge, { spend });
+        // Its own stage in a first look's spend (lib/billing/spend-scope.ts):
+        // the buyer test is the dearest model pass of discovery.
+        const fit = await timed("buyer_fit", () => withStage("buyer_fit", () => judgeBuyerFit(business ? { ...business, language: languageCodeOf(options.locale) } : business, toJudge, { spend })));
         const refusedByBuyerTest = [...fit.verdicts.values()].filter((v) => !v.keep).length;
 
         // Collapse phrasings across ALL three sources, not just the seeded one.
@@ -1112,20 +1186,10 @@ export async function analyseDomain(options: {
   if (authorityLayer) layers.push(authorityLayer);
 
   // --- Who links here -------------------------------------------------------
-  // Only when there is a workspace to store into; the sales-side "check any
-  // domain" path does not need it and should not pay for it.
-  if (depth === "full" && hasDataForSeo && supabase && workspaceId) {
-    try {
-      const r = await syncBacklinks(supabase, workspaceId, domain);
-      layers.push({
-        id: "backlinks",
-        status: "ok",
-        detail: r.total !== null ? `${r.total.toLocaleString()} backlinks in the index, ${r.fetched} referring domains stored` : `${r.fetched} referring domains stored`,
-      });
-    } catch (err) {
-      layers.push({ id: "backlinks", status: "failed", detail: err instanceof Error ? err.message : "backlink lookup failed" });
-    }
-  }
+  // Started before the keyword phase and read here, where its layer always
+  // was: nothing in the keyword work reads it.
+  const backlinksLayer = await backlinksDone;
+  if (backlinksLayer) layers.push(backlinksLayer);
 
   // --- Headline ------------------------------------------------------------
   // Leads with the readiness gap, because that is what this product sells and
@@ -1175,7 +1239,7 @@ export async function analyseDomain(options: {
     domain,
     authority,
     traffic,
-    platform: detection?.platform ?? null,
+    platform: (detection as Detection | null)?.platform ?? null,
     readiness,
     topicalProfile: profile,
     pagesCrawled,
@@ -1193,7 +1257,7 @@ export async function analyseDomain(options: {
   // --- Persist -------------------------------------------------------------
   if (supabase && workspaceId) {
     const now = new Date().toISOString();
-    await supabase.from("domain_audits").insert({
+    const auditInsert = supabase.from("domain_audits").insert({
       workspace_id: workspaceId,
       status: "completed",
       pages_crawled: pagesCrawled,
@@ -1212,6 +1276,22 @@ export async function analyseDomain(options: {
       started_at: now,
       completed_at: now,
     });
+    // Its id only when the speed test is still to land on it.
+    const auditRow = deferSpeed ? (await auditInsert.select("id").maybeSingle()).data : (await auditInsert, null);
+
+    // The speed test, when it was not waited for: onto the row it belongs to
+    // once it answers, as the result or the reason it has none.
+    if (deferSpeed) {
+      const auditId = (auditRow as { id?: string } | null)?.id ?? null;
+      analysis.pageSpeedSettled = speedTest
+        .then(async (ps) => {
+          if (!auditId) return;
+          const value = ps.ok ? { ...ps.result } : { unavailable: ps.detail };
+          const { error } = await supabase.from("domain_audits").update({ pagespeed: value }).eq("id", auditId);
+          if (error) console.warn(`[analyse] speed test result not stored: ${error.message}`);
+        })
+        .catch((err: unknown) => console.warn(`[analyse] speed test failed: ${err instanceof Error ? err.message : String(err)}`));
+    }
 
     // `first_analysed_at` means "we have looked". A crawl that got nothing for
     // a transient reason is not a look, and stamping it anyway is what made a
@@ -1251,7 +1331,7 @@ export async function analyseDomain(options: {
         // prompt. The platform itself only on a match: a blank must never
         // replace a platform the user has already confirmed.
         detected_platform_at: now,
-        ...(detection ? { detected_platform: detection.platform } : {}),
+        ...(detection ? { detected_platform: (detection as Detection).platform } : {}),
         // Only overwrite when this run actually produced one, so a later crawl
         // that gets blocked does not erase a good profile.
         ...(profile ? { topical_profile: profile } : {}),

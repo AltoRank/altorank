@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Button, Icons } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { createCheckoutSession, createBillingPortalSession } from "@/app/actions/billing";
+import { planCardRelation, type BillingInterval } from "@/lib/billing/plan-interval";
 
 /**
  * The ladder, on the page where you buy it.
@@ -20,7 +21,6 @@ import { createCheckoutSession, createBillingPortalSession } from "@/app/actions
  */
 
 type SelfServePlan = "starter" | "growth";
-type BillingInterval = "month" | "year";
 
 export type PlanCard = {
   tier: "starter" | "growth" | "scale";
@@ -34,6 +34,7 @@ export type PlanCard = {
 export function PlanCards({
   plans,
   currentTier,
+  currentInterval = null,
   isActive,
   hasCustomer,
   hasSubscription = false,
@@ -46,6 +47,11 @@ export function PlanCards({
   plans: PlanCard[];
   /** The tier actually being paid for, or null when nothing is. */
   currentTier: "starter" | "growth" | "scale" | null;
+  /**
+   * Monthly or yearly, for the tier being paid for. Null when nothing is paid
+   * for or Stripe could not say; the tier alone then decides "your plan".
+   */
+  currentInterval?: BillingInterval | null;
   isActive: boolean;
   hasCustomer: boolean;
   /**
@@ -88,7 +94,9 @@ export function PlanCards({
 }) {
   const [pending, start] = useTransition();
   const locked = canManage === false;
-  const [interval, setInterval] = useState<BillingInterval>("month");
+  // Opens on the interval being paid, so a yearly subscriber's card reads as
+  // theirs at the price they pay.
+  const [interval, setInterval] = useState<BillingInterval>(currentInterval ?? "month");
 
   function subscribe(plan: SelfServePlan) {
     start(async () => {
@@ -140,7 +148,13 @@ export function PlanCards({
           // "Current" means paid for, not merely stored: `plan` defaults to
           // starter on an empty row, and presenting that default as a purchase
           // is the bug this page already had once.
-          const current = isActive && currentTier === p.tier;
+          //
+          // And at the interval on screen: the same tier at the other interval
+          // is the card that offers the monthly/yearly switch, which the
+          // ladder had no way to make before.
+          const relation = planCardRelation({ isActive, currentTier, currentInterval, tier: p.tier, shownInterval: interval });
+          const current = relation === "current";
+          const otherInterval = relation === "other-interval";
           const price = interval === "month" ? p.monthly : p.yearly;
           const sales = p.tier === "scale";
 
@@ -149,7 +163,7 @@ export function PlanCards({
               key={p.tier}
               className={cn(
                 "flex flex-col rounded-lg border bg-bg p-[18px]",
-                current ? "border-accent ring-1 ring-accent" : "border-line",
+                current ? "border-accent ring-1 ring-accent" : otherInterval ? "border-accent" : "border-line",
               )}
             >
               <div className="flex items-center gap-2">
@@ -157,6 +171,11 @@ export function PlanCards({
                 {current && (
                   <span className="rounded-full bg-accent px-2 py-0.5 text-[10.5px] font-medium text-bg">
                     Your plan
+                  </span>
+                )}
+                {otherInterval && (
+                  <span className="rounded-full border border-accent px-2 py-0.5 text-[10.5px] font-medium text-accent-ink">
+                    Your plan, billed {currentInterval === "year" ? "yearly" : "monthly"}
                   </span>
                 )}
               </div>
@@ -188,7 +207,7 @@ export function PlanCards({
               <div className="mt-auto pt-4">
                 {locked ? (
                   <div className="text-center text-[12px] leading-relaxed text-ink-3">
-                    {current ? "Your plan." : ""} Only the account owner can change the plan or billing.
+                    {current || otherInterval ? "Your plan." : ""} Only the account owner can change the plan or billing.
                   </div>
                 ) : current && hasCustomer ? (
                   <div className="flex flex-col gap-2">
@@ -209,7 +228,15 @@ export function PlanCards({
                       )}
                     </div>
                   </div>
-                ) : current ? (
+                ) : otherInterval && hasSubscription ? (
+                  <Button
+                    onClick={() => subscribe(p.tier as SelfServePlan)}
+                    disabled={pending}
+                    className="w-full justify-center"
+                  >
+                    {pending ? "Switching…" : interval === "year" ? "Switch to yearly billing" : "Switch to monthly billing"}
+                  </Button>
+                ) : current || otherInterval ? (
                   /* Shown as current with no Stripe customer behind it: an
                      operator preview or the dev simulator. Every portal
                      button would throw, so say why instead of offering one. */

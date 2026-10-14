@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { removePendingOverage } from "@/lib/billing/overage";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { z } from "zod";
@@ -114,9 +115,15 @@ export async function updateArticle(
 }
 
 export async function deleteArticle(id: string) {
-  await requireAuth();
+  const { accountId } = await requireAuth();
   const supabase = await createClient();
-  const { error } = await supabase.from("articles").delete().eq("id", id);
+  // `.select` so the charge below is taken back only for a row this delete
+  // really removed (RLS may hide it, which deletes nothing).
+  const { data: removed, error } = await supabase.from("articles").delete().eq("id", id).select("id");
   if (error) throw new Error(error.message);
+  // The slot comes back with the delete; so does a pending overage charge
+  // for this draft, or the next draft would be a second charge for one
+  // surviving article.
+  if ((removed ?? []).length > 0) await removePendingOverage(supabase, accountId, id);
   revalidatePath("/articles");
 }

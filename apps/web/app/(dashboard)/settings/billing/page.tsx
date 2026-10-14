@@ -21,6 +21,8 @@ import { dunningInfo } from "@/lib/billing/dunning";
 import { trialEndsLabel } from "@/lib/billing/trial";
 import { SettingsTabs } from "../settings-tabs";
 import { canManageBilling } from "@/lib/team/access";
+import { priceForInterval } from "@/lib/billing/plan-interval";
+import { readSubscriptionInterval } from "@/lib/billing/subscription-interval";
 
 export const metadata: Metadata = { title: "Billing" };
 
@@ -91,6 +93,12 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
   }
   const pausedUntil = (pausedRows?.[0]?.paused_until as string | undefined) ?? null;
 
+  // Monthly or yearly: the price the header states and the card that counts
+  // as "your plan" both depend on it. Read from the subscription, after the
+  // row has said there is one; a preview or simulation has none to read.
+  const interval =
+    preview?.plan || simulation?.plan ? null : await readSubscriptionInterval(account?.stripe_subscription_id as string | null | undefined);
+
   const plan = (preview?.plan ?? simulation?.plan ?? account?.plan ?? "starter") as PlanTier;
   // The preview overrides the plan, so it has to override the status with it.
   // Reading the real row here produced "Managed plan · inactive" beside a card
@@ -144,8 +152,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
             />
             {(isActive || dunning) && (
               <span>
-                {PLAN_PRICES[plan]}
-                {plan !== "scale" ? " /mo" : ""}
+                {priceForInterval({ monthly: PLAN_PRICES[plan], yearly: PLAN_YEARLY_PRICES[plan] }, interval, { sales: plan === "scale" })}
                 {renews ? ` · renews ${renews}` : ""}
               </span>
             )}
@@ -196,6 +203,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
                    defaults to "starter" on an empty row, and this page has
                    already once presented that default as a purchase. */
                 currentTier={isActive ? plan : null}
+                currentInterval={isActive ? interval : null}
                 isActive={isActive}
                 hasCustomer={!!account?.stripe_customer_id}
                 hasSubscription={!!account?.stripe_subscription_id}
