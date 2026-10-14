@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { openaiImageModel } from "./models";
+import { claimSpend } from "@/lib/billing/spend-scope";
 import type { ImageStyle } from "@/lib/onboarding/output-settings";
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,13 @@ const QUALITY = "low";
  * number this product reports to the customer.
  */
 const OUTPUT_COMPRESSION = 70;
+
+/**
+ * What one image may cost, claimed from a first look's budget before it is
+ * generated: gpt-image-1 lists $0.016 for a low-quality 1536x1024 image and
+ * gpt-image-1-mini (the default) less, so $0.02 sits above either.
+ */
+export const IMAGE_ESTIMATE_USD = 0.02;
 
 const CONTENT_TYPE: Record<string, string> = {
   webp: "image/webp",
@@ -155,6 +163,12 @@ export async function generateImage(
     .join(" ");
 
   const model = openaiImageModel();
+  // A first look's draft pays for its images from the run's budget
+  // (lib/billing/spend-scope.ts): claimed before the call, and a refusal
+  // throws before anything is bought - every caller already treats a failed
+  // image as no image. The endpoint reports no price, so the claim settles at
+  // its estimate. Outside a first look the claim is granted at once.
+  const claim = await claimSpend(`${model} (image)`, IMAGE_ESTIMATE_USD);
   const response = await client.images.generate({
     model,
     prompt,
@@ -163,7 +177,7 @@ export async function generateImage(
     quality: QUALITY,
     output_format: OUTPUT_FORMAT,
     output_compression: OUTPUT_COMPRESSION,
-  });
+  }).finally(() => claim.settle(null));
 
   const image = response.data?.[0];
   // Deliberately not falling back to `image.url`. A URL here would mean the

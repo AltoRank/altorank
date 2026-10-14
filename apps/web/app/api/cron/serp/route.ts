@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
-import { setSpendReporter } from "@/lib/seo/client";
+import { withSpendScope } from "@/lib/billing/spend-scope";
 import { getQuota, entitledToScheduledWork } from "@/lib/billing/quota";
 import { syncBacklinks } from "@/lib/seo/backlinks";
-import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
 import { postRankingTasks } from "@/lib/seo/serp";
 import type { Workspace } from "@/lib/types";
@@ -28,9 +27,7 @@ export const maxDuration = 300;
 
 async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
-    setSpendReporter(null);
-
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   /**
@@ -91,93 +88,88 @@ async function run(request: Request) {
       continue;
     }
 
-    setSpendReporter(({ operation, costUsd }) => {
-      void recordSpend(supabase, {
-        provider: "dataforseo",
-        operation,
-        costUsd,
-        workspaceId: ws.id,
-      });
+    // Billed to this workspace through a spend scope (lib/billing/spend-scope.ts),
+    // not the process-global reporter that whatever else ran armed over.
+    await withSpendScope({ workspaceId: ws.id, db: supabase }, async () => {
+      // Weekly backlink pass, folded into the daily rank cron: one DataForSEO
+      // call per workspace per week (~$0.05). Newest discovered_at older than
+      // seven days, or none at all, means it is due.
+      try {
+        const { data: newest } = await supabase
+          .from("backlinks")
+          .select("discovered_at")
+          .eq("workspace_id", ws.id)
+          .order("discovered_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const due = !newest || Date.now() - new Date(newest.discovered_at).getTime() > 7 * 24 * 3600 * 1000;
+        if (due) await syncBacklinks(supabase, ws.id, ws.domain);
+      } catch (err) {
+        console.error(`[cron/serp] backlinks for ${ws.domain}:`, err instanceof Error ? err.message : err);
+      }
+
+      try {
+        // Planned and shipped terms plus the article keywords, newest first,
+        // capped. The same selection the found-live receipt reads before it
+        // tells a customer a term is tracked: see lib/seo/tracked-keywords.ts.
+        const { keywords, error: kwError } = await selectTrackedKeywords(supabase, ws.id);
+
+        if (kwError) {
+          results.push({
+            workspaceId: ws.id,
+            domain: ws.domain,
+            checked: 0,
+            error: kwError,
+          });
+          return;
+        }
+
+        if (keywords.length === TRACK_CAP) {
+          console.warn(`[serp] workspace ${ws.domain}: tracking capped at ${TRACK_CAP} keywords`);
+        }
+        if (keywords.length === 0) {
+          results.push({
+            workspaceId: ws.id,
+            domain: ws.domain,
+            checked: 0,
+          });
+          return;
+        }
+
+        /**
+         * Post, don't wait. This used to call the live SERP endpoint for every
+         * keyword and process the answers here - $0.002 a keyword for a
+         * six-second turnaround that nothing at three in the morning needs.
+         * The standard queue is $0.0006 for the same SERP; cron/serp-collect
+         * picks the results up twenty minutes later. See lib/seo/serp.ts.
+         */
+        const { posted, failed } = await postRankingTasks(
+          ws.id,
+          keywords.map((k) => ({ keywordId: k.id, term: k.term })),
+          {
+            languageCode: (ws as { language?: string }).language ?? "en",
+            locationCode: (ws as { location_code?: number }).location_code ?? 2840,
+          },
+        );
+        if (failed > 0) {
+          console.warn(`[serp] workspace ${ws.domain}: ${failed} task(s) refused by DataForSEO`);
+        }
+        const rankingRows = { length: posted };
+
+        results.push({
+          workspaceId: ws.id,
+          domain: ws.domain,
+          checked: rankingRows.length,
+        });
+      } catch (err) {
+        results.push({
+          workspaceId: ws.id,
+          domain: ws.domain,
+          checked: 0,
+          error: err instanceof Error ? err.message : "Unknown error",
+        });
+      }
     });
-
-    // Weekly backlink pass, folded into the daily rank cron: one DataForSEO
-    // call per workspace per week (~$0.05). Newest discovered_at older than
-    // seven days, or none at all, means it is due.
-    try {
-      const { data: newest } = await supabase
-        .from("backlinks")
-        .select("discovered_at")
-        .eq("workspace_id", ws.id)
-        .order("discovered_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const due = !newest || Date.now() - new Date(newest.discovered_at).getTime() > 7 * 24 * 3600 * 1000;
-      if (due) await syncBacklinks(supabase, ws.id, ws.domain);
-    } catch (err) {
-      console.error(`[cron/serp] backlinks for ${ws.domain}:`, err instanceof Error ? err.message : err);
-    }
-
-    try {
-      // Planned and shipped terms plus the article keywords, newest first,
-      // capped. The same selection the found-live receipt reads before it
-      // tells a customer a term is tracked: see lib/seo/tracked-keywords.ts.
-      const { keywords, error: kwError } = await selectTrackedKeywords(supabase, ws.id);
-
-      if (kwError) {
-        results.push({
-          workspaceId: ws.id,
-          domain: ws.domain,
-          checked: 0,
-          error: kwError,
-        });
-        continue;
-      }
-
-      if (keywords.length === TRACK_CAP) {
-        console.warn(`[serp] workspace ${ws.domain}: tracking capped at ${TRACK_CAP} keywords`);
-      }
-      if (keywords.length === 0) {
-        results.push({
-          workspaceId: ws.id,
-          domain: ws.domain,
-          checked: 0,
-        });
-        continue;
-      }
-
-      /**
-       * Post, don't wait. This used to call the live SERP endpoint for every
-       * keyword and process the answers here - $0.002 a keyword for a
-       * six-second turnaround that nothing at three in the morning needs.
-       * The standard queue is $0.0006 for the same SERP; cron/serp-collect
-       * picks the results up twenty minutes later. See lib/seo/serp.ts.
-       */
-      const { posted, failed } = await postRankingTasks(
-        ws.id,
-        keywords.map((k) => ({ keywordId: k.id, term: k.term })),
-        {
-          languageCode: (ws as { language?: string }).language ?? "en",
-          locationCode: (ws as { location_code?: number }).location_code ?? 2840,
-        },
-      );
-      if (failed > 0) {
-        console.warn(`[serp] workspace ${ws.domain}: ${failed} task(s) refused by DataForSEO`);
-      }
-      const rankingRows = { length: posted };
-
-      results.push({
-        workspaceId: ws.id,
-        domain: ws.domain,
-        checked: rankingRows.length,
-      });
-    } catch (err) {
-      results.push({
-        workspaceId: ws.id,
-        domain: ws.domain,
-        checked: 0,
-        error: err instanceof Error ? err.message : "Unknown error",
-      });
-    }
   }
 
   const totalChecked = results.reduce((sum, r) => sum + r.checked, 0);

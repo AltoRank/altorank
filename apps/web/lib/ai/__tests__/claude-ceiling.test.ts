@@ -42,9 +42,9 @@ describe("ClaudeProvider at the token ceiling", () => {
     expect(t.message).toContain("hit the token ceiling after 24000 output tokens");
   });
 
-  it("asks for a ceiling that clears a heavy thinking run plus a long article", () => {
+  it("asks for a ceiling that clears a heavy thinking run plus a long article", async () => {
     const provider = new ClaudeProvider("claude-sonnet-5");
-    void provider.streamArticle({ keyword: "x" }).next();
+    await provider.streamArticle({ keyword: "x" }).next();
     const calls = streamCall.mock.calls as unknown as Array<[{ max_tokens: number; model: string }]>;
     const params = calls.at(-1)?.[0];
     expect(params?.model).toBe("claude-sonnet-5");

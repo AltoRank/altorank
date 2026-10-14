@@ -16,6 +16,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicModel, replyText } from "@/lib/ai/models";
+import { createMetered } from "@/lib/ai/metered";
 import { readSiteText, type ObservedSite, type SiteTextSource, MIN_CHARS } from "./site-text";
 import { e2eStubsEnabled, stubInferProfile } from "@/lib/e2e/stubs";
 
@@ -109,11 +110,13 @@ export async function inferBusinessProfileDetailed(domain: string): Promise<Infe
 
   try {
     const client = new Anthropic({ apiKey });
-    const response = await client.messages.create({
+    // Metered: claimed under a first look's budget, written to spend either
+    // way. A refusal lands in the catch below as a failed read.
+    const response = await createMetered(client, {
       model: anthropicModel("structured"),
       max_tokens: 1200,
       messages: [{ role: "user", content: `${PROMPT}\n\nSITE: ${domain}\n\n${read.text}\n\n${linksForPrompt(read.observed)}` }],
-    });
+    }, "onboarding/business-profile");
     const raw = replyText(response.content) ?? "";
     const profile = parseProfile(raw, domain);
     return profile

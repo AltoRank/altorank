@@ -34,6 +34,7 @@ import { discoverBuyerKeywords } from "@/lib/keyword-research/discovery";
 import type { Screened } from "@/lib/keyword-research/hygiene";
 import { isBrandTerm } from "@/lib/keyword-research/seeds";
 import { judgeBuyerFit } from "@/lib/keyword-research/buyer-fit";
+import { withStage } from "@/lib/billing/spend-scope";
 import { contextKey, OPPORTUNITY_VERSION, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { isOutOfReach, isHopeless } from "@/lib/seo/difficulty";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
@@ -863,7 +864,9 @@ export async function analyseDomain(options: {
         // Asked in the market's language, exactly as qualification asks it
         // (judgeBuyerFitFor), so qualification can reuse these verdicts
         // instead of buying each kept term's answer a second time.
-        const fit = await judgeBuyerFit(business ? { ...business, language: languageCodeOf(options.locale) } : business, toJudge, { spend });
+        // Its own stage in a first look's spend (lib/billing/spend-scope.ts):
+        // the buyer test is the dearest model pass of discovery.
+        const fit = await withStage("buyer_fit", () => judgeBuyerFit(business ? { ...business, language: languageCodeOf(options.locale) } : business, toJudge, { spend }));
         const refusedByBuyerTest = [...fit.verdicts.values()].filter((v) => !v.keep).length;
 
         // Collapse phrasings across ALL three sources, not just the seeded one.

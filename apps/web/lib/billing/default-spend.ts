@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { recordSpend, type SpendEntry } from "./spend";
+import { currentSpendScope } from "./spend-scope";
 
 /**
  * Spend recording that needs nobody to remember it.
@@ -48,7 +49,10 @@ export function spendClient(): SupabaseClient | null {
 }
 
 export function recordSpendByDefault(entry: SpendEntry): void {
-  const supabase = spendClient();
+  // The scope's own client when it names one (a test's), the operator's
+  // otherwise. The scope also fills in the workspace, article, run and stage
+  // the entry does not carry (lib/billing/spend-scope.ts).
+  const supabase = currentSpendScope()?.db ?? spendClient();
   if (!supabase) return;
   // Fire and forget. recordSpend already swallows its own failures; the
   // `void` is so an unhandled rejection can never surface from here.

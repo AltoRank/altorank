@@ -10,13 +10,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * the customer that their queue is exhausted.
  */
 
-const { generateArticle, announceNothingWritten, nothingWrittenReason, recommend, spendRows, reporter } = vi.hoisted(() => ({
+const { generateArticle, announceNothingWritten, nothingWrittenReason, recommend, spendRows } = vi.hoisted(() => ({
   generateArticle: vi.fn(),
   announceNothingWritten: vi.fn(async (...args: unknown[]) => String(args.length && "")),
   nothingWrittenReason: vi.fn((...args: unknown[]): string | null => (args.length ? null : null)),
   recommend: vi.fn(),
   spendRows: [] as unknown[],
-  reporter: { armed: null as null | ((e: { operation: string; costUsd: number | null }) => void) },
 }));
 
 let workspaces: Record<string, unknown>[] = [];
@@ -40,7 +39,6 @@ const rec = (term: string, opportunity: unknown) => ({ term, keywordId: `kw-${te
 
 vi.mock("@/lib/supabase/server", () => ({ createServiceClient: () => ({ from: (n: string) => table(n) }) }));
 vi.mock("@/lib/seo/client", () => ({
-  setSpendReporter: (fn: typeof reporter.armed) => { reporter.armed = fn; },
   hasDataForSEOCredentials: () => true,
 }));
 vi.mock("@/lib/seo/recommendations", () => ({
@@ -81,6 +79,8 @@ vi.mock("@/lib/email/schedule-events", () => ({
 }));
 
 import { GET } from "../generate/route";
+import { currentSpendScope } from "@/lib/billing/spend-scope";
+import { recordSpendByDefault } from "@/lib/billing/default-spend";
 
 const req = () => new Request("http://localhost/api/cron/generate", { headers: { "x-cron-secret": "s" } });
 const detailOf = async () => {
@@ -118,17 +118,20 @@ describe("cron/generate — what the verdicts add up to", () => {
     expect(await detailOf()).toBe("no keyword qualifies: all are covered, already ranking, or flagged as provider noise");
   });
 
-  it("asks for the recommendations with qualification on, with a spend reporter armed for the workspace", async () => {
+  it("asks for the recommendations with qualification on, inside a spend scope for the workspace", async () => {
+    let inside: ReturnType<typeof currentSpendScope>;
     recommend.mockImplementation(async () => {
-      // A DataForSEO call made during qualification reports through the client's hook.
-      reporter.armed?.({ operation: "/dataforseo_labs/google/x/live", costUsd: 0.0123 });
+      inside = currentSpendScope();
+      // What lib/seo/client does after a DataForSEO call made during qualification.
+      recordSpendByDefault({ provider: "dataforseo", operation: "/dataforseo_labs/google/x/live", costUsd: 0.0123 });
       return [];
     });
     await GET(req());
     await new Promise((r) => setTimeout(r, 0));
     expect(recommend).toHaveBeenCalledWith(expect.anything(), "ws-1", { limit: 1000, qualify: true });
+    expect(inside?.workspaceId).toBe("ws-1");
     expect(spendRows).toEqual([expect.objectContaining({ provider: "dataforseo", workspace_id: "ws-1", operation: "/dataforseo_labs/google/x/live", cost_usd: 0.0123 })]);
-    // And nothing stays armed once the run is over.
-    expect(reporter.armed).toBeNull();
+    // And nothing outside the run sees it.
+    expect(currentSpendScope()).toBeUndefined();
   });
 });
