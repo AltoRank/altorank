@@ -810,7 +810,7 @@ const NOTHING_WRITTEN: Record<
   paused: {
     subject: (site) => `${site} is paused, so nothing is being written`,
     what: "This workspace is paused. Drafting and publishing are both stopped.",
-    fix: "Resuming it from the workspace switcher puts it back into the next scheduled run.",
+    fix: "Resume it from the Workspaces page, or from the pause banner on its calendar, and it goes back into the next scheduled run.",
     cta: () => "Open the calendar",
     path: "/content",
   },
