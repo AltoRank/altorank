@@ -6,7 +6,8 @@ import { syncBacklinks } from "@/lib/seo/backlinks";
 import { recordSpend } from "@/lib/billing/spend";
 import { createServiceClient } from "@/lib/supabase/server";
 import { postRankingTasks } from "@/lib/seo/serp";
-import type { Workspace, Keyword } from "@/lib/types";
+import type { Workspace } from "@/lib/types";
+import { selectTrackedKeywords, TRACK_CAP } from "@/lib/seo/tracked-keywords";
 import { observedCron } from "@/lib/observability/cron";
 
 /**
@@ -117,64 +118,21 @@ async function run(request: Request) {
     }
 
     try {
-      /**
-       * Track what someone chose, not everything discovery ever found.
-       *
-       * This selected every keyword in the workspace, and discovery writes a
-       * thousand rows per domain. A thousand daily SERP checks is roughly
-       * $2-3/day - $60-90 a month against a €69 plan, spent mostly on terms
-       * nobody is targeting. Planned and shipped are the terms a person
-       * picked; the article keywords are the ones the product wrote for.
-       * The cap is a backstop, newest first, and is logged when it bites.
-       */
-      const { data: articleKw } = await supabase
-        .from("articles")
-        .select("keyword")
-        .eq("workspace_id", ws.id);
-      const articleTerms = new Set(
-        (articleKw ?? []).map((a) => (a.keyword as string).toLowerCase()),
-      );
-
-      const TRACK_CAP = 200;
-      const { data: kwData, error: kwError } = await supabase
-        .from("keywords")
-        .select("*")
-        .eq("workspace_id", ws.id)
-        .in("status", ["planned", "shipped"])
-        // A term Search Console put in the pool gets its position from
-        // Search Console, refreshed nightly by lib/gsc/seed.ts for free and
-        // for the site's real audience rather than one SERP locale. Buying a
-        // SERP for it would pay to know less.
-        .neq("source", "gsc")
-        .order("created_at", { ascending: false })
-        .limit(TRACK_CAP);
+      // Planned and shipped terms plus the article keywords, newest first,
+      // capped. The same selection the found-live receipt reads before it
+      // tells a customer a term is tracked: see lib/seo/tracked-keywords.ts.
+      const { keywords, error: kwError } = await selectTrackedKeywords(supabase, ws.id);
 
       if (kwError) {
         results.push({
           workspaceId: ws.id,
           domain: ws.domain,
           checked: 0,
-          error: kwError.message,
+          error: kwError,
         });
         continue;
       }
 
-      // Article keywords that never got a keyword row still deserve tracking:
-      // the product wrote a page for them.
-      let keywords = (kwData ?? []) as Keyword[];
-      const known = new Set(keywords.map((k) => k.term.toLowerCase()));
-      if (keywords.length < TRACK_CAP && articleTerms.size > 0) {
-        const missing = [...articleTerms].filter((t) => !known.has(t));
-        if (missing.length > 0) {
-          const { data: extra } = await supabase
-            .from("keywords")
-            .select("*")
-            .eq("workspace_id", ws.id)
-            .in("term", missing)
-            .limit(TRACK_CAP - keywords.length);
-          keywords = keywords.concat((extra ?? []) as Keyword[]);
-        }
-      }
       if (keywords.length === TRACK_CAP) {
         console.warn(`[serp] workspace ${ws.domain}: tracking capped at ${TRACK_CAP} keywords`);
       }
