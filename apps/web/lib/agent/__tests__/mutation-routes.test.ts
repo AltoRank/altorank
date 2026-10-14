@@ -186,7 +186,7 @@ describe("POST /articles/{id}/retry-publish", () => {
   });
 
   it("refuses when the last publish succeeded", async () => {
-    db = fakeSupabase(seed({ publish_log: [{ id: "log-1", workspace_id: WS, article_id: ART_APPROVED, status: "success", error: null, destination_id: "wi-1", publish_mode: "draft", created_at: "2026-09-01T00:00:00Z" }] }));
+    db = fakeSupabase(seed({ publish_log: [{ id: "log-1", workspace_id: WS, article_id: ART_APPROVED, status: "success", source: "push", error: null, destination_id: "wi-1", publish_mode: "draft", created_at: "2026-09-01T00:00:00Z" }] }));
     const { POST } = await import("@/app/api/agent/v1/articles/[id]/retry-publish/route");
     const res = await POST(request(`/articles/${ART_APPROVED}/retry-publish`, { method: "POST" }), params({ id: ART_APPROVED }));
     expect(res.status).toBe(409);
@@ -194,7 +194,7 @@ describe("POST /articles/{id}/retry-publish", () => {
   });
 
   it("refuses a failed publish whose article is back in review: a human must approve first", async () => {
-    db = fakeSupabase(seed({ publish_log: [{ id: "log-1", workspace_id: WS, article_id: ART_REVIEW, status: "error", error: "500 from CMS", destination_id: "wi-1", publish_mode: "draft", created_at: "2026-09-01T00:00:00Z" }] }));
+    db = fakeSupabase(seed({ publish_log: [{ id: "log-1", workspace_id: WS, article_id: ART_REVIEW, status: "error", source: "push", error: "500 from CMS", destination_id: "wi-1", publish_mode: "draft", created_at: "2026-09-01T00:00:00Z" }] }));
     const { POST } = await import("@/app/api/agent/v1/articles/[id]/retry-publish/route");
     const res = await POST(request(`/articles/${ART_REVIEW}/retry-publish`, { method: "POST" }), params({ id: ART_REVIEW }));
     expect(res.status).toBe(409);
@@ -205,7 +205,7 @@ describe("POST /articles/{id}/retry-publish", () => {
   });
 
   it("GET /articles/{id} advertises retry_publish only for approved + failed", async () => {
-    db = fakeSupabase(seed({ publish_log: [{ id: "log-1", workspace_id: WS, article_id: ART_APPROVED, status: "error", error: "boom", destination_id: "wi-1", publish_mode: "draft", created_at: "2026-09-01T00:00:00Z" }] }));
+    db = fakeSupabase(seed({ publish_log: [{ id: "log-1", workspace_id: WS, article_id: ART_APPROVED, status: "error", source: "push", error: "boom", destination_id: "wi-1", publish_mode: "draft", created_at: "2026-09-01T00:00:00Z" }] }));
     const { GET } = await import("@/app/api/agent/v1/articles/[id]/route");
     const env = await (await GET(request(`/articles/${ART_APPROVED}`), params({ id: ART_APPROVED }))).json();
     expect(env.data.article.allowed_mutations.retry_publish).toEqual({ allowed: true });

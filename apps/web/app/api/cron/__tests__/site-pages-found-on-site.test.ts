@@ -94,6 +94,11 @@ describe("cron/site-pages with the found-on-site check", () => {
       ]),
     );
     expect(sb.tables.articles.find((a) => a.id === "tr-draft")).toMatchObject({ status: "live", published_url: `${S}/blog/sadakat` });
+    // The find's receipt (lib/publishing/on-article-live.ts): one publish_log
+    // row marked as a find, which cron/publish does not read as a push.
+    expect(sb.tables.publish_log).toEqual([
+      expect.objectContaining({ article_id: "tr-draft", source: "found_on_site", url: `${S}/blog/sadakat`, status: "success" }),
+    ]);
 
     // The crawl ran after it, inside what is left of the 300 seconds.
     expect(syncSitePages).toHaveBeenCalledTimes(1);
@@ -112,6 +117,7 @@ describe("cron/site-pages with the found-on-site check", () => {
     expect(calls).not.toContain(`${S}/blog/sadakat`);
     expect(sb.writes.filter((w) => w.table === "articles")).toHaveLength(writesAfterFirst);
     expect(sb.tables.found_on_site_checks).toHaveLength(1);
+    expect(sb.tables.publish_log).toHaveLength(1);
   });
 
   it("raises a site it cannot see as a warning once, the night it starts, and never counts it as checked", async () => {

@@ -17,6 +17,10 @@
 // draft's text? A match is written onto the existing publish record - status
 // 'live', `published_url` the page it was found on - with `found_on_site_*`
 // saying that is how it went live and how to take it back (migration 094).
+// The moment it is written, the find gets its receipt
+// (lib/publishing/on-article-live.ts): a publish_log row marked
+// found_on_site, the owner's "we found your article live" email, and the
+// article's keyword in the nightly rank check (migration 105).
 //
 // What it reads, and how politely:
 //   - public pages only, through the SSRF-guarded fetch the public tools use
@@ -60,6 +64,7 @@ import {
 } from "./candidates";
 import { compare, isMatch, prepareDraft, preparePage, type MatchEvidence, type PreparedDraft } from "./similarity";
 import type { FoundOnSiteBlindness } from "./state";
+import { describeArticleLive, onArticleLive } from "@/lib/publishing/on-article-live";
 
 /** Drafts older than this are not looked for. A copy happens within days, not months. */
 export const LOOKBACK_DAYS = 30;
@@ -92,6 +97,8 @@ export interface FoundArticle {
   url: string;
   containment: number;
   rule: MatchEvidence["rule"];
+  /** What the receipt did (lib/publishing/on-article-live.ts), for the run's log. */
+  receipt?: string;
 }
 
 export interface WorkspaceOutcome {
@@ -143,6 +150,11 @@ export interface RunOptions {
   /** Injected in tests. Production is always the SSRF-guarded fetch. */
   fetch?: SafeFetch;
   now?: () => Date;
+  /**
+   * Only these sites. The cron never passes it; a test or a proof run on a
+   * shared database does, so it neither reads nor stamps anybody else's.
+   */
+  workspaceIds?: readonly string[];
 }
 
 type DraftRow = {
@@ -190,7 +202,8 @@ export async function findDraftsLiveOnSites(supabase: SupabaseClient, opts: RunO
   } catch (err) {
     throw new Error(`found-on-site: could not read drafts: ${err instanceof Error ? err.message : String(err)}`);
   }
-  const ids = [...new Set(pending.map((r) => r.workspace_id))];
+  const only = opts.workspaceIds ? new Set(opts.workspaceIds) : null;
+  const ids = [...new Set(pending.map((r) => r.workspace_id))].filter((id) => !only || only.has(id));
   const run: FoundOnSiteRun = { considered: ids.length, checked: 0, unreadable: 0, found: 0, deferred: 0, results: [] };
   if (!ids.length) return run;
 
@@ -545,7 +558,22 @@ async function checkWorkspace(
     takenPages.add(page.url);
     takenDrafts.add(draft.id);
     matchedByUrl.set(page.url, draft.id);
-    found.push({ articleId: draft.id, url: page.url, containment: evidence.containment, rule: evidence.rule });
+    // The transition just happened (recordFind's update is conditional on
+    // found_on_site_at being null, so only one caller gets here per find):
+    // the receipt - publish_log, the owner's email, rank tracking. Its own
+    // claim makes it once per article and page whatever calls it again. It
+    // never throws; what it did goes in the run's log.
+    const receipt = await onArticleLive(supabase, { id: draft.id, workspaceId: draft.workspace_id }, {
+      source: "found_on_site",
+      url: page.url,
+    });
+    found.push({
+      articleId: draft.id,
+      url: page.url,
+      containment: evidence.containment,
+      rule: evidence.rule,
+      receipt: describeArticleLive(receipt),
+    });
   }
 
   // The ledger: every page that answered, matched or not, so tomorrow reads
@@ -669,6 +697,8 @@ async function recordFind(
     .eq("workspace_id", draft.workspace_id)
     .eq("article_id", draft.id)
     .eq("status", "success")
+    // A push, not an earlier find of this article that a person undid.
+    .eq("source", "push")
     .limit(1);
   if (pushErr) throw new Error(`recording ${draft.id}: could not read its publish log: ${pushErr.message}`);
   const pushedEarlier = (pushes ?? []).length > 0;

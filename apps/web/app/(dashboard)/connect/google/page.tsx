@@ -1,11 +1,17 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { PageHead } from "@/components/ui";
 import { Card } from "@/components/ui/card";
 import { listDetectedProperties } from "@/app/actions/google-properties";
 import { PropertyPicker } from "./property-picker";
 
 export const metadata: Metadata = { title: "Choose your sites" };
+
+/**
+ * An account-level Search Console connect. A plain link, not next/link: the
+ * route answers with a redirect to Google's screen and sets the OAuth nonce,
+ * which a prefetch should not do.
+ */
+const CONNECT_HREF = "/api/auth/google?integrationId=gsc";
 
 /**
  * What Google says this account can see, and which of it to work on.
@@ -30,9 +36,9 @@ export default async function GooglePropertiesPage() {
           <Card>
             <div className="px-6 py-12 text-center text-[13.5px] text-ink-3">
               No Google account is connected yet.{" "}
-              <Link href="/api/auth/google?integrationId=gsc" className="text-accent-ink underline decoration-line underline-offset-[3px]">
+              <a href={CONNECT_HREF} className="text-accent-ink underline decoration-line underline-offset-[3px]">
                 Connect one
-              </Link>{" "}
+              </a>{" "}
               and this page lists what it can see.
             </div>
           </Card>
@@ -50,6 +56,17 @@ export default async function GooglePropertiesPage() {
           </Card>
         ) : (
           <PropertyPicker properties={properties} />
+        )}
+        {/* Once a consent is stored, this page stops offering Google's
+            screen, and the account chosen first is often not the one that
+            owns the site. The way back in, whatever the page shows. */}
+        {connected && (
+          <p className="mt-4 text-center text-[12.5px] text-ink-3">
+            Not the Google account that owns your site?{" "}
+            <a href={CONNECT_HREF} className="text-accent-ink underline decoration-line underline-offset-[3px]">
+              Use a different Google account
+            </a>
+          </p>
         )}
       </div>
     </>

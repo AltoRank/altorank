@@ -1,4 +1,5 @@
 import posthog from "posthog-js";
+import { SIGNUP_SOURCE_KEYS } from "@/lib/auth/signup-source";
 
 const posthogProjectToken = process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
 const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST;
@@ -23,6 +24,16 @@ if (!posthogProjectToken || !posthogHost) {
     defaults: "2026-01-30",
     capture_exceptions: true,
     tracing_headers: [window.location.hostname],
+    // /signup arrives with where the visitor came from in its URL (`src`,
+    // `ref`, `utm_*`; lib/auth/signup-source.ts). The signup action records
+    // those on the new account, server side. PostHog would otherwise keep a
+    // second copy: the URL goes into every event's `$current_url`, into the
+    // initial-person info it saves in a cookie and localStorage, and into
+    // session replay. Masking replaces each value with "<masked>" in all of
+    // those, so the referring site and campaign stay in our own database only.
+    // The same switch masks ad click ids (gclid, fbclid and the like).
+    mask_personal_data_properties: true,
+    custom_personal_data_properties: [...SIGNUP_SOURCE_KEYS],
     debug: process.env.NODE_ENV === "development",
   });
 }
