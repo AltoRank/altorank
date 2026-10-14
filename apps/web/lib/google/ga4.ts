@@ -1,5 +1,25 @@
 const GA4_API = "https://analyticsdata.googleapis.com/v1beta";
 
+/**
+ * Search Console and Analytics are separate consents now (lib/google/oauth.ts),
+ * so a Google token can hold Search Console without Analytics. Google answers
+ * that with a 403 naming the scope; this says what to do about it instead.
+ */
+export const GA4_NOT_GRANTED_MESSAGE =
+  "This Google connection does not include Google Analytics. Connect Google Analytics for this site to read it.";
+
+export class GA4ScopeMissingError extends Error {
+  constructor() {
+    super(GA4_NOT_GRANTED_MESSAGE);
+    this.name = "GA4ScopeMissingError";
+  }
+}
+
+/** Google's 403 for a token that was never granted the scope the call needs. */
+export function isScopeInsufficient(status: number, body: string): boolean {
+  return status === 403 && /ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficient authentication scopes/i.test(body);
+}
+
 export interface GA4PageMetrics {
   pageUrl: string;
   pageviews: number;
@@ -39,6 +59,7 @@ export async function fetchGA4Metrics(
 
   if (!res.ok) {
     const err = await res.text();
+    if (isScopeInsufficient(res.status, err)) throw new GA4ScopeMissingError();
     throw new Error(`GA4 API error (${res.status}): ${err}`);
   }
 
@@ -59,9 +80,9 @@ export async function fetchGA4Metrics(
 // ---------------------------------------------------------------------------
 //
 // The sync only ran when `config.ga4PropertyId` was set, and nothing ever set
-// it, so GA4 was permanently "Not connected" even though the consent screen
-// already granted its scope alongside Search Console. Ask the Admin API what
-// the account can see, and match a property by the data stream's domain.
+// it, so GA4 was permanently "Not connected" even though its scope had been
+// granted. Ask the Admin API what the account can see, and match a property
+// by the data stream's domain.
 
 const GA4_ADMIN = "https://analyticsadmin.googleapis.com/v1beta";
 
@@ -71,7 +92,11 @@ export async function listGA4Properties(accessToken: string): Promise<GA4Propert
   const res = await fetch(`${GA4_ADMIN}/accountSummaries?pageSize=200`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) throw new Error(`GA4 admin error (${res.status}): ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) {
+    const err = await res.text();
+    if (isScopeInsufficient(res.status, err)) throw new GA4ScopeMissingError();
+    throw new Error(`GA4 admin error (${res.status}): ${err.slice(0, 200)}`);
+  }
   const body = (await res.json()) as {
     accountSummaries?: { propertySummaries?: { property?: string; displayName?: string }[] }[];
   };

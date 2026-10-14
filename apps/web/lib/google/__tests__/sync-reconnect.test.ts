@@ -48,7 +48,7 @@ function db() {
 beforeEach(() => getValidAccessToken.mockReset());
 
 describe("syncWorkspaceAnalytics and a refused token", () => {
-  it("marks both Google rows of the workspace needs_reconnect and says so in the result", async () => {
+  it("marks the row whose token was refused needs_reconnect and says so in the result", async () => {
     getValidAccessToken.mockRejectedValueOnce(new GoogleReconnectError("Google no longer accepts this connection's refresh token (400: invalid_grant). Reconnect Google to resume syncing."));
     const supabase = db();
     const r = await syncWorkspaceAnalytics(supabase as unknown as SupabaseClient, integration(), "2026-09-05");
@@ -56,11 +56,38 @@ describe("syncWorkspaceAnalytics and a refused token", () => {
     expect(r.error).toContain("Reconnect Google");
     const rows = supabase.tables.workspace_integrations;
     expect(rows.find((x) => x.id === "wi-gsc")).toMatchObject({ needs_reconnect: true, last_sync_error: expect.stringContaining("invalid_grant") });
-    expect(rows.find((x) => x.id === "wi-ga4")).toMatchObject({ needs_reconnect: true });
-    // Another workspace's connection is untouched: the flag is per site.
+    // Another workspace's connection is untouched: the flag is per row.
     expect(rows.find((x) => x.id === "wi-other")).toMatchObject({ needs_reconnect: false });
-    const update = supabase.writes.find((w) => w.op === "update");
-    expect(update?.filters).toContainEqual({ kind: "eq", col: "workspace_id", value: WS });
+    const updates = supabase.writes.filter((w) => w.op === "update");
+    expect(updates).toHaveLength(1);
+    expect(updates[0].filters).toEqual([{ kind: "eq", col: "id", value: "wi-gsc" }]);
+  });
+
+  it("leaves the site's GA4 row alone when the Search Console token is refused", async () => {
+    // A GA4 connect by a Google user who never granted Search Console writes
+    // only the ga4 row, so the two rows hold different people's tokens. One
+    // person's refusal says nothing about the other's grant.
+    getValidAccessToken.mockRejectedValueOnce(new GoogleReconnectError("Google no longer accepts this connection's refresh token (400: invalid_grant). Reconnect Google to resume syncing."));
+    const supabase = db();
+    await syncWorkspaceAnalytics(supabase as unknown as SupabaseClient, integration(), "2026-09-05");
+    expect(supabase.tables.workspace_integrations.find((x) => x.id === "wi-ga4")).toMatchObject({
+      needs_reconnect: false,
+      last_sync_error: null,
+    });
+  });
+
+  it("marks only the GA4 row when it is the GA4 row's token that was refused", async () => {
+    getValidAccessToken.mockRejectedValueOnce(new GoogleReconnectError("Google no longer accepts this connection's refresh token (400: invalid_grant). Reconnect Google to resume syncing."));
+    const supabase = db();
+    const r = await syncWorkspaceAnalytics(
+      supabase as unknown as SupabaseClient,
+      integration({ id: "wi-ga4", config: { ga4PropertyId: "42" } }),
+      "2026-09-05",
+    );
+    expect(r.needsReconnect).toBe(true);
+    const rows = supabase.tables.workspace_integrations;
+    expect(rows.find((x) => x.id === "wi-ga4")).toMatchObject({ needs_reconnect: true });
+    expect(rows.find((x) => x.id === "wi-gsc")).toMatchObject({ needs_reconnect: false, last_sync_error: null });
   });
 
   it("does not mark the row for a transient failure", async () => {

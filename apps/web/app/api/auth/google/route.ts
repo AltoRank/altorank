@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
-import { getAuthUrl } from "@/lib/google/oauth";
+import { getAuthUrl, type GoogleIntegrationId } from "@/lib/google/oauth";
+import { ACCOUNT_CONSENT_REFUSED, seesEverySite } from "@/lib/google/account-consent";
 import { encodeOauthState, newOauthNonce, setOauthNonce } from "@/lib/google/oauth-state";
 
 /**
@@ -13,8 +14,13 @@ import { encodeOauthState, newOauthNonce, setOauthNonce } from "@/lib/google/oau
  * workspace could ever obtain tokens and the cron had nothing to fetch for.
  *
  *   GET /api/auth/google?workspaceId=<uuid>&integrationId=gsc|ga4
+ *   GET /api/auth/google?integrationId=gsc            (account level)
  *
- * State is `{workspaceId}:{integrationId}:{nonce}`. Ownership is verified here
+ * Each integration asks Google for its own scope only (lib/google/oauth.ts):
+ * Search Console for `gsc`, Analytics for `ga4`.
+ *
+ * State is `{workspaceId}:{integrationId}:{nonce}`, with the literal
+ * `account` in the workspace slot for an account-level connect. Ownership is verified here
  * as well as in the callback: state travels through the user's browser and
  * comes back attacker-controllable, so the callback cannot trust it, and
  * checking here fails fast with a useful message rather than after a round
@@ -22,7 +28,11 @@ import { encodeOauthState, newOauthNonce, setOauthNonce } from "@/lib/google/oau
  * browser's - without it a victim could be handed somebody else's `code`.
  */
 
-const SUPPORTED = new Set(["gsc", "ga4"]);
+const SUPPORTED = new Set<GoogleIntegrationId>(["gsc", "ga4"]);
+
+function isSupported(id: string): id is GoogleIntegrationId {
+  return SUPPORTED.has(id as GoogleIntegrationId);
+}
 
 function back(request: NextRequest, params: Record<string, string>): NextResponse {
   const url = new URL("/connect", request.url);
@@ -41,8 +51,14 @@ export async function GET(request: NextRequest) {
   if (!integrationId) {
     return back(request, { error: "missing_params" });
   }
-  if (!SUPPORTED.has(integrationId)) {
+  if (!isSupported(integrationId)) {
     return back(request, { error: `unsupported_integration:${integrationId}` });
+  }
+  // A GA4 property belongs to one site, and the account-level landing page
+  // (/connect/google) lists Search Console properties, so Analytics is only
+  // ever connected from a site.
+  if (!workspaceId && integrationId !== "gsc") {
+    return back(request, { error: "choose_a_site_to_connect_google_analytics_for" });
   }
 
   // Fail before redirecting to Google, so a missing client ID reads as a
@@ -59,29 +75,48 @@ export async function GET(request: NextRequest) {
   } = await supabase.auth.getUser();
   if (authError || !user) return back(request, { error: "unauthorized" });
 
-  // The account that owns the site (lib/auth/require-auth.ts). A bare
+  // The account that owns the site (lib/auth/require-auth.ts), or for an
+  // account-level connect the account the person is working in - the same
+  // call the callback makes, so both ends agree on the account. A bare
   // `.single()` on the person's memberships refused anyone in two accounts
   // ("no_account"), and checked the site against whichever membership came
   // back rather than the one that owns it.
   let accountId: string;
   try {
-    ({ accountId } = await requireAuth(undefined, { workspaceId: workspaceId ?? undefined }));
+    ({ accountId } = await requireAuth(undefined, workspaceId ? { workspaceId } : {}));
   } catch {
-    return back(request, { error: "workspace_not_found" });
+    return back(request, { error: workspaceId ? "workspace_not_found" : "no_account" });
   }
 
-  const { data: workspace } = await supabase
-    .from("workspaces")
-    .select("id")
-    .eq("id", workspaceId)
-    .eq("account_id", accountId)
-    .single();
-  if (!workspace) return back(request, { error: "workspace_not_found" });
+  // No site named: connect at the account level. Every "Connect Search
+  // Console" that is not a site's own button reaches this through
+  // /connect/google (the onboarding wizard, Settings, the Integrations
+  // header), and this used to look the site up anyway, as `id = null`, so
+  // every one of them ended in `workspace_not_found` and the callback's
+  // account branch was unreachable (broken since 2026-09-02).
+  let stateWorkspace = "account";
+  // The callback stores an account-level consent for the whole account, so
+  // only someone who sees every site may start one (lib/google/account-consent.ts).
+  // Checked here too, so a member scoped to one client hears it before
+  // Google's screen rather than after it.
+  if (!workspaceId && !(await seesEverySite(supabase, user.id, accountId))) {
+    return back(request, { error: ACCOUNT_CONSENT_REFUSED });
+  }
+  if (workspaceId) {
+    const { data: workspace } = await supabase
+      .from("workspaces")
+      .select("id")
+      .eq("id", workspaceId)
+      .eq("account_id", accountId)
+      .single();
+    if (!workspace) return back(request, { error: "workspace_not_found" });
+    stateWorkspace = workspace.id as string;
+  }
 
   try {
     // The nonce ties the return trip to this browser; see lib/google/oauth-state.ts.
     const nonce = newOauthNonce();
-    const redirect = NextResponse.redirect(getAuthUrl(encodeOauthState(workspace.id, integrationId, nonce)));
+    const redirect = NextResponse.redirect(getAuthUrl(encodeOauthState(stateWorkspace, integrationId, nonce), integrationId));
     return setOauthNonce(redirect, nonce);
   } catch (err) {
     const message = err instanceof Error ? err.message : "unknown_error";
