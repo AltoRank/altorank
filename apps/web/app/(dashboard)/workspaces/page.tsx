@@ -130,7 +130,7 @@ export default async function ClientsPage({ searchParams }: Props) {
                         Renders nothing for a workspace still in setup - there
                         is nothing running to stop. */}
                     <td className="pl-8 pr-3.5 py-3 border-b border-line-soft text-right whitespace-nowrap">
-                      <PauseSiteControl workspaceId={w.id} name={w.name} status={w.status} />
+                      <PauseSiteControl workspaceId={w.id} name={w.name} status={w.status} pausedUntil={w.paused_until ?? null} />
                     </td>
                   </ClientRow>
                 );

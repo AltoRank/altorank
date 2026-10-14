@@ -83,6 +83,12 @@ export function RetentionCard({
               {pending ? "Resuming…" : "Resume now"}
             </Button>
           </div>
+        ) : trialing ? (
+          // Nothing has been charged yet, so there is no billing to pause; the
+          // action refuses it too (app/actions/retention.ts).
+          <div className="text-[13px] text-ink-2">
+            A trial cannot be paused: nothing has been charged yet. Cancel the trial before it ends and nothing will be.
+          </div>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
             {PAUSE_MONTHS.map((m) => (

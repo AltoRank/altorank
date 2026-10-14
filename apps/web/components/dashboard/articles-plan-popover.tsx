@@ -182,7 +182,7 @@ function PlanPanel({ workspaceId, onDone }: { workspaceId: string; onDone: () =>
 
   return (
     <div className="space-y-4 text-[13px]">
-      {state.status === "paused" && <PausedBanner workspaceId={state.workspaceId} meta={state.pausedMeta} />}
+      {state.status === "paused" && <PausedBanner workspaceId={state.workspaceId} meta={state.pausedMeta} pausedUntil={state.pausedUntil} />}
 
       <div>
         <div className="mb-2 flex items-baseline justify-between">

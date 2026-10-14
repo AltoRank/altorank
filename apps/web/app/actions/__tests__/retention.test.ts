@@ -79,9 +79,10 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-const { requireAuth, subUpdate } = vi.hoisted(() => ({
+const { requireAuth, subUpdate, subRetrieve } = vi.hoisted(() => ({
   requireAuth: vi.fn(async () => ({ accountId: "account-1", role: "owner", user: { id: "u1" } })),
   subUpdate: vi.fn(),
+  subRetrieve: vi.fn(),
 }));
 vi.mock("@/lib/auth/require-auth", () => ({ requireAuth }));
 vi.mock("@/lib/stripe", async (importOriginal) => {
@@ -89,12 +90,12 @@ vi.mock("@/lib/stripe", async (importOriginal) => {
   return {
     ...actual,
     billingEnabled: true,
-    getStripe: () => ({ subscriptions: { update: subUpdate } }),
+    getStripe: () => ({ subscriptions: { update: subUpdate, retrieve: subRetrieve } }),
   };
 });
 vi.mock("@/lib/billing/resume", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/billing/resume")>();
-  return { ...actual, resumePausedWorkspaces: async () => ["ws1"], liftStripePause: actual.liftStripePause };
+  return { ...actual, resumePausedWorkspaces: async () => ["ws1"] };
 });
 
 beforeEach(() => {
@@ -110,6 +111,8 @@ beforeEach(() => {
   };
   subUpdate.mockReset();
   subUpdate.mockResolvedValue({ cancel_at: 1796083200 });
+  subRetrieve.mockReset();
+  subRetrieve.mockResolvedValue({ pause_collection: { behavior: "void" }, latest_invoice: { status: "paid", billing_reason: "subscription_cycle" } });
 });
 
 describe("pauseAccount", () => {
@@ -130,6 +133,14 @@ describe("pauseAccount", () => {
     expect(result.error).toContain("Writing is paused for every workspace");
     expect(result.error).toContain("billing could not be paused");
     expect(result.error).toContain("still be charged");
+  });
+
+  it("refuses a trial, which has nothing charged to pause, before touching anything", async () => {
+    accountRow = { ...accountRow, plan_status: "trialing" };
+    const { pauseAccount } = await import("../retention");
+    const result = await pauseAccount(1);
+    expect(result).toEqual({ ok: false, error: expect.stringContaining("A trial cannot be paused") });
+    expect(subUpdate).not.toHaveBeenCalled();
   });
 
   it("returns the date when both halves land", async () => {
@@ -234,5 +245,14 @@ describe("resumeAccount", () => {
     if (result.ok) throw new Error("expected a refusal");
     expect(result.error).toContain("Writing has resumed for every workspace");
     expect(result.error).toContain("restarts on its own");
+  });
+});
+
+describe("resumeAccount, early", () => {
+  it("bills the renewal the pause voided rather than keeping that period free", async () => {
+    subRetrieve.mockResolvedValue({ pause_collection: { behavior: "void" }, latest_invoice: { status: "void", billing_reason: "subscription_cycle" } });
+    const { resumeAccount } = await import("../retention");
+    expect(await resumeAccount()).toEqual({ ok: true });
+    expect(subUpdate).toHaveBeenCalledWith("sub_1", { pause_collection: "", billing_cycle_anchor: "now", proration_behavior: "none" });
   });
 });
