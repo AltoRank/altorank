@@ -137,7 +137,21 @@ describe("POST /articles/{id}/replace", () => {
     const [write] = dataWrites();
     expect(write.op).toBe("update");
     expect(Object.keys(write.patch!).sort()).toEqual(["content", "title", "updated_at", "word_count"]);
-    expect(write.filters.map((f) => f.col)).toEqual(["id", "workspace_id"]);
+    expect(write.filters.map((f) => f.col)).toEqual(["id", "workspace_id", "status"]);
+  });
+
+  it("writes nothing when a person approved the draft between the agent's read and its write", async () => {
+    // The route read the article in review; by the time the write runs it is
+    // approved. The service-role write must not edit approved text.
+    const { applyReplace } = await import("@/lib/agent/replace");
+    const stale = { ...db.tables.articles.find((a) => a.id === ART_REVIEW)! } as unknown as Parameters<typeof applyReplace>[1];
+    const row = db.tables.articles.find((a) => a.id === ART_REVIEW)!;
+    Object.assign(row, { status: "approved", approved_by: "u1" });
+    await expect(
+      applyReplace(db as unknown as Parameters<typeof applyReplace>[0], stale, { find: "acme", replace: "Zenith", match_case: false, whole_word: false, preview_only: false }, "https://app.example"),
+    ).rejects.toThrow(/changed while it was being edited/);
+    expect(row.title).toBe("Acme guide");
+    expect(JSON.stringify(row.content)).toMatch(/Acme/);
   });
 
   it("refuses to edit an approved article, and cannot see another account's article", async () => {
