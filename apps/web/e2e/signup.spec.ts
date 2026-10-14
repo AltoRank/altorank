@@ -41,3 +41,28 @@ test("signup refuses an invalid domain and creates no account", async ({ page })
   const { data: users } = await db.auth.admin.listUsers({ perPage: 1000 });
   expect(users?.users.some((u) => u.email === email)).toBe(false);
 });
+
+/**
+ * The marketing site adds where a visitor came from to the signup link
+ * (`src`, `ref`, `utm_*`; lib/auth/signup-source.ts). Through the real form and
+ * the real action: the page turns them into hidden inputs, and a refused first
+ * submit lands back on a URL that still has them, so the second submit can
+ * record them. The domain is refused before anything is created, as above.
+ */
+test("signup keeps the signup source through a refused submit", async ({ page }) => {
+  const tag = uniqueTag();
+
+  await page.goto("/signup?src=/pricing/&ref=news.ycombinator.com&utm_source=newsletter");
+  await expect(page.locator('input[type="hidden"][name="src"]')).toHaveValue("/pricing/");
+
+  await page.locator('input[name="domain"]').fill("not a domain");
+  await page.locator('input[name="email"]').fill(`e2e+signup-src-${tag}@altorank.test`);
+  await page.locator('input[name="password"]').fill(randomBytes(18).toString("base64url"));
+  await page.getByRole("button", { name: "Create account" }).click();
+
+  await expect(page).toHaveURL(/\/signup\?error=.*&src=%2Fpricing%2F&ref=news\.ycombinator\.com&utm_source=newsletter$/);
+  await expect(page.getByText("Enter your website as a domain, like acme.com.")).toBeVisible();
+  await expect(page.locator('input[type="hidden"][name="src"]')).toHaveValue("/pricing/");
+  await expect(page.locator('input[type="hidden"][name="ref"]')).toHaveValue("news.ycombinator.com");
+  await expect(page.locator('input[type="hidden"][name="utm_source"]')).toHaveValue("newsletter");
+});
