@@ -53,6 +53,7 @@ import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
 import { BusinessFields } from "@/components/settings/business-fields";
 import { AudienceList, OfferingList } from "@/components/settings/audience-fields";
 import { CompetitorStep } from "@/components/onboarding/competitor-step";
+import { trackStep } from "@/lib/onboarding/track-step";
 import type { CompetitorSuggestion, RivalSize } from "@/lib/onboarding/competitor-suggestions";
 import { SiteFields } from "@/components/settings/site-fields";
 import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
@@ -68,6 +69,7 @@ import { TopicBriefs } from "./topic-briefs";
 import { FirstLookReportView } from "@/components/onboarding/first-look-report";
 import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
 import { FirstArticleCardView, type PendingFirstArticle } from "@/components/onboarding/first-article-card";
+import { FirstArticleReader } from "@/components/onboarding/first-article-reader";
 import type { FirstArticleCard } from "@/lib/onboarding/first-article";
 import { OPEN_SETUP, runStateOf, setupEnding, type PreTrialSetup, type SetupEnding } from "@/lib/onboarding/setup-retry";
 import { NOTHING_PLANNED_HEADING, nothingPlannedLede, SetupAsk } from "@/components/onboarding/setup-ask";
@@ -95,6 +97,7 @@ export function OnboardingWizard({
   gateReport = null,
   firstArticle = null,
   firstArticleWriting = false,
+  fullArticle = false,
   preTrialSetup = OPEN_SETUP,
   initialRun = null,
   otherSites = [],
@@ -152,6 +155,12 @@ export function OnboardingWizard({
   firstArticle?: FirstArticleCard | null;
   /** An article is being written right now, so a retry must not be offered. */
   firstArticleWriting?: boolean;
+  /**
+   * PRETRIAL_FULL_ARTICLE is on and this person owns the account: the gate
+   * shows the first article in full, read-only, as it is written
+   * (lib/onboarding/first-article-body.ts). Decided on the server.
+   */
+  fullArticle?: boolean;
   /** Whether setup may run again before the trial, and whether the first article was attempted. */
   preTrialSetup?: PreTrialSetup;
   initialRun?: OnboardingRunSnapshot | null;
@@ -193,13 +202,25 @@ export function OnboardingWizard({
   const [ownAuthority, setOwnAuthority] = useState<number | null>(null);
   const [rivalSizes, setRivalSizes] = useState<Record<string, RivalSize | null>>({});
 
+  // Where the signup got to (lib/onboarding/step-events.ts). Fired and
+  // forgotten; nothing on this screen waits for it.
+  useEffect(() => {
+    if (!running && !alreadyOnboarded) trackStep("wizard_opened", { workspaceId });
+  }, [running, alreadyOnboarded, workspaceId]);
+  useEffect(() => {
+    if (!reading && profile && !running && !alreadyOnboarded) trackStep("profile_shown", { workspaceId });
+  }, [reading, profile, running, alreadyOnboarded, workspaceId]);
+
   // Read the site. A failure is a normal outcome and is shown as one. Not
   // while a run is on screen: that page has already been through this.
   useEffect(() => {
     if (!reading || running || alreadyOnboarded) return;
     let cancelled = false;
+    const readStarted = Date.now();
+    trackStep("site_read_started", { workspaceId });
     proposeProfile(workspaceId)
       .then((r) => {
+        trackStep(r.profile ? "site_read_finished" : "site_read_failed", { workspaceId, ms: Date.now() - readStarted });
         if (cancelled) return;
         setProfile(r.profile ?? EMPTY_PROFILE);
         if (r.profile) lookUpRivals(r.profile);
@@ -209,6 +230,7 @@ export function OnboardingWizard({
         setReadFailureMessage(r.profile ? null : r.message ?? null);
       })
       .catch(() => {
+        trackStep("site_read_failed", { workspaceId, ms: Date.now() - readStarted });
         if (cancelled) return;
         setProfile(EMPTY_PROFILE);
         setReadFailure("model_failed");
@@ -276,6 +298,8 @@ export function OnboardingWizard({
       setError("Name at least one competitor. It is where your first article comes from.");
       return;
     }
+    if (profile) trackStep("competitor_step_done", { workspaceId, count: profile.competitors.length });
+    trackStep("plan_clicked", { workspaceId });
     start(async () => {
       try {
         if (profile) await saveProfile(workspaceId, profile);
@@ -303,6 +327,8 @@ export function OnboardingWizard({
         report={gateReport}
         firstArticle={firstArticle}
         writing={firstArticleWriting}
+        fullArticle={fullArticle}
+        workspaceId={workspaceId}
         setup={preTrialSetup}
         run={initialRun}
         askAttribution={askAttribution}
@@ -324,6 +350,7 @@ export function OnboardingWizard({
         initialRun={resumed}
         firstArticle={firstArticle}
         firstArticleWriting={firstArticleWriting}
+        fullArticle={fullArticle}
         preTrialSetup={preTrialSetup}
         userEmail={userEmail}
         otherSites={otherSites}
@@ -409,6 +436,7 @@ export function OnboardingWizard({
               onChange={(competitors, sizes) => {
                 setRivalSizes(sizes);
                 patch({ competitors });
+                if (competitors.length) trackStep("competitor_step_done", { workspaceId, count: competitors.length });
               }}
               resolve={(entry) => resolveCompetitor(workspaceId, entry, ownAuthority)}
             />
@@ -667,8 +695,36 @@ function SignOutLine({ email, otherSites = [] }: { email?: string; otherSites?: 
  * says the failure was ours and what the trial does about it.
  */
 const FIRST_ARTICLE_FAILED_HEADING = "Your first article did not finish";
+
+/**
+ * The first article is outlined and its body is being written to that
+ * outline (lib/content/outline.ts): the gate opens on the shape, which is all
+ * it ever showed, instead of waiting two minutes for text it locks anyway.
+ */
+const OUTLINED_HEADING = "Your first article is planned and being written";
+const OUTLINED_LEDE =
+  `Here is its outline; the text is being written to it now. Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`;
 const FIRST_ARTICLE_FAILED_LEDE =
   `Setup started writing it and it failed on our side. It is written again once your ${TRIAL_DAYS}-day trial starts, along with the rest of this week's plan.`;
+
+/**
+ * While the first article is outlined and its body is being written, read
+ * the page again every so often, so the card turns into the written one -
+ * its real length and sources - without a reload. Stops once it has, or
+ * after ten minutes.
+ */
+function useRefreshWhileOutlined(outlined: boolean): void {
+  const router = useRouter();
+  useEffect(() => {
+    if (!outlined) return;
+    const started = Date.now();
+    const timer = setInterval(() => {
+      if (Date.now() - started > 10 * 60_000) clearInterval(timer);
+      else router.refresh();
+    }, 20_000);
+    return () => clearInterval(timer);
+  }, [outlined, router]);
+}
 
 /**
  * The card, for an account that is already set up.
@@ -694,6 +750,8 @@ function TrialGateScreen({
   report,
   firstArticle,
   writing,
+  fullArticle = false,
+  workspaceId,
   setup,
   run,
   askAttribution = false,
@@ -702,6 +760,8 @@ function TrialGateScreen({
 }: {
   domain: string;
   canBuy: boolean;
+  fullArticle?: boolean;
+  workspaceId: string;
   onRetry: () => void;
   planned: OnboardingPlanned[];
   held?: OnboardingHeld | null;
@@ -729,8 +789,10 @@ function TrialGateScreen({
   const fixable = report?.readiness?.findings.filter((f) => !f.passed && !f.inconclusive).length ?? 0;
   const pagesToFix = report?.existingPages?.withIssues ?? 0;
 
+  const outlined = firstArticle?.state === "outlined";
+  useRefreshWhileOutlined(outlined);
   const heading: Record<SetupEnding, string> = {
-    article: "Your first article is written",
+    article: outlined ? OUTLINED_HEADING : "Your first article is written",
     writing: "Your first article is being written",
     retry: "Setup did not finish",
     "first-failed": FIRST_ARTICLE_FAILED_HEADING,
@@ -738,7 +800,9 @@ function TrialGateScreen({
     "no-article": "No article was written in setup",
   };
   const lede: Record<SetupEnding, string> = {
-    article: `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`,
+    article: outlined
+      ? OUTLINED_LEDE
+      : `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`,
     writing: "It appears here when it is done, usually within a few minutes. The trial opens it, and the rest of the week.",
     retry: `Nothing was written for ${domain || "your site"}. Running setup again reads the site, plans the month and writes the first article.`,
     "first-failed": FIRST_ARTICLE_FAILED_LEDE,
@@ -771,7 +835,8 @@ function TrialGateScreen({
               the card, and the note that replaces it says who writes next. */}
           <SetupAsk ending={ending} canBuy={canBuy} followUp={setup.followUp} returnTo="/dashboard" />
           {askAttribution && <AttributionAsk />}
-          {firstArticle && <FirstArticleCardView article={firstArticle} />}
+          {firstArticle && <FirstArticleCardView article={firstArticle} readable={fullArticle} />}
+          {firstArticle && fullArticle && <FirstArticleReader workspaceId={workspaceId} title={firstArticle.title} />}
         </div>
 
         <div className="mx-auto flex max-w-[640px] flex-col gap-5">
@@ -870,6 +935,8 @@ function TrialGateScreen({
  */
 function TrialStep({
   canBuy,
+  fullArticle = false,
+  workspaceId,
   ending,
   followUp,
   firstArticle,
@@ -881,6 +948,8 @@ function TrialStep({
   askAttribution = false,
 }: {
   canBuy: boolean;
+  fullArticle?: boolean;
+  workspaceId: string;
   ending: SetupEnding;
   /** Whether the note may promise a reply (PreTrialSetup `followUp`). */
   followUp: boolean;
@@ -911,7 +980,8 @@ function TrialStep({
       <SetupAsk ending={ending} canBuy={canBuy} followUp={followUp} returnTo="/dashboard" />
       {askAttribution && <AttributionAsk />}
 
-      {hasArticle && <FirstArticleCardView article={firstArticle} pending={firstArticle ? null : pending} />}
+      {hasArticle && <FirstArticleCardView article={firstArticle} pending={firstArticle ? null : pending} readable={fullArticle} />}
+      {hasArticle && fullArticle && <FirstArticleReader workspaceId={workspaceId} title={firstArticle?.title || pending?.title || ""} />}
 
       {held && held.count > 0 && (
         <p className="m-0 text-[13px] leading-[1.6] text-ink-2">
@@ -960,10 +1030,12 @@ function RunScreen({
   initialRun,
   firstArticle,
   firstArticleWriting,
+  fullArticle = false,
   preTrialSetup,
   userEmail,
   otherSites = [],
 }: {
+  fullArticle?: boolean;
   workspaceId: string;
   canBuy: boolean;
   domain: string;
@@ -998,6 +1070,9 @@ function RunScreen({
   // the workspace (lib/onboarding/first-article.ts); this only fills the gap.
   const runDraft = draft ?? drafts[0] ?? null;
   const hasArticle = firstArticle !== null || runDraft !== null;
+  // Outlined, its body still being written: the gate opens on the outline.
+  const cardOutlined = firstArticle ? firstArticle.state === "outlined" : runDraft?.outlined === true;
+  useRefreshWhileOutlined(trialEligible && firstArticle?.state === "outlined");
   // The last step of onboarding, for an account before its trial: the card,
   // whatever the run produced. With an article it shows the article; without
   // one it offers a retry only when the run fell short and nothing exists
@@ -1041,7 +1116,9 @@ function RunScreen({
           <h1 className="mb-1.5 text-[22px] font-semibold">
             {trialStep
               ? hasArticle
-                ? "Your first article is written"
+                ? cardOutlined
+                  ? OUTLINED_HEADING
+                  : "Your first article is written"
                 : failed
                   ? FIRST_ARTICLE_FAILED_HEADING
                   : nothingPlanned
@@ -1054,10 +1131,14 @@ function RunScreen({
           <p className="mx-auto max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
             {trialStep ? (
               hasArticle ? (
-                <>
-                  Start your {TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the
-                  week is written once the trial starts.
-                </>
+                cardOutlined ? (
+                  <>{OUTLINED_LEDE}</>
+                ) : (
+                  <>
+                    Start your {TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the
+                    week is written once the trial starts.
+                  </>
+                )
               ) : failed ? (
                 <>{FIRST_ARTICLE_FAILED_LEDE}</>
               ) : nothingPlanned ? (
@@ -1092,10 +1173,12 @@ function RunScreen({
         {trialStep && ending && (
           <TrialStep
             canBuy={canBuy}
+            fullArticle={fullArticle}
+            workspaceId={workspaceId}
             ending={ending}
             followUp={preTrialSetup.followUp}
             firstArticle={firstArticle}
-            pending={runDraft ? { title: runDraft.title, keyword: runDraft.keyword, wordCount: runDraft.wordCount, verdict: runDraft.verdict } : null}
+            pending={runDraft ? { title: runDraft.title, keyword: runDraft.keyword, wordCount: runDraft.wordCount, verdict: runDraft.verdict, outlined: runDraft.outlined === true } : null}
             retry={retry}
             onRetry={() => {
               setState(null);

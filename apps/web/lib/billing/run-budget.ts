@@ -60,6 +60,12 @@ const WRITER_OUTPUT_USD_PER_TOKEN = 10 / 1_000_000;
  * sent for.
  */
 export const FIRST_DRAFT_MIN_USD = round2(DRAFT_RESEARCH_USD + WRITER_PROMPT_USD + WRITER_MIN_OUTPUT_TOKENS * WRITER_OUTPUT_USD_PER_TOKEN);
+/**
+ * The writer alone: its prompt and its floor of output. What the draft must
+ * still be able to claim once its research is bought, so a first look's gate
+ * never opens on an outline the budget cannot write (lib/content/generate.ts).
+ */
+export const WRITER_FLOOR_USD = round2(WRITER_PROMPT_USD + WRITER_MIN_OUTPUT_TOKENS * WRITER_OUTPUT_USD_PER_TOKEN);
 /** Held for the first draft: what it needs to be started, and no more. */
 export const FIRST_LOOK_DRAFT_RESERVE_USD = FIRST_DRAFT_MIN_USD;
 /**

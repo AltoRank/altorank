@@ -49,10 +49,11 @@ import { countScheduled, heldTopics, schedulePlan, fulfilPlannedEntry, type Plan
 import { recordPlanFunnel } from "./funnel-event";
 import { withScreened, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 import type { FirstLook } from "@/lib/keyword-research/opportunity";
+import { timed, withRunClock, type RunClock } from "./timings";
 
 /** Pages the onboarding minute reads. The nightly pass reads up to forty. */
 const ONBOARDING_CRAWL_PAGES = 20;
-import { fetchRelatedKeywordsBatch, type RelatedKeyword } from "@/lib/seo/brief-data";
+import { fetchRelatedKeywordsBatch, type RelatedKeyword, type SerpData } from "@/lib/seo/brief-data";
 import { getLocale } from "@/lib/seo/locales";
 import { detectLinks } from "@/lib/linking/detect";
 import { assessExistingPages } from "./site-assessment";
@@ -65,6 +66,12 @@ export interface RunOnboardingOptions {
   firstDraft?: "inline" | "dispatch";
   /** The `onboarding_runs` row, named on the run's funnel event (./funnel-event.ts). */
   runId?: string;
+  /**
+   * The run's stopwatch (./timings.ts): every stage below reports to it, and
+   * the funnel event carries what it measured. The worker owns it and
+   * writes it to the row.
+   */
+  clock?: RunClock;
 }
 
 /** The first draft, chosen and gated but not yet written, for the caller to dispatch. */
@@ -74,6 +81,8 @@ export interface PendingDraft {
   selection: { reasons: string[]; score: number; difficulty: number | null; volume: number | null };
   /** This draft's share of the run's one related-keyword lookup, when it ran. */
   relatedKeywords?: RelatedKeyword[];
+  /** The results page this run bought for the term when it judged it, for the draft's research. */
+  serp?: SerpData;
 }
 
 export interface RunOnboardingResult {
@@ -85,6 +94,12 @@ export interface RunOnboardingResult {
    * long enough for the requests to leave; nothing waits on it otherwise.
    */
   fanOutSettled: Promise<void>;
+  /**
+   * Work the run started and does not wait for - the speed test, whose
+   * result lands on the audit when it answers. A serverless caller keeps the
+   * instance alive for it with `after()`; no email or status waits on it.
+   */
+  tailSettled?: Promise<void>;
 }
 
 interface Workspace {
@@ -128,9 +143,11 @@ export async function runOnboarding(
   const runId = options.runId ?? null;
   const db = spendClient() ?? supabase;
   const opened = runId ? await openFirstLookBudget(db, { runId, workspaceId: workspace.id }) : null;
-  return withSpendScope({ workspaceId: workspace.id, runId, budget: opened?.budget ?? null }, () =>
-    runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", runId, opened?.read ?? null),
+  const clock = options.clock;
+  const run = () => withSpendScope({ workspaceId: workspace.id, runId, budget: opened?.budget ?? null }, () =>
+    runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", runId, opened?.read ?? null, clock ?? null),
   );
+  return clock ? withRunClock(clock, run) : run();
 }
 
 async function runPhases(
@@ -141,11 +158,12 @@ async function runPhases(
   runId: string | null = null,
   /** The run's budget as it stands, for the funnel event; null when it has none. */
   readSpend: (() => Promise<RunBudgetState | null>) | null = null,
+  clock: RunClock | null = null,
 ): Promise<RunOnboardingResult> {
   const domain = workspace.domain;
   // Approvals asked twice and the floor allowed; the spend bound is the
   // scope's budget, which every paid call claims from.
-  const firstLook: FirstLook = { runId };
+  const firstLook: FirstLook = { runId, serps: new Map() };
 
   // --- Phase 0: is there a site here at all? -------------------------------
   //
@@ -158,13 +176,13 @@ async function runPhases(
   // one that is certain: there is no host. A site behind a WAF that refuses
   // our fetch still gets its full run (lib/domain/reachable.ts explains why).
   if (domain) {
-    const reach = await checkDomainReachable(domain);
+    const reach = await timed("reach", () => checkDomainReachable(domain));
     if (reach.verdict === "no-dns" || reach.verdict === "invalid") {
       emit({ phase: "scanning", status: "failed", detail: reach.reason });
       for (const phase of ["keywords", "pages", "planning", "drafting"] as const) {
         emit({ phase, status: "skipped", detail: "There is no site at this domain to work from." });
       }
-      return { pendingDraft: null, fanOutSettled: Promise.resolve() };
+      return { pendingDraft: null, fanOutSettled: Promise.resolve(), tailSettled: Promise.resolve() };
     }
   }
 
@@ -181,7 +199,14 @@ async function runPhases(
   // `keywordsFound` stays 0, and phases 4 and 5 below already know what to do
   // with that - skip, and say why. Phase 0 stops the adjacent case, a domain
   // with no DNS at all.
+  //
+  // Side by side with the keyword phase below: the voice is read by the
+  // writer and by nothing the keyword work does, and the two used to run one
+  // after the other - twenty-two seconds of a production first look's
+  // critical path (2026-10-09) before any keyword work began. Awaited before
+  // the plan, so its outcome is on the row before anything reads it.
   emit({ phase: "scanning", status: "active" });
+  const scanning = (async () => {
   if (!domain) {
     emit({ phase: "scanning", status: "skipped", detail: "No domain on this workspace yet." });
   } else {
@@ -189,10 +214,10 @@ async function runPhases(
       // Same reader as the wizard: homepage, then the blog when the homepage
       // is a JavaScript shell, then a rendered fetch. A voice learned from the
       // site's own articles is better than one learned from its landing page.
-      const read = await withStage("voice", () => readSiteText(domain));
+      const read = await timed("site_read", () => withStage("voice", () => readSiteText(domain)));
       const text = read.text;
       if (text && text.split(/\s+/).length > 50) {
-        await withStage("voice", () => trainVoiceProfile(supabase, workspace.id, text));
+        await timed("voice", () => withStage("voice", () => trainVoiceProfile(supabase, workspace.id, text)));
         emit({
           phase: "scanning",
           status: "done",
@@ -211,6 +236,21 @@ async function runPhases(
       emit({ phase: "scanning", status: "failed", detail: message(err) });
     }
   }
+  })();
+
+  // --- Phase 3, started early: read the pages they already have ------------
+  //
+  // Started the moment the keyword phase has read the site and its rankings
+  // (`onRead`), and run beside the buyer test, which is the long part of the
+  // keyword phase and needs none of it. It used to wait for the whole keyword
+  // phase. The plan still waits for it: the recommender reads the pages the
+  // site already has, so a topic one of them covers is not planned again.
+  let pagesStarted: Promise<void> | null = null;
+  const startPages = () => {
+    if (pagesStarted || !domain) return pagesStarted;
+    pagesStarted = readExistingPages(supabase, workspace.id, domain, emit);
+    return pagesStarted;
+  };
 
   // --- Phase 2: find what to write about ----------------------------------
   emit({ phase: "keywords", status: "active" });
@@ -221,6 +261,10 @@ async function runPhases(
   let researchFoundNothing = false;
   // What discovery's hygiene dropped before storing anything, for the funnel.
   let screened: { generalRival: number; offProfile: number } | undefined;
+  // The deferred speed test, kept alive with the rest of the run's tail.
+  let speedSettled: Promise<void> = Promise.resolve();
+  // The planned topics' owner questions, written after the plan returns.
+  let questionsSettled: Promise<void> = Promise.resolve();
   if (!domain) {
     emit({ phase: "keywords", status: "skipped", detail: "No domain to analyse." });
   } else if (!hasDataForSEOCredentials()) {
@@ -229,7 +273,7 @@ async function runPhases(
     try {
       // Watched for the budget's refusals: a buyer test the budget stopped
       // stores nothing, and "nothing rankable" would blame the site for it.
-      const { value: analysis, refused: discoveryRefused } = await watchRefusals(() => withStage("discovery", () => analyseDomain({
+      const { value: analysis, refused: discoveryRefused } = await watchRefusals(() => timed("analysis", () => withStage("discovery", () => analyseDomain({
         domain,
         supabase,
         workspaceId: workspace.id,
@@ -243,9 +287,14 @@ async function runPhases(
         // rest. Every page here is one request against a host that may be
         // counting them (acmepack.example bans after ten in forty seconds).
         maxPages: ONBOARDING_CRAWL_PAGES,
-      })));
+        onRead: () => { void startPages(); },
+        // The speed test lands on the audit when it answers; nothing here
+        // waits for it (it was a minute of a production first look).
+        deferPageSpeed: true,
+      }))));
       keywordsFound = analysis.keywordsFound;
       screened = analysis.screened;
+      if (analysis.pageSpeedSettled) speedSettled = analysis.pageSpeedSettled;
 
       // What Google has already measured for this site, before anything the
       // model or a provider guessed. A workspace that connected Search Console
@@ -259,7 +308,7 @@ async function runPhases(
       // Database only, no provider call, and idempotent by term. Nothing here
       // can fail the phase: a workspace without the connection gets a
       // one-line "nothing synced" and the run carries on.
-      const consoleSeeds = await seedKeywordsFromSearchConsole(supabase, workspace);
+      const consoleSeeds = await timed("gsc_seed", () => seedKeywordsFromSearchConsole(supabase, workspace));
       keywordsFound += consoleSeeds.inserted;
       // "Nothing rankable found for this site yet" is only true when we were
       // able to look. When the site could not be read, `analyseDomain` stores
@@ -318,60 +367,12 @@ async function runPhases(
 
   // --- Phase 3: read the pages they already have ---------------------------
   //
-  // The wizard asks for the blog and says what it is for. Until now nothing
-  // read it: detectLinks below harvests its URLs, and the pages themselves
-  // were only ever fetched by cron/site-pages, which selects on
-  // `first_analysed_at` and does one workspace a night. So on day one
-  // `site_pages` was empty and nothing in the product knew what the customer
-  // had already published.
-  //
-  // Free and technical: a plain GET per page and the checks in
-  // lib/seo/tech-audit.ts, which read status codes, tag lengths, H1 counts,
-  // canonicals and robots directives. No model, no DataForSEO. Bounded by
-  // ONBOARDING_CRAWL so a 600-post blog cannot eat the worker's 300 seconds,
-  // and best-effort: `assessExistingPages` never throws.
-  emit({ phase: "pages", status: "active" });
-  if (domain && refusing(`https://${domain}/`)) {
-    // Eight more requests into a ban only extend it. The nightly pass reads
-    // the pages when the host is not counting.
-    emit({ phase: "pages", status: "skipped", detail: "The site is rate-limiting us right now; the nightly pass reads your existing pages." });
-  } else if (!domain) {
-    emit({ phase: "pages", status: "skipped", detail: "No domain to read pages from." });
-  } else {
-    const startedAt = Date.now();
-    const pages = await assessExistingPages(supabase, workspace.id, domain);
-    // The number the budget is set against. Logged rather than shown: the
-    // customer wants to know what was found, and whoever tunes ONBOARDING_CRAWL
-    // wants to know how long it took on a real site.
-    console.log(
-      `[onboarding] pages: ${pages.status} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s - ${pages.detail}`,
-    );
-    emit({ phase: "pages", status: pages.status, detail: pages.detail });
-  }
-
-  // --- The link pool, before anything is written ---------------------------
-  //
-  // The wizard asks for the sitemap and says what it is for: "Used to find
-  // your existing pages for internal links." Until now nothing read it until
-  // a person pressed Detect on /linking, or the site-pages cron ran - and
-  // that cron is on no schedule (vercel.json, .github/workflows). So the
-  // first draft, and every draft after it, was written against an empty
-  // pool: the prompt said "do not add any" internal links, on a site with a
-  // 200-post blog it had just been told about. Measured on altorank.co,
-  // 2026-09-06: 0 internal links on a first draft with 28 sitemap posts.
-  //
-  // detectLinks reads the sitemap and the blog root (two fetches, no API
-  // cost) into link_targets, which is the pool generateArticle offers the
-  // writer. Best effort: a sitemap that cannot be read is a draft without
-  // internal links, not a failed onboarding.
-  if (domain) {
-    try {
-      const pool = await detectLinks(supabase, workspace.id);
-      if (pool.added > 0) console.log(`[onboarding] link pool: ${pool.added} page(s) from the site's own sources`);
-    } catch (err) {
-      console.warn("[onboarding] link pool detection failed:", message(err));
-    }
-  }
+  // Started above, beside the buyer test, when the keyword phase got that far;
+  // started here when it did not (no keyword research on this install, a
+  // keyword phase that failed early). Either way the plan waits for it, and
+  // for the voice.
+  await (startPages() ?? readExistingPages(supabase, workspace.id, domain, emit));
+  await scanning;
 
   // --- Phase 4: schedule the month, then write the first draft ------------
   emit({ phase: "planning", status: "active" });
@@ -404,12 +405,14 @@ async function runPhases(
       // operator, paying - gets the month as before.
       const hold = await planHold(supabase, workspace.id);
       const gated = hold !== "open";
-      plan = await schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, {
+      plan = await timed("plan", () => schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, {
         maxEntries: 5,
         qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES,
         firstLook,
         onFunnel: (f) => { planFunnel = f; },
-      });
+        // Not on the way to the gate: kept alive with the run's tail.
+        questionsInBackground: (pending) => { questionsSettled = pending.then(() => undefined, () => undefined); },
+      }));
       const held = gated && plan.length
         ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [] }))
         : { count: 0, dates: [] };
@@ -528,7 +531,7 @@ async function runPhases(
         // Not 25: the list is cut after scoring across every action, and a
         // site with 25 page-one rankings filled it with skips before any
         // writable term appeared (lib/onboarding/plan.ts has the same note).
-        const recs = await recommendKeywords(supabase, workspace.id, { limit: 1000, qualify: true, firstLook });
+        const recs = await timed("first_topic", () => recommendKeywords(supabase, workspace.id, { limit: 1000, qualify: true, firstLook }));
         // The first day of the plan is what the person just watched get
         // scheduled; writing anything else would contradict the calendar.
         const first = plan[0];
@@ -554,10 +557,14 @@ async function runPhases(
         // draft is handed a list - empty when it was not bought - and does
         // not buy it again. Nothing is bought for a draft the budget cannot
         // write: the same pre-check the draft route makes, made first.
+        //
+        // A dispatched draft buys it itself, beside its outline and off the
+        // way to the gate (lib/content/generate.ts): bought here it was ten
+        // seconds of the worker's critical path before the draft could start.
         const budget = currentSpendScope()?.budget ?? null;
         const budgetShort = next ? await draftBudgetShort(budget) : null;
-        relatedByTerm = next && budgetShort === null && await draftCanBuyLookup(budget)
-          ? await withStage("draft", () => fetchWeeksRelatedKeywords(workspace, next.term, plan))
+        relatedByTerm = next && budgetShort === null && firstDraft === "inline" && await draftCanBuyLookup(budget)
+          ? await timed("related_keywords", () => withStage("draft", () => fetchWeeksRelatedKeywords(workspace, next.term, plan)))
           : new Map();
         const relatedFor = (term: string): RelatedKeyword[] | undefined => relatedByTerm.get(term) ?? (budget ? [] : undefined);
 
@@ -574,7 +581,9 @@ async function runPhases(
             term: next.term,
             keywordId: next.keywordId ?? null,
             selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
-            relatedKeywords: relatedFor(next.term),
+            // Not bought here: the draft route decides from its own room.
+            relatedKeywords: undefined,
+            ...(firstLook.serps?.get(next.term.trim().toLowerCase()) ? { serp: firstLook.serps.get(next.term.trim().toLowerCase())! } : {}),
           };
           settle("active", `Writing "${next.term}" now. It lands in your review queue when it is done.`);
         } else {
@@ -632,7 +641,7 @@ async function runPhases(
   // after the drafting phase, whose own qualification buys reads too. In
   // dispatch mode the draft is still to come and its reserve is on the row.
   const spend = readSpend ? await readSpend() : null;
-  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail, spend, draftIncluded: firstDraft === "inline" });
+  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail, spend, draftIncluded: firstDraft === "inline", timings: clock?.toJSON() ?? null });
 
   // The rest of the week waits for a person.
   //
@@ -662,7 +671,7 @@ async function runPhases(
   // With a draft still to be written, the run is not over: the draft route
   // emits the equivalent of `ready` by settling the row when it lands.
   if (!pendingDraft) emit({ phase: "ready" });
-  return { pendingDraft, fanOutSettled };
+  return { pendingDraft, fanOutSettled, tailSettled: Promise.all([speedSettled, questionsSettled]).then(() => undefined, () => undefined) };
 }
 
 /**
@@ -680,6 +689,46 @@ async function emptyPoolOrNull(supabase: SupabaseClient, workspaceId: string): P
   } catch (err) {
     console.error(`[onboarding] empty-pool report for ${workspaceId}: ${message(err)}`);
     return null;
+  }
+}
+
+/**
+ * Read the pages the site already published, then fill the link pool from
+ * its sitemap. Both best effort and both free; they are what the planner and
+ * the writer read, not anything the keyword research needs.
+ *
+ * The wizard asks for the blog and says what it is for. Until 2026-09-06
+ * nothing read it: the pages were only ever fetched by cron/site-pages, one
+ * workspace a night, so on day one `site_pages` was empty and nothing in the
+ * product knew what the customer had already published. A plain GET per page
+ * and the checks in lib/seo/tech-audit.ts - no model, no DataForSEO - bounded
+ * by ONBOARDING_CRAWL, and `assessExistingPages` never throws.
+ *
+ * Then the link pool: detectLinks reads the sitemap and the blog root (two
+ * fetches, no API cost) into link_targets, which is the pool generateArticle
+ * offers the writer. Measured on 2026-09-06 before it ran here: 0 internal
+ * links on a first draft with 28 sitemap posts.
+ */
+async function readExistingPages(supabase: SupabaseClient, workspaceId: string, domain: string | null, emit: Emit): Promise<void> {
+  emit({ phase: "pages", status: "active" });
+  if (domain && refusing(`https://${domain}/`)) {
+    // More requests into a ban only extend it. The nightly pass reads the
+    // pages when the host is not counting.
+    emit({ phase: "pages", status: "skipped", detail: "The site is rate-limiting us right now; the nightly pass reads your existing pages." });
+  } else if (!domain) {
+    emit({ phase: "pages", status: "skipped", detail: "No domain to read pages from." });
+  } else {
+    const startedAt = Date.now();
+    const pages = await timed("pages", () => assessExistingPages(supabase, workspaceId, domain));
+    console.log(`[onboarding] pages: ${pages.status} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s - ${pages.detail}`);
+    emit({ phase: "pages", status: pages.status, detail: pages.detail });
+  }
+  if (!domain) return;
+  try {
+    const pool = await timed("link_pool", () => detectLinks(supabase, workspaceId));
+    if (pool.added > 0) console.log(`[onboarding] link pool: ${pool.added} page(s) from the site's own sources`);
+  } catch (err) {
+    console.warn("[onboarding] link pool detection failed:", message(err));
   }
 }
 

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchAdvancedSerp } from "@/lib/seo/brief-data";
+import { fetchAdvancedSerp, type SerpData } from "@/lib/seo/brief-data";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { askStructured, describeBusiness, extractJson, modelAvailable, type AskModel, type SpendSink } from "./buyer-model";
 
@@ -17,11 +17,23 @@ import { currentSpendScope, isBudgetRefusal, watchRefusals, withStage } from "@/
 import { anthropicEstimate } from "@/lib/billing/spend";
 import { anthropicModel } from "@/lib/ai/models";
 import { estimateDataForSEOUsd } from "@/lib/seo/dataforseo-cost";
+import { timed } from "@/lib/onboarding/timings";
 
 export { canonicalPage };
 
 export const OPPORTUNITY_VERSION = 2;
 export const QUALIFICATION_LIMIT = 15;
+/**
+ * Terms judged side by side in a round: their results page and their judge
+ * reads. Three everywhere but a first look, which judges its whole batch at
+ * once: thirteen rounds of one to four terms were a minute and three quarters
+ * of a production first look (2026-10-09). Which terms are judged does not
+ * change - the refill's stop rule works between batches, not rounds - and
+ * every read still claims its cost before it is bought, so the run's dollar
+ * holds whatever runs at once.
+ */
+export const JUDGE_ROUND = 3;
+export const FIRST_LOOK_JUDGE_ROUND = QUALIFICATION_LIMIT;
 /**
  * Why a verdict is not "qualified", as a code the cron can count. The
  * `reason` says it in words; this says it in a way a log line can add up,
@@ -122,6 +134,12 @@ export interface Opportunity {
 export interface FirstLook {
   /** The onboarding run, for the log; the budget itself is the scope's. */
   runId?: string | null;
+  /**
+   * The results pages this first look bought, by term (lower-cased): the
+   * first article's draft is handed its own instead of buying the same page
+   * again minutes later (lib/onboarding/pipeline.ts).
+   */
+  serps?: Map<string, SerpData>;
 }
 export interface OpportunityContext {
   domain: string;
@@ -233,8 +251,12 @@ const JUDGE_PROMPT_CHARS = 12_000;
  */
 export function firstLookTermUsd(twoReads: boolean): number {
   const page = estimateDataForSEOUsd("/serp/google/organic/live/advanced", [{}]);
-  const read = anthropicEstimate(anthropicModel("decision"), JUDGE_PROMPT_CHARS, OPPORTUNITY_MAX_TOKENS);
-  return page + read * (twoReads ? 2 : 1);
+  return page + firstLookReadUsd() * (twoReads ? 2 : 1);
+}
+
+/** One judge read, as `firstLookTermUsd` counts it. */
+export function firstLookReadUsd(): number {
+  return anthropicEstimate(anthropicModel("decision"), JUDGE_PROMPT_CHARS, OPPORTUNITY_MAX_TOKENS);
 }
 
 /** Paid work is bounded and cached. A missing response remains pending. */
@@ -322,7 +344,7 @@ export async function qualifyOpportunities(
   }
   const toAsk = pending.filter((c) => !saved.has(c.term.trim().toLowerCase()));
   const asked = toAsk.length
-    ? await watchRefusals(() => withStage("buyer_fit", () => judgeBuyerFitFor(context, toAsk.map((c) => c.term), { spend })))
+    ? await watchRefusals(() => timed("buyer_fit", () => withStage("buyer_fit", () => judgeBuyerFitFor(context, toAsk.map((c) => c.term), { spend }))))
     : { value: { verdicts: new Map<string, FitVerdict>() }, refused: false };
   const fit = asked.value;
   for (const [term, v] of saved) if (!fit.verdicts.has(term)) fit.verdicts.set(term, v);
@@ -333,27 +355,54 @@ export async function qualifyOpportunities(
   // batch the room cannot fit whole is made smaller, not abandoned: the room
   // comes back as each claim settles at what was charged.
   const budget = firstLook ? currentSpendScope()?.budget ?? null : null;
+  // A term is started only while the free room covers its whole chain - its
+  // page and both reads - so near the end of the budget no page is bought
+  // for a read that will not fit. What a started term will still claim is
+  // pledged, so two terms started together do not count the same room: its
+  // page and its first read, given back as each is made. Its second read -
+  // only an approval gets one, about one term in ten - is not pledged: it
+  // claims when it comes, from the margin the start rule leaves, and is
+  // waited for (`patiently`) while other calls still hold their estimates.
+  // Pledging every term's second read, at the estimate's ceiling of output,
+  // held a first look to six terms at a time when its research share could
+  // pay for twenty (2026-10-11 replay).
   const perTerm = budget ? firstLookTermUsd(true) : 0;
+  const readUsd = budget ? firstLookReadUsd() : 0;
+  const pledgePerTerm = budget ? firstLookTermUsd(false) : 0;
   const paidRead = (c: OpportunityCandidate) => fit.verdicts.get(c.term.trim().toLowerCase())?.keep === true;
-  let cursor = 0;
-  while (cursor < pending.length && !stopped) {
-    let batch = pending.slice(cursor, cursor + 3);
-    if (budget) {
-      const room = await budget.room("judge").catch(() => null);
-      if (room !== null) {
-        let affordable = Math.floor(room / perTerm);
-        const fits: OpportunityCandidate[] = [];
-        for (const c of batch) {
-          if (paidRead(c) && affordable-- <= 0) break;
-          fits.push(c);
-        }
-        // Not even the next term: the rest are not judged.
-        if (!fits.length) { stopped = true; break; }
-        batch = fits;
-      }
+  // Terms are judged side by side, up to `width` at once, and a new one is
+  // started as soon as one finishes and the room covers it - not when a
+  // whole round has: the slowest results page of a round used to hold every
+  // term behind it. `pledged` is what started terms will claim and have not
+  // yet: two terms started together must not both count the same room.
+  const width = firstLook ? FIRST_LOOK_JUDGE_ROUND : JUDGE_ROUND;
+  // Terms making calls, and the ones waiting for room.
+  let active = 0;
+  let waiters: Array<() => void> = [];
+  const wake = () => { const w = waiters; waiters = []; for (const f of w) f(); };
+  /**
+   * Make a paid call; when its claim is refused while another term is still
+   * calling, wait for that term's call to settle and ask again. Refused with
+   * nobody else calling is the budget's real end, and stops, as it always
+   * has. Every attempt still claims before it calls.
+   */
+  const patiently = async <T,>(call: () => Promise<{ value: T; refused: boolean }>): Promise<{ value: T; refused: boolean }> => {
+    let got = await call();
+    // Only a call that went through changes the room: a refused one wakes
+    // nobody, or two waiting terms would wake each other for ever.
+    if (!got.refused) wake();
+    while (got.refused && budget && active - 1 > 0) {
+      active -= 1;
+      await new Promise<void>((r) => waiters.push(r));
+      active += 1;
+      got = await call();
+      if (!got.refused) wake();
     }
-    cursor += batch.length;
-    await Promise.all(batch.map(async (c) => {
+    return got;
+  };
+  let pledged = 0;
+  const judgeTerm = async (c: OpportunityCandidate, release: (keep?: number) => void): Promise<void> => {
+    try {
     const verdict = fit.verdicts.get(c.term.trim().toLowerCase());
     // No buyer decision because the budget refused the batch's read: not
     // judged, which is not the same as "the model returned none".
@@ -365,22 +414,54 @@ export async function qualifyOpportunities(
       result.cause = "buyer_mismatch";
       result.reason = verdict.reason;
     } else if (verdict?.keep === true) {
-      const read = await watchRefusals(async (): Promise<ResultsJudgeInput | null> => {
+      // The results page, then the judge's read of it: two calls, each
+      // claimed before it is made, so a read the budget refuses does not buy
+      // the page again when it is asked again.
+      const fresh = { ...result };
+      let failed = false;
+      const page = await patiently(() => watchRefusals(async () => {
         try {
-          const serp = await withStage("results_pages", () => fetchAdvancedSerp(c.term, context));
-          const input: ResultsJudgeInput = { term: c.term, sourceUrl: c.source_url, context, verdict, organic: serp.organic };
-          await withStage("judge", () => judgeOnResults(result, input, { spend }));
-          return input;
+          const serp = await timed("results_pages", () => withStage("results_pages", () => fetchAdvancedSerp(c.term, context)));
+          firstLook?.serps?.set(c.term.trim().toLowerCase(), serp);
+          return serp;
         } catch (err) {
           // Refused before it was bought: counted by the watch, not an error.
           if (isBudgetRefusal(err)) return null;
+          failed = true;
           result.cause = "provider_error";
           result.reason = `Qualification could not finish: ${err instanceof Error ? err.message.slice(0, 200) : "provider call failed"}. It is retried on the next run.`;
           return null;
         }
-      });
-      if (read.refused) { stopped = true; return; }
-      const input = read.value;
+      }));
+      // The page is in: its share of the pledge is in the room's own count.
+      release(readUsd);
+      if (page.refused) { stopped = true; return; }
+      const input: ResultsJudgeInput | null = page.value ? { term: c.term, sourceUrl: c.source_url, context, verdict, organic: page.value.organic } : null;
+      if (input && !failed) {
+        const read = await patiently(() => watchRefusals(async () => {
+          // The read is about to claim its own estimate, which the room then
+          // counts: its share of the pledge goes now, not after the read, or
+          // the same read is counted twice for as long as it runs - which
+          // held the end of a first look's qualification to one term at a
+          // time (round-1 review: 39s of one site's gate).
+          release(0);
+          // A refused read leaves its marks on `result`; each ask starts clean.
+          for (const key of Object.keys(result) as Array<keyof Opportunity>) delete result[key];
+          Object.assign(result, fresh);
+          try {
+            await timed("judge", () => withStage("judge", () => judgeOnResults(result, input, { spend })));
+          } catch (err) {
+            if (!isBudgetRefusal(err)) {
+              result.cause = "provider_error";
+              result.reason = `Qualification could not finish: ${err instanceof Error ? err.message.slice(0, 200) : "provider call failed"}. It is retried on the next run.`;
+            }
+          }
+          return input;
+        }));
+        if (read.refused) { stopped = true; return; }
+      }
+      // The first read is made: nothing of this term's pledge is left.
+      release(0);
       try {
         // A first look asks the judge a second time before it approves: the
         // same results page read twice gave needs_page, then qualified
@@ -390,7 +471,7 @@ export async function qualifyOpportunities(
         // read the budget refused leaves the term not judged, as a refused
         // first read does: one approval is not what a first look plans on.
         if (firstLook && input && (result.status as Opportunity["status"]) === "qualified") {
-          const again = await watchRefusals(() => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend })));
+          const again = await patiently(() => watchRefusals(() => timed("judge", () => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend })))));
           if (again.refused) { stopped = true; return; }
           const second = again.value;
           if (second.status === "rejected") {
@@ -408,8 +489,43 @@ export async function qualifyOpportunities(
       }
     }
     await save(c, result, verdict ?? null);
-    }));
+    } finally {
+      release();
+      // This term makes no more calls: whoever waits for room asks again.
+      active -= 1;
+      wake();
+    }
+  };
+  const queue = [...pending];
+  const running = new Set<Promise<void>>();
+  while (queue.length && !stopped) {
+    // A term waiting for room to ask its next read goes first: a new term
+    // started now would take the room it is waiting for, and an approval's
+    // second read is worth more than another candidate's first.
+    if (running.size >= width || waiters.length) { await Promise.race(running); continue; }
+    const c = queue[0];
+    const pays = Boolean(budget) && paidRead(c);
+    if (pays) {
+      const room = await budget!.room("judge").catch(() => null);
+      const free = room === null ? null : room - pledged;
+      if (free !== null && free < perTerm) {
+        // Not even the next term fits now: wait for a running one to give
+        // its hold back, or, with none running, the rest are not judged.
+        if (!running.size) { stopped = true; break; }
+        await Promise.race(running);
+        continue;
+      }
+    }
+    queue.shift();
+    let held = pays ? pledgePerTerm : 0;
+    pledged += held;
+    // Down to `keep`, never up: what the term may still claim.
+    const release = (keep = 0) => { const next = Math.min(held, Math.max(0, keep)); pledged -= held - next; held = next; };
+    active += 1;
+    const term: Promise<void> = judgeTerm(c, release).finally(() => { running.delete(term); });
+    running.add(term);
   }
+  await Promise.all(running);
   // One article per search. A topic already live or drafted, or planned and
   // still to be written, owns its search, and a new approval for it - the
   // same results page, or the same words where no page was bought - is
@@ -522,8 +638,14 @@ export function opportunitySchema(): Record<string, unknown> {
   });
 }
 
-/** Output room for the judge: ten kinds, a reason and a brief. */
-export const OPPORTUNITY_MAX_TOKENS = 1500;
+/**
+ * Output room for the judge: ten kinds, a reason and a brief. A first look
+ * claims each read at this ceiling before it is made, so it is also the read's
+ * price until it settles: 1,500 priced a read at $0.025 against the $0.011 it
+ * cost, and the largest answer seen on the proof runs (2026-10-11) was 267
+ * tokens. 800 is three times that.
+ */
+export const OPPORTUNITY_MAX_TOKENS = 800;
 
 /** Business names the navigational rule should recognise in a phrase. */
 function namedBusinesses(business: FitProfile | null): string[] {

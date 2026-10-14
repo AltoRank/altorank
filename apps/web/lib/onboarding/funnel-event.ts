@@ -17,6 +17,7 @@
 import { recordEvent, type SystemEvent } from "@/lib/observability/record";
 import { describeFunnel, funnelDiscrepancy, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 import type { RunBudgetState } from "@/lib/billing/run-budget";
+import { timingSummary, type RunTimings } from "./timings";
 
 export const FUNNEL_EVENT_SOURCE = "onboarding.funnel";
 
@@ -37,6 +38,12 @@ export interface PlanFunnelEventInput {
   spend?: RunBudgetState | null;
   /** The first draft was written in this invocation, so `spend` includes it. */
   draftIncluded?: boolean;
+  /**
+   * Where the run's time went so far (./timings.ts), summarised: per-stage
+   * start, end, busy time and calls, and the named moments. Milliseconds
+   * since the run began; no terms.
+   */
+  timings?: RunTimings | null;
 }
 
 /** The spend, said at the end of the message line. Empty without a budget. */
@@ -70,15 +77,31 @@ export function spendContext(spend: RunBudgetState | null | undefined): Record<s
  * case an operator has to explain to the person who signed up.
  */
 export function planFunnelEvent(input: PlanFunnelEventInput): SystemEvent {
+  const event = funnelEventOf(input);
+  // The timings ride along only while the context fits the event's cap: past
+  // it the whole context would be replaced with a note, and the funnel is
+  // what this event is for. The full table is on the run row either way.
+  const context = event.context as Record<string, unknown>;
+  if (context.timings && JSON.stringify(context).length > TIMINGS_CONTEXT_ROOM) {
+    event.context = { ...context, timings: "omitted: see onboarding_runs.timings" };
+  }
+  return event;
+}
+
+/** Below the event's 4,000-character cap, with room for the sanitiser's quoting. */
+const TIMINGS_CONTEXT_ROOM = 3_600;
+
+function funnelEventOf(input: PlanFunnelEventInput): SystemEvent {
   const base = { source: FUNNEL_EVENT_SOURCE, workspaceId: input.workspaceId, accountId: input.accountId ?? null };
   const spend = spendContext(input.spend);
+  const timings = timingSummary(input.timings);
   const f = input.funnel;
   if (!f) {
     return {
       ...base,
       level: "info",
       message: `The planner read no candidates this run${input.planningDetail ? `: ${input.planningDetail}` : "."}`,
-      context: { runId: input.runId ?? null, ...(spend ? { spend } : {}) },
+      context: { runId: input.runId ?? null, ...(spend ? { spend } : {}), ...(timings ? { timings } : {}) },
     };
   }
   // Written down, not thrown: the funnel is instrumentation and a miscount
@@ -100,6 +123,7 @@ export function planFunnelEvent(input: PlanFunnelEventInput): SystemEvent {
       ...(f.unmeasured ? { unmeasured: f.unmeasured } : {}),
       ...(f.plannedLowerConfidence ? { plannedLowerConfidence: f.plannedLowerConfidence } : {}),
       ...(spend ? { spend } : {}),
+      ...(timings ? { timings } : {}),
       // What each judged results page was, counts only (the page-type rule).
       ...(f.pageReads?.length ? { pageReads: f.pageReads } : {}),
       ...(f.overruled ? { overruled: f.overruled } : {}),
@@ -110,4 +134,26 @@ export function planFunnelEvent(input: PlanFunnelEventInput): SystemEvent {
 /** Write the run's funnel event. Resolves whatever happens. */
 export async function recordPlanFunnel(input: PlanFunnelEventInput): Promise<void> {
   await recordEvent(planFunnelEvent(input));
+}
+
+export const TIMING_EVENT_SOURCE = "onboarding.timing";
+
+/**
+ * The whole run's timing table, once the first article's body has landed:
+ * the worker's stages and the draft route's on one axis (./timings.ts). The
+ * funnel event is written before the draft, so it cannot carry the draft's
+ * half. Seconds and counts only. Resolves whatever happens.
+ */
+export async function recordRunTiming(input: { runId: string; workspaceId: string; accountId?: string | null; timings: RunTimings | null; outcome: string }): Promise<void> {
+  const summary = timingSummary(input.timings);
+  if (!summary) return;
+  const marks = Object.entries(summary.marks).map(([k, v]) => `${k} ${v}s`).join(", ");
+  await recordEvent({
+    level: "info",
+    source: TIMING_EVENT_SOURCE,
+    workspaceId: input.workspaceId,
+    accountId: input.accountId ?? null,
+    message: `First look timing (${input.outcome})${marks ? `: ${marks}` : ""}`,
+    context: { runId: input.runId, outcome: input.outcome, ...summary },
+  });
 }

@@ -32,8 +32,8 @@ import { createServiceClient } from "@/lib/supabase/server";
  * stays readable to a client token is what the gate card may show: title,
  * keyword, length, status, scores.
  *
- * Migration 097 withholds exactly these from `anon` and `authenticated`.
- * Change the two together.
+ * Migration 097 withholds exactly these from `anon` and `authenticated`
+ * (`body_stream` since 107). Change the two together.
  */
 export const ARTICLE_BODY_COLUMNS = [
   "content",
@@ -42,6 +42,8 @@ export const ARTICLE_BODY_COLUMNS = [
   "link_checks",
   "seo_checks",
   "aeo_checks",
+  // The first article's body as it streams (migration 107, PRETRIAL_FULL_ARTICLE).
+  "body_stream",
 ] as const;
 
 /** Ids per request: a uuid list in the query string, well under any URL limit. */

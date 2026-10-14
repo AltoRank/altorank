@@ -322,6 +322,14 @@ export interface PlanOptions {
   mode?: "replace" | "top-up";
   maxEntries?: number;
   /**
+   * Handed the owner's first-hand-experience questions for the planned
+   * topics while they are still being written, instead of waiting for them:
+   * a model call nothing in the first look reads (the writer takes only
+   * answered questions, and a new site has none). The caller keeps it alive.
+   * Absent, the plan waits, as it always has.
+   */
+  questionsInBackground?: (pending: Promise<unknown>) => void;
+  /**
    * Handed where every candidate went, with how many were planned and why
    * each qualified topic left off was left off, once the plan is known
    * (lib/keyword-research/topic-funnel.ts). Not called when the recommender
@@ -545,7 +553,7 @@ export async function schedulePlan(
   // Best-effort: a plan is written even if the shape or the questions fail.
   try {
     const intents = new Map(recs.map((r) => [r.keywordId, r.intent]));
-    await decoratePlannedKeywords(supabase, workspaceId, plan.map((p) => p.keywordId), intents);
+    await decoratePlannedKeywords(supabase, workspaceId, plan.map((p) => p.keywordId), intents, opts.questionsInBackground);
   } catch (err) {
     console.warn("[plan] could not decorate planned keywords:", err instanceof Error ? err.message : err);
   }
@@ -564,6 +572,8 @@ export async function decoratePlannedKeywords(
   workspaceId: string,
   keywordIds: string[],
   intents: Map<string, KeywordIntent> = new Map(),
+  /** See PlanOptions.questionsInBackground: the shapes are awaited, the questions handed over. */
+  questionsInBackground?: (pending: Promise<unknown>) => void,
 ): Promise<{ classified: number; questioned: number }> {
   if (keywordIds.length === 0) return { classified: 0, questioned: 0 };
   const { data } = await supabase
@@ -584,12 +594,16 @@ export async function decoratePlannedKeywords(
     classified++;
   }
 
-  const questioned = await ensureQuestionsFor(
+  const asking = ensureQuestionsFor(
     supabase,
     workspaceId,
     rows.filter((r) => parseStoredQuestions(r.quality_questions).length === 0).map((r) => ({ id: r.id, term: r.term })),
   );
-  return { classified, questioned };
+  if (questionsInBackground) {
+    questionsInBackground(asking.catch((err: unknown) => console.warn("[plan] questions for planned topics:", err instanceof Error ? err.message : err)));
+    return { classified, questioned: 0 };
+  }
+  return { classified, questioned: await asking };
 }
 
 /** Topics ready to schedule that the plan did not take, and the days they would land on. */

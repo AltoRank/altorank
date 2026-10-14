@@ -33,6 +33,8 @@ export type PendingFirstArticle = {
   keyword: string;
   wordCount: number;
   verdict: FirstArticleVerdict;
+  /** Outlined, body still being written: the length is a target and there is no fact check. */
+  outlined?: boolean;
 };
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
@@ -47,15 +49,21 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
 export function FirstArticleCardView({
   article,
   pending = null,
+  readable = false,
 }: {
   article: FirstArticleCard | null;
   /** Shown while the page has not yet read the card for a draft the run just wrote. */
   pending?: PendingFirstArticle | null;
+  /** The full text is shown below it (PRETRIAL_FULL_ARTICLE): the lock line says what stays locked. */
+  readable?: boolean;
 }) {
   const title = article?.title || pending?.title || article?.keyword || pending?.keyword || "Untitled";
   const keyword = article?.keyword ?? pending?.keyword ?? "";
   const wordCount = article?.wordCount ?? pending?.wordCount ?? 0;
-  const verdict = article ? article.verdict : pending?.verdict ?? null;
+  // Outlined and still being written: the length is the outline's target,
+  // the sources the ones it plans to cite, and there is no fact check yet.
+  const outlined = article ? article.state === "outlined" : pending?.outlined === true;
+  const verdict = outlined ? null : article ? article.verdict : pending?.verdict ?? null;
   if (!article && !pending) return null;
 
   return (
@@ -81,10 +89,11 @@ export function FirstArticleCardView({
         <Fact label="Scheduled for">
           {article ? (article.scheduledDate ? calendarDay(article.scheduledDate) : "Not on the calendar yet") : "…"}
         </Fact>
-        <Fact label="Length">{wordCount > 0 ? `${wordCount.toLocaleString("en-US")} words` : "—"}</Fact>
+        <Fact label="Length">{wordCount > 0 ? `${outlined ? "About " : ""}${wordCount.toLocaleString("en-US")} words` : "—"}</Fact>
         {/* Counted from the article's own outbound links, so 0 is a
-            measurement and printed as one. Unknown until the card is read. */}
-        <Fact label="Sources cited">{article ? article.sources.toLocaleString("en-US") : "…"}</Fact>
+            measurement and printed as one; while it is being written, the
+            pages its outline plans to cite. Unknown until the card is read. */}
+        <Fact label={outlined ? "Sources planned" : "Sources cited"}>{article ? article.sources.toLocaleString("en-US") : "…"}</Fact>
       </dl>
 
       <div className="mt-4">
@@ -106,7 +115,11 @@ export function FirstArticleCardView({
 
       <p className="m-0 mt-4 flex items-center gap-1.5 text-[12.5px] text-ink-2">
         <Icons.lock size={12} />
-        The full text opens when your trial starts.
+        {readable
+          ? "Read it below. Editing, approving and publishing open when your trial starts."
+          : outlined
+            ? "Being written to this outline now. The full text opens when your trial starts."
+            : "The full text opens when your trial starts."}
       </p>
       {article && article.more > 0 && (
         <p className="m-0 mt-1.5 text-[12px] text-ink-3">
