@@ -79,10 +79,13 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-const { requireAuth, subUpdate, subRetrieve } = vi.hoisted(() => ({
+const { requireAuth, subUpdate, subRetrieve, pendingItems, createInvoice, finalizeInvoice } = vi.hoisted(() => ({
   requireAuth: vi.fn(async () => ({ accountId: "account-1", role: "owner", user: { id: "u1" } })),
   subUpdate: vi.fn(),
   subRetrieve: vi.fn(),
+  pendingItems: vi.fn(),
+  createInvoice: vi.fn(),
+  finalizeInvoice: vi.fn(),
 }));
 vi.mock("@/lib/auth/require-auth", () => ({ requireAuth }));
 vi.mock("@/lib/stripe", async (importOriginal) => {
@@ -90,7 +93,11 @@ vi.mock("@/lib/stripe", async (importOriginal) => {
   return {
     ...actual,
     billingEnabled: true,
-    getStripe: () => ({ subscriptions: { update: subUpdate, retrieve: subRetrieve } }),
+    getStripe: () => ({
+      subscriptions: { update: subUpdate, retrieve: subRetrieve },
+      invoiceItems: { list: pendingItems },
+      invoices: { create: createInvoice, finalizeInvoice },
+    }),
   };
 });
 vi.mock("@/lib/billing/resume", async (importOriginal) => {
@@ -106,11 +113,15 @@ beforeEach(() => {
   accountRow = {
     id: "account-1",
     plan: "starter",
+    stripe_customer_id: "cus_1",
     stripe_subscription_id: "sub_1",
     current_period_end: "2026-12-01T00:00:00.000Z",
   };
   subUpdate.mockReset();
   subUpdate.mockResolvedValue({ cancel_at: 1796083200 });
+  pendingItems.mockReset().mockResolvedValue({ data: [] });
+  createInvoice.mockReset().mockResolvedValue({ id: "in_overage" });
+  finalizeInvoice.mockReset().mockResolvedValue({ id: "in_overage" });
   subRetrieve.mockReset();
   subRetrieve.mockResolvedValue({ pause_collection: { behavior: "void" }, latest_invoice: { status: "paid", billing_reason: "subscription_cycle" } });
 });
@@ -140,6 +151,26 @@ describe("pauseAccount", () => {
     const { pauseAccount } = await import("../retention");
     const result = await pauseAccount(1);
     expect(result).toEqual({ ok: false, error: expect.stringContaining("A trial cannot be paused") });
+    expect(subUpdate).not.toHaveBeenCalled();
+  });
+
+  // The month's overage waits for the renewal invoice, which the pause voids.
+  it("invoices the pending overage before the pause voids the renewal that would carry it", async () => {
+    pendingItems.mockResolvedValue({ data: [{ id: "ii_1" }] });
+    const { pauseAccount } = await import("../retention");
+    const result = await pauseAccount(1);
+    expect(result.ok).toBe(true);
+    expect(createInvoice).toHaveBeenCalledWith(expect.objectContaining({ customer: "cus_1", pending_invoice_items_behavior: "include" }));
+    expect(finalizeInvoice).toHaveBeenCalledWith("in_overage");
+    expect(createInvoice.mock.invocationCallOrder[0]).toBeLessThan(subUpdate.mock.invocationCallOrder[0]);
+  });
+
+  it("changes nothing when that invoice cannot be made", async () => {
+    pendingItems.mockResolvedValue({ data: [{ id: "ii_1" }] });
+    createInvoice.mockRejectedValue(new Error("Stripe is down"));
+    const { pauseAccount } = await import("../retention");
+    const result = await pauseAccount(1);
+    expect(result).toEqual({ ok: false, error: expect.stringContaining("The pause could not be started. Nothing has been charged") });
     expect(subUpdate).not.toHaveBeenCalled();
   });
 

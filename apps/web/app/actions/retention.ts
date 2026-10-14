@@ -10,6 +10,7 @@ import { validateCancellation } from "@/lib/billing/cancellation";
 import { billingFailure, type BillingOutcome } from "@/lib/billing/failure";
 import { createServiceClient } from "@/lib/supabase/server";
 import { notifyAccountPaused } from "@/lib/email/lifecycle";
+import { invoicePendingCharges } from "@/lib/billing/invoice-pending";
 
 // `accounts.cancels_at` is a billing column. Migration 072 guards it with a
 // trigger that raises 42501 for any signed-in user - owner included - because
@@ -59,6 +60,17 @@ export async function pauseAccount(months: unknown): Promise<BillingOutcome<{ pa
   // way to stop before the first charge.
   if (account.plan_status === "trialing") return { ok: false, error: TRIAL_PAUSE_MESSAGE };
   const until = pausedUntil(new Date(), months);
+
+  // The month's overage, billed before the pause: it waits for the next
+  // renewal invoice, which the pause voids, so it used to be voided with the
+  // fee. First, so a refusal here has changed nothing.
+  if (billingEnabled && account.stripe_subscription_id && account.stripe_customer_id) {
+    try {
+      await invoicePendingCharges(getStripe(), account.stripe_customer_id as string);
+    } catch (err) {
+      return billingFailure(err, "The pause could not be started");
+    }
+  }
 
   const { data: paused, error } = await supabase
     .from("workspaces")

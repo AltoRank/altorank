@@ -122,9 +122,12 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-const { constructEvent, retrieveSubscription } = vi.hoisted(() => ({
+const { constructEvent, retrieveSubscription, pendingItems, createInvoice, finalizeInvoice } = vi.hoisted(() => ({
   constructEvent: vi.fn(),
   retrieveSubscription: vi.fn(),
+  pendingItems: vi.fn(),
+  createInvoice: vi.fn(),
+  finalizeInvoice: vi.fn(),
 }));
 
 vi.mock("@/lib/stripe", async (importOriginal) => {
@@ -134,6 +137,8 @@ vi.mock("@/lib/stripe", async (importOriginal) => {
     getStripe: () => ({
       webhooks: { constructEvent },
       subscriptions: { retrieve: retrieveSubscription },
+      invoiceItems: { list: pendingItems },
+      invoices: { create: createInvoice, finalizeInvoice },
     }),
   };
 });
@@ -234,6 +239,9 @@ beforeEach(() => {
   constructEvent.mockReset();
   retrieveSubscription.mockReset();
   retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: GROWTH } }] } });
+  pendingItems.mockReset().mockResolvedValue({ data: [] });
+  createInvoice.mockReset().mockResolvedValue({ id: "in_final" });
+  finalizeInvoice.mockReset().mockResolvedValue({ id: "in_final" });
   process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
   process.env.STRIPE_PRICE_STARTER = STARTER;
   process.env.STRIPE_PRICE_STARTER_YEARLY = "price_starter_year";
@@ -549,6 +557,36 @@ describe("customer.subscription.updated / deleted", () => {
     expect(rows).toHaveLength(1);
     expect(rows[0].row.plan_status).toBe("inactive");
     expect(rows[0].row).not.toHaveProperty("payment_failed_at");
+  });
+});
+
+// A subscription cancelled at period end makes no final invoice, so the last
+// period's overage - pending items waiting for a next invoice - was never billed.
+describe("the final period's overage", () => {
+  it("is invoiced when the subscription ends", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
+    pendingItems.mockResolvedValue({ data: [{ id: "ii_1" }] });
+    const res = await deliver(subscriptionEvent("deleted"));
+    expect(res.status).toBe(200);
+    expect(pendingItems).toHaveBeenCalledWith({ customer: "cus_1", pending: true, limit: 1 });
+    expect(createInvoice).toHaveBeenCalledWith(expect.objectContaining({ customer: "cus_1", pending_invoice_items_behavior: "include", auto_advance: true }));
+    expect(finalizeInvoice).toHaveBeenCalledWith("in_final");
+  });
+
+  it("makes no invoice when nothing is pending, and none on an ordinary update", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
+    await deliver(subscriptionEvent("deleted"));
+    expect(createInvoice).not.toHaveBeenCalled();
+    pendingItems.mockResolvedValue({ data: [{ id: "ii_1" }] });
+    await deliver(subscriptionEvent("updated"));
+    expect(createInvoice).not.toHaveBeenCalled();
+  });
+
+  it("answers 500 when the invoice cannot be made, so Stripe delivers the end again", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
+    pendingItems.mockResolvedValue({ data: [{ id: "ii_1" }] });
+    createInvoice.mockRejectedValue(new Error("Stripe is down"));
+    await expect(deliver(subscriptionEvent("deleted"))).rejects.toThrow(/final period's overage/);
   });
 });
 

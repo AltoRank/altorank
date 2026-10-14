@@ -21,6 +21,7 @@ import { oweResume } from "@/lib/plan/resume-week";
 import { canSelfInvoke } from "@/lib/content/fan-out";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
 import { graceEndsAt } from "@/lib/billing/dunning";
+import { invoicePendingCharges } from "@/lib/billing/invoice-pending";
 import {
   notifyPaymentFailed,
   notifyPlanChanged,
@@ -610,6 +611,20 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         : // Fall back to matching by the stored subscription id.
           await supabase.from("accounts").update(updates).eq("stripe_subscription_id", sub.id);
       if (writeError) throw new Error(`${event.type}: could not record the subscription on the account (${writeError.message})`);
+
+      // The plan has ended. A subscription cancelled at period end makes no
+      // final invoice, so the last period's overage - pending items waiting
+      // for a next invoice - was never billed. Billed now; a failure is thrown
+      // so Stripe delivers the event again, and a redelivery finds nothing
+      // pending and bills nothing twice.
+      if (event.type === "customer.subscription.deleted" && sub.customer) {
+        const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+        try {
+          await invoicePendingCharges(getStripe(), customerId);
+        } catch (err) {
+          throw new Error(`${event.type}: could not invoice the final period's overage (${err instanceof Error ? err.message : String(err)})`);
+        }
+      }
 
       // Every remaining write and read comes before any email. A failure
       // below throws and Stripe delivers the event again; if the change
