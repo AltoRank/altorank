@@ -8,6 +8,7 @@ import { assertEditorialStatus } from "@/lib/articles/editorial-status";
 import { sessionBodyLockedForWorkspace } from "@/lib/billing/body-lock";
 import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { urlSlug } from "@/lib/i18n/locale";
+import { approvalAfterStatusChange } from "@/lib/articles/approval";
 
 const createArticleSchema = z.object({
   workspace_id: z.string().uuid(),
@@ -67,7 +68,7 @@ export async function updateArticle(
     word_count?: number;
   },
 ) {
-  await requireAuth();
+  const { user } = await requireAuth();
   // The editor and the row menu may move an article between editorial states
   // only. Approval, scheduling and publishing have their own actions and the
   // gate in lib/publishing/core.ts trusts status = "approved".
@@ -76,15 +77,30 @@ export async function updateArticle(
   // The editor is what the trial opens. Before it the reads hand the editor
   // an article with its body withheld (lib/billing/body-lock.ts), and a Save
   // from that screen would write the empty document over the real one.
-  const { data: row } = await supabase.from("articles").select("workspace_id").eq("id", id).maybeSingle();
+  const { data: row } = await supabase
+    .from("articles")
+    .select("workspace_id, status")
+    .eq("id", id)
+    .maybeSingle();
   if (!row) throw new Error("Article not found");
   if (await sessionBodyLockedForWorkspace(row.workspace_id as string)) throw new Error(BODY_LOCKED_MESSAGE);
-  const { error } = await supabase
+
+  const now = new Date().toISOString();
+  // Change status > Review on an approved or scheduled article used to leave
+  // the approval in place and the draft unheld, so the auto-approve rule
+  // signed it off again in the next cron run and it published anyway.
+  const approval = approvalAfterStatusChange({ status: row.status as string }, data.status, user.id, now);
+  const { data: written, error } = await supabase
     .from("articles")
-    .update({ ...data, updated_at: new Date().toISOString() })
-    .eq("id", id);
+    .update({ ...data, ...approval, updated_at: now })
+    .eq("id", id)
+    // Against the status it was read in, so an approval that lands between
+    // the read and this write is not overwritten by a decision made without it.
+    .eq("status", row.status as string)
+    .select("id");
 
   if (error) throw new Error(error.message);
+  if (!written?.length) throw new Error("This article changed while it was being saved. Reload the page and try again.");
   revalidatePath("/articles");
   revalidatePath(`/content/${id}`);
 }

@@ -11,6 +11,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PublishResult } from "@/lib/cms/types";
+import { createServiceClient } from "@/lib/supabase/server";
 import { publishArticleCore, PublishError, type PublishContext } from "./core";
 import { getLastPublish, recordPublish, type LastPublish } from "./log";
 
@@ -50,11 +51,16 @@ export async function prepareRetry(supabase: SupabaseClient, articleId: string):
     if (!article.approved_by) {
       throw new Error("Approve the article before retrying: the failed attempt had no recorded approval.");
     }
-    const { error } = await supabase
+    // The server's write: `approved` is not a status a signed-in user's
+    // client may set (migration 109). The read above, through the caller's
+    // client, is what says they may act on this article; the approval it
+    // goes back to is the one already recorded, never a new one.
+    const { error } = await createServiceClient()
       .from("articles")
       .update({ status: "approved", updated_at: new Date().toISOString() })
       .eq("id", articleId)
-      .eq("status", "error");
+      .eq("status", "error")
+      .not("approved_by", "is", null);
     if (error) throw new Error(error.message);
   } else if (article.status !== "approved" && article.status !== "scheduled") {
     throw new Error(

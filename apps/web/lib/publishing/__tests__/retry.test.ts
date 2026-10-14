@@ -1,4 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
+
+// The flip back to `approved` is a service-role write (migration 109); the
+// fake plays that client too, so its recorded updates are the ones checked.
+const svc = vi.hoisted(() => ({ client: null as unknown }));
+vi.mock("@/lib/supabase/server", () => ({ createServiceClient: () => svc.client }));
+
 import { prepareRetry } from "../retry";
 import { canRetryPublish } from "../log";
 
@@ -22,7 +28,7 @@ function mockSupabase(article: Record<string, unknown> | null, log: Log[]) {
           }),
           update: vi.fn((patch: Record<string, unknown>) => {
             updates.push(patch);
-            return { eq: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }) };
+            return { eq: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ not: vi.fn().mockResolvedValue({ error: null }) }) }) };
           }),
         };
       }
@@ -38,6 +44,7 @@ function mockSupabase(article: Record<string, unknown> | null, log: Log[]) {
       throw new Error(`unexpected table ${table}`);
     }),
   };
+  svc.client = supabase;
   return supabase;
 }
 

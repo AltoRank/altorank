@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch) and **105** (publish_log found on site), each with its section at the end. **101, 104 and 105 go in BEFORE their code is deployed; 097, 099 and 100 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site) and **109** (approval written by server), each with its section at the end. **101, 104 and 105 go in BEFORE their code is deployed; 097, 099, 100 and 109 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -155,7 +155,8 @@ m(file, applied) as (values
   ('100_pre_trial_spend_bounds',             not has_table_privilege('authenticated', 'public.workspaces', 'INSERT') and exists (select 1 from pg_trigger where tgname = 'account_members_guard_own_row') and not has_column_privilege('authenticated', 'public.workspaces', 'first_analysed_at', 'UPDATE')),
   ('101_account_creator',                    exists (select 1 from col where t='accounts' and c='created_by') and not has_table_privilege('authenticated', 'public.account_members', 'INSERT')),
   ('104_onboarding_nothing_planned',         exists (select 1 from col where t='onboarding_runs' and c='empty_pool') and exists (select 1 from chk where conname='onboarding_runs_status_check' and def like '%nothing_planned%')),
-  ('105_publish_log_found_on_site',          exists (select 1 from col where t='publish_log' and c='source') and exists (select 1 from col where t='publish_log' and c='url') and to_regclass('public.publish_log_found_on_site_once') is not null)
+  ('105_publish_log_found_on_site',          exists (select 1 from col where t='publish_log' and c='source') and exists (select 1 from col where t='publish_log' and c='url') and to_regclass('public.publish_log_found_on_site_once') is not null),
+  ('109_approval_written_by_server',         exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'articles_guard_approval' and c.relname = 'articles'))
 )
 select file, applied from m order by file;
 ```
@@ -294,6 +295,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 105_publish_log_found_on_site.sql 
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 097_article_body_server_only.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 099_trial_gate_server_writes.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 100_pre_trial_spend_bounds.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 109_approval_written_by_server.sql   # AFTER its code is live; see its section
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -368,6 +370,7 @@ no code in the repo references either).
 | 101_account_creator.sql | `integration/root-causes-2026-09-25` | 085; **applied before its code is deployed** | yes | yes, see its section (an owner can again add any user as a member) |
 | 104_onboarding_nothing_planned.sql | `fix/onboarding-no-empty-gate` | 076; **applied before its code is deployed** | yes | only after its code is reverted and no row holds `nothing_planned`: see its section |
 | 105_publish_log_found_on_site.sql | `feat/found-live-receipt` | 003, 094; **applied before its code is merged** | yes | only after its code is reverted: see its section |
+| 109_approval_written_by_server.sql | `fix/approval-integrity` | 003, 013, 079; **its code deployed first** | yes | yes, `drop trigger articles_guard_approval on public.articles; drop function public.articles_guard_approval();` (a member can again forge an approval over PostgREST) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1301,3 +1304,54 @@ today's publish and skips the scheduled post).
 
 Test: `lib/publishing/__tests__/on-article-live.db.test.ts` (db tier). Green
 2026-10-02 on the local stack with 105 applied twice.
+
+## 109 — an approval is written by the server
+
+`109_approval_written_by_server.sql`, one trigger, `articles_guard_approval`,
+`before insert or update` on `articles`. The publish gate
+(`lib/publishing/core.ts`) ships an article that is `approved` or `scheduled`
+with `approved_by` set, and every member could write those columns over
+PostgREST (053's policy is FOR ALL; 097 left INSERT and UPDATE granted), so
+a member could schedule a draft under a colleague's name and the cron would
+publish it without the approve action's checks. For a signed-in user
+(`auth.uid()` set) the trigger:
+
+- refuses making an article `approved`, `scheduled` or `live`, and setting
+  `approved_by`, `approved_at`, `approval_kind` or `scheduled_at` to a value,
+  on UPDATE and on INSERT (42501);
+- lets the same client clear them, and clears all four itself whenever the
+  client changes the status (Request changes, Cancel schedule, Unpublish,
+  Change status), so no approval rides along on a draft.
+
+It passes the service role and the database's own cascades
+(`pg_trigger_depth() > 1`), like 099-102.
+
+**Apply AFTER its code is live**, like 097 and 099. Code from before it
+approves, schedules, retries and marks published through the person's own
+client; with 109 applied those writes are refused, so Approve, Publish, Schedule,
+Add to queue, Retry and Mark as published fail until the new code is
+deployed. The new code makes those writes with the service role after its
+checks (`app/actions/publish.ts`, `app/actions/schedule.ts`,
+`lib/publishing/retry.ts`, `lib/publishing/core.ts`, the found-on-site undo)
+and works with or without 109. Re-running is a no-op (`create or replace`,
+drop-then-create of the trigger). Depends on 003, 013 and 079.
+
+Test: `supabase/tests/109_approval_written_by_server.rls.sql` (self-contained,
+rolls back; run it on an isolated copy). Green 2026-10-14 on a throwaway
+Postgres 15 holding a stub of the tables it touches (`auth.users`,
+`accounts`, `workspaces`, `account_members`, `articles` with 053's policy),
+with 109 applied twice: the seven forging writes are 42501; editing a
+draft, inserting a draft, cancelling a schedule and requesting changes
+still work, and the service role still approves and schedules. With the
+trigger dropped, the first case fails. Not yet run on a copy built from
+001-109.
+
+Post-flight (expect `t`):
+
+```sql
+select exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
+                where t.tgname = 'articles_guard_approval' and c.relname = 'articles');
+```
+
+Rollback:
+`drop trigger if exists articles_guard_approval on public.articles; drop function if exists public.articles_guard_approval();`
