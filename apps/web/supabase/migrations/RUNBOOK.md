@@ -156,7 +156,7 @@ m(file, applied) as (values
   ('101_account_creator',                    exists (select 1 from col where t='accounts' and c='created_by') and not has_table_privilege('authenticated', 'public.account_members', 'INSERT')),
   ('104_onboarding_nothing_planned',         exists (select 1 from col where t='onboarding_runs' and c='empty_pool') and exists (select 1 from chk where conname='onboarding_runs_status_check' and def like '%nothing_planned%')),
   ('105_publish_log_found_on_site',          exists (select 1 from col where t='publish_log' and c='source') and exists (select 1 from col where t='publish_log' and c='url') and to_regclass('public.publish_log_found_on_site_once') is not null),
-  ('109_approval_written_by_server',         exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'articles_guard_approval' and c.relname = 'articles'))
+  ('109_approval_written_by_server',         exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'articles_guard_approval' and c.relname = 'articles') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'workspaces_guard_auto_approve' and c.relname = 'workspaces'))
 )
 select file, applied from m order by file;
 ```
@@ -370,7 +370,7 @@ no code in the repo references either).
 | 101_account_creator.sql | `integration/root-causes-2026-09-25` | 085; **applied before its code is deployed** | yes | yes, see its section (an owner can again add any user as a member) |
 | 104_onboarding_nothing_planned.sql | `fix/onboarding-no-empty-gate` | 076; **applied before its code is deployed** | yes | only after its code is reverted and no row holds `nothing_planned`: see its section |
 | 105_publish_log_found_on_site.sql | `feat/found-live-receipt` | 003, 094; **applied before its code is merged** | yes | only after its code is reverted: see its section |
-| 109_approval_written_by_server.sql | `fix/approval-integrity` | 002, 003, 005, 013, 079; **its code deployed first** | yes | yes, `drop trigger articles_guard_approval on public.articles; drop function public.articles_guard_approval();` (a member can again forge an approval over PostgREST) |
+| 109_approval_written_by_server.sql | `fix/approval-integrity` | 002, 003, 005, 013, 079, 094; **its code deployed first** | yes | yes, see its section (a member can again forge an approval over PostgREST) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1307,8 +1307,9 @@ Test: `lib/publishing/__tests__/on-article-live.db.test.ts` (db tier). Green
 
 ## 109 — an approval is written by the server
 
-`109_approval_written_by_server.sql`, one trigger, `articles_guard_approval`,
-`before insert or update` on `articles`. The publish gate
+`109_approval_written_by_server.sql`, two triggers: `articles_guard_approval`,
+`before insert or update` on `articles`, and `workspaces_guard_auto_approve`,
+`before update` on `workspaces`. The publish gate
 (`lib/publishing/core.ts`) ships an article that is `approved` or `scheduled`
 with `approved_by` set, and every member could write those columns over
 PostgREST (053's policy is FOR ALL; 097 left INSERT and UPDATE granted), so
@@ -1319,13 +1320,23 @@ publish it without the approve action's checks. For a signed-in user
 - refuses making an article `approved`, `scheduled` or `live`, and setting
   `approved_by`, `approved_at`, `approval_kind` or `scheduled_at` to a value,
   on UPDATE and on INSERT (42501);
+- refuses setting `found_on_site_at` or `found_on_site_prior` (the nightly
+  check's record of the state before a find, which "Not my article" restores
+  with the service role: a client that could write it could restore any live
+  article to `approved` after editing its text);
 - lets the same client clear them, and clears all four itself whenever the
   client changes the status (Request changes, Cancel schedule, Unpublish,
   Change status), so no approval rides along on a draft;
 - sends an approved or scheduled article (or a failed publish still holding
   its approval) back to `review`, approval cleared and held by the editor,
   when the client changes its text (content, title, slug, meta description,
-  featured image). A live article's text edits leave it live.
+  featured image) or moves it to another site (`workspace_id`). A live
+  article's text edits leave it live;
+- on `workspaces`, refuses setting `auto_approve_set_by` to anyone but the
+  caller, and records the caller as `auto_approve_set_by` whenever they turn
+  the rule on or change its hold or floors. The publish cron writes that
+  column as `approved_by` on every automatic approval, so before this a
+  member could turn the rule on in a colleague's name.
 
 It passes the service role and the database's own cascades
 (`pg_trigger_depth() > 1`), like 099-102.
@@ -1338,26 +1349,36 @@ deployed. The new code makes those writes with the service role after its
 checks (`app/actions/publish.ts`, `app/actions/schedule.ts`,
 `lib/publishing/retry.ts`, `lib/publishing/core.ts`, the found-on-site undo)
 and works with or without 109. Re-running is a no-op (`create or replace`,
-drop-then-create of the trigger). Depends on 002, 003, 005, 013 and 079.
+drop-then-create of each trigger). Depends on 002, 003, 005, 013, 079 and 094.
 
 Test: `supabase/tests/109_approval_written_by_server.rls.sql` (self-contained,
 rolls back; run it on an isolated copy). Green 2026-10-14 on a throwaway
 Postgres 15 holding a stub of the tables it touches (`auth.users`,
-`accounts`, `workspaces`, `account_members`, `articles` with 053's policy),
-with 109 applied twice: the seven forging writes are 42501; editing a
-draft, inserting a draft, cancelling a schedule and requesting changes
-still work; an edit to an approved article's text sends it back to review
-with the approval cleared, an edit to a live one leaves it live; and the
-service role still approves and schedules. With the
-trigger dropped, the first case fails. Not yet run on a copy built from
-001-109.
+`accounts`, `workspaces`, `account_members`, `articles`, with membership
+policies), with 109 applied twice: the ten forging writes (approval
+columns, found-on-site record, auto-approve in a colleague's name) are
+42501; editing a draft, inserting a draft, cancelling a schedule,
+requesting changes and turning auto-approve on in one's own name still
+work; an edit to an approved article's text, or a move to another site,
+sends it back to review with the approval cleared; an edit to a live one
+leaves it live; a member who lowers a colleague's auto-approve floor
+becomes the one it is recorded under; and the service role still approves
+and schedules. With either trigger dropped, its first case fails. Not yet
+run on a copy built from 001-109.
 
-Post-flight (expect `t`):
+Post-flight (expect `2`):
 
 ```sql
-select exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid
-                where t.tgname = 'articles_guard_approval' and c.relname = 'articles');
+select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid
+ where (t.tgname, c.relname) in (('articles_guard_approval', 'articles'),
+                                 ('workspaces_guard_auto_approve', 'workspaces'));
 ```
 
 Rollback:
-`drop trigger if exists articles_guard_approval on public.articles; drop function if exists public.articles_guard_approval();`
+
+```sql
+drop trigger if exists articles_guard_approval on public.articles;
+drop function if exists public.articles_guard_approval();
+drop trigger if exists workspaces_guard_auto_approve on public.workspaces;
+drop function if exists public.workspaces_guard_auto_approve();
+```
