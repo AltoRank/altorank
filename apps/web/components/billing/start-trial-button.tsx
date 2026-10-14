@@ -20,6 +20,7 @@ export function StartTrialButton({
   variant = "accent",
   className,
   onError,
+  onStart,
 }: {
   /** Same-origin path to land on after the card is taken. */
   returnTo?: string;
@@ -36,6 +37,8 @@ export function StartTrialButton({
    * the error needs somewhere to stay.
    */
   onError?: (message: string) => void;
+  /** Told when the button is pressed, before checkout opens: instrumentation (onboarding.step). */
+  onStart?: () => void;
 }) {
   const [pending, start] = useTransition();
   return (
@@ -43,7 +46,8 @@ export function StartTrialButton({
       variant={variant}
       disabled={pending}
       className={className}
-      onClick={() =>
+      onClick={() => {
+        onStart?.();
         start(async () => {
           // The action returns {ok:false} for the failures it predicts, and
           // throws for the ones it does not - no Stripe key, a price id that
@@ -65,8 +69,8 @@ export function StartTrialButton({
             onError?.(message);
             toast.error(message);
           }
-        })
-      }
+        });
+      }}
     >
       {pending ? "Opening checkout…" : label}
     </Button>

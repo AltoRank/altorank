@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { cancelPendingCheckout } from "@/app/actions/cancel-checkout";
+import { TrackStep } from "@/components/onboarding/track-step";
 import { createClient } from "@/lib/supabase/server";
 import { accountTrialGate } from "@/lib/billing/body-lock";
 import { billingReturnPath, checkoutDestination, TRIAL_CANCELLED_PATH } from "@/lib/billing/checkout-return";
@@ -23,6 +24,7 @@ export default async function CheckoutCancelled(props: { searchParams?: Promise<
 
   return <main className="mx-auto max-w-xl px-6 py-16">
     {gated ? <>
+      <TrackStep step="checkout_cancelled" />
       <h1 className="mb-4 text-2xl font-semibold">Your first article and plan are saved</h1>
       <p className="mb-6">You left checkout, and nothing was charged. Close it to choose another plan, or go back and start the same trial.</p>
     </> : <>

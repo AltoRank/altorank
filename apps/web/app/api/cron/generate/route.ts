@@ -3,8 +3,7 @@ import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { summarizeQualification } from "@/lib/keyword-research/opportunity";
-import { setSpendReporter } from "@/lib/seo/client";
-import { recordSpend } from "@/lib/billing/spend";
+import { withSpendScope } from "@/lib/billing/spend-scope";
 import { closeCoveredEntries, duePlannedKeyword, fulfilPlannedEntry } from "@/lib/onboarding/plan";
 import { profileIsUsable } from "@/lib/seo/topical-profile";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
@@ -16,6 +15,7 @@ import { billingEnabled, getStripe } from "@/lib/stripe";
 import { trialGateApplies } from "@/lib/billing/trial";
 import { generateArticle, ConcurrentGenerationError } from "@/lib/content/generate";
 import { sweepStaleDrafts } from "@/lib/content/stale-drafts";
+import { resumeOwedBodies } from "@/lib/content/owed-bodies";
 import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { readFrozenEntries } from "@/lib/plan/frozen";
@@ -334,17 +334,13 @@ async function run(request: Request) {
       // Not 25: the list is cut after scoring across every action, so a
       // site with 25 page-one rankings never showed a writable term here
       // (lib/onboarding/plan.ts has the same note).
-      // Qualification buys SERPs; without a reporter armed those rows landed
+      // Qualification buys SERPs; without attribution those rows landed
       // unattributed (342 of 406 DataForSEO calls in the four days after #214).
-      setSpendReporter(({ operation, costUsd }) => {
-        void recordSpend(supabase, { provider: "dataforseo", operation, costUsd, workspaceId });
-      });
-      let recommendations;
-      try {
-        recommendations = await recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true });
-      } finally {
-        setSpendReporter(null);
-      }
+      // A spend scope (lib/billing/spend-scope.ts), not a process-global
+      // reporter: that one billed whatever else the process ran meanwhile.
+      const recommendations = await withSpendScope({ workspaceId, db: supabase }, () =>
+        recommendKeywords(supabase, workspaceId, { limit: 1000, qualify: true }),
+      );
       // The calendar is a promise. If the plan says today is "<term>", write
       // that, and fall back to the live queue only when nothing is due.
       // Retire entries the live queue already covered, or the plan writes the
@@ -605,6 +601,11 @@ async function run(request: Request) {
   // which is the normal case, because the loop above announces its own.
   const unannounced = await sweepUnannouncedDrafts(supabase);
 
+  // First articles whose outline the owner was shown and whose body never
+  // landed: handed back to the draft route, one try a day (lib/content/owed-bodies.ts).
+  const owed = await resumeOwedBodies(supabase);
+  if (owed.dispatched.length) after(() => owed.settled);
+
   return NextResponse.json({
     checked: workspaces?.length ?? 0,
     pausesResumed: resumed,
@@ -613,6 +614,7 @@ async function run(request: Request) {
     pausedNotices,
     setupNotices,
     unannounced,
+    owedBodies: { dispatched: owed.dispatched.length, gaveUp: owed.gaveUp.length },
     generated: results.filter((r) => r.status === "generated").length,
     skipped: results.filter((r) => r.status === "skipped").length,
     errors: results.filter((r) => r.status === "error").length,

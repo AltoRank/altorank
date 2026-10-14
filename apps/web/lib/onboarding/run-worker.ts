@@ -21,6 +21,7 @@ import { announceDraftBatch } from "@/lib/email/draft-batch";
 import { runOnboarding } from "./pipeline";
 import { RunRecorder, RUN_COLUMNS, stampRun } from "./run-store";
 import type { OnboardingRunRow } from "./events";
+import { RunClock, saveRunTimings } from "./timings";
 
 export type ExecuteOutcome =
   | "not-found"
@@ -151,27 +152,37 @@ export async function runClaimed(run: OnboardingRunRow, deps: ExecuteDeps = {}):
   }
 
   const canDispatch = (deps.canDispatch ?? canSelfInvoke)();
+  // The run's stopwatch, on the run's own axis (started_at), so the draft
+  // route's stages land on the same timeline when it merges its own.
+  const clock = new RunClock(run.started_at);
   let result: Awaited<ReturnType<typeof runOnboarding>>;
   try {
     result = await (deps.run ?? runOnboarding)(supabase, workspace, recorder.record, {
       firstDraft: canDispatch ? "dispatch" : "inline",
       runId,
+      clock,
     });
   } catch (err) {
     await recorder.fail(err instanceof Error ? err.message : "Onboarding failed.");
+    await saveRunTimings(supabase, runId, clock);
     return settled;
   }
   // Every phase is on the row before anything else may write to it.
   await recorder.flush();
+  // Where the worker's time went, before the draft route adds its own.
+  if (!result.pendingDraft) clock.mark("run_done");
+  await saveRunTimings(supabase, runId, clock);
 
   const announce = deps.announce ?? announceDraftBatch;
 
+  // The speed test the analysis did not wait for (lib/audit/domain-analysis.ts).
+  const tail = result.tailSettled ?? Promise.resolve();
   const pending = result.pendingDraft;
   if (!pending) {
     await recorder.finish();
     return {
       outcome: "ran",
-      keepAlive: announceWhenSettled(supabase, workspace.id, result.fanOutSettled, announce),
+      keepAlive: Promise.all([announceWhenSettled(supabase, workspace.id, result.fanOutSettled, announce), tail]).then(() => undefined, () => undefined),
     };
   }
 
@@ -184,6 +195,8 @@ export async function runClaimed(run: OnboardingRunRow, deps: ExecuteDeps = {}):
     // Its share of the run's one related-keyword task, so the draft route
     // does not buy a second one (lib/seo/brief-data.ts).
     relatedKeywords: pending.relatedKeywords,
+    // The results page this run judged it on: the draft's research reads it.
+    ...(pending.serp ? { serp: pending.serp } : {}),
   });
   if ("skipped" in sent) {
     // canSelfInvoke said yes a moment ago; only an env change between the
@@ -224,6 +237,6 @@ export async function runClaimed(run: OnboardingRunRow, deps: ExecuteDeps = {}):
 
   return {
     outcome: "awaiting-draft",
-    keepAlive: Promise.all([draft, result.fanOutSettled]).then(() => undefined, () => undefined),
+    keepAlive: Promise.all([draft, result.fanOutSettled, tail]).then(() => undefined, () => undefined),
   };
 }

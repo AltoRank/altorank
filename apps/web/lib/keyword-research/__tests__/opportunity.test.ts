@@ -5,8 +5,10 @@ vi.mock("../buyer-fit", async (original) => ({ ...await original<object>(), judg
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: available }));
 vi.mock("@/lib/seo/brief-data", () => ({ fetchAdvancedSerp: fetchSerp }));
 import { askedKey } from "../buyer-fit";
-import { FIRST_LOOK_CEILING_USD, FIRST_LOOK_DRAFT_RESERVE_USD, opportunitySchema, qualifyOpportunities, readOpportunity, contextKey, validArticleAngle, assertAutonomousTopic, summarizeQualification, type Opportunity } from "../opportunity";
+import { firstLookTermUsd, opportunitySchema, qualifyOpportunities, readOpportunity, contextKey, validArticleAngle, assertAutonomousTopic, summarizeQualification, type Opportunity } from "../opportunity";
 import { sameIntent, sharedResults } from "../intent";
+import { claimSpend, withSpendScope, type RunBudget } from "@/lib/billing/spend-scope";
+import { memoryRunBudget } from "@/lib/billing/run-budget";
 import { balanceSources, diverseSeeds } from "../diversity";
 
 const context = { domain: "example.com", languageCode: "it", locationCode: 2380, business: { name: "Clinic Studio", description: "Clinic Studio builds booking websites for clinics and salons at a fixed price.", offerings: ["clinic booking websites"], audiences: ["clinic owners"] } };
@@ -359,7 +361,7 @@ describe("page-type decisions", () => {
 });
 
 describe("a first look", () => {
-  const firstLook = { since: "2026-09-30T00:00:00.000Z" };
+  const firstLook = { runId: "run-1" };
   const look = async (extra = {}) => (await qualifyOpportunities(db, "ws", [{ id: "k", term, ...extra }], context, { firstLook })).get("k");
   it("approves only when two reads of the results page agree", async () => {
     answerWith("article");
@@ -392,13 +394,120 @@ describe("a first look", () => {
     await run({ buyer_fit: { ...saved, asked: "fit1-other" } });
     expect(judge).toHaveBeenCalledTimes(1);
   });
-  it("stops buying before the run's spend reaches the ceiling less the first draft's share", async () => {
-    spendRows = [{ cost_usd: FIRST_LOOK_CEILING_USD - FIRST_LOOK_DRAFT_RESERVE_USD }];
-    expect(await look()).toBeUndefined();
-    expect(judge).not.toHaveBeenCalled();
-    expect(ask).not.toHaveBeenCalled();
-    spendRows = [{ cost_usd: 0.2 }, { cost_usd: null }];
-    answerWith("article");
-    expect(await look()).toMatchObject({ status: "qualified" });
+  describe("under the run's budget", () => {
+    // A budget that grants the first `grants` claims and refuses the rest.
+    // The mocked paid edges claim the way the real ones do (lib/seo/client.ts
+    // post, buyer-model askStructured): a results page throws the refusal, a
+    // model read answers null.
+    const budgetOf = (grants: number): RunBudget & { claims: string[] } => {
+      const claims: string[] = [];
+      return { runId: "run-1", claims, claim: async (stage) => { claims.push(stage); return claims.length <= grants ? 0.01 : null; }, settle: async () => {}, room: async () => null };
+    };
+    const lookIn = (budget: RunBudget) => withSpendScope({ budget }, () => look());
+    beforeEach(() => {
+      const page = { organic: urls.map((url, i) => ({ url, title: "Clinic booking website cost guide", description: "A buyer guide", rank: i + 1 })), peopleAlsoAsk: [], aiOverview: null };
+      fetchSerp.mockImplementation(async () => { await claimSpend("/serp/google/organic/live/advanced", 0.004); return page; });
+      const reply = JSON.stringify({ ...approval, kinds: Array(urls.length).fill("article") });
+      ask.mockImplementation(async () => (await claimSpend("keyword-research/opportunity", 0.02).then(() => reply, () => null)));
+      judge.mockImplementation(async () => { const ok = await claimSpend("keyword-research/buyer-fit", 0.05).then(() => true, () => false); return { basis: "model", verdicts: ok ? new Map([[term, { keep: true, reason: "specific buyer need" }]]) : new Map() }; });
+    });
+    it("judges as before while the budget covers every read, each tagged by its stage", async () => {
+      const budget = budgetOf(10);
+      expect(await lookIn(budget)).toMatchObject({ status: "qualified" });
+      expect(budget.claims).toEqual(["buyer_fit", "results_pages", "judge", "judge"]);
+    });
+    it("leaves a term not judged when its results page is refused: no verdict saved, nothing parked", async () => {
+      expect(await lookIn(budgetOf(1))).toBeUndefined();
+      expect(ask).not.toHaveBeenCalled();
+      expect(writes).toEqual([]);
+    });
+    it("leaves a term not judged when the judge's read is refused, rather than saving 'unusable answer'", async () => {
+      expect(await lookIn(budgetOf(2))).toBeUndefined();
+      expect(writes).toEqual([]);
+    });
+    it("leaves the batch not judged when the buyer test is refused, rather than saving 'no decision'", async () => {
+      expect(await lookIn(budgetOf(0))).toBeUndefined();
+      expect(fetchSerp).not.toHaveBeenCalled();
+      expect(writes).toEqual([]);
+    });
+    it("leaves a first approval whose second read was refused not judged: one read is not what a first look plans on", async () => {
+      expect(await lookIn(budgetOf(3))).toBeUndefined();
+      expect(writes).toEqual([]);
+    });
+    it("buys no results page when the room left cannot judge the term", async () => {
+      const budget = { ...budgetOf(10), room: async () => firstLookTermUsd(true) / 2 };
+      expect(await lookIn(budget)).toBeUndefined();
+      expect(fetchSerp).not.toHaveBeenCalled();
+      expect(writes).toEqual([]);
+    });
+    it("judges the term when the room covers its page and both reads", async () => {
+      const budget = { ...budgetOf(10), room: async () => firstLookTermUsd(true) };
+      expect(await lookIn(budget)).toMatchObject({ status: "qualified" });
+    });
+    it("waits out a hold instead of losing an approval: a second read refused while another is in flight is asked again when it settles", async () => {
+      const terms = ["clinic booking website cost", "clinic booking website price"];
+      judge.mockImplementation(async (_b: unknown, asked: string[]) => {
+        const c = await claimSpend("keyword-research/buyer-fit", 0.01);
+        await c.settle(0.01);
+        return { basis: "model", verdicts: new Map(asked.map((t) => [t.toLowerCase(), { keep: true, reason: "specific buyer need" }])) };
+      });
+      const page = { organic: urls.map((url, i) => ({ url, title: "Clinic booking website cost guide", description: "A buyer guide", rank: i + 1 })), peopleAlsoAsk: [], aiOverview: null };
+      fetchSerp.mockImplementation(async () => { const c = await claimSpend("/serp/google/organic/live/advanced", 0.004); await c.settle(0.004); return page; });
+      // Each read holds 0.05 while it runs and costs 0.01: room for both first
+      // reads at once, but for only one second read until the other settles.
+      let reads = 0;
+      ask.mockImplementation(async (_op: string, prompt: string) => {
+        let claim;
+        try { claim = await claimSpend("keyword-research/opportunity", 0.05); } catch { return null; }
+        reads += 1;
+        await new Promise((r) => setTimeout(r, 5));
+        await claim.settle(0.01);
+        return JSON.stringify({ ...approval, kinds: Array(shown(prompt)).fill("article") });
+      });
+      // With the room readable, the pledges stagger the terms and nothing is
+      // refused; with it unreadable (the pre-check blind), the claims decide,
+      // and the refused second read is waited out rather than lost.
+      for (const blind of [false, true]) {
+        reads = 0;
+        const memory = memoryRunBudget("run-1", 0.12, {});
+        const budget = blind ? { ...memory, room: async () => null } : memory;
+        const out = await withSpendScope({ budget }, () =>
+          qualifyOpportunities(db, "ws", terms.map((t, i) => ({ id: `k${i}`, term: t })), context, { firstLook }));
+        expect(out.get("k0")?.status).toBe("qualified");
+        expect(out.get("k1")?.status).toBe("qualified");
+        expect(reads).toBe(4);
+        expect(memory.state().committedUsd).toBeLessThanOrEqual(0.12 + 1e-9);
+        if (blind) expect(memory.state().refused).toBeGreaterThan(0);
+      }
+    });
+    it("judges a first look's whole batch side by side, and never commits past the run's ceiling", async () => {
+      const terms = Array.from({ length: 12 }, (_, i) => `clinic booking website option ${i + 1}`);
+      judge.mockImplementation(async (_b: unknown, asked: string[]) => {
+        await claimSpend("keyword-research/buyer-fit", 0.01);
+        return { basis: "model", verdicts: new Map(asked.map((t) => [t.toLowerCase(), { keep: true, reason: "specific buyer need" }])) };
+      });
+      let inFlight = 0;
+      let peak = 0;
+      const page = { organic: urls.map((url, i) => ({ url, title: "Clinic booking website cost guide", description: "A buyer guide", rank: i + 1 })), peopleAlsoAsk: [], aiOverview: null };
+      fetchSerp.mockImplementation(async () => {
+        await claimSpend("/serp/google/organic/live/advanced", firstLookTermUsd(false) / 4);
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight -= 1;
+        return page;
+      });
+      // A ceiling that covers the buyer test and about five terms' reads.
+      const ceiling = 0.01 + firstLookTermUsd(true) * 5;
+      const budget = memoryRunBudget("run-1", ceiling, {});
+      const out = await withSpendScope({ budget }, () =>
+        qualifyOpportunities(db, "ws", terms.map((t, i) => ({ id: `k${i}`, term: t })), context, { firstLook }));
+      // More than the old round of three ran at once.
+      expect(peak).toBeGreaterThan(3);
+      // Concurrency does not buy past the dollar: what could not be paid for is not judged.
+      expect(budget.state().committedUsd).toBeLessThanOrEqual(ceiling + 1e-9);
+      expect(out.size).toBeGreaterThan(0);
+      expect(out.size).toBeLessThan(terms.length);
+    });
   });
 });

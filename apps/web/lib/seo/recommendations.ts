@@ -4,6 +4,7 @@ import { rivalNamed } from "@/lib/keyword-research/results-page";
 import { clusterByIntent, intentKey, intentLanguage, sameIntent, storedSerp, unfoldedNote, type IntentFollower, type IntentStage, type StagedTopic } from "@/lib/keyword-research/intent";
 import { articleStage, leadersFrom, type IntentLeader, type KeywordRow, type OnCalendar } from "@/lib/keyword-research/intent-leaders";
 import { ensureBusinessProfile } from "@/lib/keyword-research/business-context";
+import { withStage } from "@/lib/billing/spend-scope";
 import { causeLabel } from "@/lib/keyword-research/opportunity";
 import { funnelOf, type FitVerdict, type Funnel } from "@/lib/keyword-research/buyer-fit";
 import { isJudgeable, isParked, isParkedForGood, isRequalifiable, parkKeywords, queueTarget, refillQualifiedQueue, RefillRefusedError, type QueueRow } from "@/lib/keyword-research/queue";
@@ -943,7 +944,7 @@ export async function recommendKeywords(
   // "pending" for want of a column (lib/keyword-research/business-context.ts).
   // Read before the clustering, which needs to know what is approved.
   const ensured = options?.qualify
-    ? await ensureBusinessProfile(supabase, workspaceId, workspace?.domain, business)
+    ? await withStage("profile", () => ensureBusinessProfile(supabase, workspaceId, workspace?.domain, business))
     : { business, inferred: false, missing: null };
   const context = { business: ensured.business, domain: workspace?.domain ?? "", languageCode: languageCodeOf(workspace?.language), locationCode: workspace?.location_code ?? 2840 };
   const fingerprint = contextKey(context);

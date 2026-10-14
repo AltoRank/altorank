@@ -15,6 +15,8 @@
 import { TrialOffer } from "@/components/billing/trial-offer";
 import { asksForCard, type SetupEnding } from "@/lib/onboarding/setup-retry";
 import { judgedRows, type EmptyPool } from "@/lib/onboarding/events";
+import { trackStep } from "@/lib/onboarding/track-step";
+import { TrackStep } from "./track-step";
 
 export const NOTHING_PLANNED_HEADING = "Nothing cleared the bar for a first article yet";
 
@@ -67,5 +69,11 @@ export function SetupAsk({
   returnTo?: string;
 }) {
   if (!asksForCard(ending)) return <NothingPlannedNote followUp={followUp} />;
-  return <TrialOffer canBuy={canBuy} returnTo={returnTo} />;
+  // The gate is the card ask: shown is when this renders it (onboarding.step).
+  return (
+    <>
+      <TrackStep step="gate_shown" />
+      <TrialOffer canBuy={canBuy} returnTo={returnTo} onStart={() => trackStep("trial_clicked")} />
+    </>
+  );
 }

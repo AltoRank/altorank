@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
-import { setSpendReporter } from "@/lib/seo/client";
-import { recordSpend } from "@/lib/billing/spend";
+import { withSpendScope } from "@/lib/billing/spend-scope";
 import { createServiceClient } from "@/lib/supabase/server";
 import { canSpend } from "@/lib/billing/spend-gate";
 import { analyseDomain } from "@/lib/audit/domain-analysis";
@@ -74,9 +73,7 @@ const FIRST_LOOK_SCAN = 30;
 
 async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
-    setSpendReporter(null);
-
-  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const supabase = createServiceClient();
@@ -159,76 +156,72 @@ async function run(request: Request) {
     }
     looked += 1;
 
-    setSpendReporter(({ operation, costUsd }) => {
-      void recordSpend(supabase, {
-        provider: "dataforseo",
-        operation,
-        costUsd,
-        workspaceId,
-      });
+    // Every provider call of this look is this workspace's: a spend scope
+    // (lib/billing/spend-scope.ts), not the process-global reporter that
+    // whatever else ran in the process armed over.
+    await withSpendScope({ workspaceId, db: supabase }, async () => {
+      try {
+        const analysis = await analyseDomain({
+          domain,
+          supabase,
+          workspaceId,
+          locale: (ws.language as string) ?? "en",
+          locationCode: (ws.location_code as number | null) ?? undefined,
+          // So a run that reads nothing can count itself against the bound.
+          analysisAttempts: (ws.analysis_attempts as number | null) ?? 0,
+        });
+
+        // Search Console queries the sync has landed since the last look. The
+        // nightly analytics job keeps analytics_metrics current; this is what
+        // moves a query the site has started to appear for into the pool the
+        // planner draws from, without waiting for a re-onboarding. Database
+        // only, idempotent by term, and written not to throw.
+        const consoleSeeds = await seedKeywordsFromSearchConsole(supabase, {
+          id: workspaceId,
+          domain,
+          language: (ws.language as string | null) ?? null,
+        });
+
+        results.push({
+          workspaceId,
+          domain,
+          // "analysed" only when the site was actually read. A run that fetched
+          // no page is an attempt, and saying so here is the difference between
+          // a quiet zero in the cron log and a workspace somebody can chase.
+          status: analysis.firstLook?.reason === "retry" ? "unreadable" : "analysed",
+          attempt: analysis.firstLook?.attempts ?? null,
+          headline: analysis.headline,
+          readinessScore: analysis.readiness?.score ?? null,
+          pagesCrawled: analysis.pagesCrawled,
+          keywordsFound: analysis.keywordsFound + consoleSeeds.inserted,
+          consoleSeeded: consoleSeeds.inserted,
+          layers: analysis.layers,
+        });
+      } catch (err) {
+        // analyseDomain is written not to throw, so reaching here means something
+        // outside the layers broke - and nothing was read. Count it as an
+        // attempt on the same terms as an empty crawl: retried a few times, then
+        // stamped so a permanently broken domain is left alone.
+        const decision = decideFirstLook({
+          attemptsBefore: (ws.analysis_attempts as number | null) ?? 0,
+          pagesCrawled: 0,
+          failedForGood: false,
+        });
+        await supabase
+          .from("workspaces")
+          .update(firstLookPatch(decision, new Date().toISOString()))
+          .eq("id", workspaceId);
+
+        results.push({
+          workspaceId,
+          domain,
+          status: "error",
+          attempt: decision.attempts,
+          willRetry: !decision.settled,
+          detail: err instanceof Error ? err.message : "unknown error",
+        });
+      }
     });
-
-    try {
-      const analysis = await analyseDomain({
-        domain,
-        supabase,
-        workspaceId,
-        locale: (ws.language as string) ?? "en",
-        locationCode: (ws.location_code as number | null) ?? undefined,
-        // So a run that reads nothing can count itself against the bound.
-        analysisAttempts: (ws.analysis_attempts as number | null) ?? 0,
-      });
-
-      // Search Console queries the sync has landed since the last look. The
-      // nightly analytics job keeps analytics_metrics current; this is what
-      // moves a query the site has started to appear for into the pool the
-      // planner draws from, without waiting for a re-onboarding. Database
-      // only, idempotent by term, and written not to throw.
-      const consoleSeeds = await seedKeywordsFromSearchConsole(supabase, {
-        id: workspaceId,
-        domain,
-        language: (ws.language as string | null) ?? null,
-      });
-
-      results.push({
-        workspaceId,
-        domain,
-        // "analysed" only when the site was actually read. A run that fetched
-        // no page is an attempt, and saying so here is the difference between
-        // a quiet zero in the cron log and a workspace somebody can chase.
-        status: analysis.firstLook?.reason === "retry" ? "unreadable" : "analysed",
-        attempt: analysis.firstLook?.attempts ?? null,
-        headline: analysis.headline,
-        readinessScore: analysis.readiness?.score ?? null,
-        pagesCrawled: analysis.pagesCrawled,
-        keywordsFound: analysis.keywordsFound + consoleSeeds.inserted,
-        consoleSeeded: consoleSeeds.inserted,
-        layers: analysis.layers,
-      });
-    } catch (err) {
-      // analyseDomain is written not to throw, so reaching here means something
-      // outside the layers broke - and nothing was read. Count it as an
-      // attempt on the same terms as an empty crawl: retried a few times, then
-      // stamped so a permanently broken domain is left alone.
-      const decision = decideFirstLook({
-        attemptsBefore: (ws.analysis_attempts as number | null) ?? 0,
-        pagesCrawled: 0,
-        failedForGood: false,
-      });
-      await supabase
-        .from("workspaces")
-        .update(firstLookPatch(decision, new Date().toISOString()))
-        .eq("id", workspaceId);
-
-      results.push({
-        workspaceId,
-        domain,
-        status: "error",
-        attempt: decision.attempts,
-        willRetry: !decision.settled,
-        detail: err instanceof Error ? err.message : "unknown error",
-      });
-    }
   }
 
   // Refreshes take what first-look analysis left. A new domain has nothing at
@@ -359,14 +352,12 @@ async function refillEmptyPools(
     if (!exhausted) continue;
 
     refills += 1;
-    setSpendReporter(({ operation, costUsd }) => {
-      void recordSpend(supabase, { provider: "dataforseo", operation, costUsd, workspaceId });
-    });
-    const outcome = await topUpKeywords(supabase, workspaceId, {
+    // Billed to this workspace through a spend scope (lib/billing/spend-scope.ts):
+    // a process-global reporter was armed over by whatever else ran.
+    const outcome = await withSpendScope({ workspaceId, db: supabase }, () => topUpKeywords(supabase, workspaceId, {
       locale: (ws.language as string) ?? "en",
       locationCode: (ws.location_code as number | null) ?? undefined,
-    });
-    setSpendReporter(null);
+    }));
     out.push({ ...outcome, workspaceId, domain: (ws.domain as string | null) ?? null });
   }
   return out;

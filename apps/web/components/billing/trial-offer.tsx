@@ -10,7 +10,7 @@ import { PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, type BillingInterval, typ
  * open only Managed, with Agency "a click away on Billing" - a page a gated
  * account is redirected away from.
  */
-export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, compact = false, initialPlan = "starter" }: { canBuy?: boolean; returnTo?: string; secondary?: { href: string; label: string }; compact?: boolean; initialPlan?: SelfServePlan }) {
+export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, compact = false, initialPlan = "starter", onStart }: { canBuy?: boolean; returnTo?: string; secondary?: { href: string; label: string }; compact?: boolean; initialPlan?: SelfServePlan; onStart?: () => void }) {
   const [plan, setPlan] = useState<SelfServePlan>(initialPlan);
   const [interval, setInterval] = useState<BillingInterval>("month");
   const [error, setError] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, 
         </button>)}
     </div>
     <p className="mb-3 text-sm">7 days free with a card, then {PLAN_LABELS[plan]} at {interval === "month" ? `${monthly} per month` : `${yearly} per year`}, plus applicable tax. Cancel from Billing before the trial ends to avoid the renewal charge.</p>
-    <StartTrialButton plan={plan} interval={interval} returnTo={returnTo} onError={setError} />
+    <StartTrialButton plan={plan} interval={interval} returnTo={returnTo} onError={setError} onStart={onStart} />
     {secondary && <Link className="ml-4 text-accent underline" href={secondary.href}>{secondary.label}</Link>}
     {error && <p role="alert" className="mt-2 text-sm text-err-ink">{error} <Link className="underline" href="/checkout/cancelled">Manage open checkout</Link></p>}
   </div>;
