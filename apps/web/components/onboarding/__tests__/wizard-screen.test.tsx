@@ -103,7 +103,7 @@ describe("competitors are optional", () => {
     expect(html).toContain("Optional.");
     expect(html).toContain("Its name is enough.");
     expect(html).not.toContain("Name at least one");
-    expect(html).not.toContain("revoo");
+    expect(html).not.toContain("acmegym");
   });
 
   it("shows names beside websites, each with a 32px remove target", () => {
