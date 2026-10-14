@@ -18,9 +18,11 @@
 //             produce one email.
 //   scoped    work on a site goes to `accountRecipients(supabase, account,
 //             workspace)`, which honours `account_members.workspace_ids`; money
-//             and account facts go to `accountBillingRecipients`, which is
-//             owner/admin. An editor scoped to one client never learns about
-//             another, and never learns what the account pays.
+//             goes to `accountBillingRecipients`, which is the owners - the
+//             only role that can act on it - and a new API key to
+//             `accountSecurityRecipients`, owners and admins. An editor scoped
+//             to one client never learns about another, and never learns what
+//             the account pays.
 //   quiet on  every function returns an outcome instead of throwing. All of
 //   failure   these announce work that is already done and recorded; a mail
 //             provider being down must not turn a published article into a
@@ -31,7 +33,7 @@
 // have not measured.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { accountRecipients, accountBillingRecipients, accountOwnerRecipients, userEmail } from "./account-recipients";
+import { accountRecipients, accountBillingRecipients, accountOwnerRecipients, accountSecurityRecipients, userEmail } from "./account-recipients";
 import { appLink } from "@/lib/app-url";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_2, EMAIL_INK_3 } from "./layout";
 import { formatGraceDate } from "@/lib/billing/dunning";
@@ -1406,7 +1408,7 @@ export async function notifyApiKeyCreated(
   data: ApiKeyCreatedEmail,
   keyId: string,
 ): Promise<SendOnceOutcome> {
-  const to = await accountBillingRecipients(supabase, accountId);
+  const to = await accountSecurityRecipients(supabase, accountId);
   return sendOnce(
     supabase,
     to,

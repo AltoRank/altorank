@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { accountRecipients, canSeeWorkspace } from "../account-recipients";
+import { accountBillingRecipients, accountRecipients, accountSecurityRecipients, canSeeWorkspace } from "../account-recipients";
 
 type Member = string | { user_id: string; workspace_ids: string[] | null };
 
@@ -74,5 +74,31 @@ describe("accountRecipients", () => {
 
   it("returns nobody for an account with no members", async () => {
     expect(await accountRecipients(client([], {}), "ag1", "ws1")).toEqual([]);
+  });
+});
+
+// Billing emails say "Sent because you manage billing" and lead with buttons
+// only an owner can use. Admins got them too, and found "Only the account
+// owner can update the card" on Billing under the same button.
+describe("billing and security recipients", () => {
+  function byRole() {
+    const rows = [
+      { user_id: "u-owner", role: "owner" },
+      { user_id: "u-admin", role: "admin" },
+      { user_id: "u-editor", role: "editor" },
+    ];
+    const emails: Record<string, string> = { "u-owner": "owner@x.co", "u-admin": "admin@x.co", "u-editor": "editor@x.co" };
+    return {
+      from: () => ({ select: () => ({ eq: async () => ({ data: rows }) }) }),
+      auth: { admin: { getUserById: async (id: string) => ({ data: { user: { email: emails[id] } } }) } },
+    } as never;
+  }
+
+  it("sends money to the owners only", async () => {
+    expect(await accountBillingRecipients(byRole(), "ag1")).toEqual(["owner@x.co"]);
+  });
+
+  it("tells owners and admins about a new API key, and not editors", async () => {
+    expect((await accountSecurityRecipients(byRole(), "ag1")).sort()).toEqual(["admin@x.co", "owner@x.co"]);
   });
 });
