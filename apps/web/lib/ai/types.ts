@@ -90,6 +90,12 @@ export interface ArticlePrompt {
    * and that the reviewer line and disclaimer are added for it.
    */
   sensitive?: { kind: "health" | "legal" | "financial" | "safety"; evidence: string } | null;
+  /**
+   * The outline the site owner has already been shown (lib/content/outline.ts):
+   * the title and every H2, word for word, in order. When set the writer is
+   * held to it, and the body is checked against it after.
+   */
+  outline?: import("@/lib/content/outline").ArticleOutline;
 }
 
 /** `workspaces.business_profile`, the fields a writer can use. */

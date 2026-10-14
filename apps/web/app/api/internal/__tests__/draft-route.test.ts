@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { FakeDb } from "@/lib/plan/__tests__/fake-postgrest";
 
 /**
@@ -23,6 +23,8 @@ const { generateArticle, getQuota, stampRun, announce, continueFrom, deferred } 
 
 let db: FakeDb;
 const order: string[] = [];
+/** When set, the run's budget is a stand-in whose room is its row's ceiling less this. */
+const budgetFake = vi.hoisted(() => ({ committed: null as number | null }));
 
 vi.mock("next/server", async () => {
   const real = await vi.importActual<typeof import("next/server")>("next/server");
@@ -39,6 +41,17 @@ vi.mock("@/lib/onboarding/run-store", () => ({
 }));
 vi.mock("@/lib/email/draft-batch", () => ({ announceDraftBatch: (...a: unknown[]) => (order.push("email"), announce(...a)) }));
 vi.mock("@/lib/plan/resume-week", () => ({ continueFrom: (...a: unknown[]) => continueFrom(...a) }));
+vi.mock("@/lib/billing/run-budget", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@/lib/billing/run-budget")>();
+  return {
+    ...real,
+    loadDraftBudget: async (client: unknown, runId: string) => {
+      if (budgetFake.committed === null) return real.loadDraftBudget(client as never, runId);
+      const room = async () => Number(db.rows("run_budgets").find((r) => r.run_id === runId)?.ceiling_usd ?? 0) - budgetFake.committed!;
+      return { runId, room, claim: async () => null, settle: async () => {} };
+    },
+  };
+});
 vi.mock("@/lib/onboarding/plan", () => ({
   fulfilPlannedEntry: async (_s: unknown, entryId: string, articleId: string) => {
     const row = db.rows("calendar_entries").find((e) => e.id === entryId);
@@ -78,6 +91,7 @@ const claimedEntry = (over: Record<string, unknown> = {}) => ({
 const resumed = { workspaceId: "ws1", entryId: "e1", keywordId: "k1", keyword: "crm for agencies", claim: "trial:sub_1" };
 
 beforeEach(() => {
+  budgetFake.committed = null;
   process.env.CRON_SECRET = "cron-secret";
   delete process.env.TRIAL_GATE_DISABLED;
   db = new FakeDb({ workspaces: [{ id: "ws1", account_id: "acc1" }], calendar_entries: [claimedEntry()] });
@@ -207,5 +221,209 @@ describe("the onboarding run's first draft", () => {
     expect(await res.json()).toEqual({ status: "skipped", reason: "trial-hold" });
     expect(generateArticle).not.toHaveBeenCalled();
     expect(stampRun.mock.calls[0][2]).toMatchObject({ phase: "drafting", status: "skipped", detail: expect.stringMatching(/^Waiting for your trial to start\./) });
+  });
+});
+
+describe("a first look's draft, gated on its outline", () => {
+  const first = { workspaceId: "ws1", runId: "run-1", keyword: "crm for agencies", keywordId: "k1" };
+  const gated = (used: number) => ({ limit: 7, used, remaining: 7 - used, reason: "no-plan", plan: null, trialEligible: true });
+  const OUTLINE = {
+    version: 1, title: "CRM for agencies: what to look for", sections: ["Key takeaways", "What does a CRM do for an agency?", "How to choose one"],
+    closing: "Learn more about Acme", targetWordCount: 1400, sources: ["https://research.example/crm"], model: "test", createdAt: "2026-10-11T00:00:00.000Z",
+  };
+  const sent: Array<{ url: string; body: Record<string, unknown> }> = [];
+  afterEach(() => vi.unstubAllGlobals());
+
+  beforeEach(() => {
+    db.rows("calendar_entries")[0] = claimedEntry({ draft_claimed_by: null, draft_claimed_at: null });
+    process.env.NEXT_PUBLIC_APP_URL = "https://app.example";
+    sent.length = 0;
+    vi.stubGlobal("fetch", async (url: string, init: { body: string }) => {
+      sent.push({ url, body: JSON.parse(init.body) });
+      return new Response("{}", { status: 200 });
+    });
+  });
+
+  /** generateArticle as it behaves: outline stored, onReady awaited, then the body (or its failure). */
+  const outlinedThen = (body: () => Promise<unknown>) => async (opts: { outline?: { onReady?: (r: unknown) => Promise<void> } }) => {
+    order.push("outline");
+    await opts.outline?.onReady?.({ articleId: "art-9", outline: OUTLINE });
+    order.push("body");
+    return body();
+  };
+
+  it("ends the run at the outline before the body is written, and emails only when the body lands", async () => {
+    getQuota.mockResolvedValue(gated(0));
+    generateArticle.mockImplementation(outlinedThen(async () => ({ articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } })));
+    const res = await post(first);
+    expect(res.status).toBe(200);
+    // The gate opens (the run finishes) between the outline and the body;
+    // the body's sentence is laid over it after; then the one email.
+    expect(order).toEqual(["outline", "stamp:done", "body", "stamp:done", "email"]);
+    const [gate, written] = stampRun.mock.calls.map((c) => c[3] as { finish?: boolean; amend?: boolean; article?: Record<string, unknown> });
+    expect(gate).toMatchObject({ finish: true, article: { id: "art-9", title: OUTLINE.title, wordCount: 1400, outlined: true } });
+    expect(written).toMatchObject({ finish: true, amend: true });
+    // On the calendar at the gate, so the card has its day.
+    expect(db.rows("calendar_entries")[0]).toMatchObject({ article_id: "art-9" });
+    expect(generateArticle.mock.calls[0][0]).toMatchObject({ outline: { keepOnFailure: true } });
+  });
+
+  /** The server's record of a body owed, as the gate's onOutline writes it. */
+  const owedRow = (over: Record<string, unknown> = {}) => ({
+    article_id: "art-9", workspace_id: "ws1", run_id: "run-1", keyword: "crm for agencies", keyword_id: "k1", outline: OUTLINE,
+    attempts: 1, allowance_usd: 0, owed_since: new Date(Date.now() - 3_600_000).toISOString(), last_tried_at: new Date(Date.now() - 3_600_000).toISOString(), ...over,
+  });
+
+  it("records the body as owed when the gate opens, and clears it when the body lands", async () => {
+    getQuota.mockResolvedValue(gated(0));
+    let atGate: unknown[] = [];
+    generateArticle.mockImplementation(async (opts: { outline?: { onReady?: (r: unknown) => Promise<void> } }) => {
+      await opts.outline?.onReady?.({ articleId: "art-9", outline: OUTLINE });
+      atGate = db.rows("owed_bodies").map((r) => ({ ...r }));
+      return { articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } };
+    });
+    await post(first);
+    expect(atGate).toEqual([expect.objectContaining({ article_id: "art-9", workspace_id: "ws1", run_id: "run-1", keyword: "crm for agencies", keyword_id: "k1", outline: OUTLINE, attempts: 1 })]);
+    expect(db.rows("owed_bodies")).toEqual([]);
+  });
+
+  it("keeps a body that fails after the gate owed, tries again in its own invocation, and never says setup failed", async () => {
+    getQuota.mockResolvedValue(gated(0));
+    generateArticle.mockImplementation(outlinedThen(async () => { throw new Error("The model timed out."); }));
+    const res = await post(first);
+    expect(await res.json()).toMatchObject({ status: "owed", attempt: 1 });
+    expect(db.rows("owed_bodies")).toHaveLength(1);
+    expect(order).not.toContain("stamp:failed");
+    expect(announce).not.toHaveBeenCalled();
+    await runDeferred();
+    expect(sent).toHaveLength(1);
+    expect(sent[0].url).toBe("https://app.example/api/internal/draft");
+    expect(sent[0].body).toMatchObject({ workspaceId: "ws1", runId: "run-1", articleId: "art-9", resume: true, attempt: 2, keyword: "crm for agencies" });
+  });
+
+  it("writes the owed body to the outline the server recorded, counting no second draft, and announces it", async () => {
+    // The claim already counted the row: used is 1, and the hold still lets it through.
+    getQuota.mockResolvedValue(gated(1));
+    stampRun.mockResolvedValue(false);
+    db.rows("owed_bodies").push(owedRow());
+    // What the request says is not what is written: the record is.
+    const res = await post({ ...first, keyword: "something the request made up", articleId: "art-9", resume: true, attempt: 2 });
+    expect(res.status).toBe(200);
+    expect(generateArticle.mock.calls[0][0]).toMatchObject({ articleId: "art-9", keyword: "crm for agencies", resumeOutline: OUTLINE });
+    expect(generateArticle.mock.calls[0][0]).not.toHaveProperty("outline");
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(db.rows("owed_bodies")).toEqual([]);
+  });
+
+  it("writes nothing for a body nobody owes, however the request names it", async () => {
+    getQuota.mockResolvedValue(gated(1));
+    const res = await post({ ...first, articleId: "art-9", resume: true, attempt: 3 });
+    expect(await res.json()).toEqual({ status: "skipped", reason: "not-owed" });
+    // Another site's record is not this one's.
+    db.rows("owed_bodies").push(owedRow({ workspace_id: "ws-other" }));
+    expect(await (await post({ ...first, articleId: "art-9", resume: true })).json()).toEqual({ status: "skipped", reason: "not-owed" });
+    expect(generateArticle).not.toHaveBeenCalled();
+  });
+
+  it("counts every try on the record and stops chaining at the third, leaving it to the nightly sweep", async () => {
+    getQuota.mockResolvedValue(gated(1));
+    db.rows("owed_bodies").push(owedRow({ attempts: 2 }));
+    generateArticle.mockRejectedValue(new Error("still down"));
+    const res = await post({ ...first, articleId: "art-9", resume: true, attempt: 1 });
+    expect(await res.json()).toMatchObject({ status: "owed", attempt: 3 });
+    expect(db.rows("owed_bodies")[0]).toMatchObject({ attempts: 3 });
+    await runDeferred();
+    expect(sent).toHaveLength(0);
+    expect(order).not.toContain("stamp:failed");
+  });
+
+  it("gives a body up once its tries are spent: errored, the record gone, nothing written", async () => {
+    getQuota.mockResolvedValue(gated(1));
+    db.rows("articles").push({ id: "art-9", workspace_id: "ws1", status: "drafting" });
+    db.rows("owed_bodies").push(owedRow({ attempts: 5 }));
+    expect(await (await post({ ...first, articleId: "art-9", resume: true })).json()).toEqual({ status: "skipped", reason: "given-up" });
+    expect(generateArticle).not.toHaveBeenCalled();
+    expect(db.rows("articles").find((a) => a.id === "art-9")).toMatchObject({ status: "error" });
+    expect(db.rows("owed_bodies")).toEqual([]);
+  });
+
+  it("pays an owed body from its run's budget, tops a short one up once, and gives it up past that", async () => {
+    getQuota.mockResolvedValue(gated(1));
+    db.rows("articles").push({ id: "art-9", workspace_id: "ws1", status: "drafting" });
+    db.rows("run_budgets").push({ run_id: "run-1", ceiling_usd: 1 });
+    db.rows("owed_bodies").push(owedRow());
+    // A body billed and thrown away: $0.79 of the dollar spent, $0.21 left.
+    budgetFake.committed = 0.79;
+    generateArticle.mockRejectedValue(new Error("The draft did not follow its outline"));
+    const first = await post({ workspaceId: "ws1", keyword: "crm for agencies", articleId: "art-9", resume: true });
+    expect(await first.json()).toMatchObject({ status: "owed" });
+    expect(generateArticle).toHaveBeenCalledTimes(1);
+    // Under the run's budget, attributed to the run.
+    expect(db.rows("run_budgets")[0].ceiling_usd).toBeCloseTo(1.12, 6);
+    expect(db.rows("owed_bodies")[0]).toMatchObject({ allowance_usd: expect.closeTo(0.12, 6), attempts: 2 });
+
+    // The top-up is spent too: the next try is given up, not written outside the budget.
+    budgetFake.committed = 1.12;
+    db.rows("owed_bodies")[0].last_tried_at = new Date(Date.now() - 3_600_000).toISOString();
+    const second = await post({ workspaceId: "ws1", keyword: "crm for agencies", articleId: "art-9", resume: true });
+    expect(await second.json()).toEqual({ status: "skipped", reason: "budget" });
+    expect(generateArticle).toHaveBeenCalledTimes(1);
+    expect(db.rows("articles").find((a) => a.id === "art-9")).toMatchObject({ status: "error" });
+    expect(db.rows("owed_bodies")).toEqual([]);
+  });
+
+  it("clears the record without retrying when the article turns out not to be owed", async () => {
+    getQuota.mockResolvedValue(gated(1));
+    db.rows("owed_bodies").push(owedRow());
+    const { OutlineNotOwedError } = await import("@/lib/content/outline");
+    generateArticle.mockRejectedValue(new OutlineNotOwedError());
+    expect(await (await post({ ...first, articleId: "art-9", resume: true })).json()).toEqual({ status: "skipped", reason: "not-owed" });
+    await runDeferred();
+    expect(sent).toHaveLength(0);
+    expect(db.rows("owed_bodies")).toEqual([]);
+  });
+
+  it("waits for the body on an account with no gate, as before: the outline is progress, not the end", async () => {
+    getQuota.mockResolvedValue({ limit: 100, used: 2, remaining: 98, reason: "plan", plan: "starter" });
+    generateArticle.mockImplementation(outlinedThen(async () => ({ articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } })));
+    await post(first);
+    expect(order).toEqual(["outline", "stamp:active", "body", "stamp:done", "email"]);
+    expect(stampRun.mock.calls[0][3]).toBeUndefined();
+    expect(generateArticle.mock.calls[0][0]).toMatchObject({ outline: { keepOnFailure: false } });
+  });
+
+  it("keeps the body as it is written for the gate's reader only with PRETRIAL_FULL_ARTICLE on, and clears it when saved", async () => {
+    db.rows("articles").push({ id: "art-9", workspace_id: "ws1", body_stream: null });
+    getQuota.mockResolvedValue(gated(0));
+    const streamingBody = outlinedThen(async () => ({ articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } }));
+    generateArticle.mockImplementation(async (opts: { outline?: { onReady?: (r: unknown) => Promise<void> }; onChunk?: (c: string) => void }) => {
+      const run = streamingBody({ outline: { onReady: async (r) => { await opts.outline?.onReady?.(r); opts.onChunk?.("<p>first words</p>"); } } });
+      return run;
+    });
+    process.env.PRETRIAL_FULL_ARTICLE = "1";
+    try {
+      await post(first);
+    } finally {
+      delete process.env.PRETRIAL_FULL_ARTICLE;
+    }
+    const streams = db.updates.filter((u) => u.table === "articles" && "body_stream" in u.patch).map((u) => u.patch.body_stream);
+    expect(streams).toEqual(["<p>first words</p>", null]);
+
+    // Off: nothing is written, and the writer is not handed a chunk hook at all.
+    db.updates.length = 0;
+    generateArticle.mockReset().mockImplementation(outlinedThen(async () => ({ articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } })));
+    await post(first);
+    expect(db.updates.filter((u) => u.table === "articles" && "body_stream" in u.patch)).toEqual([]);
+    expect(generateArticle.mock.calls[0][0]).not.toHaveProperty("onChunk");
+  });
+
+  it("an ungated body that fails is the run's failure, as before", async () => {
+    getQuota.mockResolvedValue({ limit: 100, used: 2, remaining: 98, reason: "plan", plan: "starter" });
+    generateArticle.mockImplementation(outlinedThen(async () => { throw new Error("boom"); }));
+    const res = await post(first);
+    expect(res.status).toBe(500);
+    expect(order).toEqual(["outline", "stamp:active", "body", "stamp:failed"]);
+    await runDeferred();
+    expect(sent).toHaveLength(0);
   });
 });

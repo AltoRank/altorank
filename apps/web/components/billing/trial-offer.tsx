@@ -4,7 +4,7 @@ import { useState } from "react";
 import { StartTrialButton } from "./start-trial-button";
 import { PLAN_PRICES, PLAN_YEARLY_PRICES, type BillingInterval } from "@/lib/stripe";
 
-export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, compact = false }: { canBuy?: boolean; returnTo?: string; secondary?: { href: string; label: string }; compact?: boolean }) {
+export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, compact = false, onStart }: { canBuy?: boolean; returnTo?: string; secondary?: { href: string; label: string }; compact?: boolean; onStart?: () => void }) {
   const [interval, setInterval] = useState<BillingInterval>("month");
   const [error, setError] = useState<string | null>(null);
   // Nothing here is readable before the trial (lib/billing/trial.ts,
@@ -19,7 +19,7 @@ export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, 
         </button>)}
     </div>
     <p className="mb-3 text-sm">7 days free with a card, then {interval === "month" ? `${PLAN_PRICES.starter} per month` : `${PLAN_YEARLY_PRICES.starter} per year`}, plus applicable tax. Cancel from Billing before the trial ends to avoid the renewal charge.</p>
-    <StartTrialButton interval={interval} returnTo={returnTo} onError={setError} />
+    <StartTrialButton interval={interval} returnTo={returnTo} onError={setError} onStart={onStart} />
     {secondary && <Link className="ml-4 text-accent underline" href={secondary.href}>{secondary.label}</Link>}
     {error && <p role="alert" className="mt-2 text-sm text-err-ink">{error} <Link className="underline" href="/checkout/cancelled">Manage open checkout</Link></p>}
   </div>;

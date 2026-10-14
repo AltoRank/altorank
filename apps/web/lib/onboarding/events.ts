@@ -89,7 +89,9 @@ export const PHASE_LABELS: Record<OnboardingPhase, Record<PhaseStatus, string>> 
   drafting: {
     pending: "Write your first draft",
     active: "Writing your first draft",
-    done: "Wrote your first draft",
+    // "Prepared", not "Wrote": a first look before the trial ends on its
+    // first article's outline, with the body still being written to it.
+    done: "Set up your first article",
     skipped: "No first draft yet",
     failed: "Could not write your first draft",
   },
@@ -115,6 +117,12 @@ export interface OnboardingArticle {
   wordCount: number;
   /** `unchecked`: the fact checker does not read the site's language, or the draft had nothing it could check. */
   verdict: "clean" | "review" | "high_risk" | "unchecked";
+  /**
+   * Outlined, with its body still being written: the title, length and
+   * headings are the outline's, and there is no fact check yet. The first
+   * look's gate opens on this (lib/content/outline.ts).
+   */
+  outlined?: true;
 }
 
 /**
@@ -348,12 +356,16 @@ const VERDICTS: readonly OnboardingArticle["verdict"][] = ["clean", "review", "h
  * whatever `article_id` points at, which is set only once the draft is saved.
  */
 function toOnboardingArticle(article: OnboardingRunArticle): OnboardingArticle {
+  // Still being written: an outlined first draft (or any draft mid-write)
+  // has no fact check to report, and "review" would claim one.
+  const outlined = article.status === "drafting";
   return {
     id: article.id,
     title: article.title ?? "",
     keyword: article.keyword ?? "",
     wordCount: article.word_count ?? 0,
-    verdict: VERDICTS.find((v) => v === article.fact_check_verdict) ?? "review",
+    verdict: outlined ? "unchecked" : (VERDICTS.find((v) => v === article.fact_check_verdict) ?? "review"),
+    ...(outlined ? { outlined: true as const } : {}),
   };
 }
 

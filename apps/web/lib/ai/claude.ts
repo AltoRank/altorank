@@ -26,6 +26,19 @@ export const WRITER_MAX_TOKENS = 64_000;
  */
 export { WRITER_MIN_OUTPUT_TOKENS };
 
+/**
+ * An error the API answered with a status before the stream started: the
+ * request was refused, not run, and nothing was billed. A connection that
+ * failed without an answer is not this - it may have been run - and keeps
+ * its grant.
+ */
+export function unbilledRefusal(err: unknown): boolean {
+  // Read off the error rather than its class: the SDK's APIError carries the
+  // status, its connection errors carry none.
+  const status = err instanceof Error ? (err as { status?: unknown }).status : undefined;
+  return typeof status === "number" && status >= 400;
+}
+
 export class ClaudeProvider implements AIProvider {
   private client: Anthropic;
   private model: string;
@@ -58,8 +71,13 @@ export class ClaudeProvider implements AIProvider {
       ? WRITER_MAX_TOKENS
       : Math.min(WRITER_MAX_TOKENS, Math.floor((claim.grantedUsd - inputUsd) / perToken));
     // Null until the price is known: a stream that failed part-way may have
-    // been billed for what it generated, so its grant stays committed.
+    // been billed for what it generated, so its grant stays committed. One
+    // the API refused before it started - an error status and not one event
+    // - was billed nothing, and settles at nothing: keeping the whole grant
+    // committed left a first look no room to try its body again (round-1
+    // review: a 400 held $0.36 and the retry was refused for budget).
     let charged: number | null = null;
+    let started = false;
     try {
       const stream = this.client.messages.stream({
         model: this.model,
@@ -98,6 +116,7 @@ export class ClaudeProvider implements AIProvider {
       let outputTokens = 0;
 
       for await (const event of stream) {
+        started = true;
         // Accumulate text deltas
         if (
           event.type === "content_block_delta" &&
@@ -140,6 +159,9 @@ export class ClaudeProvider implements AIProvider {
         inputTokens,
         outputTokens,
       };
+    } catch (err) {
+      if (!started && charged === null && unbilledRefusal(err)) charged = 0;
+      throw err;
     } finally {
       await claim.settle(charged);
     }

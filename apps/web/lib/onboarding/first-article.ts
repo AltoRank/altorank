@@ -28,6 +28,7 @@ import { canonicalUrl } from "@/lib/ai/inline-citations";
 import { extractLinks, isCitationLink } from "@/lib/seo/links";
 import { readArticlesWhole } from "@/lib/articles/body-read";
 import type { FactCheckReport } from "@/lib/ai/fact-check";
+import { outlineHeadings, outlineOf, type ArticleOutline } from "@/lib/content/outline";
 
 // The fact check's own verdicts, so a verdict it adds reaches the card: a
 // draft in a language the checker does not read is `unchecked` (migration
@@ -50,6 +51,13 @@ export interface FirstArticleCard {
   more: number;
   /** What the topic's verdict says about itself: lower confidence, unmeasured (lib/keyword-research/topic-labels.ts). */
   labels: TopicLabel[];
+  /**
+   * `outlined`: the outline exists and the body is being written behind it
+   * (lib/content/outline.ts). The headings are the outline's, the length is
+   * its target and the sources the ones it plans to cite; there is no fact
+   * check yet. `written`: read off the finished body.
+   */
+  state: "outlined" | "written";
 }
 
 export interface FirstArticleFact {
@@ -126,6 +134,33 @@ export function toFirstArticleCard(
     verdict: VERDICTS.has(row.fact_check_verdict ?? "") ? (row.fact_check_verdict as FirstArticleVerdict) : null,
     more: Math.max(0, opts.more),
     labels: topicLabels(opts.verdict ?? null, { volume: opts.volume ?? null }),
+    state: "written",
+  };
+}
+
+/**
+ * The card for a first article that is outlined and still being written:
+ * the outline is the shape, since the owner is shown it before the body and
+ * the body is held to it. Pure, and like the written card it has no field a
+ * body could travel in.
+ */
+export function toOutlinedCard(
+  row: { id: string; keyword: string | null },
+  outline: ArticleOutline,
+  opts: { scheduledDate: string | null; verdict?: unknown; volume?: number | null },
+): FirstArticleCard {
+  return {
+    id: row.id,
+    title: outline.title,
+    keyword: row.keyword ?? "",
+    scheduledDate: opts.scheduledDate,
+    outline: outlineHeadings(outline),
+    wordCount: outline.targetWordCount,
+    sources: outline.sources.length,
+    verdict: null,
+    more: 0,
+    labels: topicLabels(opts.verdict ?? null, { volume: opts.volume ?? null }),
+    state: "outlined",
   };
 }
 
@@ -168,7 +203,12 @@ export async function loadFirstArticle(
   // same retry while the article is being written.
   if (writing.error) throw new Error(`first article: could not tell whether an article is being written (${writing.error.message})`);
   const found = written.data?.[0];
-  if (!found) return { article: null, writing: (writing.count ?? 0) > 0 };
+  if (!found) {
+    // Nothing written yet: an outlined first article, when there is one, is
+    // the card - its body is being written to the outline it shows.
+    const outlined = (writing.count ?? 0) > 0 ? await loadOutlinedCard(supabase, workspaceId) : null;
+    return { article: outlined, writing: (writing.count ?? 0) > 0 };
+  }
   const [body] = await readArticlesWhole<{ content: unknown }>([found.id as string], "content");
   const row = { ...found, content: body?.content ?? null };
 
@@ -198,4 +238,41 @@ export async function loadFirstArticle(
     }),
     writing: false,
   };
+}
+
+/**
+ * The oldest article being written that carries an outline, as its card, or
+ * null. Through the caller's client: the outline and the title are not body
+ * columns (migration 097 withholds only the text and what quotes it).
+ */
+async function loadOutlinedCard(supabase: SupabaseClient, workspaceId: string): Promise<FirstArticleCard | null> {
+  const { data, error } = await supabase
+    .from("articles")
+    .select("id, keyword, keyword_id, instructions_snapshot")
+    .eq("workspace_id", workspaceId)
+    .eq("status", "drafting")
+    .order("created_at", { ascending: true })
+    .limit(1);
+  if (error) throw new Error(`first article: could not read the article being written (${error.message})`);
+  const row = (data?.[0] as { id: string; keyword: string | null; keyword_id: string | null; instructions_snapshot: unknown } | undefined) ?? null;
+  const outline = row ? outlineOf(row.instructions_snapshot) : null;
+  if (!row || !outline) return null;
+  const [{ data: entry }, { data: topic }] = await Promise.all([
+    supabase
+      .from("calendar_entries")
+      .select("scheduled_date")
+      .eq("workspace_id", workspaceId)
+      .eq("article_id", row.id)
+      .order("scheduled_date", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    row.keyword_id
+      ? supabase.from("keywords").select("opportunity, volume").eq("workspace_id", workspaceId).eq("id", row.keyword_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+  ]);
+  return toOutlinedCard(row, outline, {
+    scheduledDate: (entry?.scheduled_date as string | undefined) ?? null,
+    verdict: (topic as { opportunity?: unknown } | null)?.opportunity ?? null,
+    volume: (topic as { volume?: number | null } | null)?.volume ?? null,
+  });
 }

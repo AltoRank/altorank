@@ -61,3 +61,25 @@ describe("gatherArticleResearch related keywords", () => {
     expect(research.layers.find((l) => l.id === "related_keywords")?.detail).toBe("1 related keywords");
   });
 });
+
+describe("gatherArticleResearch and a results page it was handed", () => {
+  const PAGE = { organic: [{ rank: 1, title: "A guide", url: "https://guide.example/a", description: "", domain: "guide.example", wordCount: null }], peopleAlsoAsk: ["How?", "Why?"], aiOverview: null };
+
+  it("reads the page a first look already bought instead of buying it again, and says when it is in", async () => {
+    const seen: string[] = [];
+    const research = await gatherArticleResearch({
+      keyword: "acme guide",
+      serp: PAGE,
+      onSerp: () => seen.push("serp"),
+      onQuestions: (q) => seen.push(`questions:${q.length}`),
+    });
+    expect(serp).not.toHaveBeenCalled();
+    expect(research.competitors.map((c) => c.url)).toEqual(["https://guide.example/a"]);
+    expect(seen).toEqual(["serp", "questions:2"]);
+  });
+
+  it("buys it when it was not handed one", async () => {
+    await gatherArticleResearch({ keyword: "acme guide" });
+    expect(serp).toHaveBeenCalledOnce();
+  });
+});

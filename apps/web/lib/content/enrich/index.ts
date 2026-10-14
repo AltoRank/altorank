@@ -46,6 +46,7 @@ import { buildFaqSchema, type FaqSchema } from "./faq";
 import { applyTrustBlock, type ArticleTrust } from "@/lib/content/trust";
 import type { ImageStyle } from "@/lib/onboarding/output-settings";
 import { resolveLocale, SUPPORTED_LANGUAGE_LIST } from "@/lib/i18n/locale";
+import { timed } from "@/lib/onboarding/timings";
 
 export type { FormatFindings, FaqSchema, ImageStyle };
 
@@ -255,12 +256,12 @@ export async function enrichArticle(html: string, ctx: EnrichContext): Promise<E
     const result = await step(
       "images",
       (h) =>
-        addSectionImages(h, {
+        timed("images", () => addSectionImages(h, {
           produce: producer,
           max: ctx.maxImages ?? DEFAULT_MAX_IMAGES,
           style: settings.imageStyle,
           language: ctx.language,
-        }),
+        })),
       { added: 0, warnings: [] as string[] },
     );
     images = result;

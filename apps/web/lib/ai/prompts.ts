@@ -1,4 +1,5 @@
 import type { ArticlePrompt, SiteFacts } from "./types";
+import { outlineRules } from "@/lib/content/outline";
 import type { ArticleResearch } from "@/lib/seo/research";
 import { INTENT_GUIDANCE } from "@/lib/seo/intent";
 import { LENGTH_BANDS, TAXONOMY_LABELS, targetWordCountFor } from "@/lib/keywords/taxonomy";
@@ -711,6 +712,11 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "  and reads as keyword stuffing to a crawler.",
     ].join("\n")
   );
+
+  // --- The outline the owner has seen ---------------------------------------
+  // After the format rules and before everything else about structure, so a
+  // later "aim for 4-8 sections" cannot read as licence to add a ninth.
+  if (prompt.outline && !prompt.refreshOf) sections.push(outlineRules(prompt.outline).join("\n"));
 
   // --- SEO -------------------------------------------------------------------
   sections.push(
