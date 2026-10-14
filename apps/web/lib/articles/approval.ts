@@ -57,3 +57,33 @@ export function approvalAfterStatusChange(
   if (nextStatus === "review") return sentBackToReview(userId, now);
   return { status: nextStatus, ...APPROVAL_CLEARED };
 }
+
+/**
+ * The columns of an article a reader sees. An approval is of these, as they
+ * were when the person pressed Approve.
+ */
+export const APPROVED_TEXT_FIELDS = ["content", "title", "slug", "meta_description", "featured_image_url"] as const;
+
+/** Approved or scheduled, or a failed publish still holding its approval for a retry. */
+export function carriesApproval(row: { status: string; approved_by?: string | null }): boolean {
+  return row.status === "approved" || row.status === "scheduled" || (row.status === "error" && row.approved_by != null);
+}
+
+/**
+ * An edit saved after approval voids it: back to Review, held, for someone
+ * to approve the text as it now reads. The editor used to save over an
+ * approved or scheduled article and leave the approval in place, so the new
+ * text shipped under the earlier approver's name, without the figure check
+ * the approve action runs. `null` when the edit touches no approved text.
+ */
+export function approvalAfterTextEdit(
+  row: { status: string; approved_by?: string | null },
+  data: Record<string, unknown>,
+  userId: string,
+  now: string,
+): Record<string, unknown> | null {
+  if (!carriesApproval(row)) return null;
+  if (!APPROVED_TEXT_FIELDS.some((f) => data[f] !== undefined)) return null;
+  return sentBackToReview(userId, now);
+}
+

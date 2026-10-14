@@ -1,7 +1,8 @@
 -- 109: an approval is written by the server, never by a signed-in user's client
--- Depends on: 003_publishing_schedule (articles.scheduled_at),
--- 013_approval_workflow (approved_by, approved_at), 079_auto_approve
--- (approval_kind, held_by, held_at). Nothing in 097-105: it adds one trigger
+-- Depends on: 002_backend_additions (articles.meta_description),
+-- 003_publishing_schedule (scheduled_at), 005_featured_images
+-- (featured_image_url), 013_approval_workflow (approved_by, approved_at),
+-- 079_auto_approve (approval_kind, held_by, held_at). Nothing in 097-105: it adds one trigger
 -- of its own and replaces no function.
 -- Apply AFTER its code is live, like 097 and 099: see RUNBOOK.md.
 --
@@ -27,6 +28,14 @@
 --    approval_kind and scheduled_at are set to null. That is what Request
 --    changes, Cancel schedule, Unpublish and Change status mean, and it keeps
 --    a stale approval from riding along on a draft that is later retried.
+-- 3. An edit to the text of an approved or scheduled article, or of one whose
+--    publish failed with its approval kept for the retry (content, title,
+--    slug, meta_description, featured_image_url), voids the approval: the
+--    article goes back to `review`, held by the editor, so nobody's sign-off
+--    covers words they never read. The editor's Save does the same
+--    (app/actions/articles.ts); this is the same rule for any other client
+--    write. A live article's text is not touched by this: changing it
+--    changes nothing on the site until it is approved and published again.
 --
 -- Like 099-102, it passes the service role (no `auth.uid()`: the server, the
 -- crons, psql) and a change the database makes itself (`pg_trigger_depth() >
@@ -73,6 +82,20 @@ begin
   then
     raise exception 'An article is approved, scheduled or published by AltoRank, not by a signed-in user'
       using errcode = '42501';
+  end if;
+
+  -- Approved text edited: back to review, held by whoever edited it.
+  if new.status is not distinct from old.status
+     and (old.status in ('approved', 'scheduled') or (old.status = 'error' and old.approved_by is not null))
+     and (new.content is distinct from old.content
+          or new.title is distinct from old.title
+          or new.slug is distinct from old.slug
+          or new.meta_description is distinct from old.meta_description
+          or new.featured_image_url is distinct from old.featured_image_url)
+  then
+    new.status := 'review';
+    new.held_by := auth.uid();
+    new.held_at := now();
   end if;
 
   -- Out of a state by a person's hand: the approval goes with it.

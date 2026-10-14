@@ -8,7 +8,7 @@ import { assertEditorialStatus } from "@/lib/articles/editorial-status";
 import { sessionBodyLockedForWorkspace } from "@/lib/billing/body-lock";
 import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { urlSlug } from "@/lib/i18n/locale";
-import { approvalAfterStatusChange } from "@/lib/articles/approval";
+import { approvalAfterStatusChange, approvalAfterTextEdit } from "@/lib/articles/approval";
 
 const createArticleSchema = z.object({
   workspace_id: z.string().uuid(),
@@ -67,7 +67,7 @@ export async function updateArticle(
     featured_image_url?: string | null;
     word_count?: number;
   },
-) {
+): Promise<{ sentBackToReview: boolean }> {
   const { user } = await requireAuth();
   // The editor and the row menu may move an article between editorial states
   // only. Approval, scheduling and publishing have their own actions and the
@@ -79,7 +79,7 @@ export async function updateArticle(
   // from that screen would write the empty document over the real one.
   const { data: row } = await supabase
     .from("articles")
-    .select("workspace_id, status")
+    .select("workspace_id, status, approved_by")
     .eq("id", id)
     .maybeSingle();
   if (!row) throw new Error("Article not found");
@@ -89,7 +89,14 @@ export async function updateArticle(
   // Change status > Review on an approved or scheduled article used to leave
   // the approval in place and the draft unheld, so the auto-approve rule
   // signed it off again in the next cron run and it published anyway.
-  const approval = approvalAfterStatusChange({ status: row.status as string }, data.status, user.id, now);
+  const approval =
+    approvalAfterStatusChange({ status: row.status as string }, data.status, user.id, now) ??
+    approvalAfterTextEdit(
+      { status: row.status as string, approved_by: row.approved_by as string | null },
+      data,
+      user.id,
+      now,
+    );
   const { data: written, error } = await supabase
     .from("articles")
     .update({ ...data, ...approval, updated_at: now })
@@ -103,6 +110,7 @@ export async function updateArticle(
   if (!written?.length) throw new Error("This article changed while it was being saved. Reload the page and try again.");
   revalidatePath("/articles");
   revalidatePath(`/content/${id}`);
+  return { sentBackToReview: approval?.status === "review" && row.status !== "review" };
 }
 
 export async function deleteArticle(id: string) {

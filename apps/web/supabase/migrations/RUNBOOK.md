@@ -370,7 +370,7 @@ no code in the repo references either).
 | 101_account_creator.sql | `integration/root-causes-2026-09-25` | 085; **applied before its code is deployed** | yes | yes, see its section (an owner can again add any user as a member) |
 | 104_onboarding_nothing_planned.sql | `fix/onboarding-no-empty-gate` | 076; **applied before its code is deployed** | yes | only after its code is reverted and no row holds `nothing_planned`: see its section |
 | 105_publish_log_found_on_site.sql | `feat/found-live-receipt` | 003, 094; **applied before its code is merged** | yes | only after its code is reverted: see its section |
-| 109_approval_written_by_server.sql | `fix/approval-integrity` | 003, 013, 079; **its code deployed first** | yes | yes, `drop trigger articles_guard_approval on public.articles; drop function public.articles_guard_approval();` (a member can again forge an approval over PostgREST) |
+| 109_approval_written_by_server.sql | `fix/approval-integrity` | 002, 003, 005, 013, 079; **its code deployed first** | yes | yes, `drop trigger articles_guard_approval on public.articles; drop function public.articles_guard_approval();` (a member can again forge an approval over PostgREST) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1321,7 +1321,11 @@ publish it without the approve action's checks. For a signed-in user
   on UPDATE and on INSERT (42501);
 - lets the same client clear them, and clears all four itself whenever the
   client changes the status (Request changes, Cancel schedule, Unpublish,
-  Change status), so no approval rides along on a draft.
+  Change status), so no approval rides along on a draft;
+- sends an approved or scheduled article (or a failed publish still holding
+  its approval) back to `review`, approval cleared and held by the editor,
+  when the client changes its text (content, title, slug, meta description,
+  featured image). A live article's text edits leave it live.
 
 It passes the service role and the database's own cascades
 (`pg_trigger_depth() > 1`), like 099-102.
@@ -1334,7 +1338,7 @@ deployed. The new code makes those writes with the service role after its
 checks (`app/actions/publish.ts`, `app/actions/schedule.ts`,
 `lib/publishing/retry.ts`, `lib/publishing/core.ts`, the found-on-site undo)
 and works with or without 109. Re-running is a no-op (`create or replace`,
-drop-then-create of the trigger). Depends on 003, 013 and 079.
+drop-then-create of the trigger). Depends on 002, 003, 005, 013 and 079.
 
 Test: `supabase/tests/109_approval_written_by_server.rls.sql` (self-contained,
 rolls back; run it on an isolated copy). Green 2026-10-14 on a throwaway
@@ -1342,7 +1346,9 @@ Postgres 15 holding a stub of the tables it touches (`auth.users`,
 `accounts`, `workspaces`, `account_members`, `articles` with 053's policy),
 with 109 applied twice: the seven forging writes are 42501; editing a
 draft, inserting a draft, cancelling a schedule and requesting changes
-still work, and the service role still approves and schedules. With the
+still work; an edit to an approved article's text sends it back to review
+with the approval cleared, an edit to a live one leaves it live; and the
+service role still approves and schedules. With the
 trigger dropped, the first case fails. Not yet run on a copy built from
 001-109.
 

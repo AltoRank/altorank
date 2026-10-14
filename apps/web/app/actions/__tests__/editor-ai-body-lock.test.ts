@@ -16,14 +16,16 @@ let locked = true;
 
 function client() {
   const one = (data: unknown) => {
-    const q = { select: () => q, eq: () => q, single: async () => ({ data, error: null }), maybeSingle: async () => ({ data, error: null }), update: () => q };
+    const q: Record<string, unknown> = { select: () => q, eq: () => q, single: async () => ({ data, error: null }), maybeSingle: async () => ({ data, error: null }), update: () => q };
+    // An awaited update (`.update().eq().select("id")`) answers with the row it matched.
+    q.then = (resolve: (v: unknown) => unknown) => Promise.resolve({ data: [data], error: null }).then(resolve);
     return q;
   };
   return {
     from: (table: string) =>
       one(
         table === "articles"
-          ? { id: ARTICLE, workspace_id: "ws1", title: "Rehber", keyword: "ajans", slug: "rehber", meta_description: META, featured_image_url: null, published_at: null }
+          ? { id: ARTICLE, workspace_id: "ws1", status: "review", title: "Rehber", keyword: "ajans", slug: "rehber", meta_description: META, featured_image_url: null, published_at: null }
           : { id: "ws1", domain: "acme-agency.example", brand_style: null },
       ),
   };
@@ -74,6 +76,6 @@ describe("updateArticle (the editor's Save)", () => {
   it("saves for a paying account", async () => {
     locked = false;
     const { updateArticle } = await import("../articles");
-    await expect(updateArticle(ARTICLE, { title: "Yeni başlık" })).resolves.toBeUndefined();
+    await expect(updateArticle(ARTICLE, { title: "Yeni başlık" })).resolves.toEqual({ sentBackToReview: false });
   });
 });

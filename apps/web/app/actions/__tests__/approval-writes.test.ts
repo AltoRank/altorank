@@ -46,6 +46,9 @@ function seed(): Seed {
       { id: "approved", workspace_id: "ws-1", status: "approved", approved_by: OWNER, approved_at: T, approval_kind: "human", scheduled_at: null, held_by: null },
       { id: "legacy-approved", workspace_id: "ws-1", status: "approved", approved_by: null, approved_at: null, approval_kind: null, scheduled_at: null, held_by: null },
       { id: "scheduled", workspace_id: "ws-1", status: "scheduled", approved_by: OWNER, approved_at: T, approval_kind: "auto", scheduled_at: "2026-10-20T10:00:00.000Z", held_by: null },
+      { id: "failed-publish", workspace_id: "ws-1", status: "error", approved_by: OWNER, approved_at: T, approval_kind: "human", scheduled_at: null, held_by: null },
+      { id: "failed-generation", workspace_id: "ws-1", status: "error", approved_by: null, approved_at: null, approval_kind: null, scheduled_at: null, held_by: null },
+      { id: "live", workspace_id: "ws-1", status: "live", approved_by: OWNER, approved_at: T, approval_kind: "human", scheduled_at: null, held_by: null },
     ],
     publish_log: [],
   };
@@ -139,6 +142,39 @@ describe("Change status", () => {
     for (const status of ["approved", "scheduled", "live"]) {
       await expect(updateArticle("review", { status })).rejects.toThrow("cannot be set from the editor");
     }
+  });
+});
+
+describe("editing after approval", () => {
+  const edit = { content: { type: "doc", content: [] }, title: "Retitled", word_count: 0 };
+
+  it("sends an approved article back to review, approval cleared and held", async () => {
+    await expect(updateArticle("approved", edit)).resolves.toEqual({ sentBackToReview: true });
+    expect(row(asUser, "approved")).toMatchObject({ status: "review", title: "Retitled", approved_by: null, approved_at: null, held_by: "u-editor" });
+  });
+
+  it("takes a scheduled article off its date the same way", async () => {
+    await updateArticle("scheduled", { title: "Retitled" });
+    expect(row(asUser, "scheduled")).toMatchObject({ status: "review", approved_by: null, scheduled_at: null, held_by: "u-editor" });
+  });
+
+  it("voids the approval a failed publish was keeping for its retry", async () => {
+    await updateArticle("failed-publish", edit);
+    expect(row(asUser, "failed-publish")).toMatchObject({ status: "review", approved_by: null });
+  });
+
+  it("leaves a draft, a failed generation and a live article where they are", async () => {
+    for (const id of ["review", "failed-generation", "live"]) {
+      const before = row(asUser, id).status;
+      await expect(updateArticle(id, edit)).resolves.toEqual({ sentBackToReview: false });
+      expect(row(asUser, id).status).toBe(before);
+    }
+    expect(row(asUser, "live").approved_by).toBe(OWNER);
+  });
+
+  it("a score update alone touches no approval", async () => {
+    await updateArticle("approved", { seo_score: 80 });
+    expect(row(asUser, "approved")).toMatchObject({ status: "approved", approved_by: OWNER });
   });
 });
 
