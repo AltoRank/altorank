@@ -54,24 +54,36 @@ everything is here.
 ## The publishing decision
 
 One gate, two ways through it. `lib/publishing/core.ts` refuses any article
-that is not `approved` (or `scheduled` with `approved_by` set), and nothing else
-in the code path writes `live`. What can write an approval:
+that is not `approved` or `scheduled` with `approved_by` set. Only the server
+writes those columns: a signed-in user's own database client cannot make an
+article approved, scheduled or live (migration 109), and an edit to approved
+text sends it back to review. What can write an approval:
 
 - **A person**, from the editor (`approveArticle`), recorded as `approved_by`.
+  The button checks for an active plan and refuses a bare, unsourced figure.
 - **A rule a named member of the account set** (`auto_approve`, migration 079): the
-  publish cron runs the same checks the Approve button runs - active plan, no
-  unsourced figure, no failing audit item, SEO score at or above the floor -
-  after a hold window (default 24h) during which the drafted email carries a
-  one-click Hold. `approved_by` is whoever turned the rule on; `approval_kind`
-  says `auto`. Held drafts carry the reason on their own row. See
+  publish cron runs stricter checks than the Approve button - active plan,
+  somewhere to publish, no unsourced figure, no named reviewer still to sign
+  off, no failing audit item, SEO score at or above the floor - after a hold
+  window (default 24h) during which the drafted email carries a Hold link.
+  `approved_by` is whoever turned the rule on; `approval_kind` says `auto`.
+  Held drafts carry the reason on their own row. See
   `lib/publishing/auto-approve.ts`.
+
+`live` is written after an approved publish, by **Mark as published** on an
+approved article, and by one thing that is not a publish: the nightly
+found-on-site check (`lib/found-on-site/detect.ts`) marks a draft live when
+its text is already on the customer's own site. That records something done
+outside AltoRank, sends nothing to a CMS, carries no approval, and can be
+undone from the editor.
 
 What cannot write an approval: an agent. The **MCP server and the agent API
 expose no publish or approve tool** - not disabled, absent. See the comment at
 the top of `apps/web/scripts/mcp.ts`.
 
 Competing tools ship the words "you stay in control" as copy. The difference
-is checkable here: every `live` row points at a person, by click or by rule.
+is checkable here: every `live` row is an approved article (by click or by
+rule) or one found already published on the customer's own site.
 
 ## What works today
 

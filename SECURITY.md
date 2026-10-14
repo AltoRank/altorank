@@ -41,12 +41,17 @@ anything the defaults get wrong.
 - **The approval gate is a security property, not just a product one.** Every
   publish is attributable to a person: a click in the editor, or the
   automatic-publishing rule a named member turned on for that workspace
-  (`auto_approve`, migration 079), which runs the same checks and can be held
-  per draft. The MCP server and agent API expose no publish or approve tool.
-  Any path that publishes to a connected CMS without one of those two
-  decisions behind it - an agent route, a status flip that skips
-  `approved_by`, a rule firing for a workspace that did not opt in - is a
-  vulnerability, and we want to hear about it.
+  (`auto_approve`, migration 079), which runs the button's checks and more
+  and can be held per draft. The MCP server and agent API expose no publish
+  or approve tool, and a signed-in user's database client cannot write an
+  approval or the statuses that need one (migration 109). Any path that
+  publishes to a connected CMS without one of those two decisions behind it -
+  an agent route, a status flip that skips `approved_by`, text changed after
+  approval that still ships under it, a rule firing for a workspace that did
+  not opt in - is a vulnerability, and we want to hear about it. (A draft the
+  nightly check finds already live on the customer's own site is marked
+  `live` without an approval: that is a record of something published outside
+  AltoRank, and nothing is sent to a CMS.)
 
 ## What we will not treat as a finding
 
