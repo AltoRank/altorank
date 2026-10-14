@@ -588,6 +588,13 @@ describe("the final period's overage", () => {
     createInvoice.mockRejectedValue(new Error("Stripe is down"));
     await expect(deliver(subscriptionEvent("deleted"))).rejects.toThrow(/final period's overage/);
   });
+
+  it("does not retry for ever for a customer deleted at Stripe", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
+    pendingItems.mockRejectedValue(Object.assign(new Error("No such customer"), { code: "resource_missing" }));
+    const res = await deliver(subscriptionEvent("deleted"));
+    expect(res.status).toBe(200);
+  });
 });
 
 describe("a plan change", () => {

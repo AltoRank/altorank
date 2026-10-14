@@ -623,7 +623,12 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         try {
           await invoicePendingCharges(getStripe(), customerId);
         } catch (err) {
-          throw new Error(`${event.type}: could not invoice the final period's overage (${err instanceof Error ? err.message : String(err)})`);
+          // A customer deleted at Stripe has nothing left to invoice, and
+          // retrying would only fail the same way for three days.
+          if ((err as { code?: string } | null)?.code !== "resource_missing") {
+            throw new Error(`${event.type}: could not invoice the final period's overage (${err instanceof Error ? err.message : String(err)})`);
+          }
+          console.error(`[stripe] final overage: customer ${customerId} is gone at Stripe`);
         }
       }
 
