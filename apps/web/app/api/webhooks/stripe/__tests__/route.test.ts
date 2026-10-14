@@ -735,6 +735,19 @@ describe("the seven-day card trial", () => {
     expect((await import("../route")).maxDuration).toBe(300);
   });
 
+  it("quotes the yearly price to a yearly trialist, and the monthly one otherwise", async () => {
+    const yearly = { status: "trialing", trial_end: TRIAL_END, items: { data: [{ price: { id: "price_starter_year", recurring: { interval: "year" } } }] } };
+    retrieveSubscription.mockResolvedValue(yearly);
+    trialStarted.mockClear();
+    await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter", interval: "year" } }));
+    expect(trialStarted.mock.calls[0][2]).toMatchObject({ planPrice: "€690 for the year" });
+
+    retrieveSubscription.mockResolvedValue({ status: "trialing", trial_end: TRIAL_END, items: { data: [{ price: { id: STARTER, recurring: { interval: "month" } } }] } });
+    trialStarted.mockClear();
+    await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter", interval: "month" } }));
+    expect(trialStarted.mock.calls[0][2]).toMatchObject({ planPrice: "€69" });
+  });
+
   it("does not tell the person the week went to the writer when nothing will write it", async () => {
     // The claim the email makes is checked, not assumed: no site set to write
     // automatically (or every one paused), or an install that cannot hand a
@@ -800,6 +813,20 @@ describe("customer.subscription.trial_will_end", () => {
     expect(trialEnding.mock.calls[0][1]).toBe("account-1");
     expect(trialEnding.mock.calls[0][2]).toMatchObject({ endsAt: new Date(1_790_604_800 * 1000).toISOString() });
     expect(trialEnding.mock.calls[0][3]).toBe("sub_1");
+  });
+
+  it("quotes the yearly price three days before a yearly trial's first charge", async () => {
+    trialEnding.mockClear();
+    accountRow = { id: "account-1", plan_status: "trialing", payment_failed_at: null, plan: "starter", trial_ends_at: null };
+    await deliver({
+      ...subscriptionEvent("updated", {
+        status: "trialing",
+        trial_end: 1_790_604_800,
+        items: { data: [{ price: { id: GROWTH_YEARLY, recurring: { interval: "year" } } }] },
+      }),
+      type: "customer.subscription.trial_will_end",
+    });
+    expect(trialEnding.mock.calls[0][2]).toMatchObject({ planLabel: "Agency", planPrice: "€1,990 for the year" });
   });
 
   it("sends nothing for a trial ended by a date on or before its end", async () => {

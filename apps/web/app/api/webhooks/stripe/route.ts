@@ -6,7 +6,9 @@ import {
   planForPriceId,
   PLAN_ARTICLE_LIMITS,
   PLAN_LABELS,
-  PLAN_PRICES,
+  intervalForSubscription,
+  planChargeLabel,
+  type BillingInterval,
   type PlanTier,
   type SelfServePlan,
 } from "@/lib/stripe";
@@ -134,6 +136,28 @@ export async function trialForCheckoutSession(session: Stripe.Checkout.Session):
     throw new Error(`checkout.session.completed: could not read subscription ${subscriptionId} to tell a trial from a paid plan (${err instanceof Error ? err.message : String(err)})`);
   }
   return trialEndOf(sub);
+}
+
+/**
+ * How often a checkout's subscription bills, for the trial-started email's
+ * amount. Read from the subscription, like the tier and the trial; when that
+ * read fails, the `interval` our checkout wrote on the session stands in,
+ * because a failed read must not cost the customer the email that tells them
+ * when they will be charged.
+ */
+export async function intervalForCheckoutSession(session: Stripe.Checkout.Session): Promise<BillingInterval> {
+  const fallback: BillingInterval = session.metadata?.interval === "year" ? "year" : "month";
+  const subscriptionId =
+    typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+  if (!subscriptionId) return fallback;
+  try {
+    const sub = await getStripe().subscriptions.retrieve(subscriptionId, {}, { timeout: STRIPE_READ_TIMEOUT_MS, maxNetworkRetries: 1 });
+    // The session's hint sits under the subscription's own metadata, so a
+    // price this deployment does not recognise still reads the checkout's.
+    return intervalForSubscription({ items: sub.items, metadata: { ...(session.metadata ?? {}), ...(sub.metadata ?? {}) } });
+  } catch {
+    return fallback;
+  }
 }
 
 /** One Stripe read inside the webhook: long enough for a slow answer, short enough for a retry. */
@@ -472,10 +496,13 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
           const weekHandedOff =
             canSelfInvoke() && (sites ?? []).some((s) => s.auto_generate === true && s.status !== "paused");
           try {
+            // The amount the card is charged on day eight: the yearly price
+            // for a yearly trial, which used to be quoted the monthly one.
+            const interval = await intervalForCheckoutSession(session);
             await notifyTrialStarted(
               supabase,
               accountId,
-              { planLabel: PLAN_LABELS[tier] ?? tier, planPrice: PLAN_PRICES[tier] ?? "", endsAt: trial, weekHandedOff },
+              { planLabel: PLAN_LABELS[tier] ?? tier, planPrice: planChargeLabel(tier, interval), endsAt: trial, weekHandedOff },
               key,
             );
           } catch (err) {
@@ -749,7 +776,7 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
           account.id,
           {
             planLabel: PLAN_LABELS[plan] ?? plan,
-            planPrice: PLAN_PRICES[plan] ?? "",
+            planPrice: planChargeLabel(plan, intervalForSubscription(sub)),
             endsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : account.trial_ends_at ?? null,
           },
           sub.id,

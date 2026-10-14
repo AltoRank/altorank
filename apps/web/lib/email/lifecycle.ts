@@ -558,7 +558,7 @@ export function renderPlanChanged(a: PlanChangedEmail): RenderedEmail {
 
 export type TrialStartedEmail = {
   planLabel: string;
-  /** "€69/mo" style. */
+  /** What the card is charged on day eight: "€69", or "€690 for the year" (planChargeLabel). */
   planPrice: string;
   /** ISO end of the trial. */
   endsAt: string;
