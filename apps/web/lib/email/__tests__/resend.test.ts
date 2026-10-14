@@ -66,4 +66,24 @@ describe("Resend delivery", () => {
     await expect(sendToolResultEmail("a@b.co", "Hello", "<p>hi</p>")).rejects.toThrow("RESEND_API_KEY not configured");
     expect(send).not.toHaveBeenCalled();
   });
+  it("escapes the account and inviter names in the invite email", async () => {
+    // Both are user-set. An owner could otherwise mail any address arbitrary
+    // HTML (a styled link, a fake form) from the verified sending domain.
+    send.mockResolvedValue({ data: { id: "em_2" }, error: null, headers: null });
+    const { sendInviteEmail } = await freshModule();
+    await sendInviteEmail(
+      "invitee@example.com",
+      '<a href="https://evil.example">Mallory</a>',
+      "Acme <img src=x onerror=alert(1)>",
+      "editor",
+      "https://app.example/invite/abc",
+    );
+    const { html } = send.mock.calls[0][0] as { html: string };
+    expect(html).not.toContain("<img src=x");
+    expect(html).not.toContain('<a href="https://evil.example">');
+    expect(html).toContain("Acme &lt;img src=x onerror=alert(1)&gt;");
+    expect(html).toContain("&lt;a href=&quot;https://evil.example&quot;&gt;Mallory&lt;/a&gt;");
+    // The real link is still a link.
+    expect(html).toContain('href="https://app.example/invite/abc"');
+  });
 });
