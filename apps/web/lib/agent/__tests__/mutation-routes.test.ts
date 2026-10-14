@@ -305,6 +305,46 @@ describe("workspace pause / resume", () => {
   });
 });
 
+describe("the paid read has its own window", () => {
+  // POST /keywords/suggest writes nothing, so it is not a mutation - and every
+  // call is a paid DataForSEO lookup. It sat outside every window but the
+  // 120/min read limit, which any key can reach: DEFAULT_SCOPES is
+  // ["read", "generate"].
+  it("throttles at SPEND_LIMIT per key and says why, without touching the mutation window", async () => {
+    const { POST } = await import("@/app/api/agent/v1/keywords/suggest/route");
+    const { SPEND_LIMIT } = await import("@/lib/agent/http");
+    const call = () => POST(request("/keywords/suggest", { key: READ_KEY, json: { workspace_id: WS } }));
+
+    // No DataForSEO credentials under test, so the handler stops at
+    // not_available - which is the point: the window is taken before the
+    // handler runs, so an endpoint that costs money is capped whatever it
+    // then decides to do.
+    const first = await call();
+    expect(first.status).toBe(409);
+    expect((await first.json()).error.code).toBe("not_available");
+    expect(first.headers.get("x-ratelimit-spend-limit")).toBe(String(SPEND_LIMIT));
+    expect(first.headers.get("x-ratelimit-spend-remaining")).toBe(String(SPEND_LIMIT - 1));
+    // The read window is still reported beside it, not replaced by it.
+    expect(first.headers.get("x-ratelimit-limit")).toBe("120");
+    // Nothing here is a mutation, so no mutation window was spent.
+    expect(first.headers.get("x-ratelimit-mutations-limit")).toBeNull();
+
+    for (let i = 1; i < SPEND_LIMIT; i++) await call();
+
+    const over = await call();
+    expect(over.status).toBe(429);
+    const env = await over.json();
+    expect(env.error.code).toBe("rate_limited");
+    expect(env.error.message).toMatch(new RegExp(`${SPEND_LIMIT}/min`));
+    expect(env.agent_guidance).toMatch(/bills a third party per call/);
+    expect(over.headers.get("retry-after")).toBeTruthy();
+    expect(over.headers.get("x-ratelimit-spend-remaining")).toBe("0");
+    expect(dataWrites()).toHaveLength(0);
+    // Eleven route invocations through the real stack; the default 5s is not
+    // about this test's subject.
+  }, 30_000);
+});
+
 describe("GSC reads", () => {
   it("says not connected as ok:false, never as an empty result", async () => {
     const routes = [
