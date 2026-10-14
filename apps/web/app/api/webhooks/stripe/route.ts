@@ -22,7 +22,7 @@ import { oweResume } from "@/lib/plan/resume-week";
 import { canSelfInvoke } from "@/lib/content/fan-out";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
 import { graceEndsAt } from "@/lib/billing/dunning";
-import { invoicePendingCharges } from "@/lib/billing/invoice-pending";
+import { invoicePendingCharges, paymentMethodId } from "@/lib/billing/invoice-pending";
 import {
   notifyPaymentFailed,
   notifyPlanChanged,
@@ -621,7 +621,7 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
       if (event.type === "customer.subscription.deleted" && sub.customer) {
         const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
         try {
-          await invoicePendingCharges(getStripe(), customerId);
+          await invoicePendingCharges(getStripe(), customerId, { paymentMethod: paymentMethodId(sub.default_payment_method) });
         } catch (err) {
           // A customer deleted at Stripe has nothing left to invoice, and
           // retrying would only fail the same way for three days.

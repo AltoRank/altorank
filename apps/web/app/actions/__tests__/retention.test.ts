@@ -165,6 +165,14 @@ describe("pauseAccount", () => {
     expect(createInvoice.mock.invocationCallOrder[0]).toBeLessThan(subUpdate.mock.invocationCallOrder[0]);
   });
 
+  it("charges that invoice to the subscription's card", async () => {
+    pendingItems.mockResolvedValue({ data: [{ id: "ii_1" }] });
+    subRetrieve.mockResolvedValue({ id: "sub_1", default_payment_method: { id: "pm_card" } });
+    const { pauseAccount } = await import("../retention");
+    await pauseAccount(1);
+    expect(createInvoice).toHaveBeenCalledWith(expect.objectContaining({ default_payment_method: "pm_card" }));
+  });
+
   it("changes nothing when that invoice cannot be made", async () => {
     pendingItems.mockResolvedValue({ data: [{ id: "ii_1" }] });
     createInvoice.mockRejectedValue(new Error("Stripe is down"));

@@ -66,7 +66,9 @@ export async function pauseAccount(months: unknown): Promise<BillingOutcome<{ pa
   // fee. First, so a refusal here has changed nothing.
   if (billingEnabled && account.stripe_subscription_id && account.stripe_customer_id) {
     try {
-      await invoicePendingCharges(getStripe(), account.stripe_customer_id as string);
+      await invoicePendingCharges(getStripe(), account.stripe_customer_id as string, {
+        subscriptionId: account.stripe_subscription_id as string,
+      });
     } catch (err) {
       return billingFailure(err, "The pause could not be started");
     }

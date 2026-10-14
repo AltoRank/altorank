@@ -573,6 +573,15 @@ describe("the final period's overage", () => {
     expect(finalizeInvoice).toHaveBeenCalledWith("in_final");
   });
 
+  // Checkout saves the card on the subscription, not as the customer's
+  // invoice default; an invoice with no subscription would find no card.
+  it("is charged to the ended subscription's card", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
+    pendingItems.mockResolvedValue({ data: [{ id: "ii_1" }] });
+    await deliver(subscriptionEvent("deleted", { default_payment_method: "pm_card" }));
+    expect(createInvoice).toHaveBeenCalledWith(expect.objectContaining({ default_payment_method: "pm_card" }));
+  });
+
   it("makes no invoice when nothing is pending, and none on an ordinary update", async () => {
     accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
     await deliver(subscriptionEvent("deleted"));
