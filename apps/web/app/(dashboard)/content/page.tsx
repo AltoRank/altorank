@@ -89,7 +89,9 @@ export default async function CalendarPage({ searchParams }: Props) {
   const kwById = new Map<string, PlannerKeyword>(keywordRows.map((k) => [k.id, k]));
 
   // Whether "Write now" can run at all. Only the free draft's exhaustion is a
-  // refusal; a paid plan at its limit writes as overage, like any generation.
+  // refusal here. A paid plan at its limit has every planned entry frozen
+  // (lib/plan/frozen.ts), which refuses Write now per entry; the overage
+  // door is New article on the Articles page, which the frozen reason names.
   let writeGate: WriteGate = { ok: true };
   if (quota && quota.reason === "no-plan" && quota.limit !== null && (quota.remaining ?? 0) <= 0) {
     writeGate = { ok: false, reason: quotaExceededMessage(quota) };
