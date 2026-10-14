@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { VoiceRules } from "./types";
 import { anthropicModel, replyText } from "./models";
+import { createMetered } from "./metered";
 import { resolveLocale, UNKNOWN_LANGUAGE } from "@/lib/i18n/locale";
 
 const ANALYSIS_PROMPT = `You are a writing style analyst. Analyze the following sample text(s) and extract a detailed voice profile. Return a JSON object with these exact fields:
@@ -59,14 +60,16 @@ export async function analyzeVoiceWithAI(
     .map((t, i) => `--- Sample ${i + 1} ---\n${t}`)
     .join("\n\n");
 
-  const response = await client.messages.create({
+  // Metered: claimed under a first look's budget and written to spend. A
+  // refusal throws, and the caller falls back to the local read.
+  const response = await createMetered(client, {
     // Content tier: this reads a client's writing to derive their voice, and a
     // weaker read produces a voice profile that skews every future article.
     model: anthropicModel("content"),
     max_tokens: 1024,
     system: `${ANALYSIS_PROMPT}\n\n${voiceLanguageNote(language)}`,
     messages: [{ role: "user", content: combined }],
-  });
+  }, "voice/analyze");
 
   const text = replyText(response.content) ?? "";
 

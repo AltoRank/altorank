@@ -52,7 +52,7 @@ describe("entitledToScheduledWork", () => {
 // written reason, and a route in neither state fails with instructions. Same
 // shape as lib/plan/__tests__/cron-pause-guard.
 //
-// `recordSpend`/`setSpendReporter` is the right signal because it is not
+// `recordSpend`/`withSpendScope` is the right signal because it is not
 // optional: a provider call nobody records is a bill nobody can attribute, and
 // lib/billing/spend.ts exists to stop that.
 
@@ -99,7 +99,7 @@ function resolveImport(spec: string): string | null {
 }
 
 /** A call that writes a provider_spend row, i.e. money left the account. */
-const SPENDS = /\brecordSpend\s*\(|\bsetSpendReporter\s*\(/;
+const SPENDS = /\brecordSpend\s*\(|\bsetSpendReporter\s*\(|\bwithSpendScope\s*\(/;
 const SPEND_MODULE = join(APP_DIR, "lib", "billing", "spend.ts");
 
 /**
