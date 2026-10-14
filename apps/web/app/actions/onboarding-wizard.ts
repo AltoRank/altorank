@@ -25,6 +25,7 @@ import { languageCodeOf } from "@/lib/keyword-research/locale";
 import { e2eStubsEnabled, stubSuggestCompetitors } from "@/lib/e2e/stubs";
 import { resolveLocale } from "@/lib/onboarding/locale";
 import { discoverSite, type SiteDiscovery } from "@/lib/onboarding/site-discovery";
+import { automaticFirstLookEnabled } from "@/lib/onboarding/automatic-first-look";
 import {
   outputToRow,
   parseBrandColor,
@@ -47,6 +48,50 @@ async function assertWorkspace(workspaceId: string) {
   if (error && error.code !== "PGRST116") throw new Error(`Could not read the site: ${error.message}`);
   if (!data) throw new Error("That site is not on this account.");
   return { supabase, workspace: data };
+}
+
+/** The automatic path stores inference without claiming the owner confirmed it. */
+export async function prepareAutomaticFirstLook(workspaceId: string): Promise<InferenceResult> {
+  const { supabase, workspace } = await assertWorkspace(workspaceId);
+  if (!automaticFirstLookEnabled(workspaceId)) throw new Error("Automatic first look is not enabled for this site.");
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
+  const gate = await canSpend(supabase, accountId, { userEmail: user.email, workspaceId, action: "setup" });
+  if (!gate.allowed) return { profile: null, reason: "needs_plan", source: "none", message: gate.message };
+  const saved = workspace.business_profile as BusinessProfile | null;
+  const result = saved?.description?.trim() && saved.offerings?.length
+    ? { profile: saved, reason: "ok" as const, source: "none" as const }
+    : workspace.domain ? await inferVerifiedBusinessProfile(workspace.domain) : { profile: null, reason: "unreadable" as const, source: "none" as const };
+  if (!result.profile) return result;
+  const profile = result.profile;
+  const locale = resolveLocale(profile.language, profile.country);
+  const { error } = await supabase.from("workspaces").update({ business_profile: profile,
+    name: profile.name?.trim() || workspace.name, language: locale.language, location_code: locale.locationCode }).eq("id", workspaceId);
+  if (error) throw new Error(error.message);
+  // These are discovered URLs, never guessed paths or fields the user must fill.
+  const details = workspace.domain ? await discoverSite(workspace.domain) : null;
+  if (details) {
+    const { data: current, error: readError } = await supabase.from("workspaces").select("sitemap_url, blog_root_url, example_article_urls").eq("id", workspaceId).single();
+    if (readError) throw new Error(readError.message);
+    await saveSiteDetails(workspaceId, { sitemapUrl: current?.sitemap_url || details.sitemapUrl || "",
+      blogRootUrl: current?.blog_root_url || details.blogRootUrl || "", exampleArticleUrls: current?.example_article_urls?.length ? current.example_article_urls : details.exampleArticleUrls });
+  }
+  return result;
+}
+
+/** Confirm only the one answer the person supplied, not the rest of an inferred profile. */
+export async function clarifyFirstLookOffering(workspaceId: string, offering: string): Promise<void> {
+  const { supabase, workspace } = await assertWorkspace(workspaceId);
+  if (!automaticFirstLookEnabled(workspaceId)) throw new Error("Automatic first look is not enabled for this site.");
+  const answer = offering.trim();
+  if (answer.length < 3 || answer.length > 200) throw new Error("Describe your main service in 3–200 characters.");
+  const profile = workspace.business_profile as BusinessProfile | null;
+  const { error } = await supabase.from("workspaces").update({ business_profile: {
+    name: workspace.name, language: "English", country: "Global (English)", audiences: [], competitors: [],
+    ...profile, description: profile?.description || `This business offers ${answer}.`,
+    offerings: [answer, ...(profile?.offerings ?? []).filter((s) => s !== answer)].slice(0, 6),
+    firstLookOffering: answer,
+  } }).eq("id", workspaceId);
+  if (error) throw new Error(error.message);
 }
 
 /**

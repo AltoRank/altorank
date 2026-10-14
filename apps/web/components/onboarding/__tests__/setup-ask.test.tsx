@@ -73,6 +73,14 @@ describe("setupEnding: the one decision both setup screens read", () => {
 });
 
 describe("SetupAsk", () => {
+  it("requires an actual article before showing checkout in automatic onboarding", () => {
+    for (const ending of ["writing", "retry", "first-failed", "nothing-planned", "no-article"] as const) {
+      const html = renderToStaticMarkup(<SetupAsk ending={ending} canBuy followUp requireArticle />);
+      expect(html).not.toContain("trial-offer");
+      expect(html).not.toContain("24 hours");
+    }
+    expect(renderToStaticMarkup(<SetupAsk ending="article" canBuy followUp requireArticle />)).toContain("trial-offer");
+  });
   it("renders the honest note, and no card ask, for a run that planned nothing", () => {
     const ending = setupEnding(stateFromRun(nothingPlannedRow, null), GATED);
     const html = text(renderToStaticMarkup(<SetupAsk ending={ending} canBuy followUp />));

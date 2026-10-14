@@ -35,6 +35,7 @@ import type { FactCheckReport } from "@/lib/ai/fact-check";
 export type FirstArticleVerdict = FactCheckReport["verdict"];
 
 export interface FirstArticleCard {
+  selection?: { offering: string; buyerDecision: string; rationale: string };
   id: string;
   title: string;
   keyword: string;
@@ -115,7 +116,12 @@ export function toFirstArticleCard(
   opts: { domain: string | null | undefined; scheduledDate: string | null; more: number; verdict?: unknown; volume?: number | null },
 ): FirstArticleCard {
   const html = contentHtml(row.content);
+  const evidence = (opts.verdict as { firstArticle?: { version?: unknown; offering?: unknown; buyerDecision?: unknown; rationale?: unknown } } | null)?.firstArticle;
+  const selection = evidence?.version === 1 && typeof evidence.offering === "string" &&
+    typeof evidence.buyerDecision === "string" && typeof evidence.rationale === "string"
+    ? { offering: evidence.offering, buyerDecision: evidence.buyerDecision, rationale: evidence.rationale } : undefined;
   return {
+    ...(selection ? { selection } : {}),
     id: row.id,
     title: row.title ?? "",
     keyword: row.keyword ?? "",

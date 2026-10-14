@@ -29,7 +29,8 @@
 // product read their site and have a reason to answer honestly; it is asked
 // and one click is not a wall.
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { AutomaticFirstTouch } from "./automatic-first-touch";
 import { useRouter } from "next/navigation";
 import { Button, Icons } from "@/components/ui";
 import {
@@ -77,7 +78,17 @@ import posthog from "posthog-js";
 
 export type Destination = { id: string; name: string; description: string | null };
 
-export function OnboardingWizard({
+export function OnboardingWizard(props: Parameters<typeof ClassicOnboardingWizard>[0] & { automaticFirstLook?: boolean }) {
+  const [prepared, setPrepared] = useState(false);
+  const onPrepared = useCallback(() => setPrepared(true), []);
+  const [resume] = useState(() => props.initialRun && shouldResumeRun(props.initialRun, Date.now()));
+  if (props.automaticFirstLook && !prepared && !resume && !props.alreadyOnboarded) {
+    return <AutomaticFirstTouch key={props.workspaceId} workspaceId={props.workspaceId} domain={props.domain} onReady={onPrepared} />;
+  }
+  return <ClassicOnboardingWizard {...props} startAutomatically={prepared} />;
+}
+
+function ClassicOnboardingWizard({
   workspaceId,
   userId,
   userEmail,
@@ -98,7 +109,11 @@ export function OnboardingWizard({
   preTrialSetup = OPEN_SETUP,
   initialRun = null,
   otherSites = [],
+  startAutomatically = false,
+  automaticFirstLook = false,
 }: {
+  startAutomatically?: boolean;
+  automaticFirstLook?: boolean;
   workspaceId: string;
   userId: string;
   userEmail?: string;
@@ -182,7 +197,7 @@ export function OnboardingWizard({
   const [discovery, setDiscovery] = useState<SiteDiscovery | null | "pending">(initialSite.sitemapUrl || initialSite.blogRootUrl ? null : "pending");
   // A run found on load is resumed; otherwise Finish starts one.
   const [resumed] = useState(() => (initialRun && shouldResumeRun(initialRun, Date.now()) ? initialRun : null));
-  const [running, setRunning] = useState(resumed !== null);
+  const [running, setRunning] = useState(startAutomatically || resumed !== null);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   // Rivals proposed for the competitor step, looked up once the profile is
@@ -295,6 +310,7 @@ export function OnboardingWizard({
   if (!running && alreadyOnboarded && trialEligible) {
     return (
       <TrialGateScreen
+        automaticFirstLook={automaticFirstLook}
         canBuy={canBuy}
         onRetry={() => setRunning(true)}
         domain={domain}
@@ -315,6 +331,7 @@ export function OnboardingWizard({
   if (running) {
     return (
       <RunScreen
+        automaticFirstLook={automaticFirstLook}
         canBuy={canBuy}
         workspaceId={workspaceId}
         domain={domain}
@@ -686,6 +703,7 @@ const FIRST_ARTICLE_FAILED_LEDE =
  * setup to replace an article that existed (lib/onboarding/setup-retry.ts).
  */
 function TrialGateScreen({
+  automaticFirstLook = false,
   domain,
   canBuy,
   onRetry,
@@ -700,6 +718,7 @@ function TrialGateScreen({
   userEmail,
   otherSites = [],
 }: {
+  automaticFirstLook?: boolean;
   domain: string;
   canBuy: boolean;
   onRetry: () => void;
@@ -738,12 +757,12 @@ function TrialGateScreen({
     "no-article": "No article was written in setup",
   };
   const lede: Record<SetupEnding, string> = {
-    article: `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`,
-    writing: "It appears here when it is done, usually within a few minutes. The trial opens it, and the rest of the week.",
+    article: automaticFirstLook ? `Your first article is ready to review. Start your ${TRIAL_DAYS}-day trial to read it in full and continue your content plan.` : `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`,
+    writing: automaticFirstLook ? "It appears here when it is ready. You can leave this page and come back." : "It appears here when it is done, usually within a few minutes. The trial opens it, and the rest of the week.",
     retry: `Nothing was written for ${domain || "your site"}. Running setup again reads the site, plans the month and writes the first article.`,
-    "first-failed": FIRST_ARTICLE_FAILED_LEDE,
-    "nothing-planned": nothingPlannedLede(domain, runState?.emptyPool ?? null, setup.followUp),
-    "no-article": `${draftingDetail ? `Setup said: ${draftingDetail}` : "Setup finished without writing an article."} The trial opens the calendar, where articles can be written from the plan.`,
+    "first-failed": automaticFirstLook ? "The draft did not finish. Your setup is saved; no payment is needed to resolve this." : FIRST_ARTICLE_FAILED_LEDE,
+    "nothing-planned": nothingPlannedLede(domain, runState?.emptyPool ?? null, setup.followUp && !automaticFirstLook),
+    "no-article": `${draftingDetail ? `Setup said: ${draftingDetail}` : "Setup finished without writing an article."} ${automaticFirstLook ? "Your first look is saved." : "The trial opens the calendar, where articles can be written from the plan."}`,
   };
 
   return (
@@ -769,9 +788,10 @@ function TrialGateScreen({
               button placed after the card sat a screen down and went unseen.
               Not over a run that planned nothing: there is nothing behind
               the card, and the note that replaces it says who writes next. */}
-          <SetupAsk ending={ending} canBuy={canBuy} followUp={setup.followUp} returnTo="/dashboard" />
+          {automaticFirstLook && firstArticle && <FirstArticleCardView article={firstArticle} />}
+          <SetupAsk ending={ending} canBuy={canBuy} followUp={setup.followUp} returnTo="/dashboard" requireArticle={automaticFirstLook} />
           {askAttribution && <AttributionAsk />}
-          {firstArticle && <FirstArticleCardView article={firstArticle} />}
+          {!automaticFirstLook && firstArticle && <FirstArticleCardView article={firstArticle} />}
         </div>
 
         <div className="mx-auto flex max-w-[640px] flex-col gap-5">
@@ -869,6 +889,7 @@ function TrialGateScreen({
  * copied it and published it on their own site within the hour.
  */
 function TrialStep({
+  automaticFirstLook = false,
   canBuy,
   ending,
   followUp,
@@ -880,6 +901,7 @@ function TrialStep({
   held,
   askAttribution = false,
 }: {
+  automaticFirstLook?: boolean;
   canBuy: boolean;
   ending: SetupEnding;
   /** Whether the note may promise a reply (PreTrialSetup `followUp`). */
@@ -908,10 +930,11 @@ function TrialStep({
           an earlier arrangement put the evidence on top: on a site with a full
           report the button sat a full screen down and was never seen. A run
           that planned nothing gets the note instead of the ask. */}
-      <SetupAsk ending={ending} canBuy={canBuy} followUp={followUp} returnTo="/dashboard" />
+      {automaticFirstLook && hasArticle && <FirstArticleCardView article={firstArticle} pending={firstArticle ? null : pending} />}
+      <SetupAsk ending={ending} canBuy={canBuy} followUp={followUp} returnTo="/dashboard" requireArticle={automaticFirstLook} />
       {askAttribution && <AttributionAsk />}
 
-      {hasArticle && <FirstArticleCardView article={firstArticle} pending={firstArticle ? null : pending} />}
+      {!automaticFirstLook && hasArticle && <FirstArticleCardView article={firstArticle} pending={firstArticle ? null : pending} />}
 
       {held && held.count > 0 && (
         <p className="m-0 text-[13px] leading-[1.6] text-ink-2">
@@ -951,6 +974,7 @@ function TrialStep({
  * opens, and a "Finish" that led there only bounced back here.
  */
 function RunScreen({
+  automaticFirstLook = false,
   workspaceId,
   canBuy,
   domain,
@@ -964,6 +988,7 @@ function RunScreen({
   userEmail,
   otherSites = [],
 }: {
+  automaticFirstLook?: boolean;
   workspaceId: string;
   canBuy: boolean;
   domain: string;
@@ -1046,25 +1071,26 @@ function RunScreen({
                   ? FIRST_ARTICLE_FAILED_HEADING
                   : nothingPlanned
                     ? NOTHING_PLANNED_HEADING
-                    : "Start your trial to keep writing"
+                    : automaticFirstLook ? "Your first article needs another look" : "Start your trial to keep writing"
               : finished
                 ? "Your content plan"
-                : "Creating your content plan"}
+                : automaticFirstLook ? "Preparing your first article" : "Creating your content plan"}
           </h1>
           <p className="mx-auto max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
             {trialStep ? (
               hasArticle ? (
                 <>
-                  Start your {TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the
-                  week is written once the trial starts.
+                  {automaticFirstLook ? `Start your ${TRIAL_DAYS}-day trial to read it in full and continue your content plan.` : `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`}
                 </>
               ) : failed ? (
-                <>{FIRST_ARTICLE_FAILED_LEDE}</>
+                <>{automaticFirstLook ? "The draft did not finish. Your setup is saved; no payment is needed to resolve this." : FIRST_ARTICLE_FAILED_LEDE}</>
               ) : nothingPlanned ? (
-                <>{nothingPlannedLede(domain, state?.emptyPool ?? null, preTrialSetup.followUp)}</>
+                <>{nothingPlannedLede(domain, state?.emptyPool ?? null, preTrialSetup.followUp && !automaticFirstLook)}</>
               ) : (
-                <>Setup did not write an article for {domain}. The trial opens the calendar and the plan behind it.</>
+                <>{automaticFirstLook ? `We have not prepared an article for ${domain} yet. Your setup is saved.` : `Setup did not write an article for ${domain}. The trial opens the calendar and the plan behind it.`}</>
               )
+            ) : automaticFirstLook ? (
+              <>Reading {domain}, checking your services and existing pages, and selecting a buyer question supported by search results. We will write the strongest eligible article. Search Console is optional.</>
             ) : (
               <>
                 Reading {domain}, checking buyer needs and live search results, preparing up to five specific article ideas, and writing
@@ -1091,6 +1117,7 @@ function RunScreen({
 
         {trialStep && ending && (
           <TrialStep
+            automaticFirstLook={automaticFirstLook}
             canBuy={canBuy}
             ending={ending}
             followUp={preTrialSetup.followUp}

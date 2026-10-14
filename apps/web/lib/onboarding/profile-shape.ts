@@ -29,6 +29,8 @@ export interface BusinessProfile {
    * before 2026-09-11 have none.
    */
   offerings?: string[];
+  /** The owner's optional answer about the first article's service, not a full profile confirmation. */
+  firstLookOffering?: string;
   /** Domains, not company names, so they can seed competitive research. */
   competitors: string[];
   /**

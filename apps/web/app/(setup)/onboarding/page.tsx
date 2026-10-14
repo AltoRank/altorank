@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { automaticFirstLookEnabled } from "@/lib/onboarding/automatic-first-look";
 import { redirect } from "next/navigation";
 import { getSimulation } from "@/lib/dev/simulation";
 import { loadFirstLookReport } from "@/lib/onboarding/first-look-report";
@@ -141,6 +142,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
     <>
     {status === "cancelled" && <p role="status" className="p-4 text-center text-sm">Checkout was cancelled. Nothing was charged, and your first article and plan are saved. Start the trial below whenever you are ready.</p>}
     <OnboardingWizard
+      automaticFirstLook={automaticFirstLookEnabled(workspace.id)}
       canBuy={auth.role === "owner"}
       workspaceId={workspace.id}
       userId={auth.user.id}

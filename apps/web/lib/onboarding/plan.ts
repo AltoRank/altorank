@@ -298,6 +298,8 @@ export async function readPlannedEntries(
 }
 
 export interface PlanOptions {
+  /** Server-owned first-article shortlist, already qualified. An empty list stays empty. */
+  firstArticleRecommendations?: KeywordRecommendation[];
   /**
    * Batches of verdicts the plan may buy (lib/keyword-research/queue.ts).
    * The first look asks for more than a cron pass: on altorank.co eight of
@@ -385,7 +387,7 @@ async function planFor(
   };
   let recommended: KeywordRecommendation[];
   try {
-    recommended = await recommendKeywords(supabase, workspaceId, {
+    recommended = opts.firstArticleRecommendations ?? await recommendKeywords(supabase, workspaceId, {
       limit: 1000,
       qualify: true,
       qualifyBatches: opts.qualifyBatches,
