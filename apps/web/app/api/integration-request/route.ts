@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sendPlainEmail } from "@/lib/email/resend";
+import { feedbackRecipient, NO_FEEDBACK_RECIPIENT } from "@/lib/email/feedback-recipient";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
@@ -23,8 +24,6 @@ import { takeToolRateLimit } from "@/lib/tools/rate-limit";
  * The trade to know about: we cannot show the person a history of what they
  * requested, and we cannot count demand in SQL. Both are deliberate.
  */
-
-const REQUEST_TO = process.env.FEEDBACK_EMAIL ?? "helloaltorank@gmail.com";
 
 /** Per user, not per IP: the identity we rate-limit on is the session. */
 const MAX_REQUESTS = 10;
@@ -57,6 +56,11 @@ export async function POST(request: Request) {
       { error: "Requests are not configured on this deployment (RESEND_API_KEY)." },
       { status: 503 },
     );
+  }
+
+  const to = feedbackRecipient();
+  if (!to) {
+    return NextResponse.json({ error: NO_FEEDBACK_RECIPIENT }, { status: 503 });
   }
 
   const body = (await request.json().catch(() => null)) as {
@@ -110,7 +114,7 @@ export async function POST(request: Request) {
 
   try {
     await sendPlainEmail({
-      to: REQUEST_TO,
+      to,
       subject: `Integration request: ${integrationName} (${user.email})`,
       text,
       ...(user.email ? { replyTo: user.email } : {}),

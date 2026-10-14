@@ -33,7 +33,7 @@ anything the defaults get wrong.
   With `CRON_SECRET` unset every cron endpoint returns 401, which is the safe
   default. A route reachable without that header would be a finding.
 - **Operators can open the product as any account** ("View as" on
-  `/admin/users`). It is gated on `ADMIN_EMAILS`, every use is written to
+  `/admin/users`). It is gated on `ADMIN_EMAILS` (unset or empty: nobody), every use is written to
   `admin_impersonations`, and the way back is bound to the exact session that
   was minted (`apps/web/lib/auth/impersonation-stash.ts`). A path that lets a
   non-operator start one, or lets an ordinary session use the operator's return

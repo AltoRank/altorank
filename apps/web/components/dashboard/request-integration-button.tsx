@@ -40,7 +40,7 @@ export function RequestIntegrationButton({
         throw new Error(body?.error ?? "Could not send that.");
       }
       setState("sent");
-      toast.success(`Noted — we will email you when ${integrationName} is ready.`);
+      toast.success(`Request for ${integrationName} sent. Replies come by email.`);
     } catch (err) {
       setState("idle");
       toast.error(err instanceof Error ? err.message : "Could not send that.");
