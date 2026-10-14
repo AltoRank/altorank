@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { publishArticleCore, PublishError } from "@/lib/publishing/core";
-import { recordPublish } from "@/lib/publishing/log";
+import { lastSuccessfulPushAt, recordPublish } from "@/lib/publishing/log";
 import { cadenceDueState, cadenceLocalDate, withoutPaused } from "@/lib/publishing/cadence";
 import type { PublishingCadence } from "@/lib/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -151,6 +151,10 @@ async function run(request: Request) {
   }
 
   // ── Phase 2: workspace cadence (scheduled_at IS NULL) ──
+  // Every site's cadence, on purpose: the scheduler reads them all, then
+  // publishes per site. Scoping it would publish only one site. (No longer in
+  // workspace-scope-guard's ALLOWED list only because the per-site lookup
+  // below now sits inside its line window.)
   const { data: cadences, error: cadenceError } = await supabase
     .from("publishing_cadences")
     .select("*")
@@ -167,17 +171,22 @@ async function run(request: Request) {
     // window is gone. Without it a cron running more than once a day would
     // publish the whole queue in a single day. publish_log already records
     // every cron publish, so the check costs one indexed lookup per cadence.
-    const { data: lastPublish } = await supabase
-      .from("publish_log")
-      .select("created_at")
-      .eq("workspace_id", cadence.workspace_id)
-      .eq("status", "success")
-      .order("created_at", { ascending: false })
-      .limit(1);
+    // Fails closed: a log that cannot be read is not "never published", or
+    // an hourly cron would publish once an hour.
+    let lastPushed: string | null;
+    try {
+      lastPushed = await lastSuccessfulPushAt(supabase, cadence.workspace_id);
+    } catch (err) {
+      results.push({
+        articleId: "",
+        workspaceId: cadence.workspace_id,
+        status: "error",
+        error: `publish log unreadable, cadence skipped: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      continue;
+    }
 
-    const lastLocalDate = lastPublish?.[0]?.created_at
-      ? cadenceLocalDate(cadence.timezone, new Date(lastPublish[0].created_at))
-      : null;
+    const lastLocalDate = lastPushed ? cadenceLocalDate(cadence.timezone, new Date(lastPushed)) : null;
 
     const due = cadenceDueState(cadence, now, lastLocalDate);
     if (!due.due) {
