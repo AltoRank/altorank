@@ -205,7 +205,7 @@ describe("the stored hundred", () => {
     return { ...gapRow(i), keyword: `${a} ${b}` };
   };
 
-  // qasimcode.com, 2026-09-11. A studio selling fixed-price websites to
+  // acmestudio.example, 2026-09-11. A studio selling fixed-price websites to
   // clinics and salons stored `wix`, `acuity`, `web sites` and four phrasings
   // of `free portfolio website` - every one of them arriving on the ranked
   // path, which was exempt from both the brand filter and the buyer test

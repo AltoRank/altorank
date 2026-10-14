@@ -8,7 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * `duePlannedKeyword` only skips entries carrying an `article_id`, and only the
  * planned path ever sets one. When `pickNextKeyword` writes a term that also
  * sits in the calendar, that entry stays open and the plan comes back for the
- * same keyword on its scheduled day. qasimcode.com had two queued on
+ * same keyword on its scheduled day. acmestudio.example had two queued on
  * 2026-09-09, each for a keyword it had already published.
  */
 

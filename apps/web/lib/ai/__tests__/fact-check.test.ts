@@ -209,7 +209,7 @@ describe("factCheckArticle — corroboration", () => {
 });
 
 describe("factCheckArticle — attribution survives a dotted acronym", () => {
-  // From a real draft for qasimcode.com. The sentence names its source, links
+  // From a real draft for acmestudio.example. The sentence names its source, links
   // to it, and was still reported as unattributed: the split landed after
   // "U.S." and the surviving half opened "Bureau of Labor Statistics, ...".
   const BLS =

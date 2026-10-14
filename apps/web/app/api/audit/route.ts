@@ -142,7 +142,7 @@ export async function POST(request: NextRequest) {
       const pages = usablePages(fetched);
       if (!pages.length) {
         // Nothing answered. A failed fetch is not a clean page: the first
-        // version scored www.lully.ai 95/100 on a TLS error. Record the reason
+        // version scored www.acmeflow.example 95/100 on a TLS error. Record the reason
         // as the audit's one issue so the UI can show it, and mark it failed.
         const why = fetched.find((p) => p.error)?.error ?? `HTTP ${fetched[0]?.status ?? "?"}`;
         await supabase

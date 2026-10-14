@@ -43,7 +43,7 @@ const req = () => new Request("http://localhost/api/cron/generate", { headers: {
 
 beforeEach(() => {
   process.env.CRON_SECRET = "s";
-  workspaces = [{ id: "ws-1", domain: "qasimcode.com", agency_id: "ag-1", auto_generate_weekly_limit: 7, refresh_enabled: false, refresh_days: null, onboarded_at: "2026-09-07T10:00:00Z", onboarding_skipped_at: null }];
+  workspaces = [{ id: "ws-1", domain: "acmestudio.example", agency_id: "ag-1", auto_generate_weekly_limit: 7, refresh_enabled: false, refresh_days: null, onboarded_at: "2026-09-07T10:00:00Z", onboarding_skipped_at: null }];
   generateArticle.mockReset().mockResolvedValue({ articleId: "art-2", title: "T", wordCount: 400, factCheck: { verdict: "clean" } });
   firstDraftAwaitsReview.mockReset().mockResolvedValue(null);
 });

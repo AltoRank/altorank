@@ -209,7 +209,7 @@ export async function discoverBuyerKeywords(options: {
       !brand(term) && priced.get(term)?.volume == null,
     );
     // A rival phrase with no metrics is kept as a candidate but not probed
-    // for suggestions: "revoo alternatives" long-tails to nothing, and the
+    // for suggestions: "acmegym alternatives" long-tails to nothing, and the
     // probe slots belong to the category seeds.
     const rivalPhraseSet = new Set(rivalPhrases);
     const probeable = unknown.filter((term) => !rivalPhraseSet.has(term) || seeds.seeds.includes(term));

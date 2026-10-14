@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * `pickNextKeyword` is where the quality bar lives - it writes only what the
  * recommender marked `write`. A due calendar entry used to skip that check
  * entirely: whatever the plan named got written, however the recommender had
- * judged it. "business without websites" was queued for qasimcode.com on
+ * judged it. "business without websites" was queued for acmestudio.example on
  * 2026-09-09 and would have been written despite `commercialFit` refusing it,
  * because the plan had scheduled it before that check existed.
  */
@@ -108,7 +108,7 @@ const wrote = () => generateArticle.mock.calls[0][0] as { keyword: string; keywo
 beforeEach(() => {
   process.env.CRON_SECRET = "s";
   workspaces = [{
-    id: "ws-1", domain: "qasimcode.com", account_id: "ag-1", auto_generate_weekly_limit: 7,
+    id: "ws-1", domain: "acmestudio.example", account_id: "ag-1", auto_generate_weekly_limit: 7,
     refresh_enabled: false, refresh_days: null,
     onboarded_at: "2026-09-07T10:00:00Z", onboarding_skipped_at: null,
   }];

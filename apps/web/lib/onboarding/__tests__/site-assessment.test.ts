@@ -114,7 +114,7 @@ describe("the onboarding budget", () => {
  * The crawl is the one stubbed thing that is free, and the gate is narrow for
  * that reason: the fixture domains do not exist, so they are stubbed; a real
  * domain gets the real crawl even under E2E_STUBS=1. That is what let this
- * phase be exercised against limineer.com and altorank.co with no paid call
+ * phase be exercised against a real outside domain and altorank.co with no paid call
  * anywhere in the run.
  */
 describe("which domains the crawl is stubbed for", () => {
@@ -123,7 +123,7 @@ describe("which domains the crawl is stubbed for", () => {
     (domain) => expect(isReservedTestDomain(domain)).toBe(true),
   );
 
-  it.each(["limineer.com", "altorank.co", "https://www.fitsuite.co/blog", "testing.com", "invalid-name.co.uk"])(
+  it.each(["example.com", "altorank.co", "https://www.fitsuite.co/blog", "testing.com", "invalid-name.co.uk"])(
     "crawls %s for real",
     (domain) => expect(isReservedTestDomain(domain)).toBe(false),
   );

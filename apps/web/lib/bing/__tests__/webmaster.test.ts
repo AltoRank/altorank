@@ -32,7 +32,7 @@ const site = (url: string, isVerified = true) => ({ url, isVerified });
 describe("matchBingSite", () => {
   it("matches the domain across scheme and www, and never an unverified site", () => {
     expect(matchBingSite([site("http://example.com")], "www.example.com")!.url).toBe("http://example.com");
-    expect(matchBingSite([site("https://www.lully.ai/")], "lully.ai")!.url).toBe("https://www.lully.ai/");
+    expect(matchBingSite([site("https://www.acmeflow.example/")], "acmeflow.example")!.url).toBe("https://www.acmeflow.example/");
     expect(matchBingSite([site("https://example.com", false)], "example.com")).toBeNull();
   });
   it("prefers the exact host over a subdomain, and takes a subdomain over nothing", () => {

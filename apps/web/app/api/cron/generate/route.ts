@@ -313,7 +313,7 @@ async function run(request: Request) {
 
       // No vocabulary, no unattended article. With nothing to judge relevance
       // against, the queue is the provider's generic head terms, and the first
-      // draft on the lully.ai workspace would have been "ai can". A human can
+      // draft on the acmeflow.example workspace would have been "ai can". A human can
       // still pick a keyword by hand; the cron does not guess.
       const { data: wsProfile } = await supabase
         .from("workspaces")
@@ -377,7 +377,7 @@ async function run(request: Request) {
       // and keywords that argue against what the business sells never reach a
       // draft. A due entry used to skip that check entirely - whatever the
       // calendar named got written, however the recommender had judged it.
-      // "business without websites" was queued for qasimcode.com and would
+      // "business without websites" was queued for acmestudio.example and would
       // have been written despite `commercialFit` refusing it.
       //
       // So a refused plan entry falls back to the live queue, and the slot is

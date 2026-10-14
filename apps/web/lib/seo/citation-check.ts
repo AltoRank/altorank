@@ -7,7 +7,7 @@
 // it labels an attributed figure `needs_verification` and asks a human to open
 // the link.
 //
-// Nobody opens the link. A draft for qasimcode.com cited the U.S. Bureau of
+// Nobody opens the link. A draft for acmestudio.example cited the U.S. Bureau of
 // Labor Statistics by name, linked to the correct BLS page, and reported "8
 // percent from 2023 to 2033". That page says 5 percent from 2025 to 2035. The
 // figure was attributed, so it scored `needs_verification` at medium severity,

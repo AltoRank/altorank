@@ -12,7 +12,7 @@ const article = {
 
 describe("renderArticleMarkdown", () => {
   it("renders front matter the git adapter would commit, then the body", () => {
-    const md = renderArticleMarkdown(article, "https://www.lully.ai");
+    const md = renderArticleMarkdown(article, "https://www.acmeflow.example");
     expect(md.startsWith("---\n")).toBe(true);
     expect(md).toContain('title: "Warehouse \\"orchestration\\" explained"');
     expect(md).toContain('description: "What it is and why it matters."');
@@ -27,8 +27,8 @@ describe("renderArticleMarkdown", () => {
   });
 
   it("resolves relative links against the site, so a paste elsewhere still points home", () => {
-    const md = renderArticleMarkdown(article, "https://www.lully.ai");
-    expect(md).toContain("https://www.lully.ai/pricing");
+    const md = renderArticleMarkdown(article, "https://www.acmeflow.example");
+    expect(md).toContain("https://www.acmeflow.example/pricing");
   });
 
   it("omits fields the article does not have rather than writing empty strings", () => {

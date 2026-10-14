@@ -5,7 +5,7 @@ import type { CrawlResult } from "@/lib/audit/crawler";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * qasimcode.com, 2026-09-08. A studio selling appointment websites to clinics,
+ * acmestudio.example, 2026-09-08. A studio selling appointment websites to clinics,
  * salons and trades. After the seeding fix its keyword table held both of the
  * rows below; the picker chose the generic one and the first article written
  * was "Website Design Service in 2026: Compare Your Options".
@@ -16,15 +16,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  * term naming the exact buyer the person told us about in the wizard.
  */
 const page = (over: Partial<CrawlResult>): CrawlResult => ({
-  url: "https://qasimcode.com/", status: 200, title: "", metaDescription: "",
+  url: "https://acmestudio.example/", status: 200, title: "", metaDescription: "",
   h1: [], h2: [], images: [], links: [], loadTimeMs: 0, ...over,
 });
 
 const PROFILE = buildTopicalProfile(
-  "qasimcode.com",
+  "acmestudio.example",
   [
     page({
-      title: "Appointment websites for clinics and salons | Qasimcode",
+      title: "Appointment websites for clinics and salons | Acmestudio",
       h1: ["Websites that fill the appointment book"],
       h2: ["Website design service", "Dental clinic websites"],
     }),

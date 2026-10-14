@@ -32,7 +32,7 @@ export function memberDisplayName(user: ResolvedUser): string {
 
 /**
  * Two letters for the avatar. A name gives its first two initials; an email
- * gives the first two letters of its local part, so "mike@limineer.com" reads
+ * gives the first two letters of its local part, so "mike@acmeventures.example" reads
  * "MI" rather than the "M" every member used to share. An unresolved user is a
  * question mark, not initials invented from the fallback label.
  */

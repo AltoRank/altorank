@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 //
 // Every filter before this one asks whether a keyword is *about* the business.
-// None asks whether it is *for* the business. On 2026-09-08 qasimcode.com - a
+// None asks whether it is *for* the business. On 2026-09-08 acmestudio.example - a
 // studio that builds appointment websites for clinics and salons - was given
 // "Running a Business Without Websites in 2026", 1,600 searches a month, KD 0.
 // It passed every gate we had: the words are on the site, the difficulty is

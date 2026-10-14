@@ -231,7 +231,7 @@ describe("runAgentReadiness", () => {
 
 
   it("rejects an llms.txt that is really a redirect to an HTML page", () => {
-    // Regression: cloudflare.com and agenziabrand.it 301 /llms.txt to the
+    // Regression: cloudflare.com and acmeagenzia.it 301 /llms.txt to the
     // homepage; following the redirect yields 200 text/html, which passed.
     return runAgentReadiness("acme.example", fakeFetcher({
       [`${base}/`]: { body: GOOD_HOME },

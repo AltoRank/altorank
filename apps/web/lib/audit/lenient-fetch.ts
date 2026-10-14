@@ -1,6 +1,6 @@
 // A GET that tolerates a certificate chain Node cannot verify.
 //
-// www.lully.ai (2026-09-02) serves its leaf certificate without the
+// www.acmeflow.example (2026-09-02) serves its leaf certificate without the
 // intermediate. Browsers fetch the missing link themselves (AIA); Node's TLS
 // stack does not, so every fetch failed with UNABLE_TO_VERIFY_LEAF_SIGNATURE
 // and the site read as unreachable. For a read-only crawler that never sends
@@ -186,7 +186,7 @@ export function fetchLenient(
  * fallback read carries the header `x-altorank-tls-unverified: 1`.
  *
  * Every crawler, checker and scraper in this app must go through this or the
- * site with an incomplete chain (www.lully.ai, 2026-09-02) reads as empty in
+ * site with an incomplete chain (www.acmeflow.example, 2026-09-02) reads as empty in
  * one place and fine in another, and the product contradicts itself.
  */
 export async function fetchSite(

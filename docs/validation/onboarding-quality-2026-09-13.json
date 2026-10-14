@@ -171,7 +171,7 @@
       {
         "term": "crm personal trainer",
         "status": "qualified",
-        "reason": "Query dominates editorial comparisons and buyer guides (ranks 1, 6, 7). At least two results (qomodo.me, folk.app, trainerize.com) are editorial articles comparing CRM options for personal trainers. Articles credibly support buying decision: trainers need to evaluate platforms against criteria like all-in-one consolidation, client management, workout planning, and nutrition tools—core to FitSuite'",
+        "reason": "Query dominates editorial comparisons and buyer guides (ranks 1, 6, 7). At least two results (acmefit.example, folk.app, trainerize.com) are editorial articles comparing CRM options for personal trainers. Articles credibly support buying decision: trainers need to evaluate platforms against criteria like all-in-one consolidation, client management, workout planning, and nutrition tools—core to FitSuite'",
         "angle": "I 5 migliori CRM per personal trainer: confronto funzionalità e costi"
       }
     ],
@@ -826,7 +826,7 @@
   },
   {
     "case": "service",
-    "domain": "qasimcode.com",
+    "domain": "acmestudio.example",
     "scope": "Live profile, discovery, buyer fit, SERP qualification and generateArticle with local persistence. No browser, payment, CMS publishing or image-provider test.",
     "selectionPolicy": "Explicit keyword regression replay; not discovery evidence",
     "seedCount": null,

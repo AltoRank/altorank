@@ -128,7 +128,7 @@ export function isHopeless(difficulty: number | null | undefined): boolean {
  *
  * The gap this closes: `relativeDifficulty` has existed since 2026-09-05 and
  * produces "unrealistic" for exactly these keywords, but nothing on the
- * writing path ever asked it. qasimcode.com (authority 0, signed up
+ * writing path ever asked it. acmestudio.example (authority 0, signed up
  * 2026-09-07) was given twenty keywords of which five were KD 100 and eight
  * were KD 70 or worse, and an article was written for one of the KD 100s.
  *

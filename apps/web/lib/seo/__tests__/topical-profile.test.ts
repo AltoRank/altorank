@@ -183,9 +183,9 @@ describe("seedPhrasesFromPages", () => {
   it("seeds with the site's own phrases, not nav words or single tokens", async () => {
     const { seedPhrasesFromPages } = await import("../topical-profile");
     const seeds = seedPhrasesFromPages([
-      { title: "AI-Driven Warehouse Orchestration Platform - Lully.ai", h1: ["Warehouse Orchestration"], h2: ["By the Numbers:", "Lully's Why:", "AI Driven Warehouse Orchestration", "Hear from your Peers + More", "Case Studies"] },
-      { title: "Case Studies - Lully.ai", h1: ["Case Studies"], h2: ["Learn more", "Labor cost reduction at a 3PL"] },
-    ], "www.lully.ai");
+      { title: "AI-Driven Warehouse Orchestration Platform - Acmeflow.example", h1: ["Warehouse Orchestration"], h2: ["By the Numbers:", "Acmeflow's Why:", "AI Driven Warehouse Orchestration", "Hear from your Peers + More", "Case Studies"] },
+      { title: "Case Studies - Acmeflow.example", h1: ["Case Studies"], h2: ["Learn more", "Labor cost reduction at a 3PL"] },
+    ], "www.acmeflow.example");
     expect(seeds[0]).toBe("warehouse orchestration");
     expect(seeds.join(" ")).not.toContain("case stud");
     expect(seeds.join(" ")).not.toContain("learn more");
@@ -209,7 +209,7 @@ describe("seedPhrasesFromPages", () => {
 describe("domainTokens", () => {
   it("keeps the brand and drops www and the public suffix", async () => {
     const { domainTokens } = await import("../topical-profile");
-    expect(domainTokens("www.lully.ai")).toEqual(["lully"]);
+    expect(domainTokens("www.acmeflow.example")).toEqual(["acmeflow"]);
     expect(domainTokens("shop.acme-tools.co.uk")).toEqual(["shop", "acme", "tools"]);
     expect(domainTokens("https://altorank.co/")).toEqual(["altorank"]);
   });
@@ -225,11 +225,11 @@ describe("homepage signature", () => {
       ...Array.from({ length: 5 }, (_, i) => page(`Warehouse guide ${i}`, [`Warehouse topic ${i}`], ["Learn more"])),
       ...Array.from({ length: 5 }, (_, i) => page(`Article ${i}`, [`Topic ${i}`], ["Learn more"])),
     ];
-    const prof = buildTopicalProfile("www.lully.ai", pages);
+    const prof = buildTopicalProfile("www.acmeflow.example", pages);
     expect("warehouse" in prof.terms).toBe(true);
     expect("orchestration" in prof.terms).toBe(true);
     expect("www" in prof.terms).toBe(false);
-    expect("lully" in prof.terms).toBe(true);
+    expect("acmeflow" in prof.terms).toBe(true);
   });
 });
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { commercialFit } from "../commercial-fit";
 
-// qasimcode.com: builds appointment websites for clinics and salons, at a
+// acmestudio.example: builds appointment websites for clinics and salons, at a
 // fixed price, with ongoing monthly care.
 const SUBJECT = new Set([
   "appointment", "websites", "website", "booking", "clinics", "salons",

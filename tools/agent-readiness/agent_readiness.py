@@ -376,7 +376,7 @@ def check_domain(domain: str) -> Run:
     # 6. machine-readable copy of the content
     # Status alone is not enough: a site that 301s /llms.txt to its homepage
     # returns 200 text/html after the redirect and would pass. Seen on
-    # cloudflare.com and agenziabrand.it. Require a non-HTML body with content.
+    # cloudflare.com and acmeagenzia.it. Require a non-HTML body with content.
     l_status, l_headers, l_body = fetch(f"{base}/llms.txt")
     l_type = (l_headers.get("Content-Type") or l_headers.get("content-type") or "").lower()
     body = l_body.lstrip()

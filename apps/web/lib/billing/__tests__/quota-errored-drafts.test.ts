@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeAll } from "vitest";
 /**
  * A draft the platform destroyed is not a draft the customer spent.
  *
- * 2026-09-09: qasimcode.com's sixth run was killed at the function limit
+ * 2026-09-09: acmestudio.example's sixth run was killed at the function limit
  * before a word was generated. The stale sweeper marked the zero-word row
  * `error`, and the next run said "All 7 free drafts are used" - with five
  * real drafts on the account. Both article counts `getQuota` makes must leave

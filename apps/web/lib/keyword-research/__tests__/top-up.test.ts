@@ -11,17 +11,17 @@ import type { TermMetrics } from "../metrics";
 import { subjectVocabulary } from "@/lib/seo/topical-profile";
 
 /**
- * qasimcode.com stopped on its fifth article: fifteen keywords still in `new`
+ * acmestudio.example stopped on its fifth article: fifteen keywords still in `new`
  * and every one out of reach at authority 0. The pool was not empty, the
  * writable pool was, and discovery had run once at signup and never again.
  */
 
 const PROFILE = {
-  name: "Qasimcode",
+  name: "Acmestudio",
   language: "English",
   country: "Global (English)",
   description:
-    "Qasimcode builds appointment-based websites for medical and dental clinics, salons and trades, with online booking wired to the calendar they already use. Fixed price agreed upfront.",
+    "Acmestudio builds appointment-based websites for medical and dental clinics, salons and trades, with online booking wired to the calendar they already use. Fixed price agreed upfront.",
   audiences: ["dental clinics", "salons", "speech therapy practices"],
   competitors: ["wix.com", "squarespace.com"],
 };
@@ -73,13 +73,13 @@ describe("harvestFromResearch — keywords we already paid for", () => {
 
 describe("playbookCandidates — what the customer told us", () => {
   it("names the audiences the person confirmed", () => {
-    const terms = playbookCandidates(PROFILE, "qasimcode.com").join(" | ");
+    const terms = playbookCandidates(PROFILE, "acmestudio.example").join(" | ");
     expect(terms).toContain("dental clinics");
     expect(terms).toContain("salons");
   });
 
   it("asks the price question the category gets asked", () => {
-    expect(playbookCandidates(PROFILE, "qasimcode.com").some((t) => t.startsWith("how much does"))).toBe(true);
+    expect(playbookCandidates(PROFILE, "acmestudio.example").some((t) => t.startsWith("how much does"))).toBe(true);
   });
 
   it("uses the audience-shaped playbooks, not the brand-shaped ones", () => {
@@ -88,7 +88,7 @@ describe("playbookCandidates — what the customer told us", () => {
   });
 
   it("returns nothing rather than guessing when there is no profile", () => {
-    expect(playbookCandidates(null, "qasimcode.com")).toEqual([]);
+    expect(playbookCandidates(null, "acmestudio.example")).toEqual([]);
   });
 });
 
@@ -122,7 +122,7 @@ describe("worthStoring — the filter that makes this worth doing", () => {
 
   it("refuses the head terms that left the pool unwritable", () => {
     // "web design agency", 12,100/mo at KD 81, is the shape of everything
-    // qasimcode had left. Storing more of these refills nothing.
+    // acmestudio had left. Storing more of these refills nothing.
     expect(worthStoring(metric({ term: "web design agency", volume: 12100, difficulty: 81 }), opts)).toBe(false);
   });
 
@@ -155,7 +155,7 @@ describe("worthStoring — the filter that makes this worth doing", () => {
 
 describe("rankForStorage — relevance ranks, it does not reject", () => {
   const m = (term: string, volume: number): TermMetrics => metric({ term, volume });
-  // Harvested from qasimcode.com's own articles, with the relevance its
+  // Harvested from acmestudio.example's own articles, with the relevance its
   // topical profile actually gave them.
   const relevance: Record<string, number> = {
     "web developers near me": 0.0,

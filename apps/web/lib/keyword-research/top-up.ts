@@ -8,7 +8,7 @@
 //
 // Twenty keywords is a few weeks of writing. After that the queue answers "no
 // keyword qualifies: all are covered, already ranking, or flagged as provider
-// noise" and the account quietly stops producing - which is what qasimcode.com
+// noise" and the account quietly stops producing - which is what acmestudio.example
 // did on its fifth article, with fifteen keywords still sitting in `new` and
 // every one of them out of reach at authority 0. The pool was not empty. The
 // WRITABLE pool was, and nothing existed to refill it.
@@ -17,7 +17,7 @@
 //
 // 1. What we already bought. Every generated article stores its research, and
 //    that research carries up to thirty related keywords and the People Also
-//    Ask questions, with volumes. qasimcode.com had 75 distinct terms sitting
+//    Ask questions, with volumes. acmestudio.example had 75 distinct terms sitting
 //    in five articles, none of them in its keyword table. Harvesting costs
 //    nothing.
 //
@@ -61,7 +61,7 @@ export const TOP_UP_CANDIDATE_CAP = 300;
  * The playbooks a top-up asks for.
  *
  * Deliberately the audience- and category-shaped ones. They are what produced
- * the only keywords qasimcode.com ever got that named its actual customers
+ * the only keywords acmestudio.example ever got that named its actual customers
  * ("best dental clinic website"), where the site's own headings produced the
  * "web design agency" head terms it cannot rank for.
  */
@@ -166,7 +166,7 @@ export function newCandidates(raw: string[], known: Iterable<string>, language: 
  * Fill the cap most-on-topic first.
  *
  * Relevance ranks here, it does not reject. Sorting by volume alone decided
- * the cap by the wrong criterion: harvesting qasimcode.com's articles turned
+ * the cap by the wrong criterion: harvesting acmestudio.example's articles turned
  * up "whitepages removal" and a run of business-directory terms - the residue
  * of one off-target article - sitting above its clinic and booking terms on
  * raw volume alone. A hard relevance cut is the wrong answer too, because some

@@ -309,7 +309,7 @@ function volumeScore(volume: number): number {
  *
  * `relativeDifficulty` saturates: at authority 0 every KD from 45 to 100 maps
  * to relative 100, so `1 - relative/100` was exactly 0 and multiplied the
- * whole score away. Twelve of qasimcode.com's twenty keywords scored 0.0 and
+ * whole score away. Twelve of acmestudio.example's twenty keywords scored 0.0 and
  * were therefore in arbitrary order - insertion order, since the sort is
  * stable - so the plan picked among KD 56, KD 86 and KD 100 by whichever row
  * the provider had returned first. Order has to survive even when the answer
@@ -345,7 +345,7 @@ function winnability(difficulty: number | null, volume = 0, authority?: number |
  * deliberately: intent is a tiebreak, not a thesis, and the classifier is a
  * lexicon rather than an oracle.
  */
-// Retuned 2026-09-02 after the first outside workspace (www.lully.ai) queued
+// Retuned 2026-09-02 after the first outside workspace (www.acmeflow.example) queued
 // "ai system" (9,900/mo, informational) above "warehouse management system"
 // (14,800/mo, commercial) and "ai orchestration" (their own product term).
 // Intent is no longer a tiebreak: a term closer to a sale is worth half again
@@ -369,7 +369,7 @@ const SINGLE_WORD_PENALTY = 0.5;
  * How much a keyword that names an audience the customer confirmed is worth
  * over one that merely uses the site's vocabulary.
  *
- * Relevance cannot separate these two. Measured on qasimcode.com, a studio
+ * Relevance cannot separate these two. Measured on acmestudio.example, a studio
  * selling booking websites to clinics and salons: "website design service"
  * (6,600/mo) and "best dental clinic website" (210/mo) both score a flat 1.0,
  * because every word of both appears on the site. Volume then decides, and
@@ -795,7 +795,7 @@ export async function recommendKeywords(
     // A keyword the site cannot rank for is not a thing to write; it is a
     // thing to come back to after the authority exists. `relativeDifficulty`
     // has said so since 2026-09-05 and nothing on the writing path asked it:
-    // qasimcode.com (authority 0) had a KD 100 term drafted on its first day.
+    // acmestudio.example (authority 0) had a KD 100 term drafted on its first day.
     //
     // Demoted to `skip` rather than hidden, exactly as `suspect` is. The
     // keywords page still shows the row, with the reason, and a human who

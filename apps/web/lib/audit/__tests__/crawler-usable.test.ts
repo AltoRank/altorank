@@ -19,11 +19,11 @@ describe("describeFetchError", () => {
 
 describe("profileIsUsable", () => {
   it("rejects a profile that is only the domain's own tokens", () => {
-    expect(profileIsUsable({ terms: { www: 3 } } as never, "www.lully.ai")).toBe(false);
-    expect(profileIsUsable({ terms: { lully: 3, www: 3 } } as never, "www.lully.ai")).toBe(false);
+    expect(profileIsUsable({ terms: { www: 3 } } as never, "www.acmeflow.example")).toBe(false);
+    expect(profileIsUsable({ terms: { acmeflow: 3, www: 3 } } as never, "www.acmeflow.example")).toBe(false);
     expect(profileIsUsable(null)).toBe(false);
   });
   it("accepts a profile with real vocabulary", () => {
-    expect(profileIsUsable({ terms: { warehouse: 4, orchestration: 3, automation: 2, lully: 3 } } as never, "www.lully.ai")).toBe(true);
+    expect(profileIsUsable({ terms: { warehouse: 4, orchestration: 3, automation: 2, acmeflow: 3 } } as never, "www.acmeflow.example")).toBe(true);
   });
 });

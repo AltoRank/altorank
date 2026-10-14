@@ -94,7 +94,7 @@ const STOPWORDS = new Set([
   "und", "der", "die", "das", "für", "mit", "per", "con", "che", "del", "les", "des", "pour",
   // Website furniture and call-to-action verbs. They top a heading-based
   // profile on any site ("Learn more", "See how", "Next step", "Case studies")
-  // and say nothing about what the business does. www.lully.ai's profile led
+  // and say nothing about what the business does. www.acmeflow.example's profile led
   // with "study, case, more, keep, see, next, step" before this list existed.
   "more", "learn", "see", "keep", "next", "step", "steps", "here", "now", "today",
   "home", "about", "contact", "schedule", "resources", "resource", "articles", "article",
@@ -138,7 +138,7 @@ export function seedPhrasesFromPages(
   const add = (text: string | null | undefined, weight: number) => {
     if (!text) return;
     // Split on punctuation and separators first so a phrase never crosses
-    // "Warehouse Orchestration - Lully.ai" or "Effortlessly Adaptive. Endlessly".
+    // "Warehouse Orchestration - Acmeflow.example" or "Effortlessly Adaptive. Endlessly".
     for (const clause of decodeEntities(text).split(/[|:;,.!?()\[\]"“”\-–—/]+/)) {
       const toks = clause.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
       for (let n = 3; n >= 2; n--) {
@@ -206,9 +206,9 @@ export function seedPhrasesFromPages(
 }
 
 /**
- * The brand words in a hostname: "www.lully.ai" -> ["lully"],
+ * The brand words in a hostname: "www.acmeflow.example" -> ["acmeflow"],
  * "shop.acme-tools.co.uk" -> ["shop", "acme", "tools"]. The previous regex,
- * /\.[a-z.]+$/, stripped everything after the FIRST dot, so www.lully.ai
+ * /\.[a-z.]+$/, stripped everything after the FIRST dot, so www.acmeflow.example
  * became "www" and every profile on a www. site carried "www" as its brand.
  */
 export function domainTokens(domain: string): string[] {
@@ -326,7 +326,7 @@ export function buildTopicalProfile(
 
   // The first page's title and h1 are the positioning. A word there is never
   // boilerplate however often it recurs: "warehouse" sat in a quarter of
-  // www.lully.ai's headings, because it is what the company does, and the
+  // www.acmeflow.example's headings, because it is what the company does, and the
   // share filter dropped it as navigation.
   const first = pages[0];
   const signature = new Set<string>(first ? [...tokenize(first.title ?? ""), ...(first.h1 ?? []).flatMap((h) => tokenize(h))] : []);
@@ -365,7 +365,7 @@ export function buildTopicalProfile(
     // lets a rare product word outrank common filler.
     // The homepage headline says what the business is; a case-study page
     // says who one customer was. TF-IDF cannot tell them apart and rewards
-    // the rarer one, so www.lully.ai profiled as "fst, waco, shoe, company"
+    // the rarer one, so www.acmeflow.example profiled as "fst, waco, shoe, company"
     // above "warehouse". The signature multiplier puts positioning first.
     const distinctiveness = Math.log(1 + weight) * idf * (signature.has(token) ? SIGNATURE_BOOST : 1);
     // A term in every fragment has idf 0 and carries no signal. Keeping it
@@ -431,7 +431,7 @@ const GENERIC_MATCH = new Set([
  * What the business says it sells, from the profile the customer confirmed.
  *
  * The vocabulary a site uses and the subject it is about are not the same
- * thing, and until now only the first was ever tested. qasimcode.com builds
+ * thing, and until now only the first was ever tested. acmestudio.example builds
  * booking websites for clinics and salons; because its pages also name the
  * markets it serves, its 403-term profile contains "countries", "other" and
  * "states". "do other countries have states" therefore scored a perfect 1.00 -
@@ -613,7 +613,7 @@ export function scoreRelevance(
   //
   // A word from the business profile is not foreign either, and this used to
   // be the reason the whole competitor and audience half of the keyword
-  // playbooks could never produce a stored row: qasimcode.com named six
+  // playbooks could never produce a stored row: acmestudio.example named six
   // competitors and six audiences, and "acuityscheduling pricing" and "speech
   // therapy practice website" both scored 0 because the words are not in the
   // site's own headings. Of course they are not - that is what a gap is.
@@ -677,7 +677,7 @@ export function scoreRelevance(
  * Whether a profile can judge relevance at all.
  *
  * The domain's own tokens are added to every profile, so a profile built from
- * zero fragments is not empty: www.lully.ai's read {"www": 3} after every
+ * zero fragments is not empty: www.acmeflow.example's read {"www": 3} after every
  * fetch failed on a TLS error, and the queue ranked "ai can" first because
  * nothing could say it was off-topic. Three terms beyond the domain's own is
  * the floor below which relevance is unknown rather than low.

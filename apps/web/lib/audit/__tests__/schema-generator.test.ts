@@ -115,7 +115,7 @@ describe("Organization proposal", () => {
     expect(org.warnings.join(" ")).toMatch(/confirm the legal or trading name/);
   });
 
-  it("splits on an entity-encoded dash (regression: pmicomunicare.com)", () => {
+  it("splits on an entity-encoded dash (regression: acmecomunica.example)", () => {
     const org = orgOf(page(
       `<title>Agenzia Web Marketing Milano &ndash; Siti Web, Social Media, SEO</title>`,
     ))!;
@@ -281,48 +281,48 @@ describe("renderJsonLd", () => {
 // ── name sourcing (measured against 10 live account sites) ─────────────────────
 
 describe("company name sourcing", () => {
-  const withDomain = (html: string, url = "https://genesi.it/") =>
+  const withDomain = (html: string, url = "https://acmeweb.it/") =>
     proposeSchema(html, url).proposals.find((p) => p.type === "Organization")!;
 
   it("extracts the name from a footer copyright line", () => {
-    expect(extractCopyrightName("<p>Copyright &copy; 1996-2026 Genesi.IT S.r.l. - Tutti i diritti riservati</p>"))
-      .toBe("Genesi.IT S.r.l.");
-    expect(extractCopyrightName("<span>&copy; 2026&nbsp;Netprofiler</span>")).toBe("Netprofiler");
+    expect(extractCopyrightName("<p>Copyright &copy; 1996-2026 Acmeweb.IT S.r.l. - Tutti i diritti riservati</p>"))
+      .toBe("Acmeweb.IT S.r.l.");
+    expect(extractCopyrightName("<span>&copy; 2026&nbsp;Acmeprofiler</span>")).toBe("Acmeprofiler");
   });
 
   it("ignores a stray 'Copyright section' comment", () => {
     expect(extractCopyrightName("<div>Copyright section Start Here</div>")).toBeUndefined();
   });
 
-  it("prefers the copyright line over a keyword-stuffed title (regression: genesi.it)", () => {
+  it("prefers the copyright line over a keyword-stuffed title (regression: acmeweb.it)", () => {
     const org = withDomain(page(
-      `<title>Realizzazione siti web | Genesi</title>`,
-      `<footer>Copyright &copy; 1996-2026 Genesi.IT S.r.l. - Tutti i diritti riservati</footer>`,
+      `<title>Realizzazione siti web | Acmeweb</title>`,
+      `<footer>Copyright &copy; 1996-2026 Acmeweb.IT S.r.l. - Tutti i diritti riservati</footer>`,
     ));
-    expect(org.jsonLd.name).toBe("Genesi.IT S.r.l.");
+    expect(org.jsonLd.name).toBe("Acmeweb.IT S.r.l.");
     expect(org.provenance.find((p) => p.field === "name")?.source).toBe("footer copyright line");
   });
 
   it("og:site_name still outranks the copyright line", () => {
     const org = withDomain(page(
-      `<meta property="og:site_name" content="Genesi" /><title>Realizzazione siti web</title>`,
-      `<footer>&copy; 2026 Genesi.IT S.r.l.</footer>`,
+      `<meta property="og:site_name" content="Acmeweb" /><title>Realizzazione siti web</title>`,
+      `<footer>&copy; 2026 Acmeweb.IT S.r.l.</footer>`,
     ));
-    expect(org.jsonLd.name).toBe("Genesi");
+    expect(org.jsonLd.name).toBe("Acmeweb");
   });
 
-  it("picks the title segment that matches the domain (regression: albertopozzi.com)", () => {
+  it("picks the title segment that matches the domain (regression: mariorossi.example)", () => {
     const org = withDomain(
-      page(`<title>Alberto Pozzi, Web Manager, Consulente Digitale progetti Web</title>`),
-      "https://albertopozzi.com/",
+      page(`<title>Mario Rossi, Web Manager, Consulente Digitale progetti Web</title>`),
+      "https://mariorossi.example/",
     );
-    expect(org.jsonLd.name).toBe("Alberto Pozzi");
+    expect(org.jsonLd.name).toBe("Mario Rossi");
   });
 
-  it("flags an unverifiable name instead of dressing it as confident (regression: datodigitale.it)", () => {
+  it("flags an unverifiable name instead of dressing it as confident (regression: acmedigitale.it)", () => {
     const org = withDomain(
       page(`<title>Agenzia Web Verona | Consulenza</title>`),
-      "https://datodigitale.it/",
+      "https://acmedigitale.it/",
     );
     expect(org.provenance.find((p) => p.field === "name")?.source).toContain("UNVERIFIED");
     expect(org.missing.some((m) => m.startsWith("name (confirm"))).toBe(true);
@@ -330,27 +330,27 @@ describe("company name sourcing", () => {
   });
 
   it("nameMatchesDomain rejects keyword phrases and accepts real brands", () => {
-    expect(nameMatchesDomain("Genesi.IT S.r.l.", "genesi.it")).toBe(true);
-    expect(nameMatchesDomain("Netprofiler", "www.netprofiler.nl")).toBe(true);
-    expect(nameMatchesDomain("Realizzazione siti web", "genesi.it")).toBe(false);
-    expect(nameMatchesDomain("OmniSearch", "netprofiler.nl")).toBe(false);
+    expect(nameMatchesDomain("Acmeweb.IT S.r.l.", "acmeweb.it")).toBe(true);
+    expect(nameMatchesDomain("Acmeprofiler", "www.acmeprofiler.nl")).toBe(true);
+    expect(nameMatchesDomain("Realizzazione siti web", "acmeweb.it")).toBe(false);
+    expect(nameMatchesDomain("OmniSearch", "acmeprofiler.nl")).toBe(false);
   });
 });
 
 describe("copyright extraction boundaries (live regressions)", () => {
-  it("stops at following link text (netprofiler.nl)", () => {
-    expect(extractCopyrightName("<footer>&copy; 2026&nbsp;Netprofiler</footer><a>Terms and conditions</a>"))
-      .toBe("Netprofiler");
+  it("stops at following link text (acmeprofiler.nl)", () => {
+    expect(extractCopyrightName("<footer>&copy; 2026&nbsp;Acmeprofiler</footer><a>Terms and conditions</a>"))
+      .toBe("Acmeprofiler");
   });
 
-  it("strips a trailing registered mark (pmicomunicare.com)", () => {
-    expect(extractCopyrightName("<footer>&copy; 2026 Pmicomunicare.com &reg;</footer>"))
-      .toBe("Pmicomunicare.com");
+  it("strips a trailing registered mark (acmecomunica.example)", () => {
+    expect(extractCopyrightName("<footer>&copy; 2026 Acmecomunica.example &reg;</footer>"))
+      .toBe("Acmecomunica.example");
   });
 
   it("keeps the period in a legal abbreviation", () => {
-    expect(extractCopyrightName("<p>Copyright &copy; 2026 Genesi.IT S.r.l. - Tutti i diritti riservati</p>"))
-      .toBe("Genesi.IT S.r.l.");
+    expect(extractCopyrightName("<p>Copyright &copy; 2026 Acmeweb.IT S.r.l. - Tutti i diritti riservati</p>"))
+      .toBe("Acmeweb.IT S.r.l.");
   });
 
   it("rejects a runaway capture rather than emitting a sentence", () => {

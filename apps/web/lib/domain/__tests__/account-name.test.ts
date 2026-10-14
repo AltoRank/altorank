@@ -3,7 +3,7 @@ import { accountNameFromDomain } from "@/lib/domain/account-name";
 
 describe("accountNameFromDomain", () => {
   it("takes the label before the suffix", () => {
-    expect(accountNameFromDomain("qasimcode.com")).toBe("Qasimcode");
+    expect(accountNameFromDomain("acmestudio.example")).toBe("Acmestudio");
     expect(accountNameFromDomain("packiyo.com")).toBe("Packiyo");
   });
 

@@ -5,7 +5,7 @@ import type { TopicalProfile } from "@/lib/seo/topical-profile";
 
 /** A packout SaaS, as its wizard described it. */
 const business = {
-  name: "PackHub",
+  name: "AcmePack",
   language: "English",
   country: "Global (English)",
   description: "Scan-driven packout for fulfillment teams. Connects to Shopify, validates orders, guides packing, prints shipping labels.",
@@ -24,7 +24,7 @@ const c = (term: string): ResearchCandidate => ({ term, volume: 1000, difficulty
 
 describe("judgeFrom: what the terms are judged against", () => {
   it("uses the site's own pages when it has been read", () => {
-    const j = judgeFrom(business, site, "packhub.io");
+    const j = judgeFrom(business, site, "acmepack.example");
     expect(j.basis).toBe("site");
     expect(j.judge("shopify packout scan").score).toBeGreaterThan(0);
     expect(j.judge("shopify packout scan").basis).toBe("site");
@@ -35,7 +35,7 @@ describe("judgeFrom: what the terms are judged against", () => {
 
   it("falls back to the business profile when the site has no vocabulary, and says so", () => {
     // The 2026-09-09 case: research eleven minutes before the crawl succeeded.
-    const j = judgeFrom(business, null, "packhub.io");
+    const j = judgeFrom(business, null, "acmepack.example");
     expect(j.basis).toBe("business");
     expect(j.note).toContain("business profile only");
     expect(j.judge("shopify fulfillment software").score).toBeGreaterThan(0);
@@ -50,7 +50,7 @@ describe("judgeFrom: what the terms are judged against", () => {
   });
 
   it("keeps a term a word of which the customer named, even if the site never wrote it", () => {
-    const j = judgeFrom(business, null, "packhub.io");
+    const j = judgeFrom(business, null, "acmepack.example");
     // Competitor and audience words are the gaps worth writing.
     expect(j.judge("sortly alternatives").score).toBeGreaterThan(0);
     expect(j.judge("3pl provider checklist").score).toBeGreaterThan(0);
@@ -66,14 +66,14 @@ describe("judgeFrom: what the terms are judged against", () => {
   });
 
   it("carries the refresh outcome into the note", () => {
-    expect(judgeFrom(business, site, "packhub.io", "read the site first").note).toMatch(/^Read the site first; /);
-    expect(judgeFrom(business, null, "packhub.io", "could not read the site (timed out)").note).toMatch(/^Could not read the site \(timed out\); /);
+    expect(judgeFrom(business, site, "acmepack.example", "read the site first").note).toMatch(/^Read the site first; /);
+    expect(judgeFrom(business, null, "acmepack.example", "could not read the site (timed out)").note).toMatch(/^Could not read the site \(timed out\); /);
   });
 });
 
 describe("judgeCandidates", () => {
   it("attaches a judgement to every candidate and drops none", () => {
-    const j = judgeFrom(business, null, "packhub.io");
+    const j = judgeFrom(business, null, "acmepack.example");
     const out = judgeCandidates([c("shopify packing"), c("ups calculator")], j);
     expect(out).toHaveLength(2);
     expect(out[0].relevance?.score).toBeGreaterThan(0);

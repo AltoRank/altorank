@@ -104,7 +104,7 @@ export function CompetitorStep({
       <div className="flex gap-2">
         <input
           className={inputClass}
-          placeholder="Name or domain, e.g. revoo or revoo-app.com"
+          placeholder="Name or domain, e.g. acmegym or acmegym-app.example"
           value={draft}
           disabled={full || resolving}
           onChange={(e) => setDraft(e.target.value)}

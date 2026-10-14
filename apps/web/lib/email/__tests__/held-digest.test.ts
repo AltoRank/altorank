@@ -36,9 +36,9 @@ const held = (id: string): AutoApproveResult =>
 
 function db(sent: Record<string, unknown>[] = []) {
   return fakeDraftDb({
-    workspaces: [{ id: "ws1", account_id: "ag1", domain: "packhub.test", auto_approve: true, auto_approve_hold_hours: 24 }],
+    workspaces: [{ id: "ws1", account_id: "ag1", domain: "acmepack.test", auto_approve: true, auto_approve_hold_hours: 24 }],
     account_members: [{ account_id: "ag1", user_id: "u1", workspace_ids: null }],
-    emails: { u1: "owner@packhub.test" },
+    emails: { u1: "owner@acmepack.test" },
     articles: [{ id: "a1", workspace_id: "ws1", status: "review", title: "Held one" }],
     sent_emails: sent,
   });
@@ -47,7 +47,7 @@ function db(sent: Record<string, unknown>[] = []) {
 const row = (subject_id: string, sent_at: string) => ({
   email_type: "auto_approve_held",
   subject_id,
-  recipient: "owner@packhub.test",
+  recipient: "owner@acmepack.test",
   workspace_id: "ws1",
   sent_at,
 });

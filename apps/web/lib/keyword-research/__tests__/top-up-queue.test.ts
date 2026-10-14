@@ -14,7 +14,7 @@ vi.mock("../category", () => ({ resolveSeedHead: head }));
 
 import { topUpKeywords } from "../top-up";
 
-const BUSINESS = { name: "Qasimcode", description: "Qasimcode builds appointment-based websites for clinics, salons and studios.", audiences: ["Dental clinics"], offerings: ["clinic booking websites"], competitors: [] };
+const BUSINESS = { name: "Acmestudio", description: "Acmestudio builds appointment-based websites for clinics, salons and studios.", audiences: ["Dental clinics"], offerings: ["clinic booking websites"], competitors: [] };
 let inserted: Record<string, unknown>[] = [];
 const db = {
   from: (table: string) => {
@@ -22,7 +22,7 @@ const db = {
     const self = () => chain;
     Object.assign(chain, {
       select: self, eq: self, not: self,
-      single: async () => ({ data: { domain: "qasimcode.com", dr: 10, business_profile: BUSINESS, topical_profile: { terms: { clinic: 2, website: 2, booking: 2, salon: 1 }, topTerms: ["clinic", "website"] }, language: "en", location_code: 2840, auto_generate_weekly_limit: 7 } }),
+      single: async () => ({ data: { domain: "acmestudio.example", dr: 10, business_profile: BUSINESS, topical_profile: { terms: { clinic: 2, website: 2, booking: 2, salon: 1 }, topTerms: ["clinic", "website"] }, language: "en", location_code: 2840, auto_generate_weekly_limit: 7 } }),
       insert: async (rows: Record<string, unknown>[]) => { inserted.push(...rows); return { error: null }; },
       then: (r: (v: unknown) => unknown) => r({ data: table === "articles" ? [{ research: { relatedKeywords: [{ keyword: "clinic website design" }, { keyword: "free website builder" }] } }] : [], error: null }),
     });

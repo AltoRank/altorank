@@ -10,7 +10,7 @@
 // altorank.co held 274 open terms from five generations of research code,
 // one qualified. This parks them once, labelled "stored before qualification
 // existed", and removes the calendar entries planned before any judge saw
-// them (PackHub's "ups shipping calculator" row, altorank.co's 29).
+// them (AcmePack's "ups shipping calculator" row, altorank.co's 29).
 //
 // Nothing is deleted and nothing is bought. A parked-unjudged row is judged
 // again by the nightly refill when the queue needs topics; the good ones

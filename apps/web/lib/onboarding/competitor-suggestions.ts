@@ -57,7 +57,7 @@ export const SIZE_MARGIN = 15;
  *
  * A margin rather than a straight comparison: the number is one vendor's
  * estimate, and two hosts eight points apart are not different sizes. With
- * fitsuite.co at 42: revoo 22 smaller, qomodo 28 similar, evolutionfit 59
+ * fitsuite.co at 42: acmegym 22 smaller, acmefit 28 similar, acmecoach 59
  * bigger, trainerize 70 bigger. Null when either side is unmeasured; the tag
  * is then simply absent, never a guess.
  */
