@@ -2,12 +2,15 @@ import { withAgent } from "@/lib/agent/http";
 import { ok } from "@/lib/agent/envelope";
 import { accountWorkspaces, articlesThisMonth } from "@/lib/agent/data";
 import { freeAllowanceUsedMessage, getQuota } from "@/lib/billing/quota";
+import { usageGuidance } from "@/lib/agent/usage-guidance";
 
 /**
  * GET /api/agent/v1/usage
  *
- * This month's drafting quota and where it went. `limit: null` means
- * unmetered (self-hosted or operator), not zero.
+ * The drafting quota and where this month's drafts went. On a plan the
+ * quota is this month's included volume; before one it is the account's
+ * one-time free drafts, which never reset (migration 083). `limit: null`
+ * means unmetered (self-hosted or operator), not zero.
  */
 export const GET = withAgent(async (_request, ctx) => {
   const workspaces = await accountWorkspaces(ctx);
@@ -36,7 +39,7 @@ export const GET = withAgent(async (_request, ctx) => {
         ? `${freeAllowanceUsedMessage(quota.limit ?? undefined)} They are a one-time allowance and do not reset. Generating needs a plan; ask the human before doing anything else.`
         : "The included volume is used. Further drafts bill as overage; ask the human before passing allow_overage: true.";
   } else {
-    guidance = `${quota.remaining} of ${quota.limit} included drafts remain this month. Say so before you spend several.`;
+    guidance = usageGuidance(quota);
   }
 
   return ok(data, guidance, {
