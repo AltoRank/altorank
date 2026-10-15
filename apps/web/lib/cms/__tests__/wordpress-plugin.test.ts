@@ -2,8 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WordPressPluginAdapter, pluginInstallUrl, TOKEN_HEADER } from "../wordpress-plugin";
 import { resolveCMSAdapter } from "../adapter";
 
-const mockFetch = vi.fn();
-vi.stubGlobal("fetch", mockFetch);
+// Every request the adapter makes goes through siteFetch (its address policy
+// has its own tests in site-fetch.test.ts); here it is the network.
+const { mockFetch } = vi.hoisted(() => ({ mockFetch: vi.fn() }));
+vi.mock("../site-fetch", () => ({
+  siteFetch: (...args: unknown[]) => mockFetch(...args),
+  assertSiteUrl: () => {},
+}));
 
 const TOKEN = "a".repeat(64);
 const adapter = new WordPressPluginAdapter({
@@ -125,6 +130,34 @@ describe("WordPressPluginAdapter", () => {
     await expect(adapter.publish({ title: "T", html: "<p>x</p>", slug: "t" })).rejects.toThrow(
       /403.*token does not match/,
     );
+  });
+
+  it("a failure repeats only the plugin's own error message, cut short", async () => {
+    mockFetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ code: "altorank_bad_request", message: `title and\n content ${"x".repeat(400)}` }), { status: 400 }),
+    );
+    const err = (await adapter.publish({ title: "T", html: "<p>x</p>", slug: "t" }).catch((e: Error) => e)) as Error;
+    expect(err.message).toMatch(/^WordPress plugin publish failed \(400\): title and content x+…$/);
+    expect(err.message.length).toBeLessThan(260);
+  });
+
+  it("a failure that is not a WordPress REST error repeats nothing from the body", async () => {
+    mockFetch.mockResolvedValueOnce(new Response("<html><body>internal admin page secret</body></html>", { status: 400 }));
+    const err = (await adapter.publish({ title: "T", html: "<p>x</p>", slug: "t" }).catch((e: Error) => e)) as Error;
+    expect(err.message).toBe("WordPress plugin publish failed (400)");
+
+    mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({ message: "no code field" }), { status: 400 }));
+    const plain = await adapter.testConnection();
+    expect(plain).toEqual({ ok: false, error: "WordPress plugin test failed (400)" });
+  });
+
+  it("a redirect is reported, not followed", async () => {
+    mockFetch.mockResolvedValueOnce(new Response(null, { status: 301, headers: { location: "http://10.0.0.1/" } }));
+    const res = await adapter.testConnection();
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/\(301\): the site answered with a redirect/);
+    expect(res.error).not.toContain("10.0.0.1");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
   it("publish() explains a 404 as plugin not installed", async () => {
