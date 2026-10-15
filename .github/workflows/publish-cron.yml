@@ -33,7 +33,10 @@ jobs:
       - name: Trigger publishing
         env:
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
-          APP_URL: ${{ vars.APP_URL || 'https://app.altorank.co' }}
+          # A fork sets the APP_URL repository variable to its own deployment.
+          # The hosted URL is the default only in AltoRank/altorank itself.
+          APP_URL: ${{ vars.APP_URL }}
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
 
@@ -42,6 +45,16 @@ jobs:
             echo "Add it under Settings > Secrets and variables > Actions to arm this schedule."
             echo "Until then Vercel's 09:00 UTC run is the only one."
             exit 0
+          fi
+
+          if [ -z "${APP_URL}" ]; then
+            if [ "${REPOSITORY}" != "AltoRank/altorank" ]; then
+              # Never send this repository's CRON_SECRET to someone else's server.
+              echo "APP_URL is not set for this repository."
+              echo "Add it under Settings > Secrets and variables > Actions > Variables, set to your deployment's origin."
+              exit 0
+            fi
+            APP_URL="https://app.altorank.co"
           fi
 
           code=$(curl --silent --show-error --fail-with-body \

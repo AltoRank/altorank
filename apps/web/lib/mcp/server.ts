@@ -379,6 +379,11 @@ server.registerTool(
     inputSchema: {
       ...workspaceArg,
       keyword: z.string().min(2).max(200),
+      keyword_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe("The id of the keyword from altorank_list_keywords, when the draft is for a tracked keyword. The draft is then briefed from that row and linked to it; without it the brief is found by matching the term."),
       title: z.string().min(2).max(200).optional(),
       article_id: z.string().uuid().optional().describe("Regenerate into this existing draft instead of creating a new one."),
       allow_overage: z.boolean().optional().describe("Only after the human agreed to pay overage."),

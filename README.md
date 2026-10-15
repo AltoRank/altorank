@@ -78,8 +78,9 @@ outside AltoRank, sends nothing to a CMS, carries no approval, and can be
 undone from the editor.
 
 What cannot write an approval: an agent. The **MCP server and the agent API
-expose no publish or approve tool** - not disabled, absent. See the comment at
-the top of `apps/web/scripts/mcp.ts`.
+expose no publish or approve tool** - not disabled, absent. The MCP tools are
+all registered in `apps/web/lib/mcp/server.ts`, and its server instructions
+say so to the agent.
 
 Competing tools ship the words "you stay in control" as copy. The difference
 is checkable here: every `live` row is an approved article (by click or by
@@ -151,17 +152,27 @@ cp docker/.env.example apps/web/.env.local   # every variable, with what each on
 npm run dev
 ```
 
-Four things are genuinely required before it will run: your Supabase URL and
-its two keys, an `ANTHROPIC_API_KEY`, and an `ENCRYPTION_KEY`
-(`openssl rand -hex 32`). Add `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` for
-keyword volume and rank tracking; without them those steps skip rather than
-fail. Everything else in the example file is optional and each one disables
-exactly one feature. The file says which.
+Required before a self-hosted install works end to end:
+
+- your Supabase URL, its anon key and its `SUPABASE_SERVICE_ROLE_KEY`
+- `ANTHROPIC_API_KEY`
+- `ENCRYPTION_KEY` and `CRON_SECRET` (`openssl rand -hex 32` for each).
+  `docker compose` refuses to start without `CRON_SECRET`, and without it no
+  scheduled job runs.
+- `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (a sender on a domain verified in
+  your Resend account). Signup confirms by email, so without them nobody can
+  create an account and nobody can reset a password.
+
+Add `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` for keyword volume and rank
+tracking; without them those steps skip rather than fail. Everything else in
+the example file is optional and each one disables exactly one feature. The
+file says which. Product analytics (the two `NEXT_PUBLIC_POSTHOG_*` variables,
+project token and host) are optional too: without them the browser console
+says analytics are off and nothing else changes.
 
 Other entry points:
 
 ```bash
-npm run mcp      # MCP server, for driving the engine from an AI assistant
 npm run test     # vitest, unit tier: mocks only, needs no services
 npm run test:db  # vitest, db tier: *.db.test.ts against the local Supabase only
 npm run smoke    # research → prompt → model → fact check, against real APIs
@@ -170,6 +181,7 @@ npm run smoke    # research → prompt → model → fact check, against real AP
 and from `apps/web`:
 
 ```bash
+npm run mcp                  # MCP server over stdio, for driving the engine from an AI assistant
 npm run cli -- --help        # the agent API from a shell; auth with ALTORANK_API_KEY
 npm run readiness -- <domain>  # the agent-readiness checks on their own
 ```
@@ -210,10 +222,12 @@ apply in order. With the [Supabase CLI](https://supabase.com/docs/guides/cli):
 
 ```bash
 cd apps/web
-supabase start      # local Postgres + auth, prints the URL and keys for .env.local
-supabase db push    # applies the migrations
+supabase start      # local Postgres + auth; applies the migrations, prints the URL and keys for .env.local
 ```
 
+`supabase start` applies every migration to the local database on first
+start (`supabase db reset` re-applies them from scratch). Do not run
+`supabase db push` for a local stack: it targets the linked remote project.
 Against a hosted project, `supabase link --project-ref <ref>` first, then
 `supabase db push`. The app will not get far without the migrations: every
 query targets tables they create.

@@ -14,20 +14,28 @@
   // Vercel. Workers Paid allows up to 300000 ms of CPU per request; the
   // default is 30000. Wall time is unlimited while the client stays connected.
   "limits": { "cpu_ms": 300000 },
-  // The nine vercel.json schedules, verbatim. cloudflare/worker.mjs maps each
-  // expression back to its route. Cron Triggers have no once-a-day rule, so
-  // "*/15 * * * *" for publish (what docker/crontab runs) is legal here.
+  // Every job in vercel.json, one trigger each. cloudflare/worker.mjs maps each
+  // expression back to its route, so no two jobs may share an expression.
+  // Cron Triggers have no once-a-day rule, so three jobs run on the
+  // docker/crontab schedules instead of vercel.json's daily ones: publish every
+  // 15 minutes (a site's local publish time is reached in any timezone),
+  // analyze every 10, and generate four times a day (each run writes at most
+  // two drafts). lib/__tests__/cron-schedules.test.ts checks this list against
+  // worker.mjs, vercel.json and docker/crontab.
   "triggers": {
     "crons": [
-      "0 2 * * *",
+      "*/15 * * * *",
+      "*/10 * * * *",
       "0 3 * * *",
       "20 3 * * *",
       "0 4 * * *",
       "0 5 * * *",
       "0 6 1 * *",
-      "0 7 * * *",
+      "0 1,7,13,19 * * *",
+      "30 7 * * *",
       "0 8 * * 1",
-      "0 9 * * *"
+      "0 10 * * *",
+      "0 11 * * *"
     ]
   },
   "observability": { "enabled": true }

@@ -243,39 +243,50 @@ adapter needs an R2 bucket (incremental cache) and a Durable Object queue.
 
 ### Crons: the Hobby problem goes away
 
-`apps/web/vercel.json` registers nine schedules. On Vercel Hobby a schedule
+`apps/web/vercel.json` registers twelve schedules. On Vercel Hobby a schedule
 that fires more than once a day fails the whole deployment (see
 [deploy.md](deploy.md#crons-and-the-hobby-limitation)). Cloudflare Cron
-Triggers have no such rule; `"*/15 * * * *"`, which `docker/crontab` already
-uses for `publish`, is legal.
+Triggers have no such rule, so three jobs run on the `docker/crontab`
+schedules instead of the daily ones: `publish` every 15 minutes (a site's
+local publish time is reached in every timezone; at 09:00 UTC only, any site
+whose publish time falls later in the day would never auto-publish), `analyze`
+every 10 minutes, and `generate` four times a day (each run writes at most two
+drafts).
 
 The mapping, as committed in `wrangler.jsonc` and `cloudflare/worker.mjs`:
 
 ```jsonc
 "triggers": {
   "crons": [
-    "0 2 * * *",   // /api/cron/analyze
-    "0 3 * * *",   // /api/cron/serp
-    "20 3 * * *",  // /api/cron/serp-collect
-    "0 4 * * *",   // /api/cron/analytics
-    "0 5 * * *",   // /api/cron/exchange
-    "0 6 1 * *",   // /api/cron/reports
-    "0 7 * * *",   // /api/cron/generate
-    "0 8 * * 1",   // /api/cron/geo
-    "0 9 * * *"    // /api/cron/publish
+    "*/15 * * * *",       // /api/cron/publish
+    "*/10 * * * *",       // /api/cron/analyze
+    "0 3 * * *",          // /api/cron/serp
+    "20 3 * * *",         // /api/cron/serp-collect
+    "0 4 * * *",          // /api/cron/analytics
+    "0 5 * * *",          // /api/cron/exchange
+    "0 6 1 * *",          // /api/cron/reports
+    "0 1,7,13,19 * * *",  // /api/cron/generate
+    "30 7 * * *",         // /api/cron/refresh
+    "0 8 * * 1",          // /api/cron/geo
+    "0 10 * * *",         // /api/cron/site-pages
+    "0 11 * * *"          // /api/cron/ops-digest
   ]
 }
 ```
 
 Cloudflare delivers only the expression to the handler (`controller.cron`),
-not a path, so `worker.mjs` holds the same nine expressions as keys and calls
-the matching route with the `CRON_SECRET` Worker secret. Change a schedule in
-one file, change it in the other; the handler logs loudly when they disagree.
+not a path, so `worker.mjs` holds the same expressions as keys and calls the
+matching route with the `CRON_SECRET` Worker secret. No two jobs may share an
+expression. `apps/web/lib/__tests__/cron-schedules.test.ts` fails when the two
+files disagree with each other, with `vercel.json`, with `docker/crontab` or
+with the routes under `app/api/cron/`.
 
-Limits: 5 Cron Triggers per account on Workers Free, 250 on Paid. Nine
+Limits: 5 Cron Triggers per account on Workers Free, 250 on Paid. Twelve
 triggers therefore need the Paid plan, which the 10 ms CPU limit on Free
-requires anyway. `.github/workflows/generate-cron.yml` keeps working
-unchanged: it calls the same URL with the same secret.
+requires anyway. The two GitHub workflows (`generate-cron.yml`,
+`publish-cron.yml`) are not needed on Cloudflare: the triggers above already
+run both jobs as often. If you arm them anyway, set the `APP_URL` repository
+variable; outside `AltoRank/altorank` they refuse to run without it.
 
 ### Environment variables
 
@@ -449,7 +460,7 @@ $25 with the VM's price and your time.
 - `apps/web/open-next.config.ts`: `defineCloudflareConfig()`, nothing else.
 - `apps/web/wrangler.jsonc`: `nodejs_compat`, compatibility date
   2025-09-01, the assets and self-reference bindings, `cpu_ms: 300000`, the
-  nine Cron Triggers.
+  twelve Cron Triggers.
 - `apps/web/cloudflare/worker.mjs`: `fetch` from the generated worker plus the
   `scheduled` dispatcher. Plain JavaScript, so `next build`'s type-check never
   sees it.
