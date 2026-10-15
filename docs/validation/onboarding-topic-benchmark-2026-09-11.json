@@ -252,13 +252,13 @@
         "status": "qualified",
         "reason": "Query targets pricing decision for dental website with booking—Studio web dentisti's core offering. Results 2, 7, and 9 are editorial articles addressing cost factors and budget ranges. Articles credibly support buyer's procurement decision.",
         "organicUrls": [
-          "https://www.artworkstudios.it/sito-web-per-dentista.html",
+          "https://www.acme-studio-a.example/sito-web-per-dentista.html",
           "https://it.wix.com/blog/come-creare-un-sito-per-dentisti",
           "https://www.daimonart.it/web-agency/sito-web-per-dentista/?srsltid=AfmBOopiVtw89uWJXettGjSwWSrEPpzNWS_mfSkKzIVfA9frImvbneIl",
-          "https://www.gabrielepantaleo.it/realizzazione-siti-web-per-dentisti-e-odontoiatri",
+          "https://www.acme-studio-b.example/realizzazione-siti-web-per-dentisti-e-odontoiatri",
           "https://beside.it/2018/05/seo-siti-web-marketing-per-dentisti-studi-medici/",
           "https://www.odontoiatriaitalia.com/blog/?sito-web-odontoiatrico--come,-quando-e-perche-",
-          "https://www.labdesign80.it/costo-sito-web-dentisti/",
+          "https://www.acme-studio-c.example/costo-sito-web-dentisti/",
           "https://eezyweb.it/siti-web-per-dentisti/",
           "https://baghinluca.it/articoli/quanto-costa-sito-web-dentista"
         ],
@@ -270,7 +270,7 @@
         "conversionPath": "https://qualification-fixture.example",
         "evidenceUrls": [
           "https://it.wix.com/blog/come-creare-un-sito-per-dentisti",
-          "https://www.labdesign80.it/costo-sito-web-dentisti/",
+          "https://www.acme-studio-c.example/costo-sito-web-dentisti/",
           "https://baghinluca.it/articoli/quanto-costa-sito-web-dentista"
         ]
       },

@@ -276,7 +276,7 @@ export async function discoverKeywords(
 // ---------------------------------------------------------------------------
 //
 // `keywords_for_site` asks Google Ads what a domain is about, and for a small
-// site it answers with the head of the category: www.lully.ai, an AI warehouse
+// site it answers with the head of the category: www.acmeflow.example, an AI warehouse
 // orchestration platform, came back as "artificial intelligence" 301,000/mo
 // and nothing about warehouses. The site's own headings know better. This
 // seeds DataForSEO Labs' keyword ideas with the topical profile's top terms,

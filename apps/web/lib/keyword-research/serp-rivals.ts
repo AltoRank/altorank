@@ -8,7 +8,7 @@
 // six rows, four of them nothing a buyer would search. The sites that hold the
 // site's market in its language are the ones already ranking for its buyer
 // phrases, and those are on the results page for the seeds (the same run's
-// SERPs showed revoo, qomodo and gymkee, which no model reading the homepage
+// SERPs showed acmegym, acmefit and acmeclub, which no model reading the homepage
 // could have known).
 //
 // So: search a few of the buyer seeds in the site's locale, count which hosts

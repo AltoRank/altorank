@@ -131,9 +131,9 @@ export function extractSocialProfiles(html: string): string[] {
  *
  * Ranked above the <title> because account titles lead with keyword phrases far
  * more often than with the brand. Measured on ten live Italian and EU account
- * sites: the title heuristic proposed "Realizzazione siti web" for genesi.it
- * and "OmniSearch" for netprofiler.nl, where the copyright line gave
- * "Genesi.IT S.r.l." and "Netprofiler".
+ * sites: the title heuristic proposed "Realizzazione siti web" for acmeweb.it
+ * and "OmniSearch" for acmeprofiler.nl, where the copyright line gave
+ * "Acmeweb.IT S.r.l." and "Acmeprofiler".
  *
  * Legal suffixes (S.r.l., GmbH, BV) are kept deliberately: for an Organization
  * node the registered name is the more correct claim.
@@ -142,7 +142,7 @@ export function extractCopyrightName(html: string): string | undefined {
   const text = decodeEntitiesForName(html);
   // Stripping tags joins the copyright line to whatever markup follows it, so
   // the capture has to stop at the phrases that typically come next. Without
-  // this, netprofiler.nl yielded "Netprofiler Terms and conditions".
+  // this, acmeprofiler.nl yielded "Acmeprofiler Terms and conditions".
   const BOUNDARY =
     /\s*(?:[-–—|·©®™]|tutti i diritti|all rights|alle rechte|alle rechten|todos los derechos|p\.?\s?iva|vat|btw|kvk|c\.?f\.?|terms|privacy|cookie|sitemap|contact|impressum|disclaimer|powered by|realizzato|\d{4})/i;
 
@@ -151,7 +151,7 @@ export function extractCopyrightName(html: string): string | undefined {
 
   let name = raw.split(BOUNDARY)[0].replace(/\s+/g, " ").trim();
   // Trailing separators go; a trailing period stays, since it is usually part of
-  // a legal abbreviation ("Genesi.IT S.r.l.") rather than sentence punctuation.
+  // a legal abbreviation ("Acmeweb.IT S.r.l.") rather than sentence punctuation.
   name = name.replace(/[,;:]+$/, "").replace(/\s*[®™]\s*$/, "").trim();
 
   // Guards: a stray "Copyright section" comment, and runaway captures. A
@@ -174,7 +174,7 @@ const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
  *
  * Cheap, and it catches the exact failure the title heuristic produces: a
  * keyword phrase with no relationship to the brand. "Realizzazione siti web"
- * shares nothing with genesi.it; "Genesi.IT S.r.l." obviously does.
+ * shares nothing with acmeweb.it; "Acmeweb.IT S.r.l." obviously does.
  */
 export function nameMatchesDomain(name: string, domain: string): boolean {
   const host = normalise(domain.replace(/^www\./, "").split(".")[0]);
@@ -203,15 +203,15 @@ function proposeOrganization(html: string, url: string): SchemaProposal {
   // live account sites og:site_name was right 5/5, while the title heuristic was
   // wrong 4/5 because account titles lead with keyword phrases, not brands.
   //
-  // Logo alt text is deliberately NOT a source. datodigitale.it's logo alt is
+  // Logo alt text is deliberately NOT a source. acmedigitale.it's logo alt is
   // "Enel", a *client's* brand, which would have produced a confidently wrong
   // claim about who the site belongs to.
   const host = new URL(url).hostname;
   const siteName = meta(html, "og:site_name");
   const copyright = extractCopyrightName(html);
   const title = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1];
-  // Split on separators and commas so "Alberto Pozzi, Web Manager, ..." can
-  // yield "Alberto Pozzi".
+  // Split on separators and commas so "Mario Rossi, Web Manager, ..." can
+  // yield "Mario Rossi".
   const titleParts = title
     ? decode(title).split(/\s*[|–—·•,]\s*|\s+-\s+/).map((p) => p.trim()).filter(Boolean)
     : [];

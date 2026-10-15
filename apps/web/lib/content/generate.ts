@@ -725,7 +725,7 @@ async function writeArticle(
       // rewrite completes - not once its row does. This used to run here, right
       // after the `articles` insert and before a word was generated, so a run
       // Vercel killed at the function limit spent a free draft on a row at zero
-      // words. qasimcode.com was told "all 7 free drafts are used" with five on
+      // words. acmestudio.example was told "all 7 free drafts are used" with five on
       // the account (2026-09-09). The window between the save and this write is
       // covered by the live count `getQuota` floors with; the window between
       // this write and the save is what was charging people for our timeouts.

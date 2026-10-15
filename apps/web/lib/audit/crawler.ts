@@ -11,7 +11,7 @@ export const CRAWLER_UA =
  * The request shape the wizard's site reader uses, which some hosts admit
  * when they refuse the one above.
  *
- * packhub.io, 2026-09-09: from Vercel, this crawler and the readiness check
+ * acmepack.example, 2026-09-09: from Vercel, this crawler and the readiness check
  * got HTTP 403 on every page, in the same invocation in which the wizard's
  * reader - "AltoRankBot/1.0 (content analysis)", no "Mozilla/5.0
  * (compatible; ...)" prefix - had just read the homepage. From a residential
@@ -102,7 +102,7 @@ export interface CrawlResult {
  */
 export interface CrawlOptions {
   /**
-   * The homepage, already fetched by the caller. packhub.io rate-bans an
+   * The homepage, already fetched by the caller. acmepack.example rate-bans an
    * address after ten requests in about forty seconds (measured 2026-09-10:
    * ten 200s, then 403 until the window passes), and the onboarding minute
    * fetched "/" three times - the wizard's reader, the readiness check and
@@ -190,7 +190,7 @@ export async function crawlSite(
         await new Promise((resolve) => setTimeout(resolve, delayMs));
       }
     } catch (err) {
-      // A chain Node cannot verify (www.lully.ai serves no intermediate,
+      // A chain Node cannot verify (www.acmeflow.example serves no intermediate,
       // 2026-09-02) is a finding about the site, not a reason to see nothing.
       // Read it without verification, mark the page, and let the audit report
       // the chain as an issue.

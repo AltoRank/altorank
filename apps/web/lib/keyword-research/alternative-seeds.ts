@@ -33,7 +33,7 @@ const PATTERNS: Record<string, ReadonlyArray<(brand: string) => string>> = {
   nl: [(b) => `${b} alternatief`, (b) => `alternatief voor ${b}`],
 };
 
-/** The name a buyer would type: the domain's label, product suffix stripped ("revoo-app.com" -> "revoo"). */
+/** The name a buyer would type: the domain's label, product suffix stripped ("acmegym-app.example" -> "acmegym"). */
 export function rivalName(domain: string): string | null {
   // brandAliases returns [host, label, head], de-duplicated and floored at
   // three characters; the last entry after the host is the shortest wording

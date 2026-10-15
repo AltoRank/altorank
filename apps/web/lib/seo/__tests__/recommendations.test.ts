@@ -59,7 +59,7 @@ describe("assessKeywordQuality — provider noise", () => {
   });
 
   it("rejects a term cut mid-phrase", () => {
-    // The lully.ai queue led with "ai can" (110/mo) on 2026-09-02.
+    // The acmeflow.example queue led with "ai can" (110/mo) on 2026-09-02.
     expect(assessKeywordQuality("ai can", terms()).quality).toBe("suspect");
     expect(assessKeywordQuality("ai in", terms()).quality).toBe("suspect");
     expect(assessKeywordQuality("ai in retail", terms()).quality).toBe("ok");
@@ -158,7 +158,7 @@ describe("normalizeTarget — cannibalisation", () => {
   it("meets a singular with its own plural", () => {
     // The plural fold once produced "websit" from "websites" while "website"
     // stayed whole, so the two halves of the same fold never met.
-    // qasimcode.com was given "website design", "website about design" and
+    // acmestudio.example was given "website design", "website about design" and
     // "website design websites" as three targets, and all three were
     // scheduled. The "-es" ending now comes off only after x/ch/sh.
     const a = normalizeTarget("website design");

@@ -286,7 +286,7 @@ function normalizeDomain(domain: string): string {
  * Did every fetch fail for a reason that is likely to be different in a few
  * seconds?
  *
- * packhub.io, 2026-09-09 18:38:05: ten seconds after the wizard had read the
+ * acmepack.example, 2026-09-09 18:38:05: ten seconds after the wizard had read the
  * homepage from the same Vercel function, the crawl got status 0 on every
  * page and the readiness check got nothing, while the PageSpeed and DataForSEO
  * calls in the same invocation succeeded. The site answers in half a second
@@ -329,7 +329,7 @@ export const CRAWL_RETRY_DELAYS_MS: readonly number[] = [2_000, 5_000];
  */
 /**
  * How long a rate ban lasts on the one host it has been measured on:
- * packhub.io answered 403 for about forty seconds after its tenth request,
+ * acmepack.example answered 403 for about forty seconds after its tenth request,
  * then 200 again. Waiting it out once costs less than the first look it
  * would otherwise cost the customer.
  */
@@ -407,7 +407,7 @@ export async function analyseDomain(options: {
    * itself from page headings alone (`seedPhrasesFromPages`), so the model's
    * own reading of the company - the description, and every audience the
    * person confirmed - could never propose a candidate. Measured on
-   * qasimcode.com, whose profile says "appointment-based websites for clinics,
+   * acmestudio.example, whose profile says "appointment-based websites for clinics,
    * salons, studios and trades, with online booking": not one of its 20 stored
    * keywords contained book, appoint, clinic, salon, dental, therapy, trade or
    * calendar. The relevance filter downstream can only reject; it cannot
@@ -519,7 +519,7 @@ export async function analyseDomain(options: {
       pagesCrawled = pages.length;
       if (!pages.length && fetched.length) {
         // Every fetch failed. Say why, and score nothing: the first version of
-        // this gave www.lully.ai a 95/100 on-page score and a topical profile of
+        // this gave www.acmeflow.example a 95/100 on-page score and a topical profile of
         // {"www"} from a fetch that never got a response.
         const why = fetched.find((p) => p.error)?.error ?? `HTTP ${fetched[0].status}`;
         crawlLayers.push({
@@ -700,7 +700,7 @@ export async function analyseDomain(options: {
   // The same call, in the same run, moved thirty lines up. It used to sit
   // below, which meant that on a first analysis - every signup - the keyword
   // filters ran with `workspaces.dr` still null and could not ask whether a
-  // keyword was reachable for this particular site. qasimcode.com was given
+  // keyword was reachable for this particular site. acmestudio.example was given
   // five KD 100 keywords and eight at KD 70 or worse on a domain whose
   // authority this run measured, eleven seconds later, as 0.
   //
@@ -854,7 +854,7 @@ export async function analyseDomain(options: {
         const ownPages = await ownSitemapPaths(domain, depth, ranked.length, recordedBodies(recorded.resources));
         const rankedOwn = rankedOnOwnPages(ranked, ownPages);
         const rankedDropped = ranked.length - rankedOwn.length;
-        // A ranking is not a licence to store a rival's name. qasimcode.com
+        // A ranking is not a licence to store a rival's name. acmestudio.example
         // ranks somewhere for "wix" and "acuity" because its blog writes about
         // rescuing sites off them; both were stored as things to target, and
         // both name a competitor the person had just listed in the wizard.
@@ -922,7 +922,7 @@ export async function analyseDomain(options: {
         // Those used to be exempt, on the reasoning that a ranking is a test
         // result the SERP already ran. That holds for a site whose pages are
         // about what it sells, and fails for one whose blog is about the trade:
-        // qasimcode.com sells fixed-price websites to clinics and salons, and
+        // acmestudio.example sells fixed-price websites to clinics and salons, and
         // its 1,606 write-ups rank it somewhere for "wix", "web sites" and four
         // phrasings of "free portfolio website". Ranking #80 for a phrase
         // because you wrote about it is not evidence a buyer typed it.
@@ -958,7 +958,7 @@ export async function analyseDomain(options: {
         // language (the plural in English), which is what makes those one
         // target - and it is already what `recommendKeywords` collapses on,
         // so anything it merges downstream was a wasted row here anyway.
-        // qasimcode.com stored twenty rows that are thirteen queries; four of
+        // acmestudio.example stored twenty rows that are thirteen queries; four of
         // them were "website design". Two more were "create"/"creating",
         // which is a verb form, not a plural: those two are left to the
         // results page bought at qualification (lib/keyword-research/intent.ts).
@@ -978,7 +978,7 @@ export async function analyseDomain(options: {
             // Rankings are provenance, not proof of buyer fit or attainability.
             .filter((c) => fit.verdicts.get(c.k.keyword.trim().toLowerCase())?.keep === true)
             // Difficulty had no vote at all in what was stored: the sort was
-            // rank, then relevance, then volume. qasimcode.com (authority 0)
+            // rank, then relevance, then volume. acmestudio.example (authority 0)
             // was given five KD 100 keywords and eight more at KD 70 or worse,
             // and one of the KD 100s was drafted on its first day.
             //

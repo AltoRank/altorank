@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 /**
- * The qasimcode.com signup, 2026-09-07, through `analyseDomain`.
+ * The acmestudio.example signup, 2026-09-07, through `analyseDomain`.
  *
  * A studio that builds appointment-booking websites for clinics, salons,
  * studios and trades. It was given twenty keywords, none of which contains
@@ -42,22 +42,22 @@ vi.mock("@/lib/seo/ranked-keywords", async () => {
 import { analyseDomain } from "../domain-analysis";
 
 /** The site as crawled: blog tag pages, plus the page that named the markets. */
-function qasimcodePages() {
+function acmestudioPages() {
   const page = (url: string, title: string, h1: string, h2: string[] = []) => ({
     url, status: 200, title, metaDescription: "", h1: [h1], h2, images: [], links: [], loadTimeMs: 10,
   });
   return [
-    page("https://qasimcode.com/", "Appointment websites for clinics, salons and studios", "Websites that fill the appointment book", ["Clinics and dental practices", "Salons and beauty studios"]),
-    page("https://qasimcode.com/where-we-work", "Where we work", "Clients in other countries", ["The United States", "Danish and Irish clinics"]),
-    page("https://qasimcode.com/design", "Website design", "Website design that books appointments", ["Small business websites"]),
-    page("https://qasimcode.com/blog", "Business websites", "Business websites, written up", ["Trades and repair", "Beauty studios"]),
+    page("https://acmestudio.example/", "Appointment websites for clinics, salons and studios", "Websites that fill the appointment book", ["Clinics and dental practices", "Salons and beauty studios"]),
+    page("https://acmestudio.example/where-we-work", "Where we work", "Clients in other countries", ["The United States", "Danish and Irish clinics"]),
+    page("https://acmestudio.example/design", "Website design", "Website design that books appointments", ["Small business websites"]),
+    page("https://acmestudio.example/blog", "Business websites", "Business websites, written up", ["Trades and repair", "Beauty studios"]),
   ];
 }
 
 const BUSINESS_PROFILE = {
-  name: "Qasimcode",
+  name: "Acmestudio",
   description:
-    "Qasimcode builds appointment-based websites for clinics, salons, studios, and trades, with online booking integrated to existing calendars. Sites are deployed live within two to four weeks at a fixed price agreed upfront.",
+    "Acmestudio builds appointment-based websites for clinics, salons, studios, and trades, with online booking integrated to existing calendars. Sites are deployed live within two to four weeks at a fixed price agreed upfront.",
   audiences: [
     "Speech therapy practices",
     "Medical and dental clinics",
@@ -138,7 +138,7 @@ function fakeSupabase(business: unknown) {
 
 const analyse = (business: unknown = BUSINESS_PROFILE) => {
   const { client, inserted } = fakeSupabase(business);
-  return analyseDomain({ domain: "qasimcode.com", supabase: client, workspaceId: "ws1" }).then((a) => ({
+  return analyseDomain({ domain: "acmestudio.example", supabase: client, workspaceId: "ws1" }).then((a) => ({
     analysis: a,
     stored: inserted.flat(),
   }));
@@ -146,7 +146,7 @@ const analyse = (business: unknown = BUSINESS_PROFILE) => {
 
 beforeEach(() => {
   for (const m of [ranked, discover, fit, sitemap, metrics]) m.mockReset();
-  pages.mockReturnValue(qasimcodePages());
+  pages.mockReturnValue(acmestudioPages());
   ranked.mockResolvedValue([]);
   discover.mockResolvedValue(nothingDiscovered());
   fit.mockImplementation(async (business: unknown, terms: string[]) => ({basis: business ? "model" : "none", verdicts: new Map(business ? terms.map((term) => [term, {keep:true,reason:"fixture buyer fit"}]) : [])}));
@@ -156,7 +156,7 @@ beforeEach(() => {
   metrics.mockResolvedValue({ authority: 0, traffic: null, referringDomains: null });
 });
 
-describe("the qasimcode signup", () => {
+describe("the acmestudio signup", () => {
   it("measures authority before it decides what to store", async () => {
     // On a first run `workspaces.dr` is null while the keywords are chosen,
     // so no reachability judgement was possible at the moment it mattered.
@@ -259,7 +259,7 @@ describe("the qasimcode signup", () => {
   it("hands discovery the profile the person confirmed, competitors included", async () => {
     await analyse();
     const arg = discover.mock.calls[0][0] as { domain: string; business: { competitors?: string[]; audiences?: string[] } };
-    expect(arg.domain).toBe("qasimcode.com");
+    expect(arg.domain).toBe("acmestudio.example");
     expect(arg.business.competitors).toContain("calendly.com");
     expect(arg.business.audiences).toContain("Medical and dental clinics");
   });
@@ -270,10 +270,10 @@ describe("the qasimcode signup", () => {
     // needs the same seeds and the same buyer test.
     const { client } = fakeSupabase(null);
     await analyseDomain({
-      domain: "qasimcode.com",
+      domain: "acmestudio.example",
       supabase: client,
       workspaceId: "ws1",
-      profile: { ...BUSINESS_PROFILE, name: "Qasimcode", language: "English", country: "Global (English)" },
+      profile: { ...BUSINESS_PROFILE, name: "Acmestudio", language: "English", country: "Global (English)" },
     });
     const arg = discover.mock.calls[0][0] as { business: { audiences?: string[] } };
     expect(arg.business.audiences).toContain("Medical and dental clinics");

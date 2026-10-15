@@ -7,7 +7,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 /**
  * What the queue does with keywords the site cannot win.
  *
- * qasimcode.com, authority 0. Twelve of its twenty keywords scored exactly 0.0
+ * acmestudio.example, authority 0. Twelve of its twenty keywords scored exactly 0.0
  * because `1 - relative/100` is exactly 0 for every KD from 45 up, so the
  * twelve were tied and the stable sort left them in the order the provider had
  * returned them. `pickNextKeyword` and `buildPlan` then took whatever was
@@ -15,7 +15,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
  */
 
 const page = (over: Partial<CrawlResult>): CrawlResult => ({
-  url: "https://qasimcode.com/",
+  url: "https://acmestudio.example/",
   status: 200,
   title: "",
   metaDescription: "",
@@ -28,10 +28,10 @@ const page = (over: Partial<CrawlResult>): CrawlResult => ({
 });
 
 const PROFILE = buildTopicalProfile(
-  "qasimcode.com",
+  "acmestudio.example",
   [
     page({
-      title: "Appointment websites for clinics and salons | Qasimcode",
+      title: "Appointment websites for clinics and salons | Acmestudio",
       h1: ["Websites that fill the appointment book"],
       h2: ["Website design", "Small business websites"],
     }),
@@ -234,12 +234,12 @@ describe("recommendKeywords — a page on the site already targets the query", (
     { id: "r", term: "rankingcoach alternative", volume: 10, difficulty: 20, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
     { id: "w", term: "website design account", volume: 1200, difficulty: 28, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
   ];
-  const pages = [{ url: "https://qasimcode.com/alternatives/rankingcoach/", keyword: "rankingcoach alternatives" }];
+  const pages = [{ url: "https://acmestudio.example/alternatives/rankingcoach/", keyword: "rankingcoach alternatives" }];
   it("does not write a second page, and names the one to update", async () => {
     const recs = await recommendKeywords(client(ROWS_, 0, [{ keyword_id: "r", position: 28, checked_at: "2026-09-20T00:00:00Z" }], pages), "ws1");
     const rec = recs.find((r) => r.term === "rankingcoach alternative")!;
     expect(rec.action).toBe("skip");
-    expect(rec.existingPageUrl).toBe("https://qasimcode.com/alternatives/rankingcoach/");
+    expect(rec.existingPageUrl).toBe("https://acmestudio.example/alternatives/rankingcoach/");
     expect(rec.reasons.join(" ")).toContain("/alternatives/rankingcoach/");
     expect(pickNextKeyword(recs)?.term).toBe("website design account");
   });

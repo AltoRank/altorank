@@ -4,7 +4,7 @@
 //
 // `categoryOf` reads the description and returns its first noun pair. That
 // pair is the company's tagline more often than the market's term: "scan-driven
-// packout" for packhub.io, "appointment-based websites" for qasimcode.com.
+// packout" for acmepack.example, "appointment-based websites" for acmestudio.example.
 // Seeds built on a tagline price at zero and buy nothing, and the run falls
 // through to the ads tool reading words off the homepage.
 //
@@ -58,12 +58,12 @@ export async function resolveCategory(
 //
 // `resolveCategory` picks the description's phrase with the most search
 // volume on its own. That turned out to be the wrong question for seeding.
-// qasimcode.com's phrase with the most volume is "online booking" (27,100/mo);
+// acmestudio.example's phrase with the most volume is "online booking" (27,100/mo);
 // composed with its audiences - "dental clinic online booking", "salon online
 // booking" - every seed prices at zero, where the old head "website" gave
 // "dental clinic website" 30/mo and "appointment booking website" 210/mo. A
 // feature has volume; the noun that pairs with a buyer is what a seed needs.
-// packhub.io's winner was "put wall", a real warehouse term that composes with
+// acmepack.example's winner was "put wall", a real warehouse term that composes with
 // nothing. Both sites stored zero audience or profile keywords on 2026-09-10
 // and the ads tool filled their pools.
 //

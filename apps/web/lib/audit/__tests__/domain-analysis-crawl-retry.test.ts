@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 /**
  * One transient fetch failure must not become a permanent verdict.
  *
- * packhub.io, 2026-09-09 18:38:05: ten seconds after the wizard read the
+ * acmepack.example, 2026-09-09 18:38:05: ten seconds after the wizard read the
  * homepage from the same function, the crawl got status 0 on every page. One
  * attempt, no retry, so: "too little readable text on the site", keywords and
  * plan skipped, `first_analysed_at` stamped - which is what cron/analyze
@@ -30,11 +30,11 @@ vi.mock("@/lib/seo/domain-metrics", () => ({ fetchDomainMetrics: async () => ({ 
 import { analyseDomain, isTransientCrawlFailure } from "../domain-analysis";
 
 const dead = (error: string) => ({
-  url: "https://packhub.io/", status: 0, title: "", metaDescription: "", h1: [], h2: [], images: [], links: [], loadTimeMs: 0, error,
+  url: "https://acmepack.example/", status: 0, title: "", metaDescription: "", h1: [], h2: [], images: [], links: [], loadTimeMs: 0, error,
 });
 const page = {
-  url: "https://packhub.io/", status: 200, loadTimeMs: 550, images: [], links: [],
-  title: "PackHub - Scan-driven packout for fulfillment teams",
+  url: "https://acmepack.example/", status: 200, loadTimeMs: 550, images: [], links: [],
+  title: "AcmePack - Scan-driven packout for fulfillment teams",
   metaDescription: "A smarter way to pack.",
   h1: ["Scan-driven packout for fulfillment teams"],
   h2: ["Connects directly to Shopify", "Cartonization and carrier rules", "Visual guidance at the packing station"],
@@ -55,7 +55,7 @@ function supabase() {
   } as never;
 }
 
-const run = () => analyseDomain({ domain: "packhub.io", supabase: supabase(), workspaceId: "ws1", crawlRetryDelaysMs: [0, 0], rateBanWaitMs: 0 });
+const run = () => analyseDomain({ domain: "acmepack.example", supabase: supabase(), workspaceId: "ws1", crawlRetryDelaysMs: [0, 0], rateBanWaitMs: 0 });
 const stamped = () => update.mock.calls.some(([t, p]) => t === "workspaces" && "first_analysed_at" in (p as object));
 const crawlLayer = (a: Awaited<ReturnType<typeof analyseDomain>>) => a.layers.find((l) => l.id === "crawl")!;
 
@@ -110,7 +110,7 @@ describe("analyseDomain — a crawl that keeps failing for a transient reason", 
 
   it("stamps the look once the attempts are spent: a host that times out every night is not retried for ever", async () => {
     const a = await analyseDomain({
-      domain: "packhub.io",
+      domain: "acmepack.example",
       supabase: supabase(),
       workspaceId: "ws1",
       crawlRetryDelaysMs: [0, 0],

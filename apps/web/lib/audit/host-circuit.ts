@@ -2,7 +2,7 @@
 // One refusal per host, then silence
 // ---------------------------------------------------------------------------
 //
-// packhub.io, measured 2026-09-10 from a residential address: about twenty
+// acmepack.example, measured 2026-09-10 from a residential address: about twenty
 // requests in forty seconds trips a ban that answers 403 for fifteen to forty
 // seconds. A sliding window, so every request made while refused - a retry
 // with another agent, the readiness check's next resource, the pages phase's

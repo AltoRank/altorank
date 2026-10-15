@@ -9,12 +9,12 @@ describe("existingSignup", () => {
   });
 
   it("finds the account and the site a first submit already made, so a second makes neither again", async () => {
-    // novatristech.com, 2026-09-22: the same user, eight seconds later.
+    // A real signup, 2026-09-22: the same user, eight seconds later.
     const db = fakeDb({
       account_members: [{ account_id: "acc-1", user_id: "u1", role: "owner" }],
-      workspaces: [{ id: "ws-1", account_id: "acc-1", domain: "novatristech.com" }],
+      workspaces: [{ id: "ws-1", account_id: "acc-1", domain: "acme-agency.example" }],
     });
-    expect(await existingSignup(db.client, "u1", "novatristech.com")).toEqual({ accountId: "acc-1", workspaceId: "ws-1" });
+    expect(await existingSignup(db.client, "u1", "acme-agency.example")).toEqual({ accountId: "acc-1", workspaceId: "ws-1" });
   });
 
   it("finds the account but no site when the first submit stopped before the workspace", async () => {

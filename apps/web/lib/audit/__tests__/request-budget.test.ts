@@ -5,7 +5,7 @@ import { resetHostCircuit } from "../host-circuit";
 import { discoverUrls } from "@/lib/seo/site-crawl";
 
 /**
- * packhub.io rate-bans an address after ten requests in about forty seconds
+ * acmepack.example rate-bans an address after ten requests in about forty seconds
  * and answers 403 (measured 2026-09-10 from a residential address: ten 200s,
  * then 403s, 200 again after the window). The onboarding minute fetched "/"
  * three times and robots.txt and the sitemap twice, and the crawl arrived
@@ -25,7 +25,7 @@ function hostWithBudget(n: number) {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input); urls.push(url); count += 1;
     if (count > n) return new Response("banned", { status: 403, headers: { "content-type": "text/html" } });
-    const links = ["/a", "/b", "/c", "/d", "/e", "/f"].map((p) => `<a href="https://packhub.io${p}">${p}</a>`).join("");
+    const links = ["/a", "/b", "/c", "/d", "/e", "/f"].map((p) => `<a href="https://acmepack.example${p}">${p}</a>`).join("");
     return new Response(HTML(url, links), { status: 200, headers: { "content-type": "text/html" } });
   }) as typeof fetch;
   return { urls, requests: () => count };
@@ -34,7 +34,7 @@ function hostWithBudget(n: number) {
 describe("crawlSite against a host that counts requests", () => {
   it("stops the moment the host starts refusing, instead of spending the rest of the budget", async () => {
     const host = hostWithBudget(3);
-    const pages = await crawlSite("https://packhub.io", 40, 2, 0);
+    const pages = await crawlSite("https://acmepack.example", 40, 2, 0);
     expect(usablePages(pages)).toHaveLength(3);
     // 3 answered + 1 refused (the crawler-UA try) + 1 refused (the fallback try) = 5, then it stopped.
     expect(host.requests()).toBeLessThanOrEqual(5);
@@ -44,7 +44,7 @@ describe("crawlSite against a host that counts requests", () => {
 
   it("does not fetch the homepage when the caller already holds it", async () => {
     const host = hostWithBudget(100);
-    const pages = await crawlSite("https://packhub.io", 1, 0, 0, { seedHtml: HTML("Seeded") });
+    const pages = await crawlSite("https://acmepack.example", 1, 0, 0, { seedHtml: HTML("Seeded") });
     expect(usablePages(pages)).toHaveLength(1);
     expect(pages[0].title).toBe("Seeded");
     expect(host.requests()).toBe(0);
@@ -55,9 +55,9 @@ describe("recordingFetcher", () => {
   it("fetches each URL once and remembers the answer", async () => {
     const host = hostWithBudget(100);
     const f = recordingFetcher(5_000);
-    await f("https://packhub.io/"); await f("https://packhub.io/"); await f("https://packhub.io/robots.txt");
+    await f("https://acmepack.example/"); await f("https://acmepack.example/"); await f("https://acmepack.example/robots.txt");
     expect(host.requests()).toBe(2);
-    expect(f.resources.get("https://packhub.io/")?.status).toBe(200);
+    expect(f.resources.get("https://acmepack.example/")?.status).toBe(200);
   });
 });
 
@@ -65,10 +65,10 @@ describe("discoverUrls with bodies the caller already holds", () => {
   it("does not fetch robots.txt or the sitemap again", async () => {
     const host = hostWithBudget(100);
     const bodies = new Map([
-      ["https://packhub.io/robots.txt", "User-agent: *\nSitemap: https://packhub.io/sitemap.xml\n"],
-      ["https://packhub.io/sitemap.xml", `<urlset><url><loc>https://packhub.io/</loc></url><url><loc>https://packhub.io/product</loc></url></urlset>`],
+      ["https://acmepack.example/robots.txt", "User-agent: *\nSitemap: https://acmepack.example/sitemap.xml\n"],
+      ["https://acmepack.example/sitemap.xml", `<urlset><url><loc>https://acmepack.example/</loc></url><url><loc>https://acmepack.example/product</loc></url></urlset>`],
     ]);
-    const urls = await discoverUrls("packhub.io", { timeoutMs: 1000, maxUrls: 50, bodies });
+    const urls = await discoverUrls("acmepack.example", { timeoutMs: 1000, maxUrls: 50, bodies });
     expect(urls.length).toBeGreaterThanOrEqual(2);
     expect(host.requests()).toBe(0);
   });

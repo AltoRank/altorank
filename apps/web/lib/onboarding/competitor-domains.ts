@@ -57,7 +57,7 @@ export function pickCompetitorDomain(name: string, hosts: readonly string[]): st
     if (!DOMAIN_SHAPE.test(host) || NOT_A_RIVAL.test(host)) continue;
     const labels = host.split(".");
     // app.trainerize.com and trainerize.com both answer to "trainerize", and
-    // so does revoo-app.com to "revoo": a label is matched as written and
+    // so does acmegym-app.example to "acmegym": a label is matched as written and
     // with the product suffixes brandAliases strips ("-app", "hq", ...).
     const match = labels.slice(0, -1).find((label, i) =>
       squash(label) === wanted || brandAliases(labels.slice(i).join(".")).some((alias) => squash(alias) === wanted),

@@ -157,7 +157,7 @@ const STOP = new Set([
  * `competitorName` answers a different question - what to put in front of
  * "alternatives" - and its rule that a name of three letters or fewer keeps
  * its TLD ("cal.com", not "cal") is right for composing a seed and wrong for
- * filtering: it made `wix` unmatchable against wix.com, and qasimcode.com
+ * filtering: it made `wix` unmatchable against wix.com, and acmestudio.example
  * stored `wix` four times over. The suffix trim is the same story from the
  * other end: `acuity` never matched `acuityscheduling`.
  */
@@ -255,7 +255,7 @@ export function keyNouns(text: string, limit = 6): string[] {
 
 /**
  * Words that open a description's main clause without naming its subject.
- * "Qasimcode builds appointment-based websites" - the category is the third
+ * "Acmestudio builds appointment-based websites" - the category is the third
  * and fourth words, and a pair starting with the verb ("builds
  * appointment-based") reads as nonsense inside "<category> for <audience>".
  */
@@ -272,7 +272,7 @@ const LEADING_VERBS = new Set([
  *
  * `brand` is dropped when known: the description almost always opens with the
  * company's own name, and "<brand> builds" is neither a category nor something
- * anybody searches for. It fed the playbooks "qasimcode builds for medical and
+ * anybody searches for. It fed the playbooks "acmestudio builds for medical and
  * dental clinics".
  */
 export function categoryOf(
@@ -285,13 +285,13 @@ export function categoryOf(
 /**
  * Every phrase the description offers as the category, best guess first.
  *
- * One guess was the problem. packhub.io's description opens "PackHub is a
+ * One guess was the problem. acmepack.example's description opens "AcmePack is a
  * scan-driven packout solution for fulfillment teams", so the category
  * became "scan-driven packout" - the company's own coinage, which nobody has
  * ever typed into a search box. Every playbook seed built on it ("scan-driven
  * packout for 3pl providers", "what is scan-driven packout") priced at zero,
  * the profile bought nothing, and the ads fallback filled the pool with
- * Microsoft Teams. qasimcode.com's "appointment-based websites" was the same
+ * Microsoft Teams. acmestudio.example's "appointment-based websites" was the same
  * shape.
  *
  * The order is the description's own - pairs where the business says what it
@@ -415,7 +415,7 @@ export function buildPlaybookSeeds(id: PlaybookId, ctx: SeedContext): string[] {
 // ---------------------------------------------------------------------------
 //
 // #180 established the principle: the automatic path had never used the
-// audiences, so qasimcode.com's twenty keywords all came from n-grams of its
+// audiences, so acmestudio.example's twenty keywords all came from n-grams of its
 // blog tag pages and not one contained "book", "appoint", "clinic", "salon",
 // "dental", "therap", "trade", "calendar" or "schedul".
 //
@@ -472,7 +472,7 @@ export function audienceHead(audience: string): string {
  * words at the top - and because `categoryOf` reads the description by
  * counting adjacent word pairs, all of which occur exactly once in three
  * sentences, so it falls back to an alphabetical tie-break and returns "agreed
- * upfront". Every audience playbook for qasimcode.com therefore reads "best
+ * upfront". Every audience playbook for acmestudio.example therefore reads "best
  * agreed upfront for medical and dental clinics".
  *
  * Three conditions, in order of how much each removes:
@@ -480,7 +480,7 @@ export function audienceHead(audience: string): string {
  *   in the description   the profile's top terms include the brand and the
  *                        audiences; what the business SAYS it makes is in its
  *                        own description of itself
- *   not the brand        "qasimcode" is the strongest term in every profile
+ *   not the brand        "acmestudio" is the strongest term in every profile
  *   not an audience word "studios", "clinics" and "salons" are who they sell
  *                        to, not what they sell, and they outrank "websites"
  *
@@ -547,7 +547,7 @@ export function audienceSeeds(
   /**
    * The category to build on, when the caller has one the market actually
    * searches (`resolveCategory`). Without it the head is the profile's top
-   * term that also appears in the description - which for packhub.io was
+   * term that also appears in the description - which for acmepack.example was
    * "pack", from a tagline that repeats it, so every audience seed read
    * "shopify fulfillment pack".
    */

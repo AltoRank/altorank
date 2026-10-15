@@ -26,7 +26,7 @@ describe("parsePublicDomain", () => {
   });
 
   it("trims whitespace and lowercases", () => {
-    expect(ok("  LIMINEER.COM  ")).toBe("limineer.com");
+    expect(ok("  EXAMPLE.ORG  ")).toBe("example.org");
   });
 
   it("rejects things that are not a public hostname", () => {

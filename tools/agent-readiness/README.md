@@ -116,10 +116,10 @@ and each has a regression test:
    301s `/llms.txt` to its homepage returns `200 text/html` and passed.
    Confirmed on `cloudflare.com`.
 5. **Company names must not come from `<title>`.** Agency titles lead with
-   keyword phrases, so the heuristic proposed `genesi.it` is called
+   keyword phrases, so the heuristic proposed `acmeweb.it` is called
    "Realizzazione siti web". Source order is now `og:site_name` → footer
    copyright line → title segment matching the domain.
-6. **Logo `alt` is not a name source.** `datodigitale.it`'s logo alt is "Enel", a
+6. **Logo `alt` is not a name source.** `acmedigitale.it`'s logo alt is "Enel", a
    *client's* brand.
 
 ## Not implemented, deliberately

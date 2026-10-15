@@ -15,7 +15,7 @@
 const MULTI_PART_TLD = /\.(co|com|org|net|gov|edu|ac)\.[a-z]{2}$/i;
 
 /**
- * "qasimcode.com" -> "Qasimcode". "my-shop.co.uk" -> "My Shop".
+ * "acmestudio.example" -> "Acmestudio". "my-shop.co.uk" -> "My Shop".
  * Anything unreadable falls back to the host as typed.
  */
 export function accountNameFromDomain(domain: string): string {

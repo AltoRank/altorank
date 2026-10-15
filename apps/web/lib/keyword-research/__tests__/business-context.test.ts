@@ -25,8 +25,8 @@ const db = {
 } as never;
 
 const PROPOSED = {
-  name: "Qasimcode", language: "English", country: "Global (English)",
-  description: "Qasimcode builds appointment-based websites for clinics, salons and studios.",
+  name: "Acmestudio", language: "English", country: "Global (English)",
+  description: "Acmestudio builds appointment-based websites for clinics, salons and studios.",
   audiences: ["Dental clinics"], offerings: ["clinic booking websites"], competitors: ["calendly.com"],
 };
 
@@ -43,14 +43,14 @@ describe("profileUsable", () => {
 
 describe("ensureBusinessProfile", () => {
   it("passes a usable profile through without reading the site", async () => {
-    const out = await ensureBusinessProfile(db, "ws", "qasimcode.com", { description: PROPOSED.description, audiences: ["x"] });
+    const out = await ensureBusinessProfile(db, "ws", "acmestudio.example", { description: PROPOSED.description, audiences: ["x"] });
     expect(out).toEqual({ business: { description: PROPOSED.description, audiences: ["x"] }, inferred: false, missing: null });
     expect(infer).not.toHaveBeenCalled();
   });
 
   it("reads the site for a missing profile, keeps what the person had typed, and saves it", async () => {
     infer.mockResolvedValue({ profile: PROPOSED, reason: "ok", source: "static" });
-    const out = await ensureBusinessProfile(db, "ws", "qasimcode.com", { competitors: ["acuityscheduling.com"], audiences: [] });
+    const out = await ensureBusinessProfile(db, "ws", "acmestudio.example", { competitors: ["acuityscheduling.com"], audiences: [] });
     expect(out.inferred).toBe(true);
     expect(out.missing).toBeNull();
     expect(out.business?.description).toBe(PROPOSED.description);

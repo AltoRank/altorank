@@ -172,7 +172,7 @@ export const defaultFetcher: ResourceFetcher = (url) => fetchResource(url);
  * `defaultFetcher` that keeps every response, so the caller can hand the
  * homepage to the crawl and robots.txt and the sitemap to URL discovery
  * instead of fetching each of them again. Against a host that rate-bans after
- * ten requests (packhub.io), those repeats were the difference between a
+ * ten requests (acmepack.example), those repeats were the difference between a
  * first look and "too little readable text".
  */
 export function recordingFetcher(timeoutMs?: number): ResourceFetcher & { resources: Map<string, FetchedResource> } {
@@ -435,7 +435,7 @@ async function runChecks(
   //
   // Status alone is not enough. A site that 301s /llms.txt to its homepage
   // returns 200 text/html after the redirect and would pass, which is how
-  // cloudflare.com and agenziabrand.it were recorded as having an llms.txt they
+  // cloudflare.com and acmeagenzia.it were recorded as having an llms.txt they
   // do not have. Require a non-HTML body that is not just a redirect landing.
   const llms = await fetcher(`${base}/llms.txt`);
   const llmsType = (llms.headers["content-type"] ?? "").toLowerCase();

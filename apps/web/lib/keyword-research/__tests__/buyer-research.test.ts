@@ -26,9 +26,9 @@ import { parseSeeds, seedsFromProfile, proposeBuyerSeeds } from "../buyer-seeds"
 import { parseVerdicts, judgeBuyerFit, MAX_JUDGED } from "../buyer-fit";
 import { discoverBuyerKeywords, isBrandTerm, MAX_EXPANDED_SEEDS } from "../discovery";
 
-const PACKHUB = {
-  name: "PackHub",
-  description: "PackHub is an order picking and packing app for Shopify merchants: pack slips, barcode scanning, and shipping labels from one screen.",
+const ACMEPACK = {
+  name: "AcmePack",
+  description: "AcmePack is an order picking and packing app for Shopify merchants: pack slips, barcode scanning, and shipping labels from one screen.",
   audiences: ["Shopify merchants fulfilling in-house", "Small 3PL warehouses"],
   offerings: ["order picking software", "packing slip generator", "shopify barcode scanning"],
   competitors: ["packiyo.com", "shipstation.com", "www.easyship.com"],
@@ -62,7 +62,7 @@ describe("parseSeeds", () => {
 
 describe("seedsFromProfile", () => {
   it("uses the offerings and audiences as typed when there is no model", () => {
-    expect(seedsFromProfile(PACKHUB)).toEqual([
+    expect(seedsFromProfile(ACMEPACK)).toEqual([
       "order picking software",
       "packing slip generator",
       "shopify barcode scanning",
@@ -78,7 +78,7 @@ describe("seedsFromProfile", () => {
 describe("proposeBuyerSeeds", () => {
   it("asks the model with the whole profile and says so", async () => {
     ask.mockResolvedValue('["packing slip template", "order picking app"]');
-    const out = await proposeBuyerSeeds(PACKHUB);
+    const out = await proposeBuyerSeeds(ACMEPACK);
     expect(out).toEqual({ seeds: ["packing slip template", "order picking app"], basis: "model" });
     const prompt = ask.mock.calls[0][1] as string;
     expect(prompt).toContain("What people buy from it: order picking software");
@@ -87,7 +87,7 @@ describe("proposeBuyerSeeds", () => {
 
   it("falls back to the profile's own words when the model answers nothing usable", async () => {
     ask.mockResolvedValue("no");
-    const out = await proposeBuyerSeeds(PACKHUB);
+    const out = await proposeBuyerSeeds(ACMEPACK);
     expect(out.basis).toBe("profile");
     expect(out.seeds).toContain("order picking software");
   });
@@ -127,7 +127,7 @@ describe("judgeBuyerFit", () => {
   it("covers all distinct terms in bounded batches", async () => {
     ask.mockImplementation(async (_op, prompt: string) => JSON.stringify(JSON.parse(prompt.slice(prompt.indexOf("PHRASES") + 8)).map((t: string) => ({t,k:true,r:"buyer fit"}))));
     const terms = Array.from({ length: MAX_JUDGED + 40 }, (_, i) => `term ${i}`);
-    const out = await judgeBuyerFit(PACKHUB, [...terms, "term 1"]);
+    const out = await judgeBuyerFit(ACMEPACK, [...terms, "term 1"]);
     expect(ask).toHaveBeenCalledTimes(2);
     expect(out.verdicts.size).toBe(terms.length);
     for (const call of ask.mock.calls) expect(JSON.parse(call[1].slice(call[1].indexOf("PHRASES") + 8)).length).toBeLessThanOrEqual(MAX_JUDGED);
@@ -136,7 +136,7 @@ describe("judgeBuyerFit", () => {
 
   it("retries only missing decisions and never fills omissions with approval", async () => {
     ask.mockResolvedValueOnce('[{"t":"clinic booking costs","k":true,"r":"clinic buyer"}]').mockResolvedValueOnce(null);
-    const result = await judgeBuyerFit(PACKHUB, ["clinic booking costs", "ups tracking"]);
+    const result = await judgeBuyerFit(ACMEPACK, ["clinic booking costs", "ups tracking"]);
     expect(result.verdicts.has("ups tracking")).toBe(false);
     expect(ask.mock.calls[1][1]).toContain('PHRASES\n["ups tracking"]');
   });
@@ -152,14 +152,14 @@ describe("isBrandTerm", () => {
   it("catches our name and every rival's, and leaves the category alone", () => {
     const rivals = ["packiyo.com", "shipstation.com", "easyship.com"];
     expect(isBrandTerm("local clinic booking website", "studio.example", ["cal.com"])).toBe(false);
-    expect(isBrandTerm("shipstation integrazione shopify", "packhub.io", rivals)).toBe(false);
-    expect(isBrandTerm("packiyo login", "packhub.io", rivals)).toBe(true);
-    expect(isBrandTerm("packiyo", "packhub.io", rivals)).toBe(true);
-    expect(isBrandTerm("packiyo pricing", "packhub.io", rivals)).toBe(false);
-    expect(isBrandTerm("shipstation vs easyship", "packhub.io", rivals)).toBe(false);
-    expect(isBrandTerm("packhub reviews", "packhub.io", rivals)).toBe(false);
-    expect(isBrandTerm("packing slip template", "packhub.io", rivals)).toBe(false);
-    expect(isBrandTerm("ship station alternatives", "packhub.io", rivals)).toBe(false);
+    expect(isBrandTerm("shipstation integrazione shopify", "acmepack.example", rivals)).toBe(false);
+    expect(isBrandTerm("packiyo login", "acmepack.example", rivals)).toBe(true);
+    expect(isBrandTerm("packiyo", "acmepack.example", rivals)).toBe(true);
+    expect(isBrandTerm("packiyo pricing", "acmepack.example", rivals)).toBe(false);
+    expect(isBrandTerm("shipstation vs easyship", "acmepack.example", rivals)).toBe(false);
+    expect(isBrandTerm("acmepack reviews", "acmepack.example", rivals)).toBe(false);
+    expect(isBrandTerm("packing slip template", "acmepack.example", rivals)).toBe(false);
+    expect(isBrandTerm("ship station alternatives", "acmepack.example", rivals)).toBe(false);
   });
 });
 
@@ -170,8 +170,8 @@ describe("discoverBuyerKeywords", () => {
     ranked.mockResolvedValue([rankedRow("packing slip template"), rankedRow("packiyo login"), rankedRow("shipstation pricing")]);
     ask.mockResolvedValue('["packing slip template"]');
     const out = await discoverBuyerKeywords({
-      domain: "packhub.io",
-      business: { ...PACKHUB, competitors: ["packhub.io", "packiyo.com", "shipstation.com", "easyship.com", "shippo.com"] },
+      domain: "acmepack.example",
+      business: { ...ACMEPACK, competitors: ["acmepack.example", "packiyo.com", "shipstation.com", "easyship.com", "shippo.com"] },
     });
     expect(out.competitorsAsked).toEqual(["packiyo.com", "shipstation.com", "easyship.com"]);
     expect(ranked).toHaveBeenCalledTimes(3);
@@ -200,7 +200,7 @@ describe("discoverBuyerKeywords", () => {
       { keyword: "packing slip template", volume: 1300, difficulty: 0, cpc: 0, competition: 0, intent: "info", seed: "packing slip template" },
       { keyword: "easyship packing slip", volume: 90, difficulty: 0, cpc: 0, competition: 0, intent: "info", seed: "packing slip template" },
     ]);
-    const out = await discoverBuyerKeywords({ domain: "packhub.io", business: PACKHUB, languageCode: "en" });
+    const out = await discoverBuyerKeywords({ domain: "acmepack.example", business: ACMEPACK, languageCode: "en" });
     expect(price).toHaveBeenCalledOnce();
     expect(out.seedsPriced).toBe(7); // the zero-volume seed and the rival's name are out
     // Best-priced first, at most five, into one suggestions call.
@@ -225,7 +225,7 @@ describe("discoverBuyerKeywords", () => {
       ["editorial workflow", { volume: 30, difficulty: 12, cpc: 1, intent: "info" }],
       ["content planning tools", { volume: 210, difficulty: 20, cpc: 2, intent: "commercial" }],
     ]));
-    const out = await discoverBuyerKeywords({ domain: "example.test", business: PACKHUB, languageCode: "it", locationCode: 2380 });
+    const out = await discoverBuyerKeywords({ domain: "example.test", business: ACMEPACK, languageCode: "it", locationCode: 2380 });
     expect(out.seedRecovery).toEqual({ attempted: true, seeds: ["editorial workflow", "content planning tools"], measured: 2 });
     expect(out.seedsPriced).toBe(2);
     expect(price.mock.calls[1][1]).toEqual({ languageCode: "it", locationCode: 2380 });
@@ -238,7 +238,7 @@ describe("discoverBuyerKeywords", () => {
     ask.mockResolvedValueOnce('["editorial workflow"]');
     price.mockRejectedValue(new Error("provider unavailable"));
     suggest.mockResolvedValue([{ keyword: "editorial workflow", volume: 30, difficulty: 12, cpc: 0, competition: 0, intent: "info" }]);
-    const out = await discoverBuyerKeywords({ domain: "example.test", business: PACKHUB });
+    const out = await discoverBuyerKeywords({ domain: "example.test", business: ACMEPACK });
     expect(out.expandedSeeds).toEqual(["editorial workflow"]);
     expect(out.seedsPriced).toBe(0);
     // The rival phrases ride along unmeasured; the one measured idea leads.
@@ -251,7 +251,7 @@ describe("discoverBuyerKeywords", () => {
   it("does not count null volume as measured demand or exceed five probes", async () => {
     ask.mockResolvedValueOnce(JSON.stringify(Array.from({ length: 8 }, (_, i) => `category ${i}`)));
     price.mockResolvedValue(new Map([["category 0", { volume: null, difficulty: null, cpc: null, intent: "info" }]]));
-    const out = await discoverBuyerKeywords({ domain: "example.test", business: PACKHUB });
+    const out = await discoverBuyerKeywords({ domain: "example.test", business: ACMEPACK });
     expect(out.seedsPriced).toBe(0);
     expect(out.expandedSeeds).toHaveLength(5);
     expect(out.fromIdeas.every(k => k.unmeasured)).toBe(true);
@@ -268,9 +268,9 @@ describe("discoverBuyerKeywords", () => {
   it("does not long-tail a seed nobody searches", async () => {
     ask.mockResolvedValue('["warehouse picking app"]');
     price.mockResolvedValue(new Map([["warehouse picking app", { term: "warehouse picking app", volume: 0, difficulty: 39, cpc: null, intent: "info" }]]));
-    const out = await discoverBuyerKeywords({ domain: "x.co", business: PACKHUB });
+    const out = await discoverBuyerKeywords({ domain: "x.co", business: ACMEPACK });
     expect(suggest).not.toHaveBeenCalled();
-    // The "{rival} alternative" phrases for PACKHUB's three rivals are stored
+    // The "{rival} alternative" phrases for ACMEPACK's three rivals are stored
     // unmeasured and never probed; what the model seeded is gone.
     expect(out.fromIdeas.filter((k) => !/alternative/.test(k.keyword))).toEqual([]);
     expect(out.alternativeSeeds).toHaveLength(6);

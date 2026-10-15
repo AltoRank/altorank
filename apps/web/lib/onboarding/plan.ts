@@ -783,7 +783,7 @@ export async function fulfilPlannedEntry(
  * the planned path ever sets one. An article the live queue picked for a term
  * that also sits in the calendar leaves that entry open, so the plan comes
  * back for the same keyword on its scheduled day and writes it a second time.
- * qasimcode.com had two of these queued on 2026-09-09, each for a keyword it
+ * acmestudio.example had two of these queued on 2026-09-09, each for a keyword it
  * had already published.
  *
  * Attaches the existing article and returns how many entries it closed.

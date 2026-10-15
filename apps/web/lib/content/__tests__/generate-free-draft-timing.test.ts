@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
  * `free_drafts_used` was written right after the `articles` insert, before a
  * word was generated. On 2026-09-09 Vercel killed a run at the function limit
  * mid-generation; the sweeper marked the zero-word row `error`, and the next
- * run told qasimcode.com "All 7 free drafts are used" with five real drafts on
+ * run told acmestudio.example "All 7 free drafts are used" with five real drafts on
  * the account. The counter had charged the customer for the platform's own
  * timeout.
  *

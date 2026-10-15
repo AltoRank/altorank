@@ -302,7 +302,7 @@ async function runPhases(
         profile: (workspace.business_profile as BusinessProfile | null) ?? null,
         // A dozen pages is a voice and a vocabulary; the nightly pass reads the
         // rest. Every page here is one request against a host that may be
-        // counting them (packhub.io bans after ten in forty seconds).
+        // counting them (acmepack.example bans after ten in forty seconds).
         maxPages: ONBOARDING_CRAWL_PAGES,
         onRead: () => { void startPages(); },
         // The speed test lands on the audit when it answers; nothing here
@@ -338,14 +338,14 @@ async function runPhases(
       // came from the rivals the person named, how many were dropped as things
       // their buyers would not search - and this line used to throw it away
       // and print "Found 14 keywords worth tracking." A person reading the log
-      // could not tell a good 14 from qasimcode.com's 14, eleven of which were
+      // could not tell a good 14 from acmestudio.example's 14, eleven of which were
       // a rival's name or somebody shopping for a free portfolio site.
       const analysisBreakdown = analysis.layers.find((l) => l.id === "keywords" && l.status === "ok")?.detail;
       const breakdown = consoleSeeds.inserted
         ? [analysisBreakdown, consoleSeeds.detail].filter(Boolean).join(" ")
         : analysisBreakdown;
       // When the crawl itself failed, that is the news - not the keywords
-      // layer's downstream "too little readable text", which packhub.io was
+      // layer's downstream "too little readable text", which acmepack.example was
       // shown for a site with 379 words on its homepage. Quote the crawl's
       // own reason, and if it is the kind that clears on its own, say that the
       // next look is scheduled rather than handing the customer the job.
@@ -366,7 +366,7 @@ async function runPhases(
                 // The crawl failed for a reason that will not clear on its own.
                 // Say the reason - it is the one fact that lets anyone act, and
                 // the version that hid it behind "too little readable text" cost
-                // a day of guessing about packhub.io. The run row is the only
+                // a day of guessing about acmepack.example. The run row is the only
                 // place this reason is persisted.
                 ? `Your site could not be read (${crawlFailed}). Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there.`
                 : why

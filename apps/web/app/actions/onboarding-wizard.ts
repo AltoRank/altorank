@@ -114,7 +114,7 @@ export async function suggestCompetitors(workspaceId: string, profile: BusinessP
 
 /**
  * One typed entry, resolved to a domain and sized against the site.
- * "revoo" becomes revoo-app.com; a name nothing can place returns null and
+ * "acmegym" becomes acmegym-app.example; a name nothing can place returns null and
  * the screen says so, rather than storing a word research cannot read.
  */
 export async function resolveCompetitor(

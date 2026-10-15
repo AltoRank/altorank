@@ -11,7 +11,7 @@ import {
 /**
  * The draft that motivated this: a real citation carrying a wrong number.
  *
- * qasimcode.com's article named the U.S. Bureau of Labor Statistics, linked to
+ * acmestudio.example's article named the U.S. Bureau of Labor Statistics, linked to
  * the correct BLS page, and said "8 percent from 2023 to 2033". That page says
  * 5 percent from 2025 to 2035. Attributed, so `needs_verification` at medium,
  * so not a blocker, so one hold window from publishing itself.

@@ -173,13 +173,13 @@ describe("resolveFeaturedImage", () => {
 describe("offerings, the buyer's words for what is sold", () => {
   it("are parsed off the model's reply and capped at six", () => {
     const raw = JSON.stringify({
-      name: "PackHub",
+      name: "AcmePack",
       description: "Order picking for Shopify.",
       audiences: ["Shopify merchants"],
       offerings: ["order picking software", "packing slip generator", "a", "b", "c", "d", "e", "f"],
       competitors: ["packiyo.com"],
     });
-    const p = parseProfile(raw, "packhub.io");
+    const p = parseProfile(raw, "acmepack.example");
     expect(p?.offerings).toHaveLength(6);
     expect(p?.offerings?.[0]).toBe("order picking software");
   });

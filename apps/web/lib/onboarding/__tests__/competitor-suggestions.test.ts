@@ -26,14 +26,14 @@ describe("classifyRivalSize", () => {
 describe("mergeSuggestions", () => {
   it("keeps one entry per host, first source wins, never the site itself", () => {
     expect(mergeSuggestions("www.fitsuite.co", [
-      { source: "site", domains: ["trainerize.com", "https://www.revoo-app.com/pricing"] },
-      { source: "serp", domains: ["revoo-app.com", "qomodo.me", "fitsuite.co"] },
-      { source: "index", domains: ["qomodo.me", "managify.it"] },
+      { source: "site", domains: ["trainerize.com", "https://www.acmegym-app.example/pricing"] },
+      { source: "serp", domains: ["acmegym-app.example", "acmefit.example", "fitsuite.co"] },
+      { source: "index", domains: ["acmefit.example", "acmemanage.example"] },
     ])).toEqual([
       { domain: "trainerize.com", source: "site" },
-      { domain: "revoo-app.com", source: "site" },
-      { domain: "qomodo.me", source: "serp" },
-      { domain: "managify.it", source: "index" },
+      { domain: "acmegym-app.example", source: "site" },
+      { domain: "acmefit.example", source: "serp" },
+      { domain: "acmemanage.example", source: "index" },
     ]);
   });
 });
@@ -42,24 +42,24 @@ describe("suggestCompetitors", () => {
   const business = { ...EMPTY_PROFILE, description: "Coaching software for personal trainers", offerings: ["client management"], competitors: ["trainerize.com"] };
   it("tags every suggestion with its source and size, and returns the vetted rivals to keep", async () => {
     seeds.mockResolvedValue({ seeds: ["crm personal trainer", "trainerize pricing"], basis: "model" });
-    rivals.mockResolvedValue({ rivals: ["revoo-app.com", "qomodo.me"], searched: [], failed: [], candidates: [], vetted: true });
+    rivals.mockResolvedValue({ rivals: ["acmegym-app.example", "acmefit.example"], searched: [], failed: [], candidates: [], vetted: true });
     organic.mockResolvedValue([
-      { domain: "managify.it", sharedKeywords: 4, avgPosition: 12, estimatedTraffic: null },
+      { domain: "acmemanage.example", sharedKeywords: 4, avgPosition: 12, estimatedTraffic: null },
       // One shared keyword is a coincidence, not a competitor.
       { domain: "aranzulla.it", sharedKeywords: 1, avgPosition: 3, estimatedTraffic: 9_000_000 },
       // Shares enough keywords and is still a magazine: the vetting model says so.
       { domain: "starbene.it", sharedKeywords: 5, avgPosition: 4, estimatedTraffic: 2_000_000 },
     ]);
-    vet.mockImplementation(async (candidates: Array<{ host: string }>) => ({ rivals: candidates.map((c) => c.host).filter((h) => h === "managify.it"), vetted: true }));
-    bulk.mockResolvedValue(new Map([["fitsuite.co", 42], ["trainerize.com", 70], ["revoo-app.com", 22], ["qomodo.me", 28], ["managify.it", null]]));
+    vet.mockImplementation(async (candidates: Array<{ host: string }>) => ({ rivals: candidates.map((c) => c.host).filter((h) => h === "acmemanage.example"), vetted: true }));
+    bulk.mockResolvedValue(new Map([["fitsuite.co", 42], ["trainerize.com", 70], ["acmegym-app.example", 22], ["acmefit.example", 28], ["acmemanage.example", null]]));
     const out = await suggestCompetitors({ domain: "fitsuite.co", business, languageCode: "it", locationCode: 2380 });
     expect(out.own).toBe(42);
-    expect(out.searchRivals).toEqual(["revoo-app.com", "qomodo.me"]);
+    expect(out.searchRivals).toEqual(["acmegym-app.example", "acmefit.example"]);
     expect(out.suggestions).toEqual([
       { domain: "trainerize.com", source: "site", authority: 70, size: "bigger" },
-      { domain: "revoo-app.com", source: "serp", authority: 22, size: "smaller" },
-      { domain: "qomodo.me", source: "serp", authority: 28, size: "similar" },
-      { domain: "managify.it", source: "index", authority: null, size: null },
+      { domain: "acmegym-app.example", source: "serp", authority: 22, size: "smaller" },
+      { domain: "acmefit.example", source: "serp", authority: 28, size: "similar" },
+      { domain: "acmemanage.example", source: "index", authority: null, size: null },
     ]);
     // "trainerize pricing" is an evaluation, not navigation, so it is searched too;
     // the rival search excludes the site and its named rivals.

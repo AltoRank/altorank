@@ -194,7 +194,7 @@ export async function getQuota(
       // `status = 'error'` is excluded from both counts. That status is what
       // the stale sweeper writes on a draft whose run was killed before a
       // word was generated (lib/content/stale-drafts.ts): a row at zero
-      // words that nobody was handed. qasimcode.com was locked out of its
+      // words that nobody was handed. acmestudio.example was locked out of its
       // seventh free draft by exactly one of these on 2026-09-09, with five
       // real drafts on the account. Charging for it is charging for the
       // platform's own timeout.

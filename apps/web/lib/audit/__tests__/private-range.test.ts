@@ -18,7 +18,7 @@ describe("isPrivateHost", () => {
     expect(isPrivateHost(host)).toBe(true);
   });
 
-  it.each(["altorank.co", "www.lully.ai", "8.8.8.8", "172.32.0.1", "172.15.0.1", "192.169.0.1", "[2606:4700::1111]"])(
+  it.each(["altorank.co", "www.acmeflow.example", "8.8.8.8", "172.32.0.1", "172.15.0.1", "192.169.0.1", "[2606:4700::1111]"])(
     "allows %s",
     (host) => {
       expect(isPrivateHost(host)).toBe(false);
@@ -35,7 +35,7 @@ describe("assertPublicUrl", () => {
   });
 
   it("lets a public site through", () => {
-    expect(() => assertPublicUrl("https://www.lully.ai/")).not.toThrow();
+    expect(() => assertPublicUrl("https://www.acmeflow.example/")).not.toThrow();
   });
 
   it("can be lifted for a self-hosted install crawling its own network", () => {

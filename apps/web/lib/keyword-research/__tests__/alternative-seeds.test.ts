@@ -3,7 +3,7 @@ import { alternativeSeeds, rivalName } from "../alternative-seeds";
 
 describe("rivalName", () => {
   it("is the name a buyer types, not the host", () => {
-    expect(rivalName("revoo-app.com")).toBe("revoo");
+    expect(rivalName("acmegym-app.example")).toBe("acmegym");
     expect(rivalName("www.trainerize.com")).toBe("trainerize");
     expect(rivalName("distribb.io")).toBe("distribb");
   });
@@ -11,8 +11,8 @@ describe("rivalName", () => {
 
 describe("alternativeSeeds", () => {
   it("asks for a substitute in the site's language and in English", () => {
-    expect(alternativeSeeds(["revoo-app.com"], "it")).toEqual([
-      "alternativa revoo", "alternative a revoo", "revoo alternative", "revoo alternatives",
+    expect(alternativeSeeds(["acmegym-app.example"], "it")).toEqual([
+      "alternativa acmegym", "alternative a acmegym", "acmegym alternative", "acmegym alternatives",
     ]);
   });
   it("does not double the English phrasings on an English site", () => {

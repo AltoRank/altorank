@@ -15,7 +15,7 @@ describe("CREDITS_PER_ARTICLE", () => {
   });
 });
 
-const TARGET = "https://limineer.com/venture-building";
+const TARGET = "https://acmeventures.example/venture-building";
 
 function mockPage(html: string, init?: { status?: number; headers?: Record<string, string> }) {
   vi.stubGlobal(
@@ -49,7 +49,7 @@ describe("verifyPlacementLive", () => {
   });
 
   it("matches the target across scheme, case and trailing slash", async () => {
-    mockPage(`<a href="http://LIMINEER.com/venture-building/" rel="sponsored nofollow">x</a>`);
+    mockPage(`<a href="http://ACMEVENTURES.example/venture-building/" rel="sponsored nofollow">x</a>`);
     expect((await verifyPlacementLive("https://host.example/post", TARGET)).ok).toBe(true);
   });
 
