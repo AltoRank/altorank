@@ -281,12 +281,13 @@ repository can set them:
 
 Endpoint URL: `https://<your-app>/api/webhooks/stripe`. Its signing secret is
 `STRIPE_WEBHOOK_SECRET`. Subscribe it to exactly these events - the list is
-`REQUIRED_STRIPE_EVENTS` in `apps/web/lib/stripe.ts`, and a test fails if the
-route stops handling any of them:
+`REQUIRED_STRIPE_EVENTS` in `apps/web/lib/stripe.ts`, and tests fail if the
+route stops handling any of them or this table drifts from that list:
 
 | Event | Without it |
 |---|---|
 | `checkout.session.completed` | `plan_status` never becomes active after checkout |
+| `customer.subscription.trial_will_end` | no reminder email three days before a card trial's first charge, though the trial-started email promises one |
 | `customer.subscription.created` | a subscription started outside our checkout is never mapped to an account |
 | `customer.subscription.updated` | plan changes, cancel-at-period-end and the period end are never recorded |
 | `customer.subscription.deleted` | cancellations never land; access never ends |
@@ -426,7 +427,7 @@ least once.
    Without them a Vercel deployment generates and publishes once a day.
 4. **The marketing deploy.** By hand, unless one of the two automatic paths
    above is switched on.
-5. **Stripe webhook registration** (`/api/webhooks/stripe`) and the price ids. See **Stripe** below for the six events and the price setting nothing here can set.
+5. **Stripe webhook registration** (`/api/webhooks/stripe`) and the price ids. See [Stripe](#stripe) above for the events and the price setting nothing here can set.
 6. **Google OAuth client** and its redirect URI.
 7. **Supabase Auth URL configuration** (Site URL, redirect allow-list) and a
    verified Resend sender domain.

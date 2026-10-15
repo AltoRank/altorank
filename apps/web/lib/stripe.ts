@@ -264,9 +264,13 @@ export const PLAN_FEATURES: Record<PlanTier, string[]> = {
  * be subscribed to. The endpoint's event list is dashboard configuration that
  * nothing in this repository can set, so this is the checklist - and a test
  * asserts the route handles each one, so the list cannot drift from the code.
+ * Another test checks the table in docs/deploy.md ("Stripe") against it.
  *
  * What breaks when one is missing:
  *   checkout.session.completed      plan_status never goes active after checkout
+ *   customer.subscription.trial_will_end
+ *                                   no reminder email three days before a card
+ *                                   trial's first charge (the only trigger)
  *   customer.subscription.created   a subscription started outside our checkout
  *                                   is never mapped to an account
  *   customer.subscription.updated   plan changes, cancel-at-period-end and the
