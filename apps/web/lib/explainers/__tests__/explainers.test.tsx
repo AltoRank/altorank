@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { EXPLAINERS, MIN_BULLETS, MAX_BULLETS, CANNOT_YET_HEADING } from "@/lib/explainers";
 import { HowItWorks } from "@/components/dashboard/how-it-works";
+import { ADAPTER_TYPES, UPDATABLE_CMS_TYPES } from "@/lib/cms/adapter";
 
 /**
  * The two rules every explainer is held to (lib/explainers/types.ts), plus a
@@ -87,8 +88,37 @@ describe("explainers", () => {
     const gaps = review!.cannotYet.join("\n");
     expect(gaps).not.toContain("publishing again creates a new post");
     expect(gaps).not.toContain("arrive with the WordPress plugin");
-    // What is still true: the seven adapters with no update call.
-    expect(gaps).toContain("Shopify, Magento, Framer, Wix, Notion, HubSpot or WooCommerce");
+    // What is still true, checked against the adapters themselves: the list
+    // named seven connectors when only Notion and Wix lack update().
+    const cannotUpdate = ADAPTER_TYPES.filter((t) => !UPDATABLE_CMS_TYPES.has(t)).sort();
+    expect(cannotUpdate).toEqual(["notion", "wix"]);
+    expect(gaps).toContain("Update a post already live on Notion or Wix.");
+    for (const name of ["Shopify", "Magento", "Framer", "HubSpot", "WooCommerce"]) expect(gaps).not.toContain(name);
+  });
+
+  it("does not promise an Unpublish that nothing in the app calls", () => {
+    for (const id of ["review", "integrations"]) {
+      const e = EXPLAINERS.find((x) => x.id === id)!;
+      const promised = e.sections.flatMap((s) => [s.lead, ...s.bullets]).join("\n");
+      expect(promised, id).not.toMatch(/unpublish/i);
+      expect(e.cannotYet.join("\n"), id).toMatch(/Unpublish from/);
+    }
+  });
+
+  it("does not tell the integrations screen that publishing again creates a new post", () => {
+    const e = EXPLAINERS.find((x) => x.id === "integrations")!;
+    const text = [...e.sections.flatMap((s) => s.bullets), ...e.cannotYet].join("\n");
+    expect(text).not.toContain("publishing again creates a new post");
+    expect(text).not.toContain("none of the credential connections offer");
+    expect(text).toContain("Update a live post on Notion or Wix.");
+  });
+
+  /** The publish cron reads only `scheduled`; Approve writes `approved`. */
+  it("does not say the publish cron picks up Approved articles", () => {
+    const review = EXPLAINERS.find((e) => e.id === "review")!;
+    const text = review.sections.flatMap((s) => s.bullets).join("\n");
+    expect(text).not.toContain("only touches articles that are Approved");
+    expect(text).toContain("only picks up articles that are Scheduled with a recorded approval");
   });
 
   it("renders the chip with a stable test id and the heading text in the dialog data", () => {
