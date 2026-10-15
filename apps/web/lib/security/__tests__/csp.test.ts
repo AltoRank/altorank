@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 import { buildCsp, makeNonce } from "../csp";
+import { isEmbedSrc } from "@/lib/html/sanitize";
 
 // The dashboard's Content-Security-Policy. Pinned: inline script runs only
 // with the request's nonce, nothing can be embedded from or framed by another
@@ -47,11 +48,18 @@ describe("buildCsp", () => {
     expect(PROD["frame-src"]).toEqual([
       "'self'",
       "https://www.youtube-nocookie.com",
+      "https://youtube-nocookie.com",
       "https://www.youtube.com",
+      "https://youtube.com",
       "https://js.stripe.com",
       "https://checkout.stripe.com",
       "https://billing.stripe.com",
     ]);
+    // Every player the sanitiser keeps can load under the policy.
+    for (const src of ["https://www.youtube-nocookie.com/embed/v", "https://youtube-nocookie.com/embed/v", "https://www.youtube.com/embed/v", "https://youtube.com/embed/v"]) {
+      expect(isEmbedSrc(src), src).toBe(true);
+      expect(PROD["frame-src"], src).toContain(new URL(src).origin);
+    }
     // The OAuth consent form redirects to the client's registered URI, whatever its scheme.
     expect(PROD["form-action"]).toBeUndefined();
   });

@@ -82,8 +82,11 @@ export function buildCsp({ nonce, supabaseUrl, posthogHost, dev = false }: CspIn
     "media-src": ["'self'", "blob:", "data:", "https:", ...(supabase ? [supabase] : [])],
     "frame-src": [
       "'self'",
+      // Every host lib/html/sanitize.ts accepts for an embedded player.
       "https://www.youtube-nocookie.com",
+      "https://youtube-nocookie.com",
       "https://www.youtube.com",
+      "https://youtube.com",
       "https://js.stripe.com",
       "https://checkout.stripe.com",
       "https://billing.stripe.com",
