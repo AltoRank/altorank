@@ -467,7 +467,7 @@ export function OnboardingWizard({
               <div className="flex items-center justify-between rounded-[8px] border border-line bg-bg px-4 py-3">
                 <div>
                   <div className="text-[13px] font-medium">Connect Search Console</div>
-                  <div className="text-[12px] text-ink-3">So we skip keywords you already rank for, and can show real clicks later.</div>
+                  <div className="text-[12px] text-ink-3">So research starts from searches Google already shows you for, and can show real clicks later.</div>
                 </div>
                 {/* New tab: this screen's answers are not saved until the button below. */}
                 <a href="/connect/google" target="_blank" rel="noreferrer">

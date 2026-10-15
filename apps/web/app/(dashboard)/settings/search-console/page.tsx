@@ -40,10 +40,15 @@ export default async function SearchConsoleSettingsPage() {
         <Card title="Google Search Console">
           <div className="grid gap-5 md:grid-cols-[1fr_260px]">
             <div className="text-[13px] leading-relaxed text-ink-2">
-              <p className="m-0 mb-2 font-medium text-ink">Avoid suggesting keywords you already rank for.</p>
+              {/* Said "skips" the queries that already send clicks. Research
+                  does the opposite with them: impressions add to a term's
+                  score, and a term just off page one is multiplied by 2.5
+                  (recommendKeywords in lib/seo/recommendations.ts). Only
+                  a term already ranking near the top is left alone. */}
+              <p className="m-0 mb-2 font-medium text-ink">Start from the searches Google already shows this site for.</p>
               <p className="m-0 mb-2">
-                With Search Console connected, keyword research knows which queries already send this site
-                clicks and skips them, and the dashboard plots real clicks instead of nothing. Nothing here is
+                With Search Console connected, keyword research moves those queries up the list, most of all the
+                ones just off page one, and the dashboard plots real clicks instead of nothing. Nothing here is
                 estimated: until a sync has run, the traffic chart stays empty and says so.
               </p>
               <p className={`m-0 text-[12.5px] ${ws.gscNeedsReconnect ? "text-err-ink" : "text-ink-3"}`}>
