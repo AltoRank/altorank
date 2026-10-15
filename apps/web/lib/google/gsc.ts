@@ -223,28 +223,49 @@ export function matchGSCSite(sites: GSCSite[], domain: string): GSCSite | null {
   return usable.find((s) => gscPropertyCovers(s.siteUrl, domain)) ?? null;
 }
 
-function bareHost(value: string): string {
-  return value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/[/:].*$/, "");
+const HOSTNAME = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/;
+
+/** A plain lower-case hostname without `www.`, or null for anything else. */
+function plainHost(value: string): string | null {
+  const host = value.trim().toLowerCase().replace(/\.$/, "").replace(/^www\./, "");
+  return HOSTNAME.test(host) ? host : null;
+}
+
+/** The host of an `http(s)://host[:port]/path` property, or null. */
+function urlHost(value: string): string | null {
+  if (!/^https?:\/\//i.test(value.trim())) return null;
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    return null;
+  }
+  if (url.username || url.password) return null;
+  return plainHost(url.hostname);
+}
+
+function sameOrSubdomain(a: string, b: string): boolean {
+  return a === b || a.endsWith(`.${b}`) || b.endsWith(`.${a}`);
 }
 
 /**
- * Whether a Search Console property belongs to this site's domain: the same
- * host, a subdomain of it, or a domain property covering it.
+ * Whether a Search Console (or Bing) property belongs to this site's domain:
+ * the same host, a subdomain of it, or a domain property covering it.
  *
  * The nightly sync reads whatever property a site's row names, with the
  * account's Google token, and shows the result on that site's dashboard. A
  * stored property that does not belong to the site's domain is therefore
- * never read (lib/google/sync.ts resolves it again instead).
+ * never read (lib/google/sync.ts resolves it again instead). Only a plain
+ * hostname counts on either side.
  */
 export function gscPropertyCovers(siteUrl: string, domain: string): boolean {
-  const site = bareHost(domain);
+  const site = plainHost(domain.trim().replace(/^https?:\/\//i, "").replace(/[/?#].*$/, ""));
   if (!site) return false;
   const value = siteUrl.trim().toLowerCase();
   if (value.startsWith("sc-domain:")) {
-    const covered = value.slice("sc-domain:".length).replace(/^www\./, "");
-    return covered.length > 0 && (site === covered || site.endsWith(`.${covered}`) || covered.endsWith(`.${site}`));
+    const covered = plainHost(value.slice("sc-domain:".length));
+    return covered !== null && sameOrSubdomain(site, covered);
   }
-  if (!/^https?:\/\//.test(value)) return false;
-  const host = bareHost(value);
-  return host.length > 0 && (host === site || host.endsWith(`.${site}`) || site.endsWith(`.${host}`));
+  const host = urlHost(value);
+  return host !== null && sameOrSubdomain(site, host);
 }

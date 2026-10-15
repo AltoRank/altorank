@@ -36,6 +36,19 @@ describe("gscPropertyCovers", () => {
     expect(gscPropertyCovers("acme.com", "acme.com")).toBe(false);
     expect(gscPropertyCovers("sc-domain:acme.com", "")).toBe(false);
   });
+  it("reads only a plain hostname out of a stored property", async () => {
+    const { gscPropertyCovers } = await import("../gsc");
+    expect(gscPropertyCovers("https://client-b.example/?.acme.com", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("https://client-b.example#.acme.com", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("https://client-b.example\\.acme.com/", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("https://acme.com@client-b.example/", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("https://client-b.example:443/", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("sc-domain:client-b.example/.acme.com", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("sc-domain:client-b.example .acme.com", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("javascript:acme.com", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("https://acme.com:8443/blog/", "acme.com")).toBe(true);
+    expect(gscPropertyCovers("HTTPS://WWW.ACME.COM/", "acme.com")).toBe(true);
+  });
   it("matchGSCSite's subdomain fallback no longer takes a host that merely contains the domain", () => {
     expect(matchGSCSite([site("https://notacme.com/")], "acme.com")).toBeNull();
     expect(matchGSCSite([site("https://blog.acme.com/")], "acme.com")!.siteUrl).toBe("https://blog.acme.com/");
