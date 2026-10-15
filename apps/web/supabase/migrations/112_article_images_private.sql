@@ -1,0 +1,23 @@
+-- 112: article images are served by path, not listed
+-- Depends on: 045 (the `article-images` bucket and its read policy).
+-- Apply any time, before or after its code is deployed: see RUNBOOK.md. No
+-- code reads or lists this bucket through a person's client.
+--
+-- `article-images` is a public bucket: a file is served from its public URL
+-- (/storage/v1/object/public/article-images/<path>) with no policy at all,
+-- which is how a published post, a CMS and the editor show an image. 045 also
+-- created a SELECT policy on storage.objects for the bucket with no role, and
+-- that policy is what the storage API's list and authenticated download ask:
+-- with it, the anon key could list every folder and file name in the bucket,
+-- across every account. Every write and every listing the app makes goes
+-- through the service role (lib/storage/images.ts, app/actions/editor-ai.ts,
+-- lib/storage/purge.ts), which bypasses RLS, so the policy is dropped and
+-- nothing that works by path changes.
+--
+-- 045's comment says nothing private is ever put here. Drafts' images and
+-- files a person uploads into a draft are, so listing is not something the
+-- bucket offers.
+--
+-- Idempotent: `drop policy if exists`. Rollback in RUNBOOK.md.
+
+drop policy if exists "Article images are readable by anyone" on storage.objects;

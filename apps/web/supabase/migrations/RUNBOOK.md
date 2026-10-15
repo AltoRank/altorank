@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server) and **111** (member scope guards; 110 is taken by an open branch), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109 and 111 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch) and **112** (article images served by path, not listed), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109 and 111 go in AFTER**; **112 goes in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -160,7 +160,8 @@ m(file, applied) as (values
   ('107_fast_first_look',                    exists (select 1 from col where t='onboarding_runs' and c='timings') and exists (select 1 from col where t='articles' and c='body_stream') and not has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT') and to_regclass('public.owed_bodies') is not null and exists (select 1 from pg_trigger where tgname = 'articles_body_stream_server_only')),
   ('108_first_body_progress',                exists (select 1 from col where t='articles' and c='body_progress') and not has_column_privilege('authenticated', 'public.articles', 'body_progress', 'SELECT') and pg_get_functiondef('public.articles_body_stream_server_only'::regproc) like '%body_progress%'),
   ('109_approval_written_by_server',         exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'articles_guard_approval' and c.relname = 'articles') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'workspaces_guard_auto_approve' and c.relname = 'workspaces')),
-  ('111_member_scope_guards',                exists (select 1 from pg_trigger where tgname = 'api_keys_creator_sees_every_site') and exists (select 1 from pg_trigger where tgname = 'workspace_integrations_google_server_written') and not has_column_privilege('authenticated', 'public.account_integrations', 'tokens', 'SELECT') and pg_get_functiondef('public.account_members_guard_roles'::regproc) like '%actor_sites%')
+  ('111_member_scope_guards',                exists (select 1 from pg_trigger where tgname = 'api_keys_creator_sees_every_site') and exists (select 1 from pg_trigger where tgname = 'workspace_integrations_google_server_written') and not has_column_privilege('authenticated', 'public.account_integrations', 'tokens', 'SELECT') and pg_get_functiondef('public.account_members_guard_roles'::regproc) like '%actor_sites%'),
+  ('112_article_images_private',             not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Article images are readable by anyone'))
 )
 select file, applied from m order by file;
 ```
@@ -301,6 +302,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 099_trial_gate_server_writes.sql  
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 100_pre_trial_spend_bounds.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 109_approval_written_by_server.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 111_member_scope_guards.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 112_article_images_private.sql   # any time; see its section
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -380,6 +382,7 @@ no code in the repo references either).
 | 108_first_body_progress.sql | `feat/first-look-ui` | 097, **107**; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section (loses only the progress of a body mid-write) |
 | 109_approval_written_by_server.sql | `fix/approval-integrity` | 002, 003, 005, 013, 079, 094; **its code deployed first** | yes | yes, see its section (a member can again forge an approval over PostgREST) |
 | 111_member_scope_guards.sql | `fix/tighten-site-scope` | 033, 051, 053, 085, 099, 102; **its code deployed first** | yes | yes, see its section (re-apply 102 for the two member guards) |
+| 112_article_images_private.sql | `fix/tighten-site-scope` | 045; any time | yes | yes, see its section (the bucket can be listed again) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1677,4 +1680,46 @@ drop function if exists public.api_keys_creator_sees_every_site();
 drop trigger if exists workspace_integrations_google_server_written on public.workspace_integrations;
 drop function if exists public.workspace_integrations_google_server_written();
 grant select on table public.account_integrations to authenticated;
+```
+
+## 112 — article images are served by path, not listed
+
+`112_article_images_private.sql` drops 045's `"Article images are readable by
+anyone"` SELECT policy on `storage.objects`. The bucket stays public, so every
+image keeps loading from its public URL (published posts, CMS drafts, the
+editor): a public bucket serves `/object/public/...` with no policy. What the
+policy also allowed, with no role named, was the storage API's list and
+authenticated read for anyone holding the anon key: every folder and file
+name in the bucket across all accounts, draft images and uploaded proposals
+included. Every write and listing the app makes uses the service role
+(`lib/storage/images.ts`, `app/actions/editor-ai.ts`,
+`lib/storage/purge.ts`), which bypasses RLS.
+
+**Apply any time, before or after its code is deployed.** No code, old or
+new, lists or reads this bucket through a person's client. The code in the
+same change removes report PDFs and draft-only images when a site or a
+never-published article is deleted; it uses the service role and does not
+depend on 112. Re-running is a no-op (`drop policy if exists`). Depends on
+045.
+
+Test: `supabase/tests/112_article_images_private.rls.sql` (self-contained,
+rolls back). Green 2026-10-15 on the same throwaway Postgres 15 as 111, with
+a stub `storage` schema carrying 045's policy: before 112, `anon` sees the
+seeded objects (the first case fails); after 112 applied twice, `anon` and
+`authenticated` see none, the service role sees both, and the bucket is
+still public. Not yet run against the real storage schema.
+
+Post-flight (expect `f`, `t`):
+
+```sql
+select exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects'
+                and policyname = 'Article images are readable by anyone'),
+       (select public from storage.buckets where id = 'article-images');
+```
+
+Rollback:
+
+```sql
+create policy "Article images are readable by anyone" on storage.objects
+  for select using (bucket_id = 'article-images');
 ```
