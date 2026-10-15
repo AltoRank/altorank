@@ -74,14 +74,12 @@ describe("pickGaps", () => {
 });
 
 describe("planCadence", () => {
-  it("promises four a month, wins first", () => {
+  it("lists four first targets, wins first", () => {
     const c = planCadence(
       [{ keyword: "w1", position: 8, volume: 1, path: "/" }, { keyword: "w2", position: 9, volume: 1, path: "/" }],
       [{ keyword: "g1", volume: 1, difficulty: null, rankedBy: [] }, { keyword: "g2", volume: 1, difficulty: null, rankedBy: [] }, { keyword: "g3", volume: 1, difficulty: null, rankedBy: [] }],
     );
-    expect(c.articlesPerMonth).toBe(4);
-    expect(c.firstTargets).toEqual(["w1", "w2", "g1", "g2"]);
-    expect(c.firstPublishDays).toBe(5);
+    expect(c).toEqual({ firstTargets: ["w1", "w2", "g1", "g2"] });
   });
 });
 
