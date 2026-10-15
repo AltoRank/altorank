@@ -30,11 +30,16 @@ vi.mock("@/lib/supabase/server", () => ({
         },
       };
     },
-    auth: { admin: { getUserById: async (id: string) => ({ data: { user: { email: emails[id] } } }) } },
+    auth: {
+      admin: {
+        getUserById: async (id: string) =>
+          emails[id] ? { data: { user: { email: emails[id], user_metadata: {} } } } : { data: { user: null } },
+      },
+    },
   }),
 }));
 
-import { announceApiKeyCreated, announcePasswordChanged } from "../account-events";
+import { announceApiKeyCreated, announcePasswordChanged, memberLabel } from "../account-events";
 
 function sends() {
   return sendTransactionalEmail.mock.calls.map((c) => ({ to: c[0], subject: c[1], html: c[2], footer: c[3] }));
@@ -124,5 +129,17 @@ describe("announceApiKeyCreated", () => {
   it("never throws when the send is refused", async () => {
     sendTransactionalEmail.mockRejectedValue(new Error("Resend refused the email"));
     await expect(announceApiKeyCreated(key)).resolves.toBeUndefined();
+  });
+});
+
+describe("memberLabel", () => {
+  it("names the member by their address when they gave no name", async () => {
+    emails = { u9: "dana@acme.com" };
+    await expect(memberLabel("u9")).resolves.toBe("dana@acme.com");
+  });
+
+  it("falls back to a plain label when the member cannot be read", async () => {
+    emails = {};
+    await expect(memberLabel("gone")).resolves.toBe("A member of the account");
   });
 });

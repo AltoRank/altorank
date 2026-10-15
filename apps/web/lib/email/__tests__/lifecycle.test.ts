@@ -326,6 +326,22 @@ describe("account emails", () => {
     expect(e.html).toContain("read only");
     expect(e.html).toContain("January 1, 2027");
   });
+
+  /** An OAuth key goes straight to the client: nobody was shown it once. */
+  it("names the member who granted a connector, and does not say its key was shown once", () => {
+    const e = renderApiKeyCreated({
+      keyName: "Some Agent (connector)",
+      prefix: "alto_ef56",
+      createdBy: "dana@acme.com",
+      canWrite: true,
+      expiresAt: null,
+      connector: "Some Agent",
+    });
+    expect(e.html).toContain("<strong>dana@acme.com</strong> gave <strong>Some Agent</strong> access to the account");
+    expect(e.html).not.toContain("shown once");
+    expect(e.html).toContain("handed to Some Agent when access was granted");
+    expect(e.preheader).toContain("approved by dana@acme.com");
+  });
 });
 
 describe("nothing is being written", () => {

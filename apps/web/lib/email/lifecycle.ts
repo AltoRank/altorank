@@ -773,9 +773,17 @@ export function renderPasswordChanged(a: PasswordChangedEmail): RenderedEmail {
 export type ApiKeyCreatedEmail = {
   keyName: string;
   prefix: string;
+  /** The member who made the key, or who granted the connector access. */
   createdBy: string;
   canWrite: boolean;
   expiresAt: string | null;
+  /**
+   * Set when the key was issued to a connector through OAuth
+   * (app/api/oauth/token/route.ts): the client's self-chosen name. Its key
+   * goes straight to that client, so "shown once, to whoever created it" is
+   * not what happened.
+   */
+  connector?: string;
 };
 
 /**
@@ -792,20 +800,25 @@ export function renderApiKeyCreated(a: ApiKeyCreatedEmail): RenderedEmail {
     ? `It can read <em>and change</em> things: drafts, keywords, the plan.`
     : `It can read only. It cannot change drafts, keywords or the plan.`;
   const expiry = a.expiresAt ? `It expires on ${dateLabel(a.expiresAt)}.` : `It does not expire.`;
+  const created = a.connector
+    ? `<strong>${esc(a.createdBy)}</strong> gave <strong>${esc(a.connector)}</strong> access to the account, which created an API key for it called <strong>${esc(a.keyName)}</strong>, starting <code>${esc(a.prefix)}</code>.`
+    : `<strong>${esc(a.createdBy)}</strong> created an API key called <strong>${esc(a.keyName)}</strong>, starting <code>${esc(a.prefix)}</code>.`;
   return {
     subject: `A new API key was created: ${a.keyName}`,
-    preheader: `${a.prefix}… created by ${a.createdBy}.`,
+    preheader: a.connector ? `${a.prefix}… for ${a.connector}, approved by ${a.createdBy}.` : `${a.prefix}… created by ${a.createdBy}.`,
     footerNote: `Sent because you are an owner or admin of this AltoRank account.`,
     html:
       heading("A new API key was created") +
-      emailParagraph(
-        `<strong>${esc(a.createdBy)}</strong> created an API key called <strong>${esc(a.keyName)}</strong>, starting <code>${esc(a.prefix)}</code>. ${scope} ${esc(expiry)}`,
-      ) +
+      emailParagraph(`${created} ${scope} ${esc(expiry)}`) +
       emailParagraph(
         `A key works without a password and without a browser. If you do not recognise this one, revoke it - that takes effect at once and nothing else on the account is affected.`,
       ) +
       emailButton(appLink("/settings/api-keys"), "See the account's keys") +
-      emailParagraph(`The key's value is not in this email. It is shown once, to whoever created it, and never stored.`),
+      emailParagraph(
+        a.connector
+          ? `The key's value is not in this email. It was handed to ${esc(a.connector)} when access was granted, and AltoRank does not store it.`
+          : `The key's value is not in this email. It is shown once, to whoever created it, and never stored.`,
+      ),
   };
 }
 

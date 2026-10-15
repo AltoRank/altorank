@@ -3,7 +3,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { loadClient, redirectAllowed } from "@/lib/oauth/clients";
 import { exchangeCode } from "@/lib/oauth/codes";
 import { oauthError, oauthJson, readBody } from "@/lib/oauth/http";
-import { announceApiKeyCreated } from "@/lib/email/account-events";
+import { announceApiKeyCreated, memberLabel } from "@/lib/email/account-events";
 import { takeToolRateLimit } from "@/lib/tools/rate-limit";
 import { clientIp } from "@/lib/growth-plan/http";
 
@@ -48,12 +48,17 @@ export async function POST(request: NextRequest) {
 
   // Same notice a hand-made key sends: the other owners and admins learn a
   // credential now exists, and which connector holds it. Value not included.
+  // Named after the member who approved the consent screen (the code's
+  // user_id). It used to name the client, whose name is whatever the client
+  // registered itself as, so the email read as though a person called that
+  // had made the key.
   await announceApiKeyCreated({
     accountId: outcome.key.accountId,
     keyId: outcome.key.id,
     keyName: `${client.client_name} (connector)`,
     prefix: outcome.key.prefix,
-    createdBy: client.client_name,
+    createdBy: await memberLabel(outcome.key.userId),
+    connector: client.client_name,
     canWrite: outcome.key.scopes.includes("write"),
     expiresAt: outcome.key.expiresAt,
   });
