@@ -103,17 +103,29 @@ function toHeaders(raw: IncomingHttpHeaders): Headers {
   return headers;
 }
 
-function decode(body: Buffer, encoding: string | undefined): Buffer {
-  switch ((encoding ?? "").trim().toLowerCase()) {
-    case "gzip":
-    case "x-gzip":
-      return gunzipSync(body);
-    case "deflate":
-      return inflateSync(body);
-    case "br":
-      return brotliDecompressSync(body);
-    default:
-      return body;
+/**
+ * The body as the server meant it, held to the same size cap once decoded: a
+ * few kilobytes compressed can stand for gigabytes.
+ */
+function decode(body: Buffer, encoding: string | undefined, maxBytes: number): Buffer {
+  const opts = { maxOutputLength: maxBytes };
+  try {
+    switch ((encoding ?? "").trim().toLowerCase()) {
+      case "gzip":
+      case "x-gzip":
+        return gunzipSync(body, opts);
+      case "deflate":
+        return inflateSync(body, opts);
+      case "br":
+        return brotliDecompressSync(body, opts);
+      default:
+        return body;
+    }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ERR_BUFFER_TOO_LARGE" || err instanceof RangeError) {
+      throw new Error(`the response was larger than ${maxBytes} bytes`);
+    }
+    throw err;
   }
 }
 
@@ -165,7 +177,7 @@ export function requestOnce(target: URL, init: SiteFetchInit, timeoutMs: number,
               const responseHeaders = toHeaders(res.headers);
               const body = NULL_BODY.has(status)
                 ? null
-                : new Uint8Array(decode(Buffer.concat(chunks), res.headers["content-encoding"]));
+                : new Uint8Array(decode(Buffer.concat(chunks), res.headers["content-encoding"], maxBytes));
               responseHeaders.delete("content-encoding");
               responseHeaders.delete("content-length");
               resolve(new Response(body, { status, statusText: res.statusMessage, headers: responseHeaders }));

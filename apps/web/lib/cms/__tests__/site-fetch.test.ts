@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll, afterEach } from "vitest";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { gzipSync } from "node:zlib";
+import { brotliCompressSync, gzipSync } from "node:zlib";
 
 import { assertSiteUrl, requestOnce, siteFetch } from "../site-fetch";
 import { UnsafeUrlError } from "@/lib/public-tools/safe-fetch";
@@ -70,6 +70,19 @@ describe("requestOnce (loopback server, guard off)", () => {
           res.writeHead(200, { "content-type": "text/plain" });
           return res.end("x".repeat(5000));
         }
+        if (req.url === "/slow") {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.write("{");
+          return; // never ends
+        }
+        if (req.url === "/expands") {
+          res.writeHead(200, { "content-type": "text/plain", "content-encoding": "gzip" });
+          return res.end(gzipSync(Buffer.alloc(2_000_000)));
+        }
+        if (req.url === "/expands-br") {
+          res.writeHead(200, { "content-type": "text/plain", "content-encoding": "br" });
+          return res.end(brotliCompressSync(Buffer.alloc(2_000_000)));
+        }
         if (req.url === "/empty") {
           res.writeHead(204);
           return res.end();
@@ -114,6 +127,16 @@ describe("requestOnce (loopback server, guard off)", () => {
     const empty = await requestOnce(new URL(`${base}/empty`), {}, 5000, false);
     expect(empty.status).toBe(204);
     expect(await empty.text()).toBe("");
+  });
+
+  it("the deadline covers a body that starts and never finishes", async () => {
+    const started = Date.now();
+    await expect(requestOnce(new URL(`${base}/slow`), {}, 300, false)).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
+  it.each(["/expands", "/expands-br"])("the size cap applies to the decoded body too (%s)", async (p) => {
+    await expect(requestOnce(new URL(`${base}${p}`), { maxBytes: 100_000 }, 5000, false)).rejects.toThrow(/larger than 100000 bytes/);
   });
 
   it("stops reading past the size cap", async () => {
