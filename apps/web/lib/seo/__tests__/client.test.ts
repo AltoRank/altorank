@@ -203,3 +203,39 @@ describe("spendOperation", () => {
     expect(spendOperation("/dataforseo_labs/google/ranked_keywords/live")).toBe("/dataforseo_labs/google/ranked_keywords/live");
   });
 });
+
+describe("post — a request that never answers", () => {
+  it("is bounded: every request carries a timeout, and one that runs out keeps its claim at the estimate", async () => {
+    const { REQUEST_TIMEOUT_MS } = await import("../client");
+    const { memoryRunBudget } = await import("@/lib/billing/run-budget");
+    const { withSpendScope } = await import("@/lib/billing/spend-scope");
+    expect(REQUEST_TIMEOUT_MS).toBeLessThanOrEqual(120_000);
+    // A fetch that answers only when its signal gives up, as undici does.
+    const seen: Array<AbortSignal | undefined> = [];
+    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+      seen.push(init?.signal ?? undefined);
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("The operation was aborted due to timeout"), { name: "TimeoutError" })));
+      });
+    }));
+    // AbortSignal.timeout runs on the runtime's own clock: stood in for by
+    // a signal this test fires, after checking what it was asked for.
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+    try {
+      const budget = memoryRunBudget("run-t", 1, {});
+      const call = withSpendScope({ budget, stage: "results_pages" }, () => post("/serp/google/organic/live/advanced", [{ keyword: "x" }]));
+      await vi.waitFor(() => expect(seen).toHaveLength(1));
+      expect(timeout).toHaveBeenCalledWith(REQUEST_TIMEOUT_MS);
+      expect(seen[0]).toBe(controller.signal);
+      controller.abort();
+      await expect(call).rejects.toMatchObject({ name: "TimeoutError" });
+      // Not retried: a timeout is not one of DataForSEO's transient faults.
+      expect(seen).toHaveLength(1);
+      // It may have been run and billed, so the claim stays at the estimate.
+      expect(budget.state().committedUsd).toBeCloseTo(0.004, 6);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+});

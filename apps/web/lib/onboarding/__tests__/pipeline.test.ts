@@ -88,8 +88,8 @@ const emptyPool = vi.fn(async (..._a: unknown[]) => EMPTY_POOL);
 vi.mock("../empty-pool", () => ({ readEmptyPool: (...a: unknown[]) => emptyPool(...a) }));
 
 import { runOnboarding } from "../pipeline";
-import { BudgetRefusedError, claimSpend, currentSpendScope } from "@/lib/billing/spend-scope";
-import { FIRST_DRAFT_MIN_USD, firstLookReserves } from "@/lib/billing/run-budget";
+import { BudgetRefusedError, claimSpend, currentSpendScope, withStage } from "@/lib/billing/spend-scope";
+import { FIRST_DRAFT_MIN_USD, FIRST_LOOK_BUYER_TEST_ROOM_USD, FIRST_LOOK_QUALIFY_ROOM_USD, firstLookReserves } from "@/lib/billing/run-budget";
 import type { OnboardingEvent } from "../events";
 
 const WS = { id: "ws1", domain: "example.com", account_id: "ag1", language: "en" };
@@ -310,6 +310,30 @@ describe("runOnboarding", () => {
     const keywords = events.find((e) => e.phase === "keywords" && "status" in e && e.status === "skipped");
     expect((keywords as { detail: string }).detail).toMatch(/budget ran out before its keyword research finished/);
     expect(emptyPool).not.toHaveBeenCalled();
+  });
+
+  it("leaves qualification its room: discovery and its buyer test cannot spend the plan's money", async () => {
+    // The run's budget held in memory (its row cannot be written here).
+    const base = richClient(0) as unknown as { from: (t: string) => unknown };
+    const budgetTable = { upsert: async () => ({ error: { message: "no table" } }) };
+    const db = { from: (t: string) => (t === "run_budgets" ? budgetTable : base.from(t)) } as never;
+    const granted: Array<number | null> = [];
+    analyse.mockImplementation(async () => {
+      // Discovery tries to take everything, then the buyer test does.
+      granted.push(await claimSpend("/dataforseo_labs/google/ranked_keywords/live", 1, { minUsd: 0.01 }).then((c) => c.grantedUsd, () => null));
+      granted.push(await withStage("buyer_fit", () => claimSpend("keyword-research/buyer-fit", 1, { minUsd: 0.01 }).then((c) => c.grantedUsd, () => null)));
+      return { keywordsFound: 94, layers: [] };
+    });
+    let judgeRoom: number | null = null;
+    plan.mockImplementation(async () => {
+      judgeRoom = await currentSpendScope()!.budget!.room("judge");
+      return [];
+    });
+    await runOnboarding(db, WS, () => undefined, { firstDraft: "dispatch", runId: "run-9" });
+    const research = 1 - (firstLookReserves(1).draft ?? 0) - (firstLookReserves(1).outline_swap ?? 0);
+    expect(granted[0]).toBeCloseTo(research - FIRST_LOOK_QUALIFY_ROOM_USD - FIRST_LOOK_BUYER_TEST_ROOM_USD, 6);
+    expect(granted[1]).toBeCloseTo(FIRST_LOOK_BUYER_TEST_ROOM_USD, 6);
+    expect(judgeRoom).toBeCloseTo(FIRST_LOOK_QUALIFY_ROOM_USD, 6);
   });
 
   it("skips the draft, with the reason, when the free allowance is used", async () => {

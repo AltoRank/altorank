@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { acceptsThinkingDisabled, anthropicModel, DECISION_CALL, MODEL_DEFAULTS } from "@/lib/ai/models";
 import { askStructured, samplingFor } from "../buyer-model";
-import { askedKey, BUYER_FIT_MAX_TOKENS, BUYER_FIT_SCHEMA, judgeBuyerFit, savedFitFor, SEARCH_STAGES } from "../buyer-fit";
+import { askedKey, BUYER_FIT_MAX_TOKENS, BUYER_FIT_MIN_TOKENS_PER_PHRASE, BUYER_FIT_SCHEMA, buyerFitTokens, judgeBuyerFit, MAX_JUDGED, savedFitFor, SEARCH_STAGES } from "../buyer-fit";
 import { ANTHROPIC_RATES } from "@/lib/billing/spend";
 
 const { create } = vi.hoisted(() => ({ create: vi.fn() }));
@@ -62,7 +62,11 @@ describe("how a topic decision is asked", () => {
     const ask = vi.fn(async () => JSON.stringify({ verdicts: [{ t: "brakes", s: "problem", r: "driver" }] }));
     const out = await judgeBuyerFit({ description: "A garage" }, ["brakes"], { ask });
     expect(out.verdicts.get("brakes")).toMatchObject({ keep: true, funnel: "audience", asked: askedKey({ description: "A garage" }) });
-    expect(ask).toHaveBeenCalledWith("keyword-research/buyer-fit", expect.any(String), expect.objectContaining({ maxTokens: 8000, tier: "decision", schema: BUYER_FIT_SCHEMA }));
+    // Sized to the batch: one phrase is not asked with a full batch's room.
+    expect(ask).toHaveBeenCalledWith("keyword-research/buyer-fit", expect.any(String), expect.objectContaining({ maxTokens: buyerFitTokens(1).maxTokens, minTokens: buyerFitTokens(1).minTokens, tier: "decision", schema: BUYER_FIT_SCHEMA }));
+    // A full batch keeps the 8,000 that a 40-phrase reply needs, and is worth asking at no less than 5,000.
+    expect(buyerFitTokens(MAX_JUDGED)).toEqual({ maxTokens: 8000, minTokens: MAX_JUDGED * BUYER_FIT_MIN_TOKENS_PER_PHRASE + 200 });
+    expect(buyerFitTokens(MAX_JUDGED).minTokens).toBeGreaterThan(MAX_JUDGED * 100);
   });
   it("reuses a saved buyer verdict only when it answers the question asked now", () => {
     const business = { description: "A garage", language: "en" };

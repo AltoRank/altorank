@@ -10,7 +10,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { acceptsThinkingDisabled, anthropicModel, DECISION_CALL, refusesTemperature, replyText } from "@/lib/ai/models";
-import { anthropicCost, anthropicEstimate, recordSpend } from "@/lib/billing/spend";
+import { anthropicCost, anthropicEstimate, anthropicOutputRate, recordSpend } from "@/lib/billing/spend";
 import { claimSpend, currentSpendScope, isBudgetRefusal } from "@/lib/billing/spend-scope";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 
@@ -30,6 +30,16 @@ export type AskModel = (operation: string, prompt: string, options: AskOptions) 
 
 export interface AskOptions {
   maxTokens: number;
+  /**
+   * The least output the call is worth making with. Under a first look's
+   * budget the call claims its most (`maxTokens`) when the room has it and
+   * otherwise takes what the room has down to this floor, and is sent with
+   * the output the grant covers - the article writer's rule (lib/ai/claude.ts).
+   * Without it the claim is all of `maxTokens` or nothing: a reply that
+   * costs a third of its ceiling was refused when the room held the reply
+   * twice over (2026-10-15).
+   */
+  minTokens?: number;
   spend?: SpendSink | null;
   /** "decision" for the topic decisions (buyer fit, the results judge); the cheap structured tier otherwise. */
   tier?: "structured" | "decision";
@@ -64,6 +74,43 @@ export function modelAvailable(): boolean {
 }
 
 /**
+ * How long one structured call may take, and how often it is retried. The
+ * SDK's own default is ten minutes and two retries, half an hour for one
+ * buyer-test batch, and a first look waits on every batch it sent: a call
+ * the API never answered held the whole run silent. The longest structured
+ * call measured is a 40-phrase buyer-test batch, well under a minute.
+ */
+export const STRUCTURED_TIMEOUT_MS = 120_000;
+export const STRUCTURED_MAX_RETRIES = 1;
+
+/**
+ * What a structured call claims, and the output it is sent with for what it
+ * was granted. The most is the prompt plus every output token allowed; the
+ * floor is the prompt plus `minTokens`. Exported for tests.
+ */
+export function claimSize(model: string, promptChars: number, maxTokens: number, minTokens?: number): {
+  wantUsd: number;
+  minUsd: number;
+  maxTokensFor: (grantedUsd: number) => number;
+} {
+  const inputUsd = anthropicEstimate(model, promptChars, 0);
+  const perToken = anthropicOutputRate(model);
+  const wantUsd = inputUsd + Math.max(0, maxTokens) * perToken;
+  const floorTokens = minTokens === undefined ? maxTokens : Math.min(maxTokens, Math.max(1, minTokens));
+  const minUsd = inputUsd + floorTokens * perToken;
+  return {
+    wantUsd,
+    minUsd,
+    // Granted whole (or outside a budget, where every claim is): the
+    // ceiling. Granted less: what the grant pays for, never below the floor
+    // it was granted at.
+    maxTokensFor: (grantedUsd) => grantedUsd >= wantUsd - 1e-12
+      ? maxTokens
+      : Math.max(floorTokens, Math.min(maxTokens, Math.floor((grantedUsd - inputUsd) / perToken))),
+  };
+}
+
+/**
  * One structured call. Returns the text of the reply, or null when there is
  * no key or the call failed. Callers preserve the missing decision; automatic
  * writing must never interpret it as approval.
@@ -80,8 +127,9 @@ export async function askStructured(
   // (lib/billing/spend-scope.ts). A refusal is no decision, like any other
   // missing answer, and the caller's watch on the scope sees it was refused.
   let claim: Awaited<ReturnType<typeof claimSpend>>;
+  const sized = claimSize(model, prompt.length + JSON.stringify(options.schema ?? "").length, options.maxTokens, options.minTokens);
   try {
-    claim = await claimSpend(operation, anthropicEstimate(model, prompt.length + JSON.stringify(options.schema ?? "").length, options.maxTokens));
+    claim = await claimSpend(operation, sized.wantUsd, { minUsd: sized.minUsd });
   } catch (err) {
     if (isBudgetRefusal(err)) {
       console.warn(`[${operation}] not asked: ${err.message}`);
@@ -91,10 +139,10 @@ export async function askStructured(
   }
   let cost: number | null = 0;
   try {
-    const client = new Anthropic({ apiKey });
+    const client = new Anthropic({ apiKey, timeout: STRUCTURED_TIMEOUT_MS, maxRetries: STRUCTURED_MAX_RETRIES });
     const response = await client.messages.create({
       model,
-      max_tokens: options.maxTokens,
+      max_tokens: sized.maxTokensFor(claim.grantedUsd),
       messages: [{ role: "user", content: prompt }],
       ...samplingFor(model, options.tier, options.schema),
     } as Anthropic.MessageCreateParamsNonStreaming);

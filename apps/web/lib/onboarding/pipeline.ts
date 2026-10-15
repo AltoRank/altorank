@@ -41,7 +41,7 @@ import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { spendClient } from "@/lib/billing/default-spend";
 import { currentSpendScope, isBudgetRefusal, watchRefusals, withSpendScope, withStage } from "@/lib/billing/spend-scope";
-import { draftBudgetShort, draftCanBuyLookup, openFirstLookBudget, type RunBudgetState } from "@/lib/billing/run-budget";
+import { draftBudgetShort, draftCanBuyLookup, firstLookCeiling, firstLookResearchLeave, leavingRoom, openFirstLookBudget, type RunBudgetState } from "@/lib/billing/run-budget";
 import type { EmptyPool, OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { readEmptyPool } from "./empty-pool";
 import { modelAvailable } from "@/lib/keyword-research/buyer-model";
@@ -273,7 +273,15 @@ async function runPhases(
     try {
       // Watched for the budget's refusals: a buyer test the budget stopped
       // stores nothing, and "nothing rankable" would blame the site for it.
-      const { value: analysis, refused: discoveryRefused } = await watchRefusals(() => timed("analysis", () => withStage("discovery", () => analyseDomain({
+      //
+      // And held back from the plan's money: discovery and its buyer test
+      // leave qualification its room (lib/billing/run-budget.ts
+      // `leavingRoom`). Without it they took everything they could, and a
+      // first look whose research judged 360 phrases had $0.08 left to judge
+      // results pages with - less than one term - and planned nothing.
+      const runBudgetNow = currentSpendScope()?.budget ?? null;
+      const researchBudget = runBudgetNow ? leavingRoom(runBudgetNow, firstLookResearchLeave(firstLookCeiling())) : undefined;
+      const { value: analysis, refused: discoveryRefused } = await watchRefusals(() => timed("analysis", () => withSpendScope({ stage: "discovery", budget: researchBudget }, () => analyseDomain({
         domain,
         supabase,
         workspaceId: workspace.id,
