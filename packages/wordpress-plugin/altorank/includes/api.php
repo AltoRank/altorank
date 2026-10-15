@@ -853,27 +853,34 @@ function altorank_unique_slug( string $wanted, int $post_id ): string {
  * already taken the JSON-LD out and dropped every other script whole.
  */
 function altorank_sanitize_content( string $html ): string {
-	$kept = array();
+	$original = $html;
+	$kept     = array();
+	// Unique to this call, so no text in the body can name a placeholder: only
+	// the positions an embed was lifted from get one back.
+	$nonce = bin2hex( random_bytes( 12 ) );
 
 	$html = preg_replace_callback(
 		'#<iframe\b[^>]*>.*?</iframe>#is',
-		static function ( array $m ) use ( &$kept ): string {
+		static function ( array $m ) use ( &$kept, $nonce ): string {
 			if ( ! preg_match( '#\bsrc=["\']([^"\']+)["\']#i', $m[0], $src ) ) {
 				return '';
 			}
-			$url  = $src[1];
-			$host = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
-			if ( ! in_array( $host, ALTORANK_IFRAME_HOSTS, true ) ) {
+			// The host is read from the URL as it will be printed, so what is
+			// checked is what the browser loads.
+			$url    = esc_url( $src[1], array( 'https', 'http' ) );
+			$scheme = strtolower( (string) wp_parse_url( $url, PHP_URL_SCHEME ) );
+			$host   = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
+			if ( ! in_array( $scheme, array( 'https', 'http' ), true ) || ! in_array( $host, ALTORANK_IFRAME_HOSTS, true ) ) {
 				return '';
 			}
 			$width  = preg_match( '#\bwidth=["\']?(\d+)#i', $m[0], $w ) ? (int) $w[1] : 560;
 			$height = preg_match( '#\bheight=["\']?(\d+)#i', $m[0], $h ) ? (int) $h[1] : 315;
 
 			// A text token, not an HTML comment: wp_kses_post() strips comments.
-			$key          = '[altorank-embed-' . count( $kept ) . ']';
+			$key          = '[altorank-embed-' . $nonce . '-' . count( $kept ) . ']';
 			$kept[ $key ] = sprintf(
 				'<iframe src="%s" width="%d" height="%d" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>',
-				esc_url( $url ),
+				$url,
 				$width,
 				$height
 			);
@@ -881,6 +888,12 @@ function altorank_sanitize_content( string $html ): string {
 		},
 		$html
 	);
+
+	// A body too large for the pattern keeps no embeds; kses drops them.
+	if ( null === $html ) {
+		$html = $original;
+		$kept = array();
+	}
 
 	$html = wp_kses( $html, altorank_allowed_html() );
 
@@ -1160,7 +1173,6 @@ function altorank_extension_for_mime( string $mime ): string {
 		'image/gif'     => 'gif',
 		'image/webp'    => 'webp',
 		'image/avif'    => 'avif',
-		'image/svg+xml' => 'svg',
 	);
 	return $map[ $mime ] ?? '';
 }

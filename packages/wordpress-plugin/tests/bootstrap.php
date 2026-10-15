@@ -66,6 +66,7 @@ function altorank_test_reset(): void {
 		'time'     => null,
 		'kses'     => true,
 		'kses_allowed' => null,
+		'kses_input'   => null,
 		'singular' => false,
 		'queried'  => 0,
 	);
@@ -172,8 +173,15 @@ function wp_parse_url( $url, $component = -1 ) {
 	return parse_url( (string) $url, $component );
 }
 
-function esc_url( $url ) {
-	return (string) $url;
+/** WordPress's character filter and protocol check, without the entity rewriting. */
+function esc_url( $url, $protocols = null ) {
+	$url    = (string) preg_replace( '|[^a-z0-9-~+_.?#=!&;,/:%@$\|*\'()\[\]\x80-\xff]|i', '', (string) $url );
+	$scheme = parse_url( $url, PHP_URL_SCHEME );
+	$allow  = null === $protocols ? array( 'http', 'https', 'ftp', 'ftps', 'mailto' ) : $protocols;
+	if ( is_string( $scheme ) && '' !== $scheme && ! in_array( strtolower( $scheme ), $allow, true ) ) {
+		return '';
+	}
+	return $url;
 }
 
 // ---------------------------------------------------------------------------
@@ -256,9 +264,10 @@ function wp_kses_allowed_html( $context = '' ) {
 	);
 }
 
-/** Records the allowlist it was given; the HTML is returned as is (real kses is not reimplemented here). */
+/** Records the allowlist and the HTML it was given; the HTML is returned as is (real kses is not reimplemented here). */
 function wp_kses( $html, $allowed, $protocols = array() ) {
 	$GLOBALS['altorank_wp']['kses_allowed'] = $allowed;
+	$GLOBALS['altorank_wp']['kses_input']   = $html;
 	return $html;
 }
 

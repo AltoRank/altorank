@@ -100,6 +100,7 @@ content and stay.
 * PUT /edit changes only posts this plugin created, and while "Post as draft" is on it cannot publish a post that is not already live.
 * Structured data (JSON-LD) sent with an article is printed in that post's page head instead of appearing as text at the end of the body. Inline SVG charts are kept through sanitising.
 * Backslashes in titles, bodies and SEO fields are kept, and YouTube embeds survive the image import step.
+* YouTube embeds are put back only where the body placed them, checked on the URL as it is printed. The image import takes raster images only.
 * A post is dated when the article first went live, not when its draft was written; drafts keep a floating date and edits never change it.
 * The post response reports where the IndexNow key is served, so sites in a subdirectory verify.
 * Adds an Update URI header: WordPress no longer checks wordpress.org for updates to this plugin.

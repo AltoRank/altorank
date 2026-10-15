@@ -93,6 +93,25 @@ describe("structured data and charts", () => {
     expect(sanitise).toBeGreaterThan(extract);
   });
 
+  it("embed placeholders carry a per-call random token, so body text cannot name one", async () => {
+    const sanitise = code(phpFunction(await read("includes/api.php"), "altorank_sanitize_content"));
+    expect(sanitise).toMatch(/\$nonce = bin2hex\( random_bytes\( \d+ \) \);/);
+    expect(sanitise).toContain("'[altorank-embed-' . $nonce . '-' . count( $kept ) . ']'");
+    expect(sanitise).not.toMatch(/'\[altorank-embed-' \. count\(/);
+  });
+
+  it("an embed's host is checked on the URL as printed, http(s) only", async () => {
+    const sanitise = code(phpFunction(await read("includes/api.php"), "altorank_sanitize_content"));
+    const escaped = sanitise.indexOf("esc_url( $src[1], array( 'https', 'http' ) )");
+    expect(escaped).toBeGreaterThan(-1);
+    expect(sanitise.indexOf("PHP_URL_HOST")).toBeGreaterThan(escaped);
+  });
+
+  it("the media import takes raster images only", async () => {
+    const map = code(phpFunction(await read("includes/api.php"), "altorank_extension_for_mime"));
+    expect(map).not.toContain("svg");
+  });
+
   it("the body is sanitised with the chart allowlist, not bare wp_kses_post", async () => {
     const sanitise = code(phpFunction(await read("includes/api.php"), "altorank_sanitize_content"));
     expect(sanitise).toContain("wp_kses( $html, altorank_allowed_html() )");
