@@ -55,6 +55,13 @@ import { authorised, selfInvocation, selfInvoke } from "@/lib/content/fan-out";
 import { recordEvent } from "@/lib/observability/record";
 import { fullArticleOn } from "@/lib/onboarding/first-article-body";
 import { recordRunTiming } from "@/lib/onboarding/funnel-event";
+import { BODY_PROGRESS_VERSION, measureStream, type BodyProgress } from "@/lib/onboarding/body-progress";
+import type { BodyStage } from "@/lib/onboarding/setup-progress";
+
+/** The streamed text, for the owner's reader: often enough that it reads as typed. */
+const STREAM_FLUSH_MS = 500;
+/** The counts alone, with the text locked: the outline ticks once a second at most. */
+const PROGRESS_FLUSH_MS = 1_000;
 
 export const maxDuration = 300;
 
@@ -278,6 +285,9 @@ export async function POST(request: NextRequest) {
       (outline.sources.length ? `, ${outline.sources.length} source${outline.sources.length === 1 ? "" : "s"}` : "") + ". The full text is being written now.";
     if (gated) {
       clock?.mark("gate");
+      // The body is owed from here: the gate shows it thinking at once.
+      enterStage("thinking");
+      void writeStream();
       await stamp(
         { phase: "drafting", status: "done", detail },
         { finish: true, article: { id: articleId, title: outline.title, keyword, wordCount: outline.targetWordCount, verdict: "unchecked", outlined: true } },
@@ -289,36 +299,85 @@ export async function POST(request: NextRequest) {
     }
   };
 
-  // With PRETRIAL_FULL_ARTICLE on, the owner reads the first article on the
-  // gate as it is written: the writer's text so far is kept on the row
-  // (`body_stream`, server only, migration 107) every second and a half, and
-  // cleared once the body is saved or fails. Off, nothing is written.
-  const streaming = fullArticleOn() && gated && Boolean(runId || owedBody);
+  // While the first article's body is written behind its gate, the row
+  // keeps two server-only records of it (migrations 107 and 108):
+  //
+  // - `body_progress`, always: counts only - the stage (thinking, writing,
+  //   finishing), when it began, the H2s started and the words so far - so
+  //   the gate ticks the outline off and shows the work moving, with the
+  //   text locked (lib/onboarding/body-progress.ts). About once a second.
+  // - `body_stream`, only with PRETRIAL_FULL_ARTICLE on: the writer's text
+  //   so far, for the owner's reader, every half second, so it reads as
+  //   typed rather than in two-second blocks (recorded 2026-10-12).
+  //
+  // Both are cleared once the body is saved or fails. Writes are chained so
+  // they land in order, and a failed one is ignored: the body never waits
+  // on its own progress.
+  const progressing = gated && Boolean(runId || owedBody);
+  const streaming = fullArticleOn() && progressing;
   let streamed = "";
   let streamWrite: Promise<unknown> = Promise.resolve();
+  // False once a write found migration 108's column missing.
+  let progressColumn = true;
   let lastStreamAt = 0;
+  let stage: BodyStage = "thinking";
+  let stageSince = new Date().toISOString();
+  const enterStage = (next: BodyStage) => {
+    stage = next;
+    stageSince = new Date().toISOString();
+  };
   const writeStream = (final = false) => {
-    if (!outlinedId) return;
+    if (!outlinedId || !progressing) return;
     const id = outlinedId;
-    const text = final ? null : streamed;
+    const measured = measureStream(streamed);
+    const progress: BodyProgress | null = final ? null : { v: BODY_PROGRESS_VERSION, stage, since: stageSince, ...measured };
+    const update: Record<string, unknown> = progressColumn ? { body_progress: progress } : {};
+    // Nothing to read yet is not an empty body: the column stays unset.
+    if (streaming && (final || streamed)) update.body_stream = final ? null : streamed;
+    if (!Object.keys(update).length) return streamWrite;
     streamWrite = streamWrite.then(() =>
-      supabase.from("articles").update({ body_stream: text }).eq("id", id).then(
-        (r) => { if (r.error) console.warn(`[internal/draft] body stream not written: ${r.error.message}`); },
+      supabase.from("articles").update(update).eq("id", id).then(
+        async (r) => {
+          if (!r.error) return;
+          // Deployed before migration 108: the progress column is not there,
+          // and one update carrying it fails whole - the streamed text with
+          // it. Drop the column for the rest of this body and send the text
+          // on its own; only the outline's ticks are lost.
+          if (r.error.code === "42703" && progressColumn) {
+            progressColumn = false;
+            console.warn("[internal/draft] body_progress missing (migration 108 not applied); streaming without it");
+            if ("body_stream" in update) await supabase.from("articles").update({ body_stream: update.body_stream }).eq("id", id);
+            return;
+          }
+          console.warn(`[internal/draft] body progress not written: ${r.error.message}`);
+        },
         () => undefined,
       ),
     );
     return streamWrite;
   };
-  const onChunk = streaming
+  const onChunk = progressing
     ? (chunk: string) => {
+        if (stage === "thinking") {
+          enterStage("writing");
+          lastStreamAt = 0;
+        }
         streamed += chunk;
         const now = Date.now();
-        if (now - lastStreamAt >= 1_500) {
+        if (now - lastStreamAt >= (streaming ? STREAM_FLUSH_MS : PROGRESS_FLUSH_MS)) {
           lastStreamAt = now;
           void writeStream();
         }
       }
     : undefined;
+  const onWritten = progressing
+    ? () => {
+        enterStage("finishing");
+        void writeStream();
+      }
+    : undefined;
+  // An owed body tried again starts from thinking, with the gate already open.
+  if (owedBody) void writeStream();
 
   try {
     const result = await timedRun(() => withSpendScope({ workspaceId, runId: runId ?? null, budget, stage: budget ? "draft" : null }, () => generateArticle({
@@ -331,6 +390,7 @@ export async function POST(request: NextRequest) {
       relatedKeywords,
       billToAccountId: workspace.account_id as string,
       ...(onChunk ? { onChunk } : {}),
+      ...(onWritten ? { onWritten } : {}),
       // Read, not bought again: only a page shaped like one, for a first look's own draft.
       ...(runId && body.serp && Array.isArray(body.serp.organic) && Array.isArray(body.serp.peopleAlsoAsk) ? { serp: body.serp } : {}),
       ...(owedBody
@@ -353,7 +413,7 @@ export async function POST(request: NextRequest) {
         : undefined,
     })));
     clock?.mark("body_done");
-    if (streaming) await writeStream(true);
+    if (progressing) await writeStream(true);
     if (outlinedId) await settleOwedBody(supabase, outlinedId);
     if (entry && !entryFulfilled) await fulfilPlannedEntry(supabase, entry.id as string, result.articleId);
     await stamp(
@@ -388,7 +448,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    if (streaming) await writeStream(true);
+    if (progressing) await writeStream(true);
     await saveTimings(isBudgetRefusal(err) ? "budget" : "failed");
     // A body owed to an outline the gate is already showing: tried again in
     // its own invocation, and the nightly sweep after that. The run stays as

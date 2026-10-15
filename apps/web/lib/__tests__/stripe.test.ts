@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { planForPriceId, isSelfServePlan, PLAN_ARTICLE_LIMITS, PLAN_PRICES } from "@/lib/stripe";
+import { planForPriceId, isSelfServePlan, PLAN_ARTICLE_LIMITS, PLAN_PRICES, intervalForSubscription, planChargeLabel } from "@/lib/stripe";
 
 // The inverse of PLAN_PRICE_IDS, which is how the webhook learns what a
 // customer bought. Getting it wrong is a revenue bug in both directions: a
@@ -68,5 +68,27 @@ describe("the ladder the webhook writes into", () => {
     expect(PLAN_ARTICLE_LIMITS.growth).toBe(400);
     expect(PLAN_PRICES.starter).toBe("€69");
     expect(PLAN_PRICES.growth).toBe("€199");
+  });
+});
+
+// A yearly trialist was told "the first charge, €69" before a €690 charge:
+// the trial emails read the monthly price whatever had been bought.
+describe("intervalForSubscription / planChargeLabel", () => {
+  it("reads the price's own interval first", () => {
+    expect(intervalForSubscription({ items: { data: [{ price: { id: "price_x", recurring: { interval: "year" } } }] } })).toBe("year");
+    expect(intervalForSubscription({ items: { data: [{ price: { id: "price_S_y", recurring: { interval: "month" } } }] } })).toBe("month");
+  });
+
+  it("falls back to the yearly price ids, then the checkout's metadata, then monthly", () => {
+    expect(intervalForSubscription({ items: { data: [{ price: { id: "price_G_y" } }] } })).toBe("year");
+    expect(intervalForSubscription({ items: { data: [{ price: { id: "price_unknown" } }] }, metadata: { interval: "year" } })).toBe("year");
+    expect(intervalForSubscription({ items: { data: [{ price: { id: "price_S_m" } }] } })).toBe("month");
+    expect(intervalForSubscription(null)).toBe("month");
+  });
+
+  it("quotes the yearly amount with its period, and the monthly one as before", () => {
+    expect(planChargeLabel("starter", "year")).toBe("€690 for the year");
+    expect(planChargeLabel("growth", "year")).toBe("€1,990 for the year");
+    expect(planChargeLabel("starter", "month")).toBe("€69");
   });
 });

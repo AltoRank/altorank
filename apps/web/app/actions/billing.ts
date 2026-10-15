@@ -146,7 +146,10 @@ export async function createCheckoutSession(
           }
         : {}),
       success_url: `${appUrl()}/checkout/complete?session_id={CHECKOUT_SESSION_ID}&next=${encodeURIComponent(checkoutDestination(returnTo))}`,
-      cancel_url: `${appUrl()}/checkout/cancelled`,
+      // The destination rides on the cancel link too, so leaving Stripe from
+      // a Billing purchase goes back to Billing (with it), not to the trial
+      // screen every cancel used to land on.
+      cancel_url: `${appUrl()}/checkout/cancelled?next=${encodeURIComponent(checkoutDestination(returnTo))}`,
     });
   } catch (err) {
     return billingFailure(err, "Checkout could not be opened");

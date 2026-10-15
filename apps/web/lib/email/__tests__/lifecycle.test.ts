@@ -235,11 +235,22 @@ describe("plan changed", () => {
     const up = renderPlanChanged({ fromLabel: "Managed", toLabel: "Agency", articleLimit: 400, upgrade: true });
     expect(up.subject).toBe("Your plan is now Agency");
     expect(up.html).toContain("400 articles a month");
-    expect(up.html).toContain("charged the difference");
+    // Prorations go on the next invoice; nothing is charged at the switch.
+    expect(up.html).toContain("added to your next invoice");
+    expect(up.html).not.toMatch(/has charged/);
 
     const down = renderPlanChanged({ fromLabel: "Agency", toLabel: "Managed", articleLimit: 100, upgrade: false });
-    expect(down.html).toContain("credited the unused part");
-    expect(down.html).toContain("will slow to it");
+    expect(down.html).toContain("credited against your next invoice");
+    expect(down.html).toContain("has been slowed to fit it");
+  });
+
+  it("charges and credits nothing during the trial, and says so", () => {
+    for (const upgrade of [true, false]) {
+      const e = renderPlanChanged({ fromLabel: "Managed", toLabel: "Agency", articleLimit: 400, upgrade, trialing: true });
+      expect(e.html).toContain("Nothing has been charged");
+      expect(e.html).toContain("first charge is at the Agency price");
+      expect(e.html).not.toMatch(/next invoice|credited/);
+    }
   });
 
   it("does not invent a ceiling for a plan that has none", () => {

@@ -252,6 +252,12 @@ export async function refillQualifiedQueue(
     owners?: readonly IntentLeader[];
     /** A first look: approvals asked twice, spend bounded (see `qualifyOpportunities`). */
     firstLook?: FirstLook;
+    /**
+     * Told before each batch which searches it checks, and after it how many
+     * have been judged and qualified so far: the first look's screen names
+     * the work while it happens. Never awaited, never allowed to throw.
+     */
+    onProgress?: (progress: { checking: string[]; judged: number; qualified: number }) => void;
   },
 ): Promise<RefillOutcome> {
   const fingerprint = contextKey(context);
@@ -280,6 +286,7 @@ export async function refillQualifiedQueue(
     const batch = unjudged.splice(0, Math.min(QUALIFICATION_LIMIT, needed * 3));
     batches++;
     const asked: OpportunityCandidate[] = batch.map((row) => ({ id: row.id, term: row.term, source_url: row.source_url, opportunity: null, buyer_fit: row.buyer_fit ?? null, ...(row.unmeasured ? { unmeasured: true } : {}) }));
+    tell(options.onProgress, { checking: batch.map((row) => row.term), judged, qualified });
     let results: Map<string, Opportunity>;
     try {
       results = await qualifyOpportunities(supabase, workspaceId, asked, context, {
@@ -305,12 +312,23 @@ export async function refillQualifiedQueue(
       }
     }
     if (toPark.length) parked += (await parkKeywords(supabase, workspaceId, toPark)).parked;
+    tell(options.onProgress, { checking: [], judged, qualified });
     // A first look that stopped part-way through a batch hit its budget:
     // the next batch would stop before buying anything too.
     if (options.firstLook && batch.some((row) => !results.has(row.id))) break;
   }
 
   return { ready: ready.size, target: options.target, judged, qualified, parked, verdicts };
+}
+
+/** A progress listener is told, and whatever it does cannot stop the refill. */
+function tell<T>(listener: ((value: T) => void) | undefined, value: T): void {
+  if (!listener) return;
+  try {
+    listener(value);
+  } catch {
+    // Instrumentation for a screen; the plan does not wait on it.
+  }
 }
 
 /**

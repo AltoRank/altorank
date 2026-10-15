@@ -431,7 +431,11 @@ export function quotaExceededMessage(q: Quota, now: Date = new Date()): string {
     day: "numeric",
     timeZone: "UTC",
   });
-  return `This month's included ${q.limit} articles are used. Scheduled writing stops until ${resets}; upgrade on the Billing page, or write one by hand from the calendar to bill it as overage.`;
+  // "Write one by hand from the calendar" named the one manual door that
+  // cannot bill overage: at the limit every planned entry is frozen
+  // (lib/plan/frozen.ts) and Write now refuses it. New article on the
+  // Articles page is the door that does.
+  return `This month's included ${q.limit} articles are used. Scheduled writing stops until ${resets}; upgrade on the Billing page, or start one yourself with New article on the Articles page, which is billed as overage.`;
 }
 
 /**

@@ -41,8 +41,6 @@ import {
   saveSiteDetails,
   completeWizard,
 } from "@/app/actions/onboarding-wizard";
-import { saveAttribution } from "@/app/actions/attribution";
-import { AttributionPicker, EMPTY_ATTRIBUTION, attributionComplete, type AttributionDraft } from "@/components/onboarding/attribution-picker";
 import type { SiteDetails } from "@/lib/onboarding/output-settings";
 import type { OnboardingHeld } from "@/lib/onboarding/events";
 import { EMPTY_PROFILE, type BusinessProfile } from "@/lib/onboarding/profile-shape";
@@ -60,19 +58,19 @@ import { OnboardingProgress } from "@/components/onboarding/onboarding-progress"
 import {
   onboardingOutcome,
   shouldResumeRun,
+  stateFromRun,
   type OnboardingPlanned,
   type OnboardingRunSnapshot,
   type OnboardingState,
 } from "@/lib/onboarding/events";
 import { freeAllowanceClause } from "@/lib/onboarding/copy";
-import { TopicBriefs } from "./topic-briefs";
 import { FirstLookReportView } from "@/components/onboarding/first-look-report";
 import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
-import { FirstArticleCardView, type PendingFirstArticle } from "@/components/onboarding/first-article-card";
-import { FirstArticleReader } from "@/components/onboarding/first-article-reader";
 import type { FirstArticleCard } from "@/lib/onboarding/first-article";
 import { OPEN_SETUP, runStateOf, setupEnding, type PreTrialSetup, type SetupEnding } from "@/lib/onboarding/setup-retry";
-import { NOTHING_PLANNED_HEADING, nothingPlannedLede, SetupAsk } from "@/components/onboarding/setup-ask";
+import { NOTHING_PLANNED_HEADING, nothingPlannedLede } from "@/components/onboarding/setup-ask";
+import { AttributionAsk, GateTop } from "@/components/onboarding/first-look-gate";
+import { Fold } from "@/components/onboarding/fold";
 import { signOut } from "@/app/actions/auth";
 import { TRIAL_DAYS } from "@/lib/stripe";
 import posthog from "posthog-js";
@@ -98,6 +96,7 @@ export function OnboardingWizard({
   firstArticle = null,
   firstArticleWriting = false,
   fullArticle = false,
+  initialHtml = null,
   preTrialSetup = OPEN_SETUP,
   initialRun = null,
   otherSites = [],
@@ -161,6 +160,8 @@ export function OnboardingWizard({
    * (lib/onboarding/first-article-body.ts). Decided on the server.
    */
   fullArticle?: boolean;
+  /** The first article's text, when it is already written and `fullArticle` lets the owner read it. */
+  initialHtml?: string | null;
   /** Whether setup may run again before the trial, and whether the first article was attempted. */
   preTrialSetup?: PreTrialSetup;
   initialRun?: OnboardingRunSnapshot | null;
@@ -328,6 +329,7 @@ export function OnboardingWizard({
         firstArticle={firstArticle}
         writing={firstArticleWriting}
         fullArticle={fullArticle}
+        initialHtml={initialHtml}
         workspaceId={workspaceId}
         setup={preTrialSetup}
         run={initialRun}
@@ -351,6 +353,7 @@ export function OnboardingWizard({
         firstArticle={firstArticle}
         firstArticleWriting={firstArticleWriting}
         fullArticle={fullArticle}
+        initialHtml={initialHtml}
         preTrialSetup={preTrialSetup}
         userEmail={userEmail}
         otherSites={otherSites}
@@ -558,45 +561,6 @@ function Section({
   );
 }
 
-/**
- * The one question about the person, asked once, where it now lives: beside
- * the trial ask. One click saves it; nothing else on the screen waits for it.
- * The copy says why we ask, because a question with no visible reason gets
- * the answer that closes it fastest, and the answer we most need to be true
- * is the one about AI.
- */
-function AttributionAsk() {
-  const [value, setValue] = useState<AttributionDraft>(EMPTY_ATTRIBUTION);
-  const [saved, setSaved] = useState(false);
-  const [, start] = useTransition();
-  function onChange(next: AttributionDraft) {
-    setValue(next);
-    if (!next.source || !attributionComplete(next)) return;
-    const source = next.source;
-    start(async () => {
-      try {
-        await saveAttribution(source, next.note);
-        setSaved(true);
-      } catch {
-        // Optional by design: a failed save is not a thing to interrupt the
-        // trial ask with.
-      }
-    });
-  }
-  if (saved) {
-    return <p className="m-0 mt-4 text-[12.5px] text-ink-3">Thanks. That is the one thing we asked about you.</p>;
-  }
-  return (
-    <div className="mt-5 border-t border-line pt-4">
-      <p className="m-0 mb-2.5 text-[12.5px] leading-[1.5] text-ink-2">
-        <strong className="font-medium text-ink">Where did you hear about us?</strong> Optional. It is the only way we can
-        tell whether an AI answer sent you here, which is the thing we sell.
-      </p>
-      <AttributionPicker value={value} onChange={onChange} columns={5} />
-    </div>
-  );
-}
-
 /** The wait, with the work named. */
 function ReadingSite({ domain }: { domain: string }) {
   return (
@@ -695,46 +659,94 @@ function SignOutLine({ email, otherSites = [] }: { email?: string; otherSites?: 
  * says the failure was ours and what the trial does about it.
  */
 const FIRST_ARTICLE_FAILED_HEADING = "Your first article did not finish";
-
-/**
- * The first article is outlined and its body is being written to that
- * outline (lib/content/outline.ts): the gate opens on the shape, which is all
- * it ever showed, instead of waiting two minutes for text it locks anyway.
- */
-const OUTLINED_HEADING = "Your first article is planned and being written";
-const OUTLINED_LEDE =
-  `Here is its outline; the text is being written to it now. Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`;
 const FIRST_ARTICLE_FAILED_LEDE =
   `Setup started writing it and it failed on our side. It is written again once your ${TRIAL_DAYS}-day trial starts, along with the rest of this week's plan.`;
 
 /**
- * While the first article is outlined and its body is being written, read
- * the page again every so often, so the card turns into the written one -
- * its real length and sources - without a reload. Stops once it has, or
- * after ten minutes.
+ * The heading and lede for an ending, before the trial. An article's own
+ * words follow it being written (first-look-gate.tsx `articleHeading`), so
+ * "article" here is only the fallback for a page that has not read it yet.
  */
-function useRefreshWhileOutlined(outlined: boolean): void {
-  const router = useRouter();
-  useEffect(() => {
-    if (!outlined) return;
-    const started = Date.now();
-    const timer = setInterval(() => {
-      if (Date.now() - started > 10 * 60_000) clearInterval(timer);
-      else router.refresh();
-    }, 20_000);
-    return () => clearInterval(timer);
-  }, [outlined, router]);
+function endingWords(
+  ending: SetupEnding,
+  ctx: { domain: string; runState: Pick<OnboardingState, "steps" | "emptyPool"> | null; followUp: boolean },
+): { heading: string; lede: string } {
+  const draftingDetail = ctx.runState?.steps.find((s) => s.phase === "drafting")?.detail ?? null;
+  switch (ending) {
+    case "article":
+      return { heading: "Your first article", lede: `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it.` };
+    case "writing":
+      return { heading: "Your first article is being written", lede: "It appears here when it is done, usually within a few minutes. The trial opens it, and the rest of the week." };
+    case "retry":
+      return { heading: "Setup did not finish", lede: `Nothing was written for ${ctx.domain || "your site"}. Running setup again reads the site, plans the month and writes the first article.` };
+    case "first-failed":
+      return { heading: FIRST_ARTICLE_FAILED_HEADING, lede: FIRST_ARTICLE_FAILED_LEDE };
+    case "nothing-planned":
+      return { heading: NOTHING_PLANNED_HEADING, lede: nothingPlannedLede(ctx.domain, ctx.runState?.emptyPool ?? null, ctx.followUp) };
+    case "no-article":
+      return {
+        heading: "No article was written in setup",
+        lede: `${draftingDetail ? `Setup said: ${draftingDetail}` : "Setup finished without writing an article."} The trial opens the calendar, where articles can be written from the plan.`,
+      };
+  }
+}
+
+/** The page the gate sits on: one column, with room at the bottom for the slim ask bar. */
+function GateShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-bg">
+      <div className="mx-auto max-w-[680px] px-4 pb-28 pt-8 sm:px-6 sm:pt-10">{children}</div>
+    </div>
+  );
+}
+
+function RetryBox({ line, label, onRetry }: { line: string; label: string; onRetry: () => void }) {
+  return (
+    <div className="rounded-[10px] border border-line bg-panel p-4">
+      <p className="m-0 mb-3 text-sm">{line}</p>
+      <Button variant="accent" onClick={onRetry}>
+        {label}
+      </Button>
+    </div>
+  );
+}
+
+/** The month behind the first article, as rows: the first ticked and named, the rest locked. */
+function PlanRows({ planned, firstArticle, written }: { planned: OnboardingPlanned[]; firstArticle: FirstArticleCard | null; written: boolean }) {
+  return (
+    <ul className="m-0 list-none divide-y divide-line overflow-hidden rounded-[8px] border border-line bg-bg p-0">
+      {planned.slice(0, 8).map((p) => {
+        const done = firstArticle && sameTerm(firstArticle.keyword, p.term) ? firstArticle : null;
+        return (
+          <li key={`${p.date}-${p.term}`} className={`flex items-center justify-between gap-3 px-3.5 py-2.5 text-[12.5px] ${done ? "" : "opacity-55"}`}>
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="shrink-0 text-ok-ink">{done ? <Icons.check size={13} /> : <Icons.lock size={12} />}</span>
+              <span className="min-w-0">
+                <span className="block break-words text-ink">{done ? done.title || p.term : p.term}</span>
+                {done && (
+                  <span className="block text-[11.5px] text-ink-3">
+                    {written ? `Written${done.wordCount > 0 && done.state === "written" ? ` · ${done.wordCount.toLocaleString("en-US")} words` : ""}` : "Being written"} · opens with the trial
+                  </span>
+                )}
+              </span>
+            </div>
+            <span className="shrink-0 font-mono text-[11px] text-ink-3">{calendarDay(p.date)}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 /**
  * The card, for an account that is already set up.
  *
  * What somebody sees on their second visit, or their thirtieth, and what every
- * dashboard link sends an account that has not started its trial to. It shows
- * the article setup wrote as its shape only - title, keyword, day, outline,
- * length, sources - and asks for the card. There is no link to read it and no
- * way into the dashboard: the trial is the way forward, and signing out the
- * way out.
+ * dashboard link sends an account that has not started its trial to. The same
+ * gate as the end of the run (first-look-gate.tsx): the article, the ask
+ * under it, why this article; the plan and the site report folded below.
+ * There is no way into the dashboard: the trial is the way forward, and
+ * signing out the way out.
  *
  * "Has a first article" is the workspace's fact, not the latest run's. When a
  * later visit read it off the run, the screen said the draft was not ready
@@ -751,6 +763,7 @@ function TrialGateScreen({
   firstArticle,
   writing,
   fullArticle = false,
+  initialHtml = null,
   workspaceId,
   setup,
   run,
@@ -761,6 +774,7 @@ function TrialGateScreen({
   domain: string;
   canBuy: boolean;
   fullArticle?: boolean;
+  initialHtml?: string | null;
   workspaceId: string;
   onRetry: () => void;
   planned: OnboardingPlanned[];
@@ -783,242 +797,82 @@ function TrialGateScreen({
     setupAllowed: setup.setupAllowed,
     firstAttempted: setup.firstAttempted,
   });
-  const retry = ending === "retry";
-  // The run's own words for why it wrote nothing, when it said.
-  const draftingDetail = runState?.steps.find((s) => s.phase === "drafting")?.detail ?? null;
+  const words = endingWords(ending, { domain, runState, followUp: setup.followUp });
   const fixable = report?.readiness?.findings.filter((f) => !f.passed && !f.inconclusive).length ?? 0;
   const pagesToFix = report?.existingPages?.withIssues ?? 0;
-
-  const outlined = firstArticle?.state === "outlined";
-  useRefreshWhileOutlined(outlined);
-  const heading: Record<SetupEnding, string> = {
-    article: outlined ? OUTLINED_HEADING : "Your first article is written",
-    writing: "Your first article is being written",
-    retry: "Setup did not finish",
-    "first-failed": FIRST_ARTICLE_FAILED_HEADING,
-    "nothing-planned": NOTHING_PLANNED_HEADING,
-    "no-article": "No article was written in setup",
-  };
-  const lede: Record<SetupEnding, string> = {
-    article: outlined
-      ? OUTLINED_LEDE
-      : `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the week is written once the trial starts.`,
-    writing: "It appears here when it is done, usually within a few minutes. The trial opens it, and the rest of the week.",
-    retry: `Nothing was written for ${domain || "your site"}. Running setup again reads the site, plans the month and writes the first article.`,
-    "first-failed": FIRST_ARTICLE_FAILED_LEDE,
-    "nothing-planned": nothingPlannedLede(domain, runState?.emptyPool ?? null, setup.followUp),
-    "no-article": `${draftingDetail ? `Setup said: ${draftingDetail}` : "Setup finished without writing an article."} The trial opens the calendar, where articles can be written from the plan.`,
-  };
+  const written = firstArticle?.state === "written";
 
   return (
-    <div className="min-h-screen bg-bg">
-      <div className="mx-auto max-w-[860px] px-6 py-10">
-        <div className="mb-6 text-center">
-          <h1 className="m-0 mb-1.5 text-[22px] font-semibold">{heading[ending]}</h1>
-          <p className="mx-auto m-0 max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">{lede[ending]}</p>
-        </div>
+    <GateShell>
+      <GateTop
+        workspaceId={workspaceId}
+        canBuy={canBuy}
+        ending={ending}
+        followUp={setup.followUp}
+        heading={words.heading}
+        lede={words.lede}
+        retry={
+          ending === "retry" ? (
+            <RetryBox
+              line={runState ? "The last setup run stopped before it wrote an article." : "Setup was skipped, so no article has been written yet."}
+              label={runState ? "Run setup again" : "Write my first article"}
+              onRetry={onRetry}
+            />
+          ) : null
+        }
+        firstArticle={firstArticle}
+        planned={planned}
+        fullArticle={fullArticle}
+        initialHtml={initialHtml}
+      />
 
-        <div className="mx-auto mb-6 flex max-w-[640px] flex-col gap-4 rounded-[10px] border border-accent/40 bg-panel p-5">
-          {retry && (
-            <div className="rounded-lg border border-line p-4">
-              <p className="m-0 mb-3 text-sm">
-                {runState ? "The last setup run stopped before it wrote an article." : "Setup was skipped, so no article has been written yet."}
-              </p>
-              <Button variant="accent" onClick={onRetry}>
-                {runState ? "Run setup again" : "Write my first article"}
-              </Button>
-            </div>
-          )}
-          {/* The ask comes before the evidence: with a report below it, a
-              button placed after the card sat a screen down and went unseen.
-              Not over a run that planned nothing: there is nothing behind
-              the card, and the note that replaces it says who writes next. */}
-          <SetupAsk ending={ending} canBuy={canBuy} followUp={setup.followUp} returnTo="/dashboard" />
-          {askAttribution && <AttributionAsk />}
-          {firstArticle && <FirstArticleCardView article={firstArticle} readable={fullArticle} />}
-          {firstArticle && fullArticle && <FirstArticleReader workspaceId={workspaceId} title={firstArticle.title} />}
-        </div>
-
-        <div className="mx-auto flex max-w-[640px] flex-col gap-5">
-          {(fixable > 0 || pagesToFix > 0) && (
-            <div className="rounded-[8px] border border-line bg-bg p-4">
-              <div className="mb-2.5 text-[12.5px] font-medium text-ink">Also found on {domain || "your site"}</div>
-              <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-[12.5px] text-ink-2">
-                {fixable > 0 && (
-                  <li>
-                    <strong className="text-ink">{fixable}</strong> {fixable === 1 ? "thing" : "things"} stopping AI
-                    assistants reading {domain || "your site"}, each with the fix
-                  </li>
-                )}
-                {pagesToFix > 0 && (
-                  <li>
-                    <strong className="text-ink">{pagesToFix}</strong> existing {pagesToFix === 1 ? "page" : "pages"}{" "}
-                    with something to fix
-                  </li>
-                )}
-              </ul>
-            </div>
-          )}
-
-          {planned.length > 0 && (
-            <div>
-              <div className="mb-2 flex items-baseline justify-between gap-3">
-                <div className="text-[12.5px] font-medium text-ink">Your first articles</div>
-                <div className="text-[11.5px] text-ink-3">
-                  {planned.length} {planned.length === 1 ? "article" : "articles"} scheduled{held && held.count > 0 ? `, ${held.count} more ready for the trial` : ""}
-                </div>
-              </div>
-              {/* The row for the article that exists is ticked and named; it
-                  is not a link, because there is nothing to open before the
-                  trial. Everything under it is locked, drawn as a lock and not
-                  as a spinner: nothing is being written down there until the
-                  trial starts. */}
-              <ul className="m-0 list-none divide-y divide-line overflow-hidden rounded-[8px] border border-line bg-bg p-0">
-                {planned.slice(0, 8).map((p) => {
-                  const done = firstArticle && sameTerm(firstArticle.keyword, p.term) ? firstArticle : null;
-                  return (
-                    <li
-                      key={`${p.date}-${p.term}`}
-                      className={`flex items-center justify-between gap-3 px-3.5 py-2.5 text-[12.5px] ${done ? "" : "opacity-55"}`}
-                    >
-                      <div className="flex min-w-0 items-center gap-2.5">
-                        <span className="shrink-0 text-ok-ink">
-                          {done ? <Icons.check size={13} /> : <Icons.lock size={12} />}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block text-ink">{done ? done.title || p.term : p.term}</span>
-                          {done && (
-                            <span className="block truncate text-[11.5px] text-ink-3">
-                              Written{done.wordCount > 0 ? ` · ${done.wordCount.toLocaleString("en-US")} words` : ""} · opens with the trial
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                      <span className="shrink-0 font-mono text-[11px] text-ink-3">{calendarDay(p.date)}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-              <p className="m-0 mt-2 text-[12px] text-ink-2">
-                {firstArticle
-                  ? "The rest are scheduled. They start writing when your trial does."
-                  : "These start writing when your trial does."}
-              </p>
-            </div>
-          )}
-
-          <TopicBriefs planned={planned} />
-          {report && <FirstLookReportView report={report} domain={domain} live={false} />}
-        </div>
-        <SignOutLine email={userEmail} otherSites={otherSites} />
+      <div className="mt-6 flex flex-col gap-2">
+        {planned.length > 0 && (
+          <Fold
+            title="Your plan"
+            line={`${planned.length} ${planned.length === 1 ? "article" : "articles"} scheduled${held && held.count > 0 ? `, ${held.count} more ready for your trial` : ""}`}
+          >
+            <PlanRows planned={planned} firstArticle={firstArticle} written={written} />
+            <p className="m-0 text-[12px] text-ink-2">
+              {firstArticle ? "The rest are scheduled. They start writing when your trial does." : "These start writing when your trial does."}
+            </p>
+          </Fold>
+        )}
+        {report && (
+          <Fold
+            title="Your site report"
+            line={[
+              fixable > 0 ? `${fixable} ${fixable === 1 ? "thing" : "things"} stopping AI assistants reading ${domain || "your site"}` : null,
+              pagesToFix > 0 ? `${pagesToFix} existing ${pagesToFix === 1 ? "page" : "pages"} with something to fix` : null,
+            ].filter(Boolean).join(" · ") || `${domain || "Your site"}, as we read it`}
+          >
+            <FirstLookReportView report={report} domain={domain} live={false} />
+          </Fold>
+        )}
       </div>
-    </div>
-  );
-}
-
-/**
- * The last step of onboarding: the card.
- *
- * The order is the point. Setup has just written the account's first article
- * and the person is looking at its shape - title, keyword, outline, length,
- * sources - and at the month scheduled behind it. What the trial buys is the
- * next thing they would do: read it, approve it, publish it, keep writing. So
- * the ask is made here, before the dashboard, and not from a banner they find
- * later. There is no skip and no way into the dashboard: the schedule starts
- * when the trial does, so a person who leaves from here has nothing running
- * to come back to.
- *
- * The same card as the gate screen (FirstArticleCardView), so the two places
- * the trial is asked cannot describe the article differently. There is no
- * "Read draft": a real signup (2026-09-22) read the whole text off that link,
- * copied it and published it on their own site within the hour.
- */
-function TrialStep({
-  canBuy,
-  fullArticle = false,
-  workspaceId,
-  ending,
-  followUp,
-  firstArticle,
-  pending,
-  retry,
-  onRetry,
-  planned,
-  held,
-  askAttribution = false,
-}: {
-  canBuy: boolean;
-  fullArticle?: boolean;
-  workspaceId: string;
-  ending: SetupEnding;
-  /** Whether the note may promise a reply (PreTrialSetup `followUp`). */
-  followUp: boolean;
-  firstArticle: FirstArticleCard | null;
-  /** The run's own record of the draft, until the page has read the card. */
-  pending: PendingFirstArticle | null;
-  retry: boolean;
-  onRetry: () => void;
-  planned: OnboardingPlanned[];
-  held: OnboardingHeld | null;
-  askAttribution?: boolean;
-}) {
-  const hasArticle = firstArticle !== null || pending !== null;
-  return (
-    <div className="mx-auto mb-6 flex max-w-[640px] flex-col gap-4 rounded-[10px] border border-accent/40 bg-panel p-5">
-      {retry && (
-        <div className="rounded-lg border border-line p-4">
-          <p className="m-0 mb-3 text-sm">Setup stopped before it wrote your first article.</p>
-          <Button variant="accent" onClick={onRetry}>
-            Run setup again
-          </Button>
+      {askAttribution && (
+        <div className="mt-6">
+          <AttributionAsk />
         </div>
       )}
-      {/* The ask comes first. Everything below it is the evidence for it, and
-          an earlier arrangement put the evidence on top: on a site with a full
-          report the button sat a full screen down and was never seen. A run
-          that planned nothing gets the note instead of the ask. */}
-      <SetupAsk ending={ending} canBuy={canBuy} followUp={followUp} returnTo="/dashboard" />
-      {askAttribution && <AttributionAsk />}
-
-      {hasArticle && <FirstArticleCardView article={firstArticle} pending={firstArticle ? null : pending} readable={fullArticle} />}
-      {hasArticle && fullArticle && <FirstArticleReader workspaceId={workspaceId} title={firstArticle?.title || pending?.title || ""} />}
-
-      {held && held.count > 0 && (
-        <p className="m-0 text-[13px] leading-[1.6] text-ink-2">
-          {/* Count and dates, never the terms: a readable list of topics is a
-              free keyword report, and the trial is what buys it. */}
-          <strong>Ready for your trial:</strong> {held.count} more {held.count === 1 ? "topic" : "topics"}, each with a buyer and search evidence behind it,
-          {held.dates.length ? ` on ${calendarDay(held.dates[0])}${held.dates.length > 1 ? ` to ${calendarDay(held.dates[held.dates.length - 1])}` : ""}` : ""}. Start the trial to see them and keep the schedule writing.
-        </p>
-      )}
-
-      {planned.length > 0 && !(held && held.count > 0) && (
-        <p className="m-0 text-[13px] leading-[1.6] text-ink-2">
-          {/* "on the calendar", not "more": the plan counts the article
-              above, so a run that planned eight and wrote one has seven still
-              to come, not eight. */}
-          <strong>On your calendar:</strong> {planned.length} {planned.length === 1 ? "article" : "articles"}, {planned[0].date === planned[planned.length - 1].date ? "on" : "from"}{" "}
-          {calendarDay(planned[0].date)}
-          {planned[0].date === planned[planned.length - 1].date ? "" : ` to ${calendarDay(planned[planned.length - 1].date)}`}.
-          {hasArticle && planned.length > 1
-            ? ` ${planned.length - 1} of them still to write; the schedule starts when the trial does.`
-            : " The schedule starts when the trial does."}
-        </p>
-      )}
-
-      <TopicBriefs planned={planned} />
-    </div>
+      <SignOutLine email={userEmail} otherSites={otherSites} />
+    </GateShell>
   );
 }
 
 /**
- * The finish: the pipeline, live, with the deferred setup offered as things to
- * do while it runs. The person is already invested and the value is already
- * being produced; the ask is framed as improving a result.
+ * The finish: the pipeline, live, then - for an account before its trial -
+ * the gate.
  *
- * For an account before its trial the run ends on the card (TrialStep) and
- * never on a button into the dashboard: the dashboard is what the trial
- * opens, and a "Finish" that led there only bounced back here.
+ * For an account before its trial the run ends on the card and never on a
+ * button into the dashboard: the dashboard is what the trial opens, and a
+ * "Finish" that led there only bounced back here. Its wait is one calm
+ * screen (./setup-loading.tsx), and its end is the gate (./first-look-gate.tsx),
+ * in one tree: the run's poller is mounted once and is never remounted
+ * between the two, which would start a run again.
+ *
+ * Everyone else - self-host, operators, a paying account - sees the run as a
+ * log and a calendar, and a button to the plan at the end.
  */
 function RunScreen({
   workspaceId,
@@ -1031,11 +885,13 @@ function RunScreen({
   firstArticle,
   firstArticleWriting,
   fullArticle = false,
+  initialHtml = null,
   preTrialSetup,
   userEmail,
   otherSites = [],
 }: {
   fullArticle?: boolean;
+  initialHtml?: string | null;
   workspaceId: string;
   canBuy: boolean;
   domain: string;
@@ -1050,13 +906,20 @@ function RunScreen({
   otherSites?: OtherSite[];
 }) {
   const router = useRouter();
-  const [state, setState] = useState<OnboardingState | null>(null);
+  // Read from the run the page found, so a reload of a finished run opens on
+  // the gate and not, for one frame, on the loading screen.
+  const [state, setState] = useState<OnboardingState | null>(() =>
+    initialRun?.run ? stateFromRun(initialRun.run, initialRun.article, { stale: initialRun.stale, drafts: initialRun.drafts, held: initialRun.held }) : null,
+  );
   // Bumped by "Try again". `OnboardingProgress` starts a run on mount and
   // never again, so a retry is a remount with no run to resume: the mount
   // effect POSTs /start, which creates a fresh row (the last one is finished)
   // and polls it. Nothing on the old attempt is touched - its phases are on
   // their own tables and its row keeps its status.
   const [attempt, setAttempt] = useState(0);
+  // Bumped when the first article's body lands after the gate, so the run's
+  // log is read again and says what was written.
+  const [bodyLanded, setBodyLanded] = useState(0);
   const finished = Boolean(state && (state.ready || state.error));
   const planned = state?.planned ?? [];
   // Where "Finish" actually leads, decided by what the run produced. It used
@@ -1070,9 +933,6 @@ function RunScreen({
   // the workspace (lib/onboarding/first-article.ts); this only fills the gap.
   const runDraft = draft ?? drafts[0] ?? null;
   const hasArticle = firstArticle !== null || runDraft !== null;
-  // Outlined, its body still being written: the gate opens on the outline.
-  const cardOutlined = firstArticle ? firstArticle.state === "outlined" : runDraft?.outlined === true;
-  useRefreshWhileOutlined(trialEligible && firstArticle?.state === "outlined");
   // The last step of onboarding, for an account before its trial: the card,
   // whatever the run produced. With an article it shows the article; without
   // one it offers a retry only when the run fell short and nothing exists
@@ -1090,9 +950,6 @@ function RunScreen({
           firstAttempted: preTrialSetup.firstAttempted,
         })
       : null;
-  const retry = ending === "retry";
-  const failed = ending === "first-failed";
-  const nothingPlanned = ending === "nothing-planned";
   // The run ended after this page was read: read it again. With a draft, so
   // the card has its outline and sources; without one, so the retry and the
   // copy answer from the spend gate and the claim as they are NOW - read
@@ -1104,6 +961,78 @@ function RunScreen({
     refreshed.current = true;
     router.refresh();
   }, [trialStep, firstArticle, router]);
+  const retryRun = () => {
+    setState(null);
+    setAttempt((a) => a + 1);
+  };
+
+  if (trialEligible) {
+    const words = ending ? endingWords(ending, { domain, runState: state, followUp: preTrialSetup.followUp }) : null;
+    const held = state?.held ?? null;
+    const scheduled = planned.length > 0 ? (
+      <div>
+        <div className="mb-1.5 text-[11px] uppercase tracking-wide text-ink-3">Scheduled</div>
+        <ul className="m-0 grid list-none grid-cols-1 gap-1.5 p-0 sm:grid-cols-2">
+          {planned.slice(0, 10).map((p) => (
+            <li key={p.date + p.term} className="flex min-w-0 items-baseline gap-2 text-[12.5px]">
+              <span className="shrink-0 font-mono text-[11px] text-ink-3">{p.date.slice(5)}</span>
+              <span className="min-w-0 break-words">{p.term}</span>
+            </li>
+          ))}
+          {held && held.count > 0 && held.dates.slice(0, 10).map((date, i) => (
+            <li key={`held-${date}-${i}`} className="flex items-baseline gap-2 text-[12.5px] text-ink-3">
+              <span className="shrink-0 font-mono text-[11px]">{date.slice(5)}</span>
+              <span>Ready · opens with the trial</span>
+            </li>
+          ))}
+        </ul>
+        {planned.length > 10 && <p className="m-0 mt-1.5 text-[12px] text-ink-3">and {planned.length - 10} more on the calendar.</p>}
+      </div>
+    ) : null;
+    return (
+      <GateShell>
+        {trialStep && ending && words ? (
+          <GateTop
+            workspaceId={workspaceId}
+            canBuy={canBuy}
+            ending={ending}
+            followUp={preTrialSetup.followUp}
+            heading={words.heading}
+            lede={words.lede}
+            retry={ending === "retry" ? <RetryBox line="Setup stopped before it wrote your first article." label="Run setup again" onRetry={retryRun} /> : null}
+            firstArticle={firstArticle}
+            pending={runDraft ? { title: runDraft.title, keyword: runDraft.keyword, wordCount: runDraft.wordCount, outlined: runDraft.outlined === true } : null}
+            planned={planned}
+            fullArticle={fullArticle}
+            initialHtml={initialHtml}
+            onBodyDone={() => setBodyLanded((n) => n + 1)}
+          />
+        ) : null}
+        <div className={trialStep ? "mt-6" : undefined}>
+          <OnboardingProgress
+            key={attempt}
+            workspaceId={workspaceId}
+            domain={domain}
+            autoNavigate={false}
+            onState={setState}
+            initialRun={attempt === 0 ? initialRun : null}
+            lockHeld
+            preTrial
+            variant="first-look"
+            refreshKey={bodyLanded}
+            scheduled={scheduled}
+          />
+        </div>
+        {trialStep && askAttribution ? (
+          <div className="mt-6">
+            <AttributionAsk />
+          </div>
+        ) : null}
+        {trialStep ? <SignOutLine email={userEmail} otherSites={otherSites} /> : null}
+      </GateShell>
+    );
+  }
+
   const next = planned.length > 0
     ? { href: "/content", label: "Open my plan" }
     : draft
@@ -1113,82 +1042,24 @@ function RunScreen({
     <div className="min-h-screen bg-bg">
       <div className="mx-auto max-w-[860px] px-6 py-10">
         <div className="mb-8 text-center">
-          <h1 className="mb-1.5 text-[22px] font-semibold">
-            {trialStep
-              ? hasArticle
-                ? cardOutlined
-                  ? OUTLINED_HEADING
-                  : "Your first article is written"
-                : failed
-                  ? FIRST_ARTICLE_FAILED_HEADING
-                  : nothingPlanned
-                    ? NOTHING_PLANNED_HEADING
-                    : "Start your trial to keep writing"
-              : finished
-                ? "Your content plan"
-                : "Creating your content plan"}
-          </h1>
+          <h1 className="mb-1.5 text-[22px] font-semibold">{finished ? "Your content plan" : "Creating your content plan"}</h1>
           <p className="mx-auto max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2">
-            {trialStep ? (
-              hasArticle ? (
-                cardOutlined ? (
-                  <>{OUTLINED_LEDE}</>
-                ) : (
-                  <>
-                    Start your {TRIAL_DAYS}-day trial to read it in full, approve it and publish it. The rest of the
-                    week is written once the trial starts.
-                  </>
-                )
-              ) : failed ? (
-                <>{FIRST_ARTICLE_FAILED_LEDE}</>
-              ) : nothingPlanned ? (
-                <>{nothingPlannedLede(domain, state?.emptyPool ?? null, preTrialSetup.followUp)}</>
-              ) : (
-                <>Setup did not write an article for {domain}. The trial opens the calendar and the plan behind it.</>
-              )
-            ) : (
-              <>
-                Reading {domain}, checking buyer needs and live search results, preparing up to five specific article ideas, and writing
-                the first one. Only topics with supporting evidence make the plan, so your site may get fewer.{" "}
-                {freeAllowanceClause(freeDrafts === null ? null : Math.min(1, freeDrafts), { preTrial: trialEligible }) ?? ""}
-              </>
-            )}
+            Reading {domain}, checking buyer needs and live search results, preparing up to five specific article ideas, and writing
+            the first one. Only topics with supporting evidence make the plan, so your site may get fewer.{" "}
+            {freeAllowanceClause(freeDrafts === null ? null : Math.min(1, freeDrafts), { preTrial: false }) ?? ""}
             {/* True since the run left the browser's request: it is a row
                 advanced by its own invocations (/api/onboard/run, then
-                /api/internal/draft), and this screen only polls it. An
-                earlier version said "keep this tab open", because the SSE
-                route stopped the pipeline when the tab went. Gone once the
-                run is over, because a screen that has said "Done." has no
+                /api/internal/draft), and this screen only polls it. Gone once
+                the run is over, because a screen that has said "Done." has no
                 wait left to describe. */}
             {!finished && (
               <>
                 {" "}
-                A few minutes. You can leave this page and come back: the run carries on without you, and this
-                screen picks up where it is.
+                You can leave this page and come back: the run carries on without you, and this screen picks up where it is.
               </>
             )}
           </p>
         </div>
-
-        {trialStep && ending && (
-          <TrialStep
-            canBuy={canBuy}
-            fullArticle={fullArticle}
-            workspaceId={workspaceId}
-            ending={ending}
-            followUp={preTrialSetup.followUp}
-            firstArticle={firstArticle}
-            pending={runDraft ? { title: runDraft.title, keyword: runDraft.keyword, wordCount: runDraft.wordCount, verdict: runDraft.verdict, outlined: runDraft.outlined === true } : null}
-            retry={retry}
-            onRetry={() => {
-              setState(null);
-              setAttempt((a) => a + 1);
-            }}
-            planned={planned}
-            held={state?.held ?? null}
-            askAttribution={askAttribution}
-          />
-        )}
 
         <div className="mx-auto max-w-[640px]">
           <div className="rounded-[10px] border border-line bg-panel p-5">
@@ -1199,53 +1070,34 @@ function RunScreen({
               autoNavigate={false}
               onState={setState}
               initialRun={attempt === 0 ? initialRun : null}
-              lockHeld={trialEligible}
-              preTrial={trialEligible}
             />
             {planned.length > 0 && (
               <div className="mt-5">
                 <div className="mb-1.5 text-[11px] uppercase tracking-wide text-ink-3">Scheduled</div>
-                <ul className="m-0 grid list-none grid-cols-2 gap-1.5 p-0">
+                <ul className="m-0 grid list-none grid-cols-1 gap-1.5 p-0 sm:grid-cols-2">
                   {planned.slice(0, 10).map((p) => (
-                    <li key={p.date + p.term} className="flex items-baseline gap-2 text-[12.5px]">
-                      <span className="font-mono text-[11px] text-ink-3">{p.date.slice(5)}</span>
+                    <li key={p.date + p.term} className="flex min-w-0 items-baseline gap-2 text-[12.5px]">
+                      <span className="shrink-0 font-mono text-[11px] text-ink-3">{p.date.slice(5)}</span>
                       <span className="truncate">{p.term}</span>
                     </li>
                   ))}
                 </ul>
                 {planned.length > 10 && <p className="m-0 mt-1.5 text-[12px] text-ink-3">and {planned.length - 10} more on the calendar.</p>}
-                {trialEligible && state?.held && state.held.count > 0 && (
-                  <ul className="m-0 mt-1.5 grid list-none grid-cols-2 gap-1.5 p-0" aria-label="Held for the trial">
-                    {state.held.dates.slice(0, 10).map((date, i) => (
-                      <li key={date + i} className="flex items-baseline gap-2 text-[12.5px] text-ink-3">
-                        <span className="font-mono text-[11px]">{date.slice(5)}</span>
-                        <span className="truncate">Ready · opens with the trial</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
               </div>
             )}
             <div className="mt-6 flex items-center gap-3">
-              {/* A plain navigation, live or not. This used to open a new tab
-                  while the run was live, because unmounting the progress
-                  component aborted the SSE request and the pipeline with it;
-                  the run is its own invocations now and nothing on this page
-                  can cancel it. Coming back to /onboarding resumes the screen. */}
-              {/* No way into the dashboard for an account before its trial,
-                  finished or not: the calendar is behind the gate too, and a
-                  button to it only bounced back here. */}
-              {trialStep ? null : finished ? (
+              {/* A plain navigation, live or not: the run is its own
+                  invocations now and nothing on this page can cancel it.
+                  Coming back to /onboarding resumes the screen. */}
+              {finished ? (
                 <Button variant="accent" onClick={() => router.push(next.href)}>
                   {next.label}
                 </Button>
               ) : (
                 <>
-                  {!trialEligible && (
-                    <Button variant="accent" disabled={planned.length === 0} onClick={() => router.push("/content")}>
-                      Open the calendar so far
-                    </Button>
-                  )}
+                  <Button variant="accent" disabled={planned.length === 0} onClick={() => router.push("/content")}>
+                    Open the calendar so far
+                  </Button>
                   <span className="text-[12px] text-ink-3">Still working…</span>
                 </>
               )}
@@ -1254,34 +1106,22 @@ function RunScreen({
                 calendar the header just promised. `OnboardingProgress` prints
                 the same sentence, so this only adds the part the button needs
                 to be honest about. */}
-            {/* Before the trial the card above decides whether to offer a run
-                again, from the workspace's articles and not this run alone. */}
-            {!trialEligible && outcome && (outcome.tone === "error" || (outcome.tone === "partial" && !outcome.produced)) && (
+            {outcome && (outcome.tone === "error" || (outcome.tone === "partial" && !outcome.produced)) && (
               <div className="mt-3 flex flex-wrap items-center gap-3 rounded-[8px] border border-warn bg-warn-soft px-3 py-2.5">
                 <p className="m-0 min-w-0 flex-1 text-[12px] leading-[1.55] text-warn-ink">
                   {/* A run that fell short is a thing to retry, right here,
-                      not a job to hand the person. The old text only said
-                      "add a keyword by hand", which is the last resort, not
-                      the first. */}
+                      not a job to hand the person. */}
                   Nothing was set up yet. Trying again is free to try; if the site still cannot be read,
                   add a keyword by hand from Keywords or connect Search Console and the plan can be built
                   from there.
                 </p>
-                <Button
-                  size="sm"
-                  onClick={() => {
-                    setState(null);
-                    setAttempt((a) => a + 1);
-                  }}
-                >
+                <Button size="sm" onClick={retryRun}>
                   Try again
                 </Button>
               </div>
             )}
           </div>
-
         </div>
-        {trialStep && <SignOutLine email={userEmail} otherSites={otherSites} />}
       </div>
     </div>
   );

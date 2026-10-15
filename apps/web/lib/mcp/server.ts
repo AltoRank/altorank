@@ -264,7 +264,7 @@ server.registerTool(
     title: "Who am I (account preflight)",
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     description:
-      "Which AltoRank account this key opens, its workspaces and this month's drafting quota. " +
+      "Which AltoRank account this key opens, its workspaces and its drafting quota (this month's included volume on a plan, the one-time free drafts before one). " +
       "Run first. Needs ALTORANK_API_KEY.",
     inputSchema: {},
   },
@@ -393,7 +393,7 @@ server.registerTool(
   {
     title: "Usage and quota",
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    description: "This month's drafting quota and per-workspace article counts. limit null means unmetered.",
+    description: "The drafting quota (this month's included volume on a plan; the one-time free drafts, which never reset, before one) and this month's per-workspace article counts. limit null means unmetered.",
     inputSchema: {},
   },
   async () => asEnvelope(await call("/usage")),

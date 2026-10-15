@@ -338,6 +338,8 @@ export interface PlanOptions {
    * a spend refusal after counting.
    */
   onFunnel?: (funnel: TopicFunnel) => void;
+  /** Each qualification batch as it starts and ends: the searches checked, and the counts so far. */
+  onQualifyProgress?: (progress: { checking: string[]; judged: number; qualified: number }) => void;
 }
 
 /**
@@ -398,6 +400,7 @@ async function planFor(
       limit: 1000,
       qualify: true,
       qualifyBatches: opts.qualifyBatches,
+      ...(opts.onQualifyProgress ? { onQualifyProgress: opts.onQualifyProgress } : {}),
       ...(opts.firstLook ? { firstLook: opts.firstLook } : {}),
       ...(opts.onFunnel ? { onFunnel: (f: TopicFunnel, qualified: ReadonlySet<string>) => { seen.funnel = f; seen.qualified = qualified; } } : {}),
     });

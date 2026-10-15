@@ -334,6 +334,16 @@ async function writtenByRun(
   return { planned, articleId, writing: since.some((a) => a.status === "drafting") };
 }
 
+/** The steps with any planning check dropped, or null when none carried one. */
+export function withoutChecking(phases: OnboardingRunRow["phases"] | null | undefined): OnboardingRunRow["phases"] | null {
+  if (!phases?.some((p) => (p as { checking?: unknown }).checking !== undefined)) return null;
+  return phases.map((p) => {
+    const { checking: _dropped, ...rest } = p as typeof p & { checking?: unknown };
+    void _dropped;
+    return rest as typeof p;
+  });
+}
+
 /**
  * Close a `running` row, and say so where somebody will see it.
  *
@@ -397,10 +407,15 @@ async function closeRun(
       : "error";
 
   const now = new Date().toISOString();
+  // A run cut off mid-planning left its step active with the searches it was
+  // checking on it (events.ts, PlanningCheck); nothing settles that step now,
+  // so the terms go here - a closed row is readable by every member.
+  const phases = withoutChecking(row.phases);
   let update = supabase
     .from("onboarding_runs")
     .update({
       status,
+      ...(phases ? { phases } : {}),
       ...(status === "error" ? { error: reason } : {}),
       ...(wrote.articleId && wrote.articleId !== row.article_id ? { article_id: wrote.articleId } : {}),
       finished_at: now,

@@ -71,6 +71,38 @@ export async function liftStripePause(stripe: Stripe, subscriptionId: string): P
   await stripe.subscriptions.update(subscriptionId, { pause_collection: "" });
 }
 
+/**
+ * End the account pause early at Stripe, and bill the renewal the pause voided.
+ *
+ * `pause_collection: { behavior: "void" }` voids every invoice Stripe makes
+ * while the pause runs, renewals included. Resuming early used to only clear
+ * the pause, so pausing the day before a renewal and resuming the day after
+ * left that whole period unpaid while everything drafted again.
+ *
+ * When the subscription's latest invoice is a voided renewal, the pause is
+ * cleared and the billing period restarts today (`billing_cycle_anchor:
+ * "now"`, no proration), which invoices a full period from the day writing
+ * starts again; the days already inside the pause stay free, as the pause
+ * promised. When no renewal fell inside the pause, the period that was paid
+ * is still running, and only the pause is cleared.
+ */
+export async function endStripePauseEarly(stripe: Stripe, subscriptionId: string): Promise<"lifted" | "rebilled"> {
+  const sub = await stripe.subscriptions.retrieve(subscriptionId, { expand: ["latest_invoice"] });
+  const latest = sub.latest_invoice;
+  const voidedRenewal =
+    latest != null && typeof latest === "object" && latest.status === "void" && latest.billing_reason === "subscription_cycle";
+  if (sub.pause_collection && voidedRenewal) {
+    await stripe.subscriptions.update(subscriptionId, {
+      pause_collection: "",
+      billing_cycle_anchor: "now",
+      proration_behavior: "none",
+    });
+    return "rebilled";
+  }
+  await liftStripePause(stripe, subscriptionId);
+  return "lifted";
+}
+
 export type ExpiredPauseOutcome = {
   accountId: string;
   workspaces: string[];

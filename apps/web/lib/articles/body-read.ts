@@ -44,6 +44,9 @@ export const ARTICLE_BODY_COLUMNS = [
   "aeo_checks",
   // The first article's body as it streams (migration 107, PRETRIAL_FULL_ARTICLE).
   "body_stream",
+  // Counts only - the stage, sections and words of that body (108) - and
+  // withheld from client tokens like it, so a client read of it is caught too.
+  "body_progress",
 ] as const;
 
 /** Ids per request: a uuid list in the query string, well under any URL limit. */

@@ -45,3 +45,17 @@ export function topicLabels(verdict: unknown, current?: { volume?: number | null
   }
   return out;
 }
+
+/**
+ * A label in a first-timer's words, for the screens before the trial. The
+ * pre-trial card leads the gate, and "Top of funnel … before they compare
+ * providers" was marketing jargon, with the wrong noun for a shop, as the
+ * third thing a person read (review, 2026-10-12). The calendar keeps the
+ * planner's own words.
+ */
+export function plainTopicLabel(label: TopicLabel): TopicLabel {
+  if (label.label === "Top of funnel") {
+    return { label: "Early reader", explain: "For people still learning about this, not yet shopping: it earns their trust first." };
+  }
+  return label;
+}
