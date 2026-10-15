@@ -28,6 +28,15 @@ describe("auth emails", () => {
     expect(u.searchParams.get("next")).toBe("/reset-password/confirm");
   });
 
+  it("puts the code in the confirmation's subject and body, and keeps the link for another device", () => {
+    const url = "https://app.altorank.co/callback?token_hash=x&type=signup";
+    const r = renderConfirmSignup(url, "a@x.co", "123456");
+    expect(r.subject).toBe("123456 is your AltoRank code");
+    expect(r.html).toContain("123456");
+    expect(r.html).toContain(url.replace("&", "&amp;"));
+    expect(renderConfirmSignup(url, "a@x.co").subject).toBe("Confirm your AltoRank account");
+  });
+
   it("renders branded bodies that carry the link and escape the address", () => {
     const url = "https://app.altorank.co/callback?token_hash=x&type=signup";
     for (const r of [renderConfirmSignup(url, "a<b@x.co"), renderPasswordReset(url, "a<b@x.co"), renderMagicLink(url, "a<b@x.co")]) {

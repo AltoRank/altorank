@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendSignupConfirmation } from "@/lib/email/auth-emails";
 import { authErrorMessage } from "@/lib/auth/errors";
@@ -9,7 +10,8 @@ import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { accountNameFromDomain } from "@/lib/domain/account-name";
 import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/growth-plan/build";
 import { checkDomainReachable } from "@/lib/domain/reachable";
-import { SubmitButton } from "@/components/auth/submit-button";
+import { SignupSteps } from "@/components/auth/signup-steps";
+import { PENDING_SIGNUP_COOKIE, PENDING_SIGNUP_MAX_AGE } from "@/lib/auth/pending-signup";
 import { recordEvent } from "@/lib/observability/record";
 import { existingSignup } from "@/lib/auth/signup-reuse";
 import {
@@ -27,7 +29,9 @@ export const metadata: Metadata = {
 async function signUp(formData: FormData) {
   "use server";
   const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
+  // No password field since the code (/signup/verify): an empty value makes
+  // the account with a random one nobody types.
+  const password = ((formData.get("password") as string | null) ?? "") || undefined;
   // Where this signup came from (the marketing page, the referring site, the
   // campaign), carried in from the URL by hidden inputs. Every redirect back
   // to this form below takes it along, so a failed first submit keeps it; see
@@ -226,7 +230,17 @@ async function signUp(formData: FormData) {
     }
   }
 
-  redirect("/signup?success=Check+your+email+to+confirm+your+account");
+  // The code is in their inbox; the page that takes it knows the address
+  // from a short-lived cookie rather than the URL, so the address is not in
+  // history, logs or a Referer.
+  (await cookies()).set(PENDING_SIGNUP_COOKIE, email, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/signup",
+    maxAge: PENDING_SIGNUP_MAX_AGE,
+  });
+  redirect("/signup/verify");
 }
 
 export default async function SignUpPage(props: {
@@ -242,11 +256,11 @@ export default async function SignUpPage(props: {
   return (
     <div className="space-y-6">
       <div className="text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">Create your account</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Read your first article before you start a trial</h1>
         <p className="mt-2 text-sm text-ink-3">
           {prefilled
-            ? `Your workspace for ${prefilled} is set up the moment you sign up`
-            : "One site to start. AltoRank reads it and plans your first month."}
+            ? `We read ${prefilled}, plan your next month and write the first article. You read it before we ask for a card.`
+            : "Paste your website. We read it, plan your next month and write the first article. You read it before we ask for a card."}
         </p>
       </div>
 
@@ -260,55 +274,13 @@ export default async function SignUpPage(props: {
           </div>
         )}
         {searchParams?.error && (
-          <div className="text-sm text-err-ink bg-err-soft px-3 py-2 rounded-lg">
+          <div role="alert" className="text-sm text-err-ink bg-err-soft px-3 py-2 rounded-lg">
             {searchParams.error}
           </div>
         )}
-        <div>
-          <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">
-            Your website
-          </label>
-          <input
-            name="domain"
-            type="text"
-            required
-            defaultValue={prefilled ?? ""}
-            inputMode="url"
-            autoComplete="url"
-            className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
-            placeholder="acme.com"
-          />
-          {/* Half of this was the sub-heading again ("AltoRank reads it and
-              plans your first month" / "We read it first, so setup is a check
-              rather than a form"), two lines apart on the same screen. The
-              half worth keeping is the promise the sub-heading does not make. */}
-          <p className="mt-1.5 text-[11.5px] text-ink-3">Nothing publishes without your approval.</p>
-        </div>
-        <div>
-          <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">
-            Email
-          </label>
-          <input
-            name="email"
-            type="email"
-            required
-            className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
-            placeholder="you@example.com"
-          />
-        </div>
-        <div>
-          <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">
-            Password
-          </label>
-          <input
-            name="password"
-            type="password"
-            required
-            minLength={8}
-            className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
-          />
-        </div>
-        <SubmitButton pendingLabel="Creating your account…">Create account</SubmitButton>
+        {/* The domain, then the email, then a code typed on the next page:
+            no password, and no leaving the tab to click a link. */}
+        <SignupSteps prefilledDomain={prefilled} />
       </form>
 
       <p className="text-center text-sm text-ink-3">

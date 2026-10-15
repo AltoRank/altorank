@@ -24,6 +24,13 @@ import { appUrl } from "@/lib/app-url";
 
 export type AuthLinkType = "signup" | "recovery" | "magiclink";
 
+/** A password nobody will type: 32 random bytes, base64url. */
+function randomPassword(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Buffer.from(bytes).toString("base64url");
+}
+
 const esc = (s: unknown) =>
   String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
@@ -40,13 +47,21 @@ function fallbackLine(url: string): string {
   return `<p style="margin:0 0 14px;font-size:12px;line-height:1.6;color:${EMAIL_INK_3};word-break:break-all;">If the button does not work, paste this into your browser:<br>${esc(url)}</p>`;
 }
 
-export function renderConfirmSignup(url: string, email: string) {
+export function renderConfirmSignup(url: string, email: string, code?: string | null) {
+  // The code first when there is one: the signup page is waiting for it, in
+  // the tab the person is still on. The link stays for another device.
+  const codeBlock = code
+    ? `<p style="margin:0 0 6px;font-size:13px;line-height:1.6;color:${EMAIL_INK_3};">Your code</p>` +
+      `<p style="margin:0 0 18px;font-family:ui-monospace,Menlo,monospace;font-size:28px;letter-spacing:6px;font-weight:600;color:${EMAIL_INK};">${esc(code)}</p>`
+    : "";
   return {
     footerNote: `Sent to ${email} because an account was created on AltoRank with this address. If that was not you, ignore this email.`,
-    subject: "Confirm your AltoRank account",
+    subject: code ? `${code} is your AltoRank code` : "Confirm your AltoRank account",
     html:
       `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Confirm your email</h1>` +
-      emailParagraph("One click and your account is live. Your workspace is already set up; the first thing you will see is what your site ranks for.") +
+      (code
+        ? emailParagraph("Type this code on the signup page to carry on. Your workspace is already set up.") + codeBlock + emailParagraph("Or confirm with one click on any device:")
+        : emailParagraph("One click and your account is live. Your workspace is already set up; the first thing you will see is what your site ranks for.")) +
       emailButton(url, "Confirm my email") +
       emailParagraph("The link expires in 24 hours. Nothing is charged and no card is asked for until you have read your first drafts.") +
       fallbackLine(url),
@@ -109,20 +124,25 @@ async function tokenHashFor(type: "recovery", email: string): Promise<string | n
  * Create the user (unconfirmed) and email the confirmation link.
  * Returns the new user's id, or throws with a message safe to show.
  */
-export async function sendSignupConfirmation(opts: { email: string; password: string; name: string; next?: string }): Promise<string> {
+export async function sendSignupConfirmation(opts: { email: string; password?: string; name: string; next?: string }): Promise<string> {
   const admin = createServiceClient();
   // `signup` creates the user when it does not exist and returns the token
   // for the confirmation link; no email leaves Supabase.
   const { data, error } = await admin.auth.admin.generateLink({
     type: "signup",
     email: opts.email,
-    password: opts.password,
+    // Signup asks for no password since the code was added: the person signs
+    // in with a code or a link, and this random one is never shown or used.
+    // Supabase's signup link still needs one to create the user.
+    password: opts.password || randomPassword(),
     options: { data: { name: opts.name } },
   });
   if (error || !data.user) throw new Error(error?.message ?? "Could not create the account");
 
   const url = authLink("signup", data.properties.hashed_token, opts.next ?? "/dashboard");
-  const { subject, html, footerNote } = renderConfirmSignup(url, opts.email);
+  // The same confirmation as the link, as a code the signup page takes in
+  // the tab the person never left (app/(auth)/signup/verify).
+  const { subject, html, footerNote } = renderConfirmSignup(url, opts.email, data.properties.email_otp || null);
   try {
     await sendTransactionalEmail(opts.email, subject, html, footerNote, "One click and your account is live.");
   } catch (e) {
