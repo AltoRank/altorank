@@ -8,6 +8,7 @@ import {
   PLAN_YEARLY_PRICES,
   PLAN_TAGLINES,
   PLAN_FEATURES,
+  billingEnabled,
   type PlanTier,
 } from "@/lib/stripe";
 import { getSimulation } from "@/lib/dev/simulation";
@@ -118,8 +119,12 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
   // is no plan to buy and no bill. This page used to say "No plan" and offer
   // Choose Managed / Choose Agency, and every one of those clicks failed at
   // checkout because the install has no Stripe prices. A preview or a
-  // simulation still shows the hosted screens, on purpose.
-  const selfHosted = quota.reason === "self-host" && !preview?.plan && !simulation?.plan;
+  // simulation still shows the hosted screens, on purpose. An operator
+  // (ADMIN_EMAILS) is answered "operator" before "self-host" by getQuota, so
+  // billing being off is read directly too: the operator of a self-hosted
+  // install is the one person most likely to open this page.
+  const selfHosted =
+    (quota.reason === "self-host" || !billingEnabled) && !preview?.plan && !simulation?.plan;
   // Owner only, like every other change to what the account pays, and only
   // when there is a subscription to pause or end.
   const showRetention = canManage && isActive && Boolean(account?.stripe_subscription_id);

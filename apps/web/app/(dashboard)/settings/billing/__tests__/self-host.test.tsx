@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { Quota } from "@/lib/billing/quota";
 
-const state: { quota: Partial<Quota> } = { quota: {} };
+const state: { quota: Partial<Quota>; billing: boolean } = { quota: {}, billing: false };
 
 vi.mock("next/navigation", () => ({ usePathname: () => "/settings/billing" }));
 vi.mock("@/lib/auth/require-auth", () => ({
@@ -20,6 +20,15 @@ vi.mock("@/lib/billing/quota", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/billing/quota")>()),
   getQuota: async () => state.quota,
 }));
+vi.mock("@/lib/stripe", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/stripe")>();
+  return {
+    ...actual,
+    get billingEnabled() {
+      return state.billing;
+    },
+  };
+});
 vi.mock("../plan-cards", () => ({ PlanCards: () => "PLAN-LADDER" }));
 vi.mock("../retention-card", () => ({ RetentionCard: () => "RETENTION" }));
 vi.mock("../dunning-card", () => ({ DunningCard: () => "DUNNING" }));
@@ -50,6 +59,7 @@ async function render(): Promise<string> {
 describe("Billing page", () => {
   beforeEach(() => {
     state.quota = {};
+    state.billing = false;
   });
 
   it("on a self-hosted install, says so and offers no plan or invoices", async () => {
@@ -63,7 +73,15 @@ describe("Billing page", () => {
     expect(html).not.toContain("Recent invoices");
   });
 
+  it("an operator of a self-hosted install sees the same, not the ladder", async () => {
+    state.quota = { limit: null, used: 3, remaining: null, reason: "operator", plan: null };
+    const html = await render();
+    expect(html).toContain("Self-hosted · no plan needed");
+    expect(html).not.toContain("PLAN-LADDER");
+  });
+
   it("with billing on and no plan, still shows the plan ladder", async () => {
+    state.billing = true;
     state.quota = { limit: 7, used: 1, remaining: 6, reason: "no-plan", plan: null, trialEligible: true };
     const html = await render();
     expect(html).toContain("No plan");
