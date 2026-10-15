@@ -33,6 +33,7 @@ import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { discoverSite } from "./site-discovery";
 import { e2eStubsEnabled, stubReadSiteText } from "@/lib/e2e/stubs";
 import { htmlLangOf } from "./locale-guess";
+import { extractMainContent } from "@/lib/audit/markdown";
 
 export type SiteTextSource = "static" | "sitemap" | "rendered" | "none";
 
@@ -64,7 +65,17 @@ export interface SiteText {
    * failed read (lib/onboarding/locale-guess.ts).
    */
   htmlLang?: string | null;
+  /**
+   * The site's newest articles, as text, when the caller asked for them
+   * (`articles`). Kept apart from `text`, which describes the business: a
+   * voice is learned from how a site writes its posts, and the pricing and
+   * about copy at the top of `text` is how it writes its sales pages.
+   */
+  articleText?: string;
 }
+
+/** Characters kept from each article: enough for a voice, not a whole post. */
+const ARTICLE_CHARS = 3_000;
 
 /** Enough links to include a site's whole navigation and footer. */
 const MAX_OBSERVED_LINKS = 80;
@@ -133,7 +144,22 @@ export async function pageText(url: string): Promise<{ text: string; page: Scrap
   }
 }
 
-export async function readSiteText(domain: string, maxChars = 12_000): Promise<SiteText> {
+/** An article's own words: its main content, without the template around it. */
+export function articleBodyText(html: string): string {
+  return extractMainContent(html).html
+    .replace(/<(script|style|noscript|svg|nav|footer|header|aside|form)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * `articles`: read the site's newest posts (up to this many) for
+ * `articleText`. The onboarding run asks for two, for the voice; the wizard's
+ * profile read does not, and makes no extra requests.
+ */
+export async function readSiteText(domain: string, maxChars = 12_000, opts: { articles?: number } = {}): Promise<SiteText> {
   // E2E_STUBS: fixture text, no fetch (lib/e2e/stubs.ts).
   if (e2eStubsEnabled()) return stubReadSiteText(domain, maxChars);
   // Every page that answered, whichever branch below returns: the evidence
@@ -141,12 +167,14 @@ export async function readSiteText(domain: string, maxChars = 12_000): Promise<S
   // guessed are kept apart: their links are evidence, their URLs are not.
   const fetched: ScrapedPage[] = [];
   const probed: ScrapedPage[] = [];
+  let articleText = "";
   const done = (text: string, source: SiteTextSource): SiteText => ({
     text: text.slice(0, maxChars),
     source,
     chars: text.length,
     observed: observedFrom(domain, fetched, probed),
     htmlLang: [...fetched, ...probed].map((p) => htmlLangOf(p.html)).find(Boolean) ?? null,
+    ...(opts.articles ? { articleText } : {}),
   });
 
   // Discovery is needed by the next wizard screen anyway and is cheap, so it
@@ -156,6 +184,20 @@ export async function readSiteText(domain: string, maxChars = 12_000): Promise<S
     discoverSite(domain).catch(() => null),
   ]);
   fetched.push(...scraped.pages);
+  // The newest posts, for the voice. Their URLs came from the sitemap (newest
+  // first where it is dated), so this is how the site writes now. A page the
+  // scraper already read is not fetched again.
+  const articleUrls = (opts.articles && discovery?.exampleArticleUrls.slice(0, opts.articles)) || [];
+  const articleReads = await Promise.all(articleUrls.map(async (url) => {
+    const held = fetched.find((p) => p.url === url);
+    const page = held ?? (await pageText(url)).page;
+    if (!page) return null;
+    if (!held) fetched.push(page);
+    const text = articleBodyText(page.html);
+    return text.length >= 300 ? { url, text } : null;
+  }));
+  const articles = articleReads.filter((a): a is { url: string; text: string } => a !== null);
+  articleText = articles.map((a) => `SOURCE ${a.url}\n${a.text.slice(0, ARTICLE_CHARS)}`).join("\n\n");
   const rawStatic = scraped.text;
   const base = domain.startsWith("http") ? domain : `https://${domain}`;
   const productPages = await Promise.all(["/pricing", "/features", "/about"].map(async (path) => {
@@ -168,9 +210,10 @@ export async function readSiteText(domain: string, maxChars = 12_000): Promise<S
   if (stat.length >= MIN_CHARS) return done(stat, "static");
 
   if (discovery?.exampleArticleUrls.length) {
-    const read = await Promise.all(discovery.exampleArticleUrls.slice(0, 3).map(pageText));
+    const already = new Set(articles.map((a) => a.url));
+    const read = await Promise.all(discovery.exampleArticleUrls.slice(0, 3).filter((u) => !already.has(u)).map(pageText));
     for (const r of read) if (r.page) fetched.push(r.page);
-    const joined = [stat, ...read.map((r) => r.text)].filter(Boolean).join("\n\n");
+    const joined = [stat, ...articles.map((a) => a.text), ...read.map((r) => r.text)].filter(Boolean).join("\n\n");
     if (joined.length >= MIN_CHARS) return done(joined, "sitemap");
   }
 
