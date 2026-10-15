@@ -62,9 +62,9 @@ describe("explainers", () => {
 
   it("does not tell the review screen that no automatic approval exists", () => {
     // The lead used to read "There is no auto-publish path. Not a hidden one,
-    // not a flag: it does not exist." `workspaces.auto_approve` is that flag,
-    // it is on by default for a workspace created at signup, and README.md
-    // documents it. Guard the correction so it cannot silently come back.
+    // not a flag: it does not exist." `workspaces.auto_approve` is that flag:
+    // off by default (migration 079), turned on per workspace by a member of
+    // the account, and README.md documents it. Guard the correction so it cannot silently come back.
     const review = EXPLAINERS.find((e) => e.id === "review");
     expect(review).toBeDefined();
     const text = review!.sections.flatMap((s) => [s.lead, ...s.bullets]).join("\n");
