@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { TabRow, Icons, StatusPill, Chip, Card, SearchInput } from "@/components/ui";
 import { SetupWizard } from "@/components/dashboard/setup-wizard";
 import { PublishingCadenceForm } from "@/components/dashboard/publishing-cadence-form";
@@ -8,6 +9,8 @@ import { GenerationPaceForm } from "@/components/dashboard/generation-pace-form"
 import { AutoApproveForm } from "@/components/dashboard/auto-approve-form";
 import { LocaleSelector } from "@/components/dashboard/locale-selector";
 import { FirstDraftLive } from "./first-draft-live";
+import { DeleteWorkspaceCard } from "./delete-workspace-card";
+import { deleteConfirmationText } from "@/lib/workspaces/delete";
 import type { Article, Keyword, CalendarEntry, Backlink, VoiceProfile, Workspace, PublishingCadence } from "@/lib/types";
 
 type ClientTabsProps = {
@@ -27,6 +30,8 @@ type ClientTabsProps = {
   now: number;
   /** Whether the workspace has a CMS connection to publish through. */
   hasDestination: boolean;
+  /** Owners and admins may delete the workspace from its Settings tab. */
+  canDelete?: boolean;
 };
 
 const TABS = [
@@ -39,7 +44,7 @@ const TABS = [
   { id: "settings", label: "Settings", icon: <Icons.settings size={14} /> },
 ];
 
-export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, planIncluded, maxPace, now, hasDestination }: ClientTabsProps) {
+export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, planIncluded, maxPace, now, hasDestination, canDelete = false }: ClientTabsProps) {
   const [activeTab, setActiveTab] = useState("overview");
 
   const tabs = TABS.map((t) => {
@@ -61,7 +66,7 @@ export function ClientTabs({ workspace, articles, keywords, calendar, backlinks,
         {activeTab === "voice" && <VoiceTab voice={voice} />}
         {activeTab === "backlinks" && <BacklinksTab backlinks={backlinks} />}
         {activeTab === "settings" && (
-          <SettingsTab workspace={workspace} cadence={cadence} planIncluded={planIncluded} maxPace={maxPace} hasDestination={hasDestination} />
+          <SettingsTab workspace={workspace} cadence={cadence} planIncluded={planIncluded} maxPace={maxPace} hasDestination={hasDestination} canDelete={canDelete} />
         )}
       </div>
     </>
@@ -132,7 +137,7 @@ function OverviewTab({ workspace, articles, keywords, backlinks, voice, now }: {
                 {recentArticles.map((a) => (
                   <tr key={a.id} className="hover:[&>td]:bg-panel">
                     <td className="px-3.5 py-2.5 border-b border-line-soft">
-                      <div className="font-medium truncate">{a.title}</div>
+                      <Link href={`/content/${a.id}`} className="block font-medium truncate hover:text-accent-ink">{a.title}</Link>
                     </td>
                     <td className="px-3.5 py-2.5 border-b border-line-soft font-mono text-xs text-ink-2">{a.keyword}</td>
                     <td className="px-3.5 py-2.5 border-b border-line-soft"><StatusPill status={a.status} /></td>
@@ -194,7 +199,7 @@ function ArticlesTab({ articles }: { articles: Article[] }) {
               return (
                 <tr key={a.id} className="hover:[&>td]:bg-panel">
                   <td className="px-3.5 py-3 border-b border-line-soft" style={{ maxWidth: 0 }}>
-                    <div className="truncate font-medium">{a.title}</div>
+                    <Link href={`/content/${a.id}`} className="block truncate font-medium hover:text-accent-ink">{a.title}</Link>
                     <div className="text-[11px] text-ink-3 mt-0.5">{a.word_count ? `${a.word_count.toLocaleString()} words` : "Draft"}</div>
                   </td>
                   <td className="px-3.5 py-3 border-b border-line-soft font-mono text-xs text-ink-2">{a.keyword}</td>
@@ -487,12 +492,14 @@ function SettingsTab({
   planIncluded,
   maxPace,
   hasDestination,
+  canDelete,
 }: {
   workspace: Workspace;
   cadence: PublishingCadence | null;
   planIncluded: number | null;
   maxPace: number;
   hasDestination: boolean;
+  canDelete: boolean;
 }) {
   return (
     <div className="max-w-lg space-y-4">
@@ -530,6 +537,7 @@ function SettingsTab({
         hasDestination={hasDestination}
       />
       <PublishingCadenceForm workspaceId={workspace.id} cadence={cadence} />
+      {canDelete && <DeleteWorkspaceCard workspaceId={workspace.id} confirmText={deleteConfirmationText(workspace)} />}
     </div>
   );
 }

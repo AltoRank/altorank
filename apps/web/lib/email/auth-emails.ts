@@ -130,7 +130,15 @@ async function tokenHashFor(type: "recovery", email: string): Promise<string | n
  * Create the user (unconfirmed) and email the confirmation link.
  * Returns the new user's id, or throws with a message safe to show.
  */
-export async function sendSignupConfirmation(opts: { email: string; password: string; next?: string }): Promise<string> {
+export async function sendSignupConfirmation(opts: {
+  email: string;
+  password: string;
+  /** A name the person typed themselves (the invite join form). Never one made from a domain. */
+  name?: string;
+  next?: string;
+  /** Set for an invited teammate: the account they are joining. They get no site of their own, so the owner wording would be wrong. */
+  invitedTo?: string;
+}): Promise<string> {
   const admin = createServiceClient();
   // `signup` creates the user when it does not exist and returns the token
   // for the confirmation link; no email leaves Supabase.
@@ -139,21 +147,34 @@ export async function sendSignupConfirmation(opts: { email: string; password: st
   // go here was the account name made from the domain, which every email that
   // names a person then read back as theirs: "You are in, Acme" and "Acme
   // approved this draft" (callback/route.ts, approval-events.ts `actorName`).
-  // With no name those fall back to the address, which is the person.
+  // With no name those fall back to the address, which is the person. A name
+  // the person typed (an invitee on the join form) is theirs, so it is kept.
+  const name = opts.name?.trim();
   const { data, error } = await admin.auth.admin.generateLink({
     type: "signup",
     email: opts.email,
     password: opts.password,
+    ...(name ? { options: { data: { name } } } : {}),
   });
   if (error || !data.user) throw new Error(error?.message ?? "Could not create the account");
 
   const url = authLink("signup", data.properties.hashed_token, opts.next ?? "/dashboard");
   // A new signup has no plan and has not had a trial, so it meets the gate
   // unless billing is off, the gate is switched off, or the address is exempt.
+  // An invitee joins someone else's account and never meets the gate.
   const beforeTrial = billingEnabled && process.env.TRIAL_GATE_DISABLED !== "1" && !trialGateBypassed(opts.email);
-  const { subject, html, footerNote } = renderConfirmSignup(url, opts.email, { beforeTrial });
+  const { subject, html, footerNote } =
+    opts.invitedTo !== undefined
+      ? renderConfirmInvite(url, opts.email, opts.invitedTo)
+      : renderConfirmSignup(url, opts.email, { beforeTrial });
   try {
-    await sendTransactionalEmail(opts.email, subject, html, footerNote, "One click and your account is live.");
+    await sendTransactionalEmail(
+      opts.email,
+      subject,
+      html,
+      footerNote,
+      opts.invitedTo !== undefined ? "Confirm your email to join your team." : "One click and your account is live.",
+    );
   } catch (e) {
     // The user exists by now and the link that would confirm them never left.
     // Left alone, the next attempt is refused as "already registered" and
@@ -205,4 +226,22 @@ export async function sendPasswordReset(email: string): Promise<boolean> {
   const { subject, html, footerNote } = renderPasswordReset(url, email);
   await sendTransactionalEmail(email, subject, html, footerNote, "Set a new password in one click.");
   return true;
+}
+
+/**
+ * The confirmation for a teammate who was invited. They join an account that
+ * already exists, so there is no site of theirs to mention and no trial of
+ * theirs to promise.
+ */
+export function renderConfirmInvite(url: string, email: string, accountName: string) {
+  return {
+    footerNote: `Sent to ${email} because a login was created on AltoRank from an invitation to this address. If that was not you, ignore this email.`,
+    subject: `Confirm your email to join ${accountName} on AltoRank`,
+    html:
+      `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Confirm your email</h1>` +
+      emailParagraph(`Confirm this address to finish joining ${esc(accountName)} on AltoRank. The link signs you in and accepts the invitation.`) +
+      emailButton(url, "Confirm and join") +
+      emailParagraph("The link works once and expires in one hour.") +
+      fallbackLine(url),
+  };
 }

@@ -5,7 +5,7 @@
 # to run the server locally without a Node toolchain:
 #
 #   docker build -f docker/Dockerfile.mcp -t altorank-mcp .
-#   docker run --rm -i -e ALTORANK_API_KEY=ar_... altorank-mcp
+#   docker run --rm -i -e ALTORANK_API_KEY=altorank_live_... altorank-mcp
 #
 # Build from the repo root, not from this directory.
 #

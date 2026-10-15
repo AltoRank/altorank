@@ -38,7 +38,7 @@ export default async function LinkingPage() {
       .order("priority", { ascending: false })
       .order("created_at", { ascending: true })
       .limit(1000),
-    supabase.from("workspaces").select("domain").eq("id", workspaceId).maybeSingle(),
+    supabase.from("workspaces").select("domain, sitemap_url, blog_root_url").eq("id", workspaceId).maybeSingle(),
   ]);
 
   return (
@@ -56,6 +56,7 @@ export default async function LinkingPage() {
         workspaceId={workspaceId}
         sources={(sources ?? []) as LinkSourceRow[]}
         targets={(targets ?? []) as LinkTargetRow[]}
+        defaults={workspace ? { sitemap_url: workspace.sitemap_url as string | null, blog_root_url: workspace.blog_root_url as string | null } : null}
       />
     </>
   );

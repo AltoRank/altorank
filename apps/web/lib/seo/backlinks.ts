@@ -69,15 +69,19 @@ export function parseBacklinkItem(item: DFSBacklinkItem): BacklinkData | null {
  * Fetch backlink data for a domain using DataForSEO's backlinks/live
  * endpoint. Returns one row per referring domain and target.
  */
+/** How many referring domains one check reads, highest authority first. */
+export const BACKLINK_FETCH_LIMIT = 200;
+
 export async function getBacklinksData(
   domain: string,
   options?: { limit?: number },
-): Promise<{ links: BacklinkData[]; total: number | null }> {
+): Promise<{ links: BacklinkData[]; total: number | null; capped: boolean }> {
+  const limit = options?.limit ?? BACKLINK_FETCH_LIMIT;
   const response = await post<BacklinksResult>("/backlinks/backlinks/live", [
     {
       target: domain.replace(/^https?:\/\//, "").replace(/^www\./, ""),
       mode: "one_per_domain",
-      limit: options?.limit ?? 200,
+      limit,
       order_by: ["rank,desc"],
     },
   ]);
@@ -85,9 +89,11 @@ export async function getBacklinksData(
   const links: BacklinkData[] = [];
   const seen = new Set<string>();
   let total: number | null = null;
+  let items = 0;
   for (const task of response.tasks ?? []) {
     for (const result of task.result ?? []) {
       if (typeof result?.total_count === "number") total = result.total_count;
+      items += result?.items?.length ?? 0;
       for (const item of result?.items ?? []) {
         const parsed = item ? parseBacklinkItem(item) : null;
         if (!parsed) continue;
@@ -98,7 +104,9 @@ export async function getBacklinksData(
       }
     }
   }
-  return { links, total };
+  // A full page means the index holds more referring domains than this read:
+  // one that ranked 201st this week is still linking, just not in the list.
+  return { links, total, capped: items >= limit };
 }
 
 export type BacklinkRow = { source_domain: string; target_url: string; status: string };
@@ -121,8 +129,8 @@ export async function syncBacklinks(
   supabase: SupabaseClient,
   workspaceId: string,
   domain: string,
-): Promise<{ fetched: number; total: number | null; lost: number }> {
-  const { links, total } = await getBacklinksData(domain);
+): Promise<{ fetched: number; total: number | null; lost: number; capped: boolean }> {
+  const { links, total, capped } = await getBacklinksData(domain);
 
   const { data: existing } = await supabase
     .from("backlinks")
@@ -150,7 +158,10 @@ export async function syncBacklinks(
     if (error) throw new Error(`Failed to upsert backlinks: ${error.message}`);
   }
 
-  const lost = lostBacklinks((existing ?? []) as BacklinkRow[], links);
+  // Only a complete read can say a link is gone. When the read stopped at the
+  // limit, a stored domain missing from it may simply rank below the cut, so
+  // nothing is marked lost (it stays live until a complete read misses it).
+  const lost = capped ? [] : lostBacklinks((existing ?? []) as BacklinkRow[], links);
   for (const r of lost) {
     await supabase
       .from("backlinks")
@@ -160,5 +171,5 @@ export async function syncBacklinks(
       .eq("target_url", r.target_url);
   }
 
-  return { fetched: links.length, total, lost: lost.length };
+  return { fetched: links.length, total, lost: lost.length, capped };
 }

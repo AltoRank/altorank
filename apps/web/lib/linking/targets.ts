@@ -37,6 +37,13 @@ export interface RankInput {
   /** The keyword the draft is about. Undefined ranks by priority and origin only. */
   keyword?: string | null;
   limit?: number;
+  /**
+   * URLs a person switched off on /linking ("Stop linking to this page").
+   * Dropped from `published` too: the crawl and our own live articles hold
+   * the same pages, and without this a disabled page came straight back as a
+   * fresh entry from either of them.
+   */
+  excluded?: string[];
 }
 
 /** The prompt shows this many; more is a longer list the model reads less of. */
@@ -85,14 +92,15 @@ function wordsFromPath(url: string): string {
 /**
  * Merge, de-duplicate and rank. Pure, so the order is testable.
  */
-export function rankTargets({ pool, published, keyword, limit = DEFAULT_LIMIT }: RankInput): LinkTarget[] {
+export function rankTargets({ pool, published, keyword, limit = DEFAULT_LIMIT, excluded = [] }: RankInput): LinkTarget[] {
   type Scored = { target: LinkTarget; priority: number; relevance: number; origin: number };
   const byUrl = new Map<string, Scored>();
+  const off = new Set(excluded.map(normaliseUrl));
 
   // Pool rows first: they carry what a person set.
   for (const p of pool) {
     const key = normaliseUrl(p.url);
-    if (byUrl.has(key)) continue;
+    if (byUrl.has(key) || off.has(key)) continue;
     const fallback = wordsFromPath(p.url);
     const target: LinkTarget = {
       url: p.url,
@@ -108,6 +116,7 @@ export function rankTargets({ pool, published, keyword, limit = DEFAULT_LIMIT }:
   // none.
   published.forEach((t, i) => {
     const key = normaliseUrl(t.url);
+    if (off.has(key)) return;
     const seen = byUrl.get(key);
     if (seen) {
       if (!seen.target.title || seen.target.title === wordsFromPath(seen.target.url) || seen.target.title === seen.target.url) {
@@ -216,6 +225,23 @@ export async function fetchPoolTargets(
 }
 
 /**
+ * URLs switched off on /linking. Kept out of the prompt by `rankTargets`; still
+ * counted by `fetchKnownPages`, because a disabled page is a page the site has.
+ */
+export async function fetchDisabledTargetUrls(
+  supabase: SupabaseClient,
+  workspaceId: string,
+): Promise<string[]> {
+  const { data } = await supabase
+    .from("link_targets")
+    .select("url")
+    .eq("workspace_id", workspaceId)
+    .eq("enabled", false)
+    .limit(5000);
+  return (data ?? []).map((r) => r.url as string).filter(Boolean);
+}
+
+/**
  * Every URL on the site we can show exists: the whole configured pool
  * (not the ranked slice the prompt sees), every crawled page that answered,
  * and every published article. This is what the unwrap step and the scorer
@@ -267,9 +293,10 @@ export async function getLinkTargetsForPrompt(
   workspaceId: string,
   opts: { keyword?: string | null; limit?: number; excludeArticleId?: string } = {},
 ): Promise<LinkTarget[]> {
-  const [pool, published] = await Promise.all([
+  const [pool, published, excluded] = await Promise.all([
     fetchPoolTargets(supabase, workspaceId),
     fetchPublishedTargets(supabase, workspaceId, opts.excludeArticleId),
+    fetchDisabledTargetUrls(supabase, workspaceId),
   ]);
-  return rankTargets({ pool, published, keyword: opts.keyword, limit: opts.limit });
+  return rankTargets({ pool, published, keyword: opts.keyword, limit: opts.limit, excluded });
 }

@@ -44,7 +44,10 @@ RUN npm run build --workspace=altorank-web
 # ── runtime ───────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS runtime
 WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
+# HOSTNAME: the standalone server listens on $HOSTNAME, and Docker sets that to
+# the container id, so without this it bound to the bridge address only and
+# the healthcheck's localhost request was refused on every install.
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 
 # Never run the server as root.
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001

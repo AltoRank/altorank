@@ -65,6 +65,9 @@ const ALLOWED: Record<string, Partial<Record<Rule, string>>> = {
     "env-file": "writes env files into a temp dir to test that loader",
     "local-stack": "the loader's own unit test; it never connects",
   },
+  "lib/__tests__/self-host-env.test.ts": {
+    "env-file": "reads the committed docker/.env.example template for its key names, never a real env file",
+  },
   "lib/__tests__/network-guard.test.ts": {
     "own-client": "builds a client for a .invalid host to prove the guard stops it",
   },

@@ -47,7 +47,13 @@ export interface PublicCheckData {
   error?: string;
 }
 
-export const APP_URL = "https://app.altorank.co";
+/**
+ * This install's address, for share links and the badge snippet. It was the
+ * hosted app's on every install, so a self-hosted badge sent its visitors to
+ * app.altorank.co. The hosted address is the fallback only when
+ * NEXT_PUBLIC_APP_URL is unset (it is inlined at build time).
+ */
+export const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, "") || "https://app.altorank.co";
 
 export const AGENT_GUIDANCE =
   "Each check is pass, fail or unknown. Unknown means the check did not " +

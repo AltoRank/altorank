@@ -21,3 +21,17 @@ describe("REQUIRED_STRIPE_EVENTS", () => {
     expect([...events].sort()).toEqual([...REQUIRED_STRIPE_EVENTS].sort());
   });
 });
+
+// docs/deploy.md is what a self-hoster subscribes their endpoint from. It once
+// listed six events and left out trial_will_end, the only trigger of the
+// reminder email before a card trial's first charge.
+describe("docs/deploy.md webhook table", () => {
+  const doc = readFileSync(resolve(__dirname, "../../../../../../../docs/deploy.md"), "utf8");
+  const section = doc.slice(doc.indexOf("### 1. The webhook endpoint and its events"), doc.indexOf("### 2. VAT"));
+  const documented = [...section.matchAll(/^\| `([a-z_.]+)` \|/gm)].map((m) => m[1]);
+
+  it("lists exactly REQUIRED_STRIPE_EVENTS", () => {
+    expect(section.length).toBeGreaterThan(0);
+    expect([...documented].sort()).toEqual([...REQUIRED_STRIPE_EVENTS].sort());
+  });
+});

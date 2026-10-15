@@ -71,9 +71,12 @@ Every response, every surface:
    This spends research credits: **ask before calling it**. Results are
    candidates, not saved.
 3. Agree the keyword (and optionally a title) with the human.
-4. `POST /articles/generate { workspace_id, keyword, title?, idempotency_key }`
+4. `POST /articles/generate { workspace_id, keyword, keyword_id?, title?, idempotency_key }`
    - returns 202 with `article_id`, `poll_url`, `editor_url`. Nothing is
-   published. Make up one `idempotency_key` per draft you intend (a UUID is
+   published. When the keyword came from step 1, send its `id` as
+   `keyword_id`: the draft is then briefed from that keyword's row and
+   linked to it. Without it the brief is found by matching the term, which
+   can pick the wrong row when two terms differ only in case or a plural. Make up one `idempotency_key` per draft you intend (a UUID is
    fine; the `Idempotency-Key` header works too) and keep it until the draft
    is in review.
 5. Poll `GET /articles/{id}` every 30-60 s until `status` is `review`

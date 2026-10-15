@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PageHead, Card } from "@/components/ui";
+import { appUrl } from "@/lib/app-url";
 import { SettingsTabs } from "../../settings-tabs";
 
 export const metadata: Metadata = { title: "Agent API" };
@@ -45,10 +46,25 @@ const WRITE_ENDPOINTS: [string, string, string][] = [
 const CODE = "font-mono text-[11.5px] bg-panel border border-line rounded-md px-3 py-2 overflow-x-auto whitespace-pre";
 
 /**
- * The short version of scripts/SKILL.md, for a person deciding whether to hand
- * an agent a key. The full skill file is what the agent itself reads.
+ * This install's own origin. A key works only against the deployment that
+ * issued it, so the examples must not name the hosted app on a self-host.
+ * appUrl() throws in production when NEXT_PUBLIC_APP_URL is unset; a help page
+ * shows a placeholder instead of failing.
+ */
+function origin(): string {
+  try {
+    return appUrl();
+  } catch {
+    return "https://<your-app>";
+  }
+}
+
+/**
+ * The short version of skills/altorank/SKILL.md, for a person deciding whether
+ * to hand an agent a key. The full skill file is what the agent itself reads.
  */
 export default function AgentApiPage() {
+  const base = origin();
   return (
     <>
       <PageHead title="Agent API" subtitle="What a coding agent can do with an API key, and what it cannot." backHref="/settings/api-keys" backLabel="API keys" />
@@ -84,7 +100,7 @@ export default function AgentApiPage() {
               a revoked or expired key answers 401 with instructions for the agent.
             </p>
             <pre className={CODE}>{`curl -H "Authorization: Bearer $ALTORANK_API_KEY" \\
-  https://app.altorank.co/api/agent/v1/auth/whoami`}</pre>
+  ${base}/api/agent/v1/auth/whoami`}</pre>
             {/* Two windows, not one. lib/agent/http.ts puts a second, tighter
                 limiter on mutations, so an agent doing writes is refused at 30
                 while the page claimed 120 (2026-09-06). */}
@@ -133,18 +149,30 @@ export default function AgentApiPage() {
             </table>
           </Card>
 
+          <Card title="MCP">
+            <p className="mb-3">
+              The same tools are served as an MCP server at{" "}
+              <span className="font-mono text-[11.5px]">{base}/api/mcp</span>. Add that URL as a connector
+              in an MCP client. It signs in through this app (OAuth), or takes an API key from this page as a
+              bearer token. In Claude Code:
+            </p>
+            <pre className={CODE}>{`claude mcp add --transport http altorank ${base}/api/mcp`}</pre>
+          </Card>
+
           <Card title="Command line">
             <p className="mb-3">
               The repo ships a thin CLI over the same API. Every command prints the envelope; a failed
               call exits 1.
             </p>
             <pre className={CODE}>{`export ALTORANK_API_KEY=altorank_live_…
+export ALTORANK_BASE_URL=${base}
 npm run cli -- auth whoami
 npm run cli -- keywords list --workspace <id>
 npm run cli -- articles generate --workspace <id> --keyword "…"`}</pre>
             <p className="mt-3 text-ink-3">
-              Agents should read <span className="font-mono">apps/web/scripts/SKILL.md</span> first: it is the
-              preflight, the happy path, and the rules.
+              Agents should read <span className="font-mono">skills/altorank/SKILL.md</span> first: it is the
+              preflight, the happy path, and the rules. <span className="font-mono">npx skills add AltoRank/altorank</span>{" "}
+              installs it where most coding agents look.
             </p>
           </Card>
         </div>

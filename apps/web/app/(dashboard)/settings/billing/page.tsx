@@ -8,6 +8,7 @@ import {
   PLAN_YEARLY_PRICES,
   PLAN_TAGLINES,
   PLAN_FEATURES,
+  billingEnabled,
   type PlanTier,
 } from "@/lib/stripe";
 import { getSimulation } from "@/lib/dev/simulation";
@@ -114,6 +115,16 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
 
   const isActive =
     Boolean(preview?.plan) || Boolean(simulation?.plan) || status === "active" || status === "trialing";
+  // A self-hosted install runs with billing off (no STRIPE_SECRET_KEY): there
+  // is no plan to buy and no bill. This page used to say "No plan" and offer
+  // Choose Managed / Choose Agency, and every one of those clicks failed at
+  // checkout because the install has no Stripe prices. A preview or a
+  // simulation still shows the hosted screens, on purpose. An operator
+  // (ADMIN_EMAILS) is answered "operator" before "self-host" by getQuota, so
+  // billing being off is read directly too: the operator of a self-hosted
+  // install is the one person most likely to open this page.
+  const selfHosted =
+    (quota.reason === "self-host" || !billingEnabled) && !preview?.plan && !simulation?.plan;
   // Owner only, like every other change to what the account pays, and only
   // when there is a subscription to pause or end.
   const showRetention = canManage && isActive && Boolean(account?.stripe_subscription_id);
@@ -141,13 +152,15 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
         subtitle={
           <>
             <StatusPill
-              status={dunning ? "error" : isActive ? "on" : "setup"}
+              status={dunning ? "error" : isActive || selfHosted ? "on" : "setup"}
               label={
                 dunning
                   ? `${PLAN_LABELS[plan]} plan · payment failed`
                   : isActive
                     ? `${PLAN_LABELS[plan]} plan · ${status}`
-                    : "No plan"
+                    : selfHosted
+                      ? "Self-hosted · no plan needed"
+                      : "No plan"
               }
             />
             {(isActive || dunning) && (
@@ -194,6 +207,14 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
             <Card title="Your plan" flush>
               <DunningCard planLabel={PLAN_LABELS[plan]} dunning={dunning} canManage={canManage} />
             </Card>
+          ) : selfHosted ? (
+            <Card title="Your plan">
+              <p className="text-[13px] text-ink-2">
+                This install is self-hosted, with billing turned off. There is no plan to choose and
+                nothing is charged here. Your own accounts with the model and data providers (Anthropic,
+                DataForSEO and any others you set up) bill you directly for what it uses.
+              </p>
+            </Card>
           ) : (
           <Card title={isActive ? "Your plan" : "Choose a plan"} flush>
             <div className="p-[18px]">
@@ -236,6 +257,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
             />
           )}
 
+          {!selfHosted && (
           <Card title="Recent invoices" flush className="scroll-mt-6" id="invoices">
             {invoices && invoices.length > 0 ? (
               <div className="overflow-x-auto">
@@ -311,6 +333,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
               </div>
             )}
           </Card>
+          )}
         </div>
       </div>
     </>

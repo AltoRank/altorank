@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { detectLinks, type DetectResult, type SourceKind } from "@/lib/linking/detect";
+import { DEFAULT_SOURCE_NOTE, isDefaultSource } from "@/lib/linking/default-sources";
 
 // Every action names its workspace and RLS confines it to the caller's
 // account, so a foreign id misses rather than widens. `requireAuth` is for the
@@ -48,6 +49,16 @@ export async function addLinkSource(
 export async function removeLinkSource(workspaceId: string, sourceId: string): Promise<void> {
   await requireAuth();
   const supabase = await createClient();
+  // The sitemap and blog root are written back on the next render
+  // (lib/linking/default-sources.ts), so deleting one would only look like it
+  // worked. The page offers no remove for them; this says why if it is asked.
+  const [{ data: source }, { data: ws }] = await Promise.all([
+    supabase.from("link_sources").select("url").eq("id", sourceId).eq("workspace_id", workspaceId).maybeSingle(),
+    supabase.from("workspaces").select("sitemap_url, blog_root_url").eq("id", workspaceId).maybeSingle(),
+  ]);
+  if (source && isDefaultSource(source as { url: string }, ws as { sitemap_url: string | null; blog_root_url: string | null } | null)) {
+    throw new Error(DEFAULT_SOURCE_NOTE);
+  }
   const { error } = await supabase
     .from("link_sources")
     .delete()

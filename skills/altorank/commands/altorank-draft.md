@@ -8,8 +8,12 @@ optionally a title. Before running, confirm the keyword with the human and make
 up one idempotency key (a UUID) for this draft. Run from `apps/web`:
 
 ```bash
-npm run cli -- articles generate --workspace <id> --keyword "<keyword>" [--title "<title>"] --idempotency-key <uuid>
+npm run cli -- articles generate --workspace <id> --keyword "<keyword>" [--keyword-id <id>] [--title "<title>"] --idempotency-key <uuid>
 ```
+
+When the keyword is one the workspace already tracks (`npm run cli --
+keywords list --workspace <id>`), pass its `id` as `--keyword-id`, so the
+draft is briefed from that keyword and linked to it.
 
 The API answers 202 with `article_id`, `poll_url` and `editor_url`. Poll every
 30-60 seconds until `status` is `review` (about two minutes):
