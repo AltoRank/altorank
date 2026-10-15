@@ -86,6 +86,15 @@ export function parseWorkspaceIds(values: readonly unknown[], allowed: readonly 
 // a narrower picker does not silently take them away. Migration 111 holds the
 // database to the same rule (account_members_guard_roles, invites_guard_scope).
 
+/**
+ * API keys and connected apps (hosted MCP) act for the whole account: the
+ * agent API resolves a key to its account, not to a list of sites. So a
+ * member limited to some sites cannot create one, by hand or by approving a
+ * connector, and the keys page and the consent screen say why.
+ */
+export const LIMITED_NO_KEYS =
+  "API keys and connected apps reach every site on this account, so only a member with access to every site can create one.";
+
 /** NULL is every site. */
 export type SiteScope = readonly string[] | null;
 

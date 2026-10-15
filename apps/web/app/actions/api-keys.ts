@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
+import { isSiteLimited, LIMITED_NO_KEYS } from "@/lib/team/access";
+import { readMemberSites } from "@/lib/team/member-sites";
 import { sessionTrialGate } from "@/lib/billing/body-lock";
 import { trialRefusal } from "@/lib/billing/trial-refusal";
 import { DEFAULT_SCOPES, expiryFromDays, generateApiKey, type ApiKeyScope } from "@/lib/agent/api-keys";
@@ -26,6 +28,11 @@ import { actorName } from "@/lib/email/approval-events";
 //
 // An account that has not started its trial gets no key. No trial means no
 // dashboard, and the agent API is the dashboard by another door.
+//
+// A member limited to some sites gets no key either: a key acts for the whole
+// account (lib/agent/auth.ts resolves it to an account, not to sites), so it
+// would reach the sites they were kept out of. Migration 111 refuses the row
+// in the database as well.
 
 const createSchema = z.object({
   name: z.string().trim().min(1, "Give the key a name.").max(80),
@@ -46,6 +53,7 @@ export type CreatedApiKey = {
 
 export async function createApiKey(formData: FormData): Promise<CreatedApiKey> {
   const { user, accountId } = await requireAuth(["owner", "admin"]);
+  if (isSiteLimited(await readMemberSites(await createClient(), accountId, user.id))) throw new Error(LIMITED_NO_KEYS);
   const parsed = createSchema.parse({
     name: formData.get("name"),
     expires_in_days: formData.get("expires_in_days") ?? "never",

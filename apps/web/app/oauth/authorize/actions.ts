@@ -8,6 +8,9 @@ import { issueCode, parseScopes } from "@/lib/oauth/codes";
 import type { ApiKeyScope } from "@/lib/agent/api-keys";
 import { sessionTrialGate } from "@/lib/billing/body-lock";
 import { trialRefusal } from "@/lib/billing/trial-refusal";
+import { createClient } from "@/lib/supabase/server";
+import { isSiteLimited, LIMITED_NO_KEYS } from "@/lib/team/access";
+import { readMemberSites } from "@/lib/team/member-sites";
 
 // ---------------------------------------------------------------------------
 // The consent decision
@@ -48,6 +51,12 @@ export async function decideAuthorization(formData: FormData): Promise<void> {
   // Owner or admin, same rule as making a key by hand. A member who got this
   // far sees the explanation on the page; the action just refuses.
   const { user, accountId } = await requireAuth(["owner", "admin"]);
+
+  // The token is an API key for the whole account, so a member limited to
+  // some sites cannot approve one (the same rule as Settings → API keys).
+  if (isSiteLimited(await readMemberSites(await createClient(), accountId, user.id))) {
+    redirect(withParams(redirectUri, { error: "access_denied", error_description: LIMITED_NO_KEYS, state }));
+  }
 
   // The code this issues is a key (lib/oauth/codes.ts), and an account that
   // has not started its trial gets none, the same rule as Settings: the agent
