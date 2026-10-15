@@ -53,9 +53,13 @@ export function SettingsForm({ account, quotaReason, canEdit }: SettingsFormProp
       <fieldset disabled={!canEdit} className="grid grid-cols-2 gap-4">
         {/* Account profile */}
         <div className="bg-bg border border-line rounded-lg p-5">
-          <h3 className="text-sm font-semibold mb-1">Workspace profile</h3>
-          <p className="text-[12.5px] text-ink-3 mb-4">How you appear on reports and any page a client sees.</p>
-          <label className={labelClass}>Workspace name</label>
+          {/* Account-wide, not this site's: `updateAccountProfile` writes the
+              accounts row, and every site's report PDF is signed with its
+              name (lib/reports/pdf-template.tsx). Labelled "Workspace" it
+              read as a per-site setting. */}
+          <h3 className="text-sm font-semibold mb-1">Account profile</h3>
+          <p className="text-[12.5px] text-ink-3 mb-4">Shared by every site in this account. Each site&rsquo;s reports are signed with this name.</p>
+          <label className={labelClass}>Account name</label>
           <input name="name" className={inputClass} defaultValue={account.name} />
           <label className={labelClass}>Reporting email</label>
           <input name="report_email" className={inputClass} defaultValue={account.report_email ?? ""} />
