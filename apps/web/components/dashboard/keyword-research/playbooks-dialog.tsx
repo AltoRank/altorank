@@ -14,17 +14,17 @@ interface PlaybooksDialogProps {
 }
 
 /**
- * Seven query shapes that work for nearly every business, filled in from the
- * person's own profile. Each card shows the phrases it would actually search,
- * so the decision is made on the real seeds rather than on a template name.
- */
-/**
  * Said "then schedule the best ones". The footer of the same dialog says
  * nothing is scheduled, and runPlaybook only researches
  * (app/actions/keyword-research.ts): results open in the drawer.
  */
 export const PLAYBOOKS_DESCRIPTION = "Pick a playbook and we'll research the keywords for you. You choose which to keep from the results.";
 
+/**
+ * Seven query shapes that work for nearly every business, filled in from the
+ * person's own profile. Each card shows the phrases it would actually search,
+ * so the decision is made on the real seeds rather than on a template name.
+ */
 export function PlaybooksDialog({ workspaceId, open, onOpenChange, onResult }: PlaybooksDialogProps) {
   const [cards, setCards] = useState<PlaybookCard[] | null>(null);
   const [running, setRunning] = useState<PlaybookId | null>(null);

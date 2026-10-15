@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { EXPLAINERS, MIN_BULLETS, MAX_BULLETS, CANNOT_YET_HEADING } from "@/lib/explainers";
 import { HowItWorks } from "@/components/dashboard/how-it-works";
 import { ADAPTER_TYPES, UPDATABLE_CMS_TYPES } from "@/lib/cms/adapter";
+import { statusChoices } from "@/components/dashboard/article-row-menu";
 
 /**
  * The two rules every explainer is held to (lib/explainers/types.ts), plus a
@@ -119,6 +120,14 @@ describe("explainers", () => {
     const text = review.sections.flatMap((s) => s.bullets).join("\n");
     expect(text).not.toContain("only touches articles that are Approved");
     expect(text).toContain("only picks up articles that are Scheduled with a recorded approval");
+  });
+
+  /** The row menu gained Archived (statusChoices); the gate bullet said "Draft and Review and nothing else". */
+  it("names every status the row menu's Change status offers", () => {
+    const review = EXPLAINERS.find((e) => e.id === "review")!;
+    const text = review.sections.flatMap((s) => s.bullets).join("\n");
+    expect(text).not.toContain("offers Draft and Review and nothing else");
+    for (const s of statusChoices("draft")) expect(text).toContain(s.charAt(0).toUpperCase() + s.slice(1));
   });
 
   it("renders the chip with a stable test id and the heading text in the dialog data", () => {

@@ -23,10 +23,10 @@ export const reviewExplainer: Explainer = {
         "Every draft, whoever or whatever wrote it, waits in Review until someone approves it.",
       bullets: [
         "Drafts from the scheduler, from New article and from a hand-made article all land with the status In review.",
-        "Approve records who approved and when. It is the only path to Approved: the row menu's status change offers Draft and Review and nothing else.",
+        "Approve records who approved and when. It is the only path to Approved: the row menu's status change offers Draft, Review and Archived, never Approved.",
         "Approving re-runs the fact check on what is in the editor at that moment. A bare figure with no source blocks approval until it is sourced or cut; a named but unverified source is left to your judgement, which is what review is for.",
         "Request changes sends an approved article back to Review and clears the sign-off, so it must be approved again before it can go anywhere.",
-        `On the hosted free tier, approving and publishing ask you to choose a plan. Reading, editing and rewriting the month's ${FREE_DRAFTS} free drafts do not.`,
+        `On the hosted free tier, approving and publishing ask you to choose a plan. Reading, editing and rewriting the ${FREE_DRAFTS} free drafts do not.`,
       ],
     },
     {
