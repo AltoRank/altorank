@@ -97,8 +97,11 @@ describe("syncWorkspaceAnalytics and a refused token", () => {
     const r = await syncWorkspaceAnalytics(supabase as unknown as SupabaseClient, integration(), "2026-09-05");
     expect(r.needsReconnect).toBeUndefined();
     expect(r.error).toContain("503");
-    expect(supabase.writes.filter((w) => w.op === "update")).toHaveLength(0);
-    expect(supabase.tables.workspace_integrations.find((x) => x.id === "wi-gsc")).toMatchObject({ needs_reconnect: false });
+    // The failure is recorded as the last sync's error, and nothing more: the
+    // row is not marked for a reconnect, and tomorrow's run tries again.
+    const updates = supabase.writes.filter((w) => w.op === "update");
+    expect(updates.map((w) => Object.keys(w.patch!))).toEqual([["last_sync_error"]]);
+    expect(supabase.tables.workspace_integrations.find((x) => x.id === "wi-gsc")).toMatchObject({ needs_reconnect: false, last_sync_error: expect.stringContaining("503") });
   });
 
   it("does not ask Google again while the row is flagged", async () => {

@@ -189,6 +189,22 @@ export async function latestGscDate(supabase: SupabaseClient, workspaceId: strin
   return ((data?.[0] as { metric_date?: string } | undefined)?.metric_date as string | undefined) ?? null;
 }
 
+/**
+ * The oldest day Search Console has reported for this workspace, or null when
+ * nothing has been synced: where stored history begins, which decides whether
+ * a "previous window" is whole or only its last few days.
+ */
+export async function earliestGscDate(supabase: SupabaseClient, workspaceId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("analytics_metrics")
+    .select("metric_date")
+    .eq("workspace_id", workspaceId)
+    .eq("source", "gsc")
+    .order("metric_date", { ascending: true })
+    .limit(1);
+  return ((data?.[0] as { metric_date?: string } | undefined)?.metric_date as string | undefined) ?? null;
+}
+
 /** When the newest Search Console row was written: the last sync that stored anything. */
 export async function lastGscWriteAt(supabase: SupabaseClient, workspaceId: string): Promise<string | null> {
   const { data } = await supabase

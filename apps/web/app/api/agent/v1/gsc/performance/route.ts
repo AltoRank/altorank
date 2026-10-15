@@ -1,7 +1,7 @@
 import { withAgent } from "@/lib/agent/http";
 import { ok } from "@/lib/agent/envelope";
-import { gscRows, gscScope, NOT_SYNCED_GUIDANCE, syncBlock } from "@/lib/agent/gsc";
-import { queryOpportunities, searchPerformance, topPages } from "@/lib/gsc/analysis";
+import { gscRows, gscScope, measuredIn, notSyncedGuidance, staleNote, syncBlock } from "@/lib/agent/gsc";
+import { queryOpportunities, searchPerformance, topPages, windows } from "@/lib/gsc/analysis";
 
 /**
  * GET /api/agent/v1/gsc/performance?workspace_id=&days=28
@@ -20,12 +20,15 @@ export const GET = withAgent(async (request, ctx) => {
   const performance = searchPerformance(gsc, scope.today, scope.days);
   const pages = topPages(gsc, scope.today, scope.days, 10);
   const opportunities = queryOpportunities(gsc, scope.today, scope.days, 10);
+  const w = windows(scope.today, scope.days);
+  // Rows, or a sync that answered for the window with none: a measured zero.
+  const hasData = performance.hasData || measuredIn(scope, gsc, w.current) || measuredIn(scope, gsc, w.previous);
 
   const data = {
     workspace_id: scope.workspace.id,
     days: scope.days,
     sync: syncBlock(scope.health),
-    has_data: performance.hasData,
+    has_data: hasData,
     previous_window_measured: performance.previousMeasured,
     clicks: performance.clicks,
     impressions: performance.impressions,
@@ -34,13 +37,21 @@ export const GET = withAgent(async (request, ctx) => {
     opportunities,
   };
 
-  if (!performance.hasData) return ok(data, NOT_SYNCED_GUIDANCE);
+  if (!hasData) return ok(data, notSyncedGuidance(scope.health, scope.today));
+  if (performance.impressions.current === 0) {
+    return ok(
+      data,
+      `Search Console reports no impressions for this site over the last ${scope.days} days. That is Google's measured zero, not missing data: say the site is not being shown in Google search yet.` +
+        staleNote(scope.health),
+    );
+  }
   const delta = performance.clicks.changePct;
   const trend = delta === null ? "no previous window to compare against" : `${delta >= 0 ? "+" : ""}${delta}% vs the ${scope.days} days before`;
   return ok(
     data,
     `${performance.clicks.current} clicks and ${performance.impressions.current} impressions over ${scope.days} days (${trend}). ` +
       `opportunities are queries in positions 4-15 with impressions: the next revision is worth more than a new article there. ` +
-      `A null changePct means no baseline, not no change. Never present these as anything but Google's own numbers.`,
+      `A null changePct means no baseline, not no change. Never present these as anything but Google's own numbers.` +
+      staleNote(scope.health),
   );
 });

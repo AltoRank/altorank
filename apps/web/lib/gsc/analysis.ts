@@ -131,6 +131,23 @@ export function inWindow(date: string, w: DateWindow): boolean {
   return date >= w.start && date <= w.end;
 }
 
+/**
+ * The days a site's Search Console history covers, first to last, as the
+ * sync recorded them and the stored rows show (lib/gsc/queries.ts
+ * `coverageOf`). Null ends are "nothing synced".
+ */
+export type GscCoverage = { from: string | null; through: string | null };
+
+/** Every day of the window is inside the covered range. */
+export function coversWindow(c: GscCoverage, w: DateWindow): boolean {
+  return c.from !== null && c.through !== null && c.from <= w.start && c.through >= w.end;
+}
+
+/** Some day of the window is inside the covered range. */
+export function touchesWindow(c: GscCoverage, w: DateWindow): boolean {
+  return c.from !== null && c.through !== null && c.from <= w.end && c.through >= w.start;
+}
+
 export type DayPoint = { date: string; clicks: number; impressions: number };
 
 const n = (v: number | null | undefined) => v ?? 0;

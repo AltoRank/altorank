@@ -19,6 +19,7 @@ import {
   matchGSCSite,
 } from "@/lib/google/gsc";
 import { articleIndex, gscRowsForDay } from "@/lib/gsc/rows";
+import { isoDaysAgo } from "@/lib/gsc/analysis";
 
 export type SyncableIntegration = {
   id: string;
@@ -85,6 +86,63 @@ export async function resolveGscSiteUrl(
     .update({ config: { ...(integration.config ?? {}), gscSiteUrl: match.siteUrl } })
     .eq("id", integration.id);
   return match.siteUrl;
+}
+
+/**
+ * Whether a day Google answered counts as measured. With rows, always: Google
+ * serves final data only. Empty, only once the day is past the publishing lag;
+ * before that, an empty answer is a day Google has not written yet, which is
+ * the trap SYNC_LAG_DAYS exists for, and recording it would turn "not in yet"
+ * into a measured zero.
+ */
+export function dayAnswered(date: string, storedRows: number, now: Date = new Date(), lagDays: number = SYNC_LAG_DAYS): boolean {
+  return storedRows > 0 || date <= isoDaysAgo(now, lagDays);
+}
+
+/**
+ * Record that a Search Console day synced, on the site's gsc row (whichever
+ * row's token drove the sync). Clears a previous failure, and widens the
+ * recorded range (migration 115) to cover the day when Google's answer counts.
+ *
+ * The range columns are written only when the row read back has them, so
+ * this is a no-op for them on a database without 115, not a failed update.
+ */
+async function recordGscSynced(supabase: SupabaseClient, workspaceId: string, date: string, storedRows: number, now: Date): Promise<void> {
+  const { data: row } = await supabase
+    .from("workspace_integrations")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .eq("integration_id", "gsc")
+    .maybeSingle();
+  if (!row) return;
+  const r = row as { id: string; needs_reconnect?: boolean | null; last_sync_error?: string | null; synced_from?: string | null; synced_through?: string | null };
+  // A refused token's message stays until a reconnect clears it.
+  if (r.last_sync_error && !r.needs_reconnect) {
+    await supabase.from("workspace_integrations").update({ last_sync_error: null }).eq("id", r.id);
+  }
+  if (!("synced_through" in r)) return;
+  const patch: Record<string, string> = { last_synced_at: now.toISOString() };
+  if (dayAnswered(date, storedRows, now)) {
+    patch.synced_from = r.synced_from && r.synced_from < date ? r.synced_from : date;
+    patch.synced_through = r.synced_through && r.synced_through > date ? r.synced_through : date;
+  }
+  await supabase.from("workspace_integrations").update(patch).eq("id", r.id);
+}
+
+/**
+ * Record why a Search Console sync failed, on the site's gsc row. A refused
+ * token is markGoogleNeedsReconnect's; this is every other failure - above all
+ * an account with no Search Console property for the domain, which used to be
+ * returned to the cron's log and nowhere else, so the product kept describing
+ * the connection as new.
+ */
+async function recordGscFailed(supabase: SupabaseClient, workspaceId: string, message: string): Promise<void> {
+  await supabase
+    .from("workspace_integrations")
+    .update({ last_sync_error: message.slice(0, 500) })
+    .eq("workspace_id", workspaceId)
+    .eq("integration_id", "gsc")
+    .eq("needs_reconnect", false);
 }
 
 /** Rows per insert request when storing a day of Search Console. */
@@ -177,6 +235,7 @@ export async function syncWorkspaceAnalytics(
         }
         gscCount = rows.length;
       }
+      await recordGscSynced(supabase, ws.id, dateStr, rows.length, new Date());
     }
 
     return { workspaceId: ws.id, ga4: ga4Count, gsc: gscCount, ...(ga4Error ? { error: ga4Error } : {}) };
@@ -190,6 +249,7 @@ export async function syncWorkspaceAnalytics(
       await markGoogleNeedsReconnect(supabase, integration.id, message);
       return { workspaceId: ws.id, ga4: 0, gsc: 0, error: message, needsReconnect: true };
     }
+    if (ws.domain) await recordGscFailed(supabase, ws.id, message);
     return { workspaceId: ws.id, ga4: 0, gsc: 0, error: message };
   }
 }

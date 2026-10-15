@@ -96,7 +96,32 @@ describe("syncHealthFor", () => {
     seed.workspace_integrations = [];
     const { syncHealthFor } = await import("../queries");
     const h = await syncHealthFor(WORKSPACE_A);
-    expect(h).toEqual({ connected: false, connectedAt: null, siteUrl: null, lastSyncAt: null, latestMetricDate: null, needsReconnect: false, lastSyncError: null });
+    expect(h).toEqual({
+      connected: false,
+      connectedAt: null,
+      siteUrl: null,
+      lastSyncAt: null,
+      latestMetricDate: null,
+      earliestMetricDate: null,
+      syncedFrom: null,
+      syncedThrough: null,
+      needsReconnect: false,
+      lastSyncError: null,
+    });
+  });
+  it("reads the recorded sync outcome, and takes the later of it and the newest row write", async () => {
+    seed.workspace_integrations = seed.workspace_integrations.map((r) =>
+      r.workspace_id === WORKSPACE_A ? { ...r, last_synced_at: "2026-09-20T04:00:00Z", synced_from: "2026-08-25", synced_through: "2026-09-17" } : r,
+    );
+    const { syncHealthFor, coverageOf } = await import("../queries");
+    const h = await syncHealthFor(WORKSPACE_A);
+    expect(h.lastSyncAt).toBe("2026-09-20T04:00:00Z");
+    expect(h.syncedFrom).toBe("2026-08-25");
+    expect(h.syncedThrough).toBe("2026-09-17");
+    expect(h.earliestMetricDate).not.toBeNull();
+    const c = coverageOf(h);
+    expect(c.through).toBe("2026-09-17");
+    expect(c.from! <= "2026-08-25").toBe(true);
   });
   it("carries the refused-token flag and its reason off the connection row", async () => {
     seed.workspace_integrations = seed.workspace_integrations.map((r) =>
