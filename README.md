@@ -221,10 +221,12 @@ apply in order. With the [Supabase CLI](https://supabase.com/docs/guides/cli):
 
 ```bash
 cd apps/web
-supabase start      # local Postgres + auth, prints the URL and keys for .env.local
-supabase db push    # applies the migrations
+supabase start      # local Postgres + auth; applies the migrations, prints the URL and keys for .env.local
 ```
 
+`supabase start` applies every migration to the local database on first
+start (`supabase db reset` re-applies them from scratch). Do not run
+`supabase db push` for a local stack: it targets the linked remote project.
 Against a hosted project, `supabase link --project-ref <ref>` first, then
 `supabase db push`. The app will not get far without the migrations: every
 query targets tables they create.

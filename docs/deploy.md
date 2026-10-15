@@ -369,8 +369,7 @@ the wrong engine.
 ```bash
 npm ci
 cd apps/web
-supabase start                       # Docker; prints API URL (…:54331), anon key, service_role key
-supabase db push                     # applies the migrations to the local DB
+supabase start                       # Docker; applies every migration, prints API URL (…:54331), anon key, service_role key
 cd ../..
 cp docker/.env.example apps/web/.env.local
 # fill NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54331 and the two keys from `supabase start`,

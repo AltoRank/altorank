@@ -10,9 +10,10 @@
 # Two supported shapes:
 #
 #   Local, fully self-hosted and free:
-#     cd apps/web && supabase start        # postgres, auth, storage, studio
-#     supabase db push                     # apply the migrations, in order
-#     # take the API URL and anon key it prints, put them in docker/.env
+#     cd apps/web && supabase start        # postgres, auth, storage, studio;
+#                                          # applies every migration on first start
+#     # put the anon and service_role keys it prints in docker/.env, with
+#     # NEXT_PUBLIC_SUPABASE_URL=http://host.docker.internal:54331
 #     docker compose -f docker/compose.yml up --build
 #
 #   Against a hosted Supabase project:
@@ -35,6 +36,10 @@ services:
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
     ports:
       - "${PORT:-3000}:3000"
+    # Docker Desktop provides host.docker.internal; Linux needs it mapped, so a
+    # Supabase running on the host (`supabase start`) is reachable from here.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # Server-side only. docker/.env.example lists which ones are required
       # (the service role key, Anthropic, ENCRYPTION_KEY, CRON_SECRET and
