@@ -500,4 +500,11 @@ describe("nothingWrittenVerdict", () => {
     );
     expect(nothingWrittenVerdict("weekly limit is 0")).toBeNull();
   });
+
+  /** The cron's no-verdict fallback is not a tally, and repeats the pre-buyer-test reasons. */
+  it("quotes nothing when the cron had no verdicts to count", () => {
+    expect(
+      nothingWrittenVerdict("no keyword qualifies: all are covered, already ranking, or flagged as provider noise"),
+    ).toBeNull();
+  });
 });

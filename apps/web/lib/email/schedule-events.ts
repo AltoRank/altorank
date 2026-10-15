@@ -107,9 +107,14 @@ export function nothingWrittenReason(detail: string): NothingWrittenReason | nul
   return null;
 }
 
-/** The verdict tally after "no keyword qualifies: ", for the email to quote. */
+/**
+ * The verdict tally after "no keyword qualifies: ", for the email to quote.
+ * Only a tally (summarizeQualification: "N qualified, ..."). The cron's
+ * fallback when nothing was judged is the old "covered, already ranking, or
+ * provider noise" sentence, which the email no longer gives as a reason.
+ */
 export function nothingWrittenVerdict(detail: string): string | null {
-  const m = /^no keyword qualifies:\s*(.+)$/.exec(detail);
+  const m = /^no keyword qualifies:\s*(\d+ qualified\b.*)$/.exec(detail);
   return m ? m[1].trim() : null;
 }
 
