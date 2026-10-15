@@ -110,6 +110,15 @@ describe("publish failed", () => {
   it("does not say the article is back in review when it is not", () => {
     expect(renderPublishFailed({ ...base, committed: true }).html).not.toContain("back in review");
   });
+
+  /** The cron writes `status = error` (labelled Failed), outside the review queue. */
+  it("says the article is marked Failed with Retry on its page, not back in review", () => {
+    const e = renderPublishFailed(base);
+    expect(e.html).not.toContain("back in review");
+    expect(e.preheader).not.toContain("back in review");
+    expect(e.html).toContain("It is marked Failed in Articles, and Retry is on its page.");
+    expect(e.preheader).toMatch(/^Marked Failed\./);
+  });
 });
 
 describe("refresh proposal ready", () => {

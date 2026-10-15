@@ -283,7 +283,13 @@ export type PublishFailedEmail = {
 /**
  * A failed publish is the one thing in this product that a customer must be
  * told about rather than shown, because the failure is silent everywhere else:
- * the article goes back to review and the calendar simply has a gap.
+ * the article is marked Failed and the calendar simply has a gap.
+ *
+ * Marked Failed, not "back in review": both publish cron phases write
+ * `status = error` on a failed publish (app/api/cron/publish/route.ts), which
+ * the Articles list labels Failed (STATUS_META in lib/constants.ts) and which
+ * is outside the review queue. Retry is on the article's page
+ * (retryPublishCore in lib/publishing/retry.ts).
  *
  * The reason is quoted verbatim. A paraphrase would send somebody looking at
  * the wrong thing, and these messages come from the CMS - "401 Unauthorized",
@@ -294,7 +300,7 @@ export function renderPublishFailed(a: PublishFailedEmail): RenderedEmail {
   const where = a.destination ? ` to ${a.destination}` : "";
   return {
     subject: `Could not publish to ${site}: "${a.title}"`,
-    preheader: `It is back in review. ${a.reason.slice(0, 90)}`,
+    preheader: `Marked Failed. ${a.reason.slice(0, 90)}`,
     footerNote: `Sent because you have access to ${site} on AltoRank.`,
     html:
       eyebrow(site) +
@@ -302,7 +308,7 @@ export function renderPublishFailed(a: PublishFailedEmail): RenderedEmail {
       emailParagraph(
         a.committed
           ? `<strong>${esc(a.title)}</strong> was committed to the repository, but the published address never resolved, so we cannot say where it is.`
-          : `<strong>${esc(a.title)}</strong> could not be published${esc(where)}. The article is back in review; nothing partial was left on the site.`,
+          : `<strong>${esc(a.title)}</strong> could not be published${esc(where)}. It is marked Failed in Articles, and Retry is on its page. Nothing partial was left on the site.`,
       ) +
       emailParagraph(`What the ${a.destination ? esc(a.destination) : "connection"} said:`) +
       quoted(a.reason) +
