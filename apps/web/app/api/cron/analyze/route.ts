@@ -188,7 +188,9 @@ async function run(request: Request) {
           // "analysed" only when the site was actually read. A run that fetched
           // no page is an attempt, and saying so here is the difference between
           // a quiet zero in the cron log and a workspace somebody can chase.
-          status: analysis.firstLook?.reason === "retry" ? "unreadable" : "analysed",
+          // "unmeasured": read, but the demand lookup failed, so the topics
+          // were held and the next slot looks again (lib/audit/first-look.ts).
+          status: analysis.firstLook?.reason === "retry" ? "unreadable" : analysis.firstLook?.reason === "unmeasured" ? "unmeasured" : "analysed",
           attempt: analysis.firstLook?.attempts ?? null,
           headline: analysis.headline,
           readinessScore: analysis.readiness?.score ?? null,
@@ -269,6 +271,7 @@ async function run(request: Request) {
     refused: results.filter((r) => r.status === "skipped").length,
     analysed: results.filter((r) => r.status === "analysed").length,
     unreadable: results.filter((r) => r.status === "unreadable").length,
+    unmeasured: results.filter((r) => r.status === "unmeasured").length,
     errors: results.filter((r) => r.status === "error").length,
     profileMaxAgeDays: PROFILE_MAX_AGE_DAYS,
     profilesRefreshed: refreshed.filter((r) => r.status === "refreshed").length,

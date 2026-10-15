@@ -63,6 +63,14 @@ export interface FirstLookInput {
    * is known, so it is retried on the same terms as a blip.
    */
   failedForGood: boolean;
+  /**
+   * True when the site was read but the search-demand lookup for its topics
+   * failed (a provider error, not a provider answer). The topics it found
+   * were held rather than stored as "nobody searches this", and a look that
+   * could not measure demand has not finished: it is retried on the same
+   * bounded schedule as a crawl that timed out.
+   */
+  demandUnmeasured?: boolean;
 }
 
 export interface FirstLookDecision {
@@ -74,8 +82,11 @@ export interface FirstLookDecision {
    * tried.
    */
   settled: boolean;
-  /** Why, for the cron's result row. */
-  reason: "read" | "unreachable" | "retry" | "gave-up";
+  /**
+   * Why, for the cron's result row. "unmeasured": the site was read, the
+   * demand lookup failed, and the next look is scheduled.
+   */
+  reason: "read" | "unreachable" | "retry" | "unmeasured" | "gave-up";
 }
 
 /**
@@ -86,7 +97,12 @@ export function decideFirstLook(
   maxAttempts: number = MAX_ANALYSIS_ATTEMPTS,
 ): FirstLookDecision {
   const attempts = Math.max(0, input.attemptsBefore) + 1;
-  if (input.pagesCrawled > 0) return { attempts, settled: true, reason: "read" };
+  if (input.pagesCrawled > 0 && !input.demandUnmeasured) return { attempts, settled: true, reason: "read" };
+  if (input.pagesCrawled > 0) {
+    return attempts >= maxAttempts
+      ? { attempts, settled: true, reason: "gave-up" }
+      : { attempts, settled: false, reason: "unmeasured" };
+  }
   if (input.failedForGood) return { attempts, settled: true, reason: "unreachable" };
   if (attempts >= maxAttempts) return { attempts, settled: true, reason: "gave-up" };
   return { attempts, settled: false, reason: "retry" };

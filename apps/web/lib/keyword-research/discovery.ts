@@ -8,7 +8,7 @@ import { diverseSeeds } from "./diversity";
 import { fetchRankedKeywords } from "@/lib/seo/ranked-keywords";
 import { discoverKeywordsFromSeeds, type DiscoveredKeyword } from "@/lib/seo/keywords";
 import { classifyIntent } from "@/lib/seo/intent";
-import { fetchTermMetrics } from "./metrics";
+import { fetchTermMetrics, type TermMetrics } from "./metrics";
 import { isBrandTerm } from "./seeds";
 import { proposeBuyerSeeds, recoverBuyerSeeds, type BuyerSeeds, type SeedableProfile } from "./buyer-seeds";
 import type { SpendSink } from "./buyer-model";
@@ -17,8 +17,19 @@ import { alternativeSeeds } from "./alternative-seeds";
 import { resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
 import { isGeneralPool, isGeneralSite, profileVocabulary, sharesVocabulary, type Screened } from "./hygiene";
 
-/** A candidate plus the rival that holds it, when one does. */
-export type Candidate = DiscoveredKeyword & { competitor?: string };
+/**
+ * A candidate plus the rival that holds it, when one does.
+ *
+ * `measureFailed` is the difference between "the provider has no row for this
+ * phrase" and "we never got an answer": the volume lookup threw (an empty
+ * balance's 402, an outage, a refused spend claim). Both leave `unmeasured`
+ * set, and only the first is evidence about demand. In the US and the UK the
+ * recommender reads a missing volume as nobody searching it (Rule 5 is about
+ * the second case: unknown is not zero), so a failed lookup stored as a null
+ * volume became "no measured demand" on 25 of 25 topics for a real signup on
+ * 2026-10-15, while every DataForSEO call that minute answered 402.
+ */
+export type Candidate = DiscoveredKeyword & { competitor?: string; measureFailed?: boolean };
 
 export { isBrandTerm };
 
@@ -50,6 +61,18 @@ export interface DiscoveryResult {
   expandedSeeds: string[];
   /** What candidate hygiene set aside before any judge (./hygiene.ts). */
   screened: Screened;
+  /**
+   * Set when a volume lookup threw: nothing was measured for `terms`, which
+   * is not the same news as the provider having no row for them. The caller
+   * must not store them as measured-absent (lib/audit/domain-analysis.ts).
+   */
+  demandLookupFailed: { reason: string; terms: string[] } | null;
+  /**
+   * Fresh metrics for `remeasure` terms the caller already holds with no
+   * volume, priced in the same overview call as the seeds. Only terms the
+   * provider answered for are present.
+   */
+  remeasured: Map<string, TermMetrics>;
 }
 
 /** Rivals a first look reads. Each is one `ranked_keywords` task. */
@@ -78,6 +101,13 @@ export async function discoverBuyerKeywords(options: {
   spend?: SpendSink | null;
   /** The site's own crawled terms, for the hygiene vocabulary (./hygiene.ts). */
   vocabulary?: readonly string[];
+  /**
+   * Terms already stored with no volume, priced again in the seeds' overview
+   * call (one call answers 700 terms). A first look that ran while the
+   * provider could not answer left them null; without this a later look
+   * found them already stored and kept the null for good.
+   */
+  remeasure?: readonly string[];
 }): Promise<DiscoveryResult> {
   const languageCode = options.languageCode ?? "en";
   const locale = { languageCode, locationCode: options.locationCode };
@@ -172,6 +202,21 @@ export async function discoverBuyerKeywords(options: {
   let expandedSeeds: string[] = [];
   let seedsPriced = 0;
   let priced: Awaited<ReturnType<typeof fetchTermMetrics>> = new Map();
+  // Terms whose volume lookup threw, and why. A lookup that answered without
+  // a row for a term is not here: that is the provider's answer.
+  const lookupFailed = new Set<string>();
+  let lookupFailure: string | null = null;
+  const priceTerms = async (terms: string[]) => {
+    try {
+      return await fetchTermMetrics(terms, locale);
+    } catch (err) {
+      lookupFailure ??= err instanceof Error ? err.message : String(err);
+      for (const t of terms) lookupFailed.add(t.trim().toLowerCase());
+      return new Map<string, TermMetrics>();
+    }
+  };
+  const remeasure = [...new Set((options.remeasure ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean))];
+  const remeasured = new Map<string, TermMetrics>();
   // What a buyer types when weighing a rival the person named, or one the
   // results pages vetted. Priced with the buyer seeds and judged like them.
   // Every rival the person named, not only the three whose rankings are
@@ -181,8 +226,14 @@ export async function discoverBuyerKeywords(options: {
     [...named.domains.map(host).filter((c) => c && c !== own), ...(options.business?.searchRivals ?? [])],
     languageCode,
   ).filter((t) => !brand(t));
+  if (seeds.seeds.length || rivalPhrases.length || remeasure.length) {
+    priced = await priceTerms([...seeds.seeds, ...rivalPhrases, ...remeasure]);
+    for (const term of remeasure) {
+      const m = priced.get(term);
+      if (m && m.volume != null) remeasured.set(term, m);
+    }
+  }
   if (seeds.seeds.length || rivalPhrases.length) {
-    priced = await fetchTermMetrics([...seeds.seeds, ...rivalPhrases], locale).catch(() => new Map());
     const measured = (terms: string[]) => terms.filter((term) => {
       const m = priced.get(term);
       return m?.volume != null && m.volume >= SEED_MIN_VOLUME && !brand(term);
@@ -193,7 +244,7 @@ export async function discoverBuyerKeywords(options: {
       seedRecovery.attempted = true;
       seedRecovery.seeds = await recoverBuyerSeeds(options.business, seeds.seeds, { spend: options.spend });
       if (seedRecovery.seeds.length) {
-        const recovered = await fetchTermMetrics(seedRecovery.seeds, locale).catch(() => new Map());
+        const recovered = await priceTerms(seedRecovery.seeds);
         for (const [term, metric] of recovered) priced.set(term, metric);
         seedRecovery.measured = measured(seedRecovery.seeds).length;
       }
@@ -224,6 +275,7 @@ export async function discoverBuyerKeywords(options: {
         cpc: m?.cpc ?? 0, competition: 0,
         intent: m?.intent ?? classifyIntent(term, languageCode).intent,
         unmeasured: m?.volume == null,
+        ...(!m && lookupFailed.has(term) ? { measureFailed: true } : {}),
       });
     }
     const tail = expandedSeeds.length
@@ -299,5 +351,10 @@ export async function discoverBuyerKeywords(options: {
   const keptChanged = kept.length > 0 && (rivalsKeptNow.length !== keptAll.length);
   screened.generalRivals = [...general];
 
-  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors, alternativeSeeds: rivalPhrases, competitorsUnresolved: named.unresolved, competitorsFailed, serpRivals: rivalsKeptNow, serpRivalsKept: kept.length > 0 && !keptChanged, serpRivalsVetted: serpRivals.vetted, fromSerpRivals, serpRivalSearchesFailed: serpRivals.failed, seedRecovery, expandedSeeds, screened };
+  // Only the candidates still waiting on a failed lookup: a suggestion that
+  // measured one since is a measurement.
+  const stillFailed = fromIdeas.filter((k) => k.measureFailed).map((k) => k.keyword);
+  const demandLookupFailed = lookupFailure !== null && stillFailed.length ? { reason: lookupFailure, terms: stillFailed } : null;
+
+  return { fromCompetitors, fromIdeas, seeds, seedsPriced, competitorsAsked: competitors, alternativeSeeds: rivalPhrases, competitorsUnresolved: named.unresolved, competitorsFailed, serpRivals: rivalsKeptNow, serpRivalsKept: kept.length > 0 && !keptChanged, serpRivalsVetted: serpRivals.vetted, fromSerpRivals, serpRivalSearchesFailed: serpRivals.failed, seedRecovery, expandedSeeds, screened, demandLookupFailed, remeasured };
 }

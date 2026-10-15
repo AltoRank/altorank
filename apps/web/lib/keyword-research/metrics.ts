@@ -101,7 +101,16 @@ export async function fetchTermMetrics(
     if (process.env.NODE_ENV !== "production") {
       console.info(`[keyword-research] keyword_overview x${Math.min(BATCH, clean.length - i)} terms cost $${response.cost ?? "?"}`);
     }
-    for (const task of response.tasks ?? []) {
+    // No task at all, or none that succeeded, is no answer: not "the index
+    // knows none of these terms". The client throws when every task failed;
+    // this covers an envelope with nothing in it. Thrown, so the caller can
+    // tell a lookup that failed from terms the provider has no row for
+    // (lib/keyword-research/discovery.ts, `measureFailed`).
+    const answered = (response.tasks ?? []).filter((t) => t && (t.status_code === 20000 || t.status_code === undefined));
+    if (!answered.length) {
+      throw new Error(`keyword_overview gave no answer for ${Math.min(BATCH, clean.length - i)} terms`);
+    }
+    for (const task of answered) {
       for (const result of task.result ?? []) {
         const items = Array.isArray(result?.items) ? result.items : [result as unknown as OverviewItem];
         for (const item of items) {
