@@ -25,6 +25,8 @@ type ClientTabsProps = {
   maxPace: number;
   /** Server clock at render; see FirstDraftLive. */
   now: number;
+  /** Whether the workspace has a CMS connection to publish through. */
+  hasDestination: boolean;
 };
 
 const TABS = [
@@ -37,7 +39,7 @@ const TABS = [
   { id: "settings", label: "Settings", icon: <Icons.settings size={14} /> },
 ];
 
-export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, planIncluded, maxPace, now }: ClientTabsProps) {
+export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, planIncluded, maxPace, now, hasDestination }: ClientTabsProps) {
   const [activeTab, setActiveTab] = useState("overview");
 
   const tabs = TABS.map((t) => {
@@ -59,7 +61,7 @@ export function ClientTabs({ workspace, articles, keywords, calendar, backlinks,
         {activeTab === "voice" && <VoiceTab voice={voice} />}
         {activeTab === "backlinks" && <BacklinksTab backlinks={backlinks} />}
         {activeTab === "settings" && (
-          <SettingsTab workspace={workspace} cadence={cadence} planIncluded={planIncluded} maxPace={maxPace} />
+          <SettingsTab workspace={workspace} cadence={cadence} planIncluded={planIncluded} maxPace={maxPace} hasDestination={hasDestination} />
         )}
       </div>
     </>
@@ -484,11 +486,13 @@ function SettingsTab({
   cadence,
   planIncluded,
   maxPace,
+  hasDestination,
 }: {
   workspace: Workspace;
   cadence: PublishingCadence | null;
   planIncluded: number | null;
   maxPace: number;
+  hasDestination: boolean;
 }) {
   return (
     <div className="max-w-lg space-y-4">
@@ -523,6 +527,7 @@ function SettingsTab({
         minSeo={workspace.auto_approve_min_seo ?? 70}
         setByName={null}
         hasCadence={Boolean(cadence?.enabled)}
+        hasDestination={hasDestination}
       />
       <PublishingCadenceForm workspaceId={workspace.id} cadence={cadence} />
     </div>

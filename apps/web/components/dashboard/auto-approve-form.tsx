@@ -34,6 +34,7 @@ export function AutoApproveForm({
   minSeo: initialMinSeo,
   setByName,
   hasCadence,
+  hasDestination,
 }: {
   workspaceId: string;
   enabled: boolean;
@@ -43,11 +44,22 @@ export function AutoApproveForm({
   setByName: string | null;
   /** Whether an enabled publishing schedule exists; without one nothing ships. */
   hasCadence: boolean;
+  /**
+   * Whether the workspace has a CMS connection to publish through. Without
+   * one the rule holds every draft ("no CMS connected", decideAutoApproval in
+   * lib/publishing/auto-approve.ts), so choosing it here would save a mode
+   * that never publishes anything. The option is offered once a CMS is
+   * connected; a rule that is already on can still be switched off.
+   */
+  hasDestination: boolean;
 }) {
   const [enabled, setEnabled] = useState(initialEnabled);
   const [hold, setHold] = useState(initialHold);
   const [minSeo, setMinSeo] = useState(initialMinSeo);
   const [pending, startTransition] = useTransition();
+  // Not offered with no CMS, unless it is already on: then it stays
+  // selectable so the saved state shows, and switching it off still works.
+  const autoBlocked = !hasDestination && !initialEnabled;
 
   function save() {
     startTransition(async () => {
@@ -80,14 +92,30 @@ export function AutoApproveForm({
             <span className="block text-[12.5px] text-ink-3">Nothing publishes until someone clicks Approve.</span>
           </span>
         </label>
-        <label className="flex cursor-pointer items-start gap-3 rounded-md border border-line-soft p-3 text-[13px]">
-          <input type="radio" name="approval-mode" className="mt-0.5" checked={enabled} onChange={() => setEnabled(true)} />
+        <label
+          className={`flex items-start gap-3 rounded-md border border-line-soft p-3 text-[13px] ${autoBlocked ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+        >
+          <input
+            type="radio"
+            name="approval-mode"
+            className="mt-0.5"
+            checked={enabled}
+            disabled={autoBlocked}
+            onChange={() => setEnabled(true)}
+          />
           <span className="flex-1">
             <span className="font-medium text-ink">Publish automatically unless I hold it</span>
             <span className="block text-[12.5px] text-ink-3">
               You get the draft by email when it is written; it ships after the hold below unless you hold it,
               on the workspace&rsquo;s publishing schedule.
             </span>
+            {!hasDestination && (
+              <span className="mt-2 block text-[12.5px] text-ink-2">
+                {initialEnabled
+                  ? "No CMS is connected, so every draft is held instead of published. Connect one in Integrations, or switch to reviewing each draft."
+                  : "Connect a CMS in Integrations first. With nowhere to publish, every draft would be held."}
+              </span>
+            )}
             {enabled && (
               <span className="mt-3 block space-y-2 text-[12.5px]">
                 <span className="flex items-center gap-2">
