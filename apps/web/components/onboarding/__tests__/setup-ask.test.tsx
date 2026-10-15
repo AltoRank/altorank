@@ -62,13 +62,14 @@ describe("setupEnding: the one decision both setup screens read", () => {
     expect(setupEnding(live, GATED)).toBe("nothing-planned");
   });
 
-  it("a run that fell short still offers the retry, and every other ending still asks for the card", () => {
+  it("a run that fell short offers the retry and no card; every other ending still asks for the card", () => {
     const fellShort = stateFromRun({ ...nothingPlannedRow, status: "partial", empty_pool: null, phases: [{ phase: "keywords", status: "failed", detail: "provider down" }] }, null);
     expect(setupEnding(fellShort, GATED)).toBe("retry");
     expect(setupEnding(stateFromRun(nothingPlannedRow, null), { ...GATED, hasArticle: true })).toBe("article");
     expect(setupEnding(stateFromRun(nothingPlannedRow, null), { ...GATED, writing: true })).toBe("writing");
     expect(setupEnding(null, { ...GATED, setupAllowed: false, firstAttempted: true })).toBe("first-failed");
-    for (const ending of ["article", "writing", "retry", "first-failed", "no-article"] as const) expect(asksForCard(ending)).toBe(true);
+    expect(asksForCard("retry")).toBe(false);
+    for (const ending of ["article", "writing", "first-failed", "no-article"] as const) expect(asksForCard(ending)).toBe(true);
   });
 });
 
@@ -87,6 +88,13 @@ describe("SetupAsk", () => {
     expect(html).not.toContain("trial-offer");
     expect(html).not.toMatch(/24 hours|writes to you|our team/i);
     expect(html).toContain("nothing to pay");
+  });
+
+  it("asks for no card beside a retry, and says nothing was charged", () => {
+    const html = text(renderToStaticMarkup(<SetupAsk ending="retry" canBuy followUp />));
+    expect(html).not.toContain("trial-offer");
+    expect(html).not.toMatch(/trial|€/i);
+    expect(html).toContain("Nothing has been charged");
   });
 
   it("renders the card ask otherwise", () => {

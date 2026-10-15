@@ -5,7 +5,7 @@ vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault }));
 import { post, hasDataForSEOCredentials, DataForSEOError } from "../client";
 
 // The shape below is copied from a real 40201 response observed on 2026-08-30
-// when the altorank@supalabs.co account was suspended: the envelope says
+// when the DataForSEO account was suspended: the envelope says
 // 20000 "Ok." while the single task inside carries the failure and a null
 // result. Checking only the envelope turned that into a successful empty SERP.
 

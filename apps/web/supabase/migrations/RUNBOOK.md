@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record) and **109** (approval written by server), each with its section at the end. **101, 104, 105, 106 and 107 go in BEFORE their code is deployed; 097, 099, 100 and 109 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress) and **109** (approval written by server), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100 and 109 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -158,6 +158,7 @@ m(file, applied) as (values
   ('105_publish_log_found_on_site',          exists (select 1 from col where t='publish_log' and c='source') and exists (select 1 from col where t='publish_log' and c='url') and to_regclass('public.publish_log_found_on_site_once') is not null),
   ('106_run_budgets',                        to_regclass('public.run_budgets') is not null and exists (select 1 from col where t='provider_spend' and c='stage') and to_regprocedure('public.run_budget_claim(uuid,text,numeric,numeric)') is not null),
   ('107_fast_first_look',                    exists (select 1 from col where t='onboarding_runs' and c='timings') and exists (select 1 from col where t='articles' and c='body_stream') and not has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT') and to_regclass('public.owed_bodies') is not null and exists (select 1 from pg_trigger where tgname = 'articles_body_stream_server_only')),
+  ('108_first_body_progress',                exists (select 1 from col where t='articles' and c='body_progress') and not has_column_privilege('authenticated', 'public.articles', 'body_progress', 'SELECT') and pg_get_functiondef('public.articles_body_stream_server_only'::regproc) like '%body_progress%'),
   ('109_approval_written_by_server',         exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'articles_guard_approval' and c.relname = 'articles') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'workspaces_guard_auto_approve' and c.relname = 'workspaces'))
 )
 select file, applied from m order by file;
@@ -374,6 +375,7 @@ no code in the repo references either).
 | 105_publish_log_found_on_site.sql | `feat/found-live-receipt` | 003, 094; **applied before its code is merged** | yes | only after its code is reverted: see its section |
 | 106_run_budgets.sql | `fix/first-look-spend-reserve` | 025, 076; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section |
 | 107_fast_first_look.sql | `feat/fast-first-look` | 076, 097, 106; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section (loses the timing tables, any body mid-stream and the record of bodies owed) |
+| 108_first_body_progress.sql | `feat/first-look-ui` | 097, **107**; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section (loses only the progress of a body mid-write) |
 | 109_approval_written_by_server.sql | `fix/approval-integrity` | 002, 003, 005, 013, 079, 094; **its code deployed first** | yes | yes, see its section (a member can again forge an approval over PostgREST) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
@@ -1424,6 +1426,76 @@ Tests: `lib/onboarding/__tests__/first-look-gate.db.test.ts` and
 table refused to a client token, the trigger, the reader's checks, a re-armed
 article buying nothing, a try claimed once, the one top-up). Applied on the
 local stack 2026-10-11, and again with `owed_bodies` and the trigger.
+
+## 108 — the first body's progress, counts only
+
+One column, and the 107 trigger widened to guard it:
+
+- `articles.body_progress` (jsonb): while the first article's body is
+  written behind its gate, the draft route keeps `{v, stage, since,
+  sections, words}` on the row - the stage (`thinking`, `writing`,
+  `finishing`), when it began, the H2s the writer has started and the words
+  so far. Counts only: no heading, no term, no sentence. Written about once a
+  second with `PRETRIAL_FULL_ARTICLE` off (beside `body_stream` every half
+  second with it on); cleared when the body is saved or fails. Read only by
+  `/api/onboard/first-article/progress` (and the reader's route), after the
+  owner and first-article checks, which turn it into the indexes of the
+  outline written so far.
+- No client grant (a column added after 097 has none; revoked again to say
+  so), and `articles_body_stream_server_only` now refuses a client token that
+  sets `body_stream` **or** `body_progress`.
+
+**Apply before its code is deployed - a hard pre-flight, not a nicety.** The
+code reads `body_progress` on every path that shows the first article before
+the trial: the gate's progress route, the owner's reader route and the page's
+first render (`lib/onboarding/first-article-body.ts`), and the draft route
+writes it in the same update as `body_stream`. Deployed without the column:
+
+- the reads retry without it (`readArticleRow`, on Postgres error `42703`)
+  and the draft route sends `body_stream` on its own after the first failed
+  write (logged once, `[internal/draft] body_progress missing`), so the gate
+  still flips to "written" and the owner's reader still streams;
+- what is lost is the outline's ticks and the words so far - the gate shows
+  "Planning each section…" until the body lands.
+
+Before that fallback existed (the first cut of this branch), every read
+errored into a 404, the gate took the 404 as a refusal and stopped polling,
+it never said "written" without a manual reload, and with
+`PRETRIAL_FULL_ARTICLE` on the owner never saw a word: do not deploy an
+older build of this branch without 108. Re-running is a no-op
+(`if not exists`, `create or replace`, drop-then-create for the trigger).
+
+Post-flight (expect `t`, `f`, `t`):
+
+```sql
+select exists (select 1 from information_schema.columns where table_name = 'articles' and column_name = 'body_progress'),
+       has_column_privilege('authenticated', 'public.articles', 'body_progress', 'SELECT'),
+       pg_get_functiondef('public.articles_body_stream_server_only'::regproc) like '%body_progress%';
+```
+
+Rollback, only after the code is reverted. **Trigger first, then the
+column**: 108's trigger fires on `update of body_stream, body_progress`, so
+Postgres records that it depends on `body_progress` and refuses to drop the
+column while it exists (`cannot drop column body_progress ... trigger
+articles_body_stream_server_only depends on column body_progress`). Do not
+reach for `CASCADE`: it drops the `body_stream` guard with it. In one
+transaction (`psql -1`):
+
+```sql
+-- 1. 107's guard back: re-run, from 107_fast_first_look.sql, its
+--    `create or replace function public.articles_body_stream_server_only()`,
+--    its `revoke execute`, and its
+--    `drop trigger if exists articles_body_stream_server_only on public.articles;`
+--    `create trigger articles_body_stream_server_only before insert or update of body_stream ...`
+-- 2. only then:
+alter table public.articles drop column if exists body_progress;
+```
+
+Tests: `lib/onboarding/__tests__/first-look-gate.db.test.ts` (db tier: the
+owner gets counts and none of the text, another account and a non-owner are
+refused, a client token can neither read nor write the column) and
+`app/api/onboard/__tests__/first-article-progress-route.test.ts`. Applied on
+the local stack 2026-10-12.
 
 ## 109 — an approval is written by the server
 

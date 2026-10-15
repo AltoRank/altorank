@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FirstLookReportView } from "./first-look-report";
+import { SetupLoading } from "./setup-loading";
+import { Fold } from "./fold";
 import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
 import { calendarStripDays, dayFromIso, MAX_CHIPS_PER_DAY } from "@/lib/onboarding/calendar-strip";
 import {
@@ -81,6 +83,9 @@ export function OnboardingProgress({
   initialRun = null,
   lockHeld = false,
   preTrial = false,
+  variant = "log",
+  refreshKey = 0,
+  scheduled,
 }: {
   workspaceId: string;
   domain: string;
@@ -105,6 +110,21 @@ export function OnboardingProgress({
    * not readable, so nothing here may point it at a review queue.
    */
   preTrial?: boolean;
+  /**
+   * `log`: the run as a log, a calendar and the site report, as the
+   * dashboard and self-hosted installs show it. `first-look`: while the run
+   * is live, the focused loading screen (./setup-loading.tsx); once it is
+   * over, the same three folded away under the gate.
+   */
+  variant?: "log" | "first-look";
+  /**
+   * Bumped by the gate when the first article's body lands after the run
+   * ended at its outline: the row is read once more, so the log says what
+   * was written instead of "being written now".
+   */
+  refreshKey?: number;
+  /** The scheduled list the gate shows inside the folded calendar. */
+  scheduled?: React.ReactNode;
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState>(() =>
@@ -113,6 +133,9 @@ export function OnboardingProgress({
   // The site report, from the same snapshot the phases come from. Kept apart
   // from the reducer: it is a thing the run measured, not a step of the run.
   const [report, setReport] = useState<FirstLookReport | null>(initialRun?.report ?? null);
+  // When the run started, on this browser's clock: the row's start, moved by
+  // how far the server's clock is from this one (/state answers its `now`).
+  const [startedAt, setStartedAt] = useState<number | null>(() => (initialRun?.run ? Date.parse(initialRun.run.started_at) : null));
   // `onDone` is a fresh arrow on every parent render. Reading it through a ref
   // keeps it out of the hand-off effect's dependencies, so a parent re-render
   // - the workspace list refreshing after creation, for one - cannot re-run
@@ -146,6 +169,10 @@ export function OnboardingProgress({
             failures = 0;
             const next = stateFromRun(snapshot.run, snapshot.article, { stale: snapshot.stale, drafts: snapshot.drafts, held: snapshot.held });
             setState(next);
+            const serverNow = (snapshot as { now?: number }).now;
+            const skew = typeof serverNow === "number" ? serverNow - Date.now() : 0;
+            const started = Date.parse(snapshot.run.started_at);
+            if (Number.isFinite(started)) setStartedAt(started - skew);
             if (snapshot.report) setReport(snapshot.report);
             if (isTerminal(next)) return;
           } else {
@@ -220,11 +247,69 @@ export function OnboardingProgress({
     return () => clearTimeout(t);
   }, [finished, router, workspaceId, nextHref, autoNavigate]);
 
+  // Read the row once more when the gate says the body has landed.
+  useEffect(() => {
+    if (!refreshKey) return;
+    let cancelled = false;
+    fetch(`/api/onboard/state?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" })
+      .then((res) => (res.ok ? (res.json() as Promise<OnboardingRunSnapshot>) : null))
+      .then((snapshot) => {
+        if (cancelled || !snapshot?.run) return;
+        setState(stateFromRun(snapshot.run, snapshot.article, { stale: snapshot.stale, drafts: snapshot.drafts, held: snapshot.held }));
+        if (snapshot.report) setReport(snapshot.report);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey, workspaceId]);
+
   const drafting = state.steps.find((s) => s.phase === "drafting");
   // The closing sentence is derived, not chosen: `ready` is emitted whatever
   // happened, so "Done. Your first month is on the calendar" used to print
   // over an empty calendar and a refused draft.
   const outcome = onboardingOutcome(state, autoNavigate, { preTrial });
+
+  const calendar = (
+    <CalendarStrip
+      planned={state.planned}
+      heldDates={lockHeld ? state.held?.dates ?? [] : []}
+      drafting={drafting?.status === "active"}
+      article={state.article}
+      skipped={drafting?.status === "skipped" || drafting?.status === "failed"}
+      skippedReason={drafting?.status === "skipped" || drafting?.status === "failed" ? drafting.detail : undefined}
+      preTrial={preTrial}
+    />
+  );
+
+  if (variant === "first-look") {
+    if (!finished) {
+      return <SetupLoading domain={domain} state={state} report={report} startedAt={startedAt} log={<RunLog steps={state.steps} />} />;
+    }
+    const scheduledCount = state.planned.length;
+    const heldCount = lockHeld ? state.held?.count ?? 0 : 0;
+    return (
+      <div className="flex flex-col gap-2">
+        <Fold title="How setup went" line={outcome.line} tone={outcome.tone === "error" ? "err" : undefined}>
+          <RunLog steps={state.steps} />
+        </Fold>
+        {scheduledCount > 0 && (
+          <Fold
+            title="Your calendar"
+            line={`${scheduledCount} ${scheduledCount === 1 ? "article" : "articles"} scheduled${heldCount ? `, ${heldCount} more ready for your trial` : ""}`}
+          >
+            {calendar}
+            {scheduled}
+          </Fold>
+        )}
+        {report && (
+          <Fold title="Your site report" line={report.readiness ? `AI readability ${report.readiness.score}/100${report.existingPages?.withIssues ? ` · ${report.existingPages.withIssues} existing ${report.existingPages.withIssues === 1 ? "page" : "pages"} with something to fix` : ""}` : `${domain}, as we read it`}>
+            <FirstLookReportView report={report} domain={domain} live={false} />
+          </Fold>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-5" aria-live="polite">
@@ -239,15 +324,7 @@ export function OnboardingProgress({
 
       <RunLog steps={state.steps} />
 
-      <CalendarStrip
-        planned={state.planned}
-        heldDates={lockHeld ? state.held?.dates ?? [] : []}
-        drafting={drafting?.status === "active"}
-        article={state.article}
-        skipped={drafting?.status === "skipped" || drafting?.status === "failed"}
-        skippedReason={drafting?.status === "skipped" || drafting?.status === "failed" ? drafting.detail : undefined}
-        preTrial={preTrial}
-      />
+      {calendar}
 
       {/* What the first look measured, to read while the draft is written.
           It lands on the poll after the keywords phase, so for most of the
@@ -284,8 +361,11 @@ function RunLog({ steps }: { steps: OnboardingStep[] }) {
     return out;
   }, [steps]);
 
-  // How many lines are fully written, and how much of the next one is.
-  const [done, setDone] = useState(0);
+  // How many lines are fully written, and how much of the next one is. The
+  // lines already there when the log first renders are shown whole: on a
+  // reload of a finished run it retyped every line for seven seconds, as if
+  // setup were running again (recorded 2026-10-12). Only new lines type.
+  const [done, setDone] = useState(() => lines.length);
   const [partial, setPartial] = useState("");
   const box = useRef<HTMLDivElement | null>(null);
   // A phase that rewrites its own detail (active -> done) can leave the
@@ -409,7 +489,10 @@ function CalendarStrip({
   return (
     <div>
       <div className="mb-1.5 text-[11px] uppercase tracking-wide text-ink-3">Your calendar</div>
-      <div className="grid grid-cols-7 gap-1" role="presentation">
+      {/* Seven columns do not fit a phone: the week scrolls inside its own
+          box there rather than squeezing every label to a letter. */}
+      <div className="-mx-1 overflow-x-auto px-1 pb-1">
+      <div className="grid min-w-[504px] grid-cols-7 gap-1" role="presentation">
         {days.map((day) => {
           const d = dayFromIso(day.date);
           const isDraftDay = day.date === draftDate;
@@ -467,6 +550,7 @@ function CalendarStrip({
           );
         })}
       </div>
+      </div>
       {beyond > 0 && lastDate && (
         <p className="m-0 mt-2 text-[12px] text-ink-3">
           and {beyond} more on the calendar through{" "}
@@ -476,7 +560,9 @@ function CalendarStrip({
       {article && (
         <p className="m-0 mt-2 text-[12px] text-ink-2">
           {preTrial ? (
-            "First article is written. The full text opens with the trial."
+            article.outlined
+              ? "First article is outlined and being written. The full text opens with the trial."
+              : "First article is written. The full text opens with the trial."
           ) : (
             <>
               First draft is in your review queue

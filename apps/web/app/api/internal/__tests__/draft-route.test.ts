@@ -408,13 +408,61 @@ describe("a first look's draft, gated on its outline", () => {
     }
     const streams = db.updates.filter((u) => u.table === "articles" && "body_stream" in u.patch).map((u) => u.patch.body_stream);
     expect(streams).toEqual(["<p>first words</p>", null]);
+    // Beside it, the counts: thinking from the gate, writing from the first word, cleared when saved.
+    const progress = db.updates.filter((u) => u.table === "articles" && "body_progress" in u.patch).map((u) => u.patch.body_progress as { stage: string; sections: number; words: number } | null);
+    expect(progress.map((p) => p?.stage ?? null)).toEqual(["thinking", "writing", null]);
+    expect(progress[1]).toMatchObject({ sections: 0, words: 2 });
 
-    // Off: nothing is written, and the writer is not handed a chunk hook at all.
+    // Off: the text is never written, and the counts carry none of it.
     db.updates.length = 0;
-    generateArticle.mockReset().mockImplementation(outlinedThen(async () => ({ articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } })));
+    generateArticle.mockReset().mockImplementation(async (opts: { outline?: { onReady?: (r: unknown) => Promise<void> }; onChunk?: (c: string) => void; onWritten?: () => void }) =>
+      outlinedThen(async () => ({ articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } }))({
+        outline: { onReady: async (r) => { await opts.outline?.onReady?.(r); opts.onChunk?.("<h2>Key takeaways</h2><p>secret words here</p><h2>Next</h2>"); opts.onWritten?.(); } },
+      }),
+    );
     await post(first);
     expect(db.updates.filter((u) => u.table === "articles" && "body_stream" in u.patch)).toEqual([]);
-    expect(generateArticle.mock.calls[0][0]).not.toHaveProperty("onChunk");
+    const counts = db.updates.filter((u) => u.table === "articles" && "body_progress" in u.patch).map((u) => u.patch.body_progress);
+    expect(counts.length).toBeGreaterThan(1);
+    expect(counts.at(-1)).toBeNull();
+    for (const c of counts.slice(0, -1)) expect(Object.keys(c as object).sort()).toEqual(["sections", "since", "stage", "v", "words"]);
+    expect(JSON.stringify(counts)).not.toMatch(/secret|Key takeaways|Next/);
+    expect(counts.map((c) => (c as { stage?: string } | null)?.stage ?? null)).toContain("finishing");
+  });
+
+  it("streams the text on its own when migration 108's column is missing, instead of losing it with the counts", async () => {
+    db.rows("articles").push({ id: "art-9", workspace_id: "ws1", body_stream: null });
+    getQuota.mockResolvedValue(gated(0));
+    // The database as it is with the code deployed before 108: any update
+    // that names body_progress fails whole.
+    const real = (db as unknown as { query: (t: string) => Record<string, unknown> }).query.bind(db);
+    let refused = 0;
+    (db as unknown as { query: (t: string) => Record<string, unknown> }).query = (table: string) => {
+      const q = real(table);
+      if (table !== "articles") return q;
+      const update = q.update as (p: Record<string, unknown>) => unknown;
+      q.update = (p: Record<string, unknown>) => {
+        if (!("body_progress" in p)) return update(p);
+        refused++;
+        return { eq: async () => ({ data: null, error: { code: "42703", message: "column articles.body_progress does not exist" } }) };
+      };
+      return q;
+    };
+    generateArticle.mockImplementation(async (opts: { outline?: { onReady?: (r: unknown) => Promise<void> }; onChunk?: (c: string) => void }) =>
+      outlinedThen(async () => ({ articleId: "art-9", title: OUTLINE.title, wordCount: 1380, factCheck: { verdict: "clean" } }))({
+        outline: { onReady: async (r) => { await opts.outline?.onReady?.(r); await new Promise((r2) => setTimeout(r2, 5)); opts.onChunk?.("<p>first words</p>"); } },
+      }),
+    );
+    process.env.PRETRIAL_FULL_ARTICLE = "1";
+    try {
+      await post(first);
+    } finally {
+      delete process.env.PRETRIAL_FULL_ARTICLE;
+    }
+    // Tried once with the counts, then never again; the text still went out, and was cleared on save.
+    expect(refused).toBe(1);
+    const streams = db.updates.filter((u) => u.table === "articles" && "body_stream" in u.patch).map((u) => u.patch.body_stream);
+    expect(streams).toEqual(["<p>first words</p>", null]);
   });
 
   it("an ungated body that fails is the run's failure, as before", async () => {

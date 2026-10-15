@@ -178,6 +178,12 @@ export interface GenerateArticleOptions {
   relatedKeywords?: RelatedKeyword[];
   /** Streaming hook. Omitted by the unattended path. */
   onChunk?: (html: string) => void;
+  /**
+   * Called once the writer has finished, before the body is checked,
+   * enriched and saved: the first look's gate says the text is written and
+   * being finished (app/api/internal/draft/route.ts).
+   */
+  onWritten?: () => void;
   /** Called once research completes, before the model starts. */
   onResearch?: (research: ArticleResearch) => void;
   /**
@@ -330,7 +336,7 @@ async function writeArticle(
   options: GenerateArticleOptions,
   scope: SpendScope,
 ): Promise<GenerateArticleResult | RefreshArticleResult> {
-  const { supabase, workspaceId, keyword, keywordId, title, autonomous, onChunk, onResearch,
+  const { supabase, workspaceId, keyword, keywordId, title, autonomous, onChunk, onWritten, onResearch,
     selection, articleId, billToAccountId, callerEmail, refreshOf,
   } = options;
 
@@ -1126,6 +1132,11 @@ async function writeArticle(
       }
     });
     if (!articleResult) throw new Error("Generator ended without returning a result");
+    try {
+      onWritten?.();
+    } catch {
+      // A screen's hook; the article does not wait on it.
+    }
 
     // The title fits a results line, and the body does not repeat it as an
     // <h1>: every destination renders the title as the page's H1. Both were

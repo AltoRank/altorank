@@ -41,9 +41,15 @@ describe("GET /api/onboard/first-article", () => {
   });
 
   it("hands over the text the reader allowed, for the signed-in person", async () => {
-    read.mockResolvedValue({ ok: true, articleId: "a1", html: "<p>x</p>", done: false });
+    const progress = { done: false, stage: "writing", stageMs: 1200, sectionsDone: [0], sections: 5, words: 140 };
+    read.mockResolvedValue({ ok: true, articleId: "a1", html: "<p>x</p>", done: false, progress });
     const res = await get("?workspaceId=ws1");
-    expect(await res.json()).toEqual({ articleId: "a1", html: "<p>x</p>", done: false });
+    expect(await res.json()).toEqual({
+      articleId: "a1",
+      html: "<p>x</p>",
+      done: false,
+      progress: { stage: "writing", stageMs: 1200, sectionsDone: [0], sections: 5, words: 140 },
+    });
     expect(read).toHaveBeenCalledWith(expect.anything(), "u1", "ws1");
   });
 });

@@ -145,7 +145,9 @@ export function readableHtml(html: string): string {
   const input = html
     .replace(/^\s*```(?:html)?\s*/i, "")
     // A tag the writer is half-way through: shown once it is whole.
-    .replace(/<[^>]*$/, "");
+    .replace(/<[^>]*$/, "")
+    // So is a link placeholder: "{{internal-li" would flash as raw text.
+    .replace(/\{\{[^}]*\}?$/, "");
   const lower = input.toLowerCase();
   let out = "";
   const open: string[] = [];
@@ -180,5 +182,21 @@ export function readableHtml(html: string): string {
   }
   if (last < input.length) text(input.slice(last));
   while (open.length) out += `</${open.pop()}>`;
-  return out.trim();
+  return withoutContents(out.trim());
+}
+
+/**
+ * The finished article's table of contents, taken out for the reader.
+ *
+ * Enrichment adds it after the body is written (lib/content/enrich/toc.ts),
+ * so in the reader it arrived as a block inserted near the top the moment
+ * the stream turned into the saved article, shifting everything under a
+ * person mid-read - and the same headings were then on screen three times
+ * (recorded 2026-10-12). It is a list of in-page links and nothing else,
+ * with its short label before it; the article's own H2s are the contents.
+ */
+const CONTENTS = /(?:<(p|h[2-6])>(?:<(?:strong|b)>)?[^<]{1,40}(?:<\/(?:strong|b)>)?<\/\1>\s*)?<ul>(?:\s*<li>\s*(?:<p>)?\s*<a href="#[^"]*"[^>]*>[^<]*<\/a>\s*(?:<\/p>)?\s*<\/li>)+\s*<\/ul>/g;
+
+export function withoutContents(html: string): string {
+  return html.replace(CONTENTS, "").replace(/\n{3,}/g, "\n\n");
 }

@@ -18,7 +18,7 @@ import { PRE_TRIAL_DRAFTS } from "@/lib/billing/trial-hold";
 import { OPEN_SETUP, type PreTrialSetup } from "@/lib/onboarding/setup-retry";
 import { followUpPromised } from "@/lib/auth/operators";
 import { TrackStep } from "@/components/onboarding/track-step";
-import { fullArticleOn } from "@/lib/onboarding/first-article-body";
+import { fullArticleOn, readFirstArticleBody } from "@/lib/onboarding/first-article-body";
 
 export const metadata: Metadata = { title: "Set up your site" };
 
@@ -134,6 +134,17 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
         loadFirstLookReport(supabase, workspace.id).catch(() => null),
       ])
     : [[], null];
+  // The switch on, for the owner, and the article already written: its text
+  // is read here, through the same checks the reader's route makes, so a
+  // reload shows it at once instead of an empty "Being written..." for half
+  // a second before the page jumps 3,000px (recorded 2026-10-12).
+  const fullArticle = preTrial && fullArticleOn() && auth.role === "owner";
+  const initialHtml =
+    fullArticle && firstArticle?.article?.state === "written"
+      ? await readFirstArticleBody(supabase, auth.user.id, workspace.id)
+          .then((body) => (body.ok && body.done ? body.html : null))
+          .catch(() => null)
+      : null;
   // What the trial would open, beside the locked month: read only on the gate.
   const gateHeld = gateShown && gatePlan.length
     ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, gatePlan.map((p) => p.date)).catch(() => null)
@@ -165,7 +176,8 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       firstArticleWriting={firstArticle?.writing ?? false}
       // The switch, and only for the owner: the reader's route checks both
       // again, and the article, before it hands over a word.
-      fullArticle={preTrial && fullArticleOn() && auth.role === "owner"}
+      fullArticle={fullArticle}
+      initialHtml={initialHtml}
       preTrialSetup={preTrialSetup}
       initialProfile={(workspace.business_profile as BusinessProfile | null) ?? null}
       initialSite={{

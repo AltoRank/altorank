@@ -68,6 +68,8 @@ export function SetupAsk({
   followUp: boolean;
   returnTo?: string;
 }) {
+  // A retry: the button is above, and there is nothing to ask for.
+  if (ending === "retry") return <p className="m-0 text-[12.5px] text-ink-2">Nothing has been charged, and running setup again costs nothing.</p>;
   if (!asksForCard(ending)) return <NothingPlannedNote followUp={followUp} />;
   // The gate is the card ask: shown is when this renders it (onboarding.step).
   return (
