@@ -2,26 +2,30 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { Button } from "@/components/ui";
-import { updateAccountProfile, rotateApiKey } from "@/app/actions/settings";
+import { updateAccountProfile } from "@/app/actions/settings";
 import type { Account } from "@/lib/types";
 
 interface SettingsFormProps {
   account: Account;
   /** Why the account's quota is what it is; decides the attribution line. */
   quotaReason: "self-host" | "operator" | "plan" | "no-plan";
+  /**
+   * Owner or admin. Only they may change account settings
+   * (`updateAccountProfile`); an editor sees the values read-only instead of
+   * a Save that always failed with no message.
+   */
+  canEdit: boolean;
 }
 
-export function SettingsForm({ account, quotaReason }: SettingsFormProps) {
+export function SettingsForm({ account, quotaReason, canEdit }: SettingsFormProps) {
   // Only the hosted free tier publishes with the line. See
   // lib/publishing/attribution.ts for why the rule lives on the plan and not
   // on a toggle.
   const attributionApplies = quotaReason === "no-plan";
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const [apiKey, setApiKey] = useState(account.api_key ?? "");
-  const [copied, setCopied] = useState(false);
-  const [rotating, setRotating] = useState(false);
   const [accentColor, setAccentColor] = useState(account.accent_color ?? "#5763EC");
 
   const COLORS = ["#5763EC", "#D97757", "#0F766E", "#111827"];
@@ -31,26 +35,14 @@ export function SettingsForm({ account, quotaReason }: SettingsFormProps) {
     const fd = new FormData(e.currentTarget);
     fd.set("accent_color", accentColor);
     startTransition(async () => {
-      await updateAccountProfile(fd);
-      router.refresh();
+      try {
+        await updateAccountProfile(fd);
+        toast.success("Saved");
+        router.refresh();
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Could not save");
+      }
     });
-  }
-
-  async function handleCopy() {
-    await navigator.clipboard.writeText(apiKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }
-
-  async function handleRotate() {
-    if (!confirm("Rotate API key? The current key will stop working immediately.")) return;
-    setRotating(true);
-    try {
-      const newKey = await rotateApiKey();
-      setApiKey(newKey);
-    } finally {
-      setRotating(false);
-    }
   }
 
   const inputClass = "w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] mb-3.5 focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft";
@@ -58,12 +50,16 @@ export function SettingsForm({ account, quotaReason }: SettingsFormProps) {
 
   return (
     <form onSubmit={handleSave}>
-      <div className="grid grid-cols-2 gap-4">
+      <fieldset disabled={!canEdit} className="grid grid-cols-2 gap-4">
         {/* Account profile */}
         <div className="bg-bg border border-line rounded-lg p-5">
-          <h3 className="text-sm font-semibold mb-1">Workspace profile</h3>
-          <p className="text-[12.5px] text-ink-3 mb-4">How you appear on reports and any page a client sees.</p>
-          <label className={labelClass}>Workspace name</label>
+          {/* Account-wide, not this site's: `updateAccountProfile` writes the
+              accounts row, and every site's report PDF is signed with its
+              name (lib/reports/pdf-template.tsx). Labelled "Workspace" it
+              read as a per-site setting. */}
+          <h3 className="text-sm font-semibold mb-1">Account profile</h3>
+          <p className="text-[12.5px] text-ink-3 mb-4">Shared by every site in this account. Each site&rsquo;s reports are signed with this name.</p>
+          <label className={labelClass}>Account name</label>
           <input name="name" className={inputClass} defaultValue={account.name} />
           <label className={labelClass}>Reporting email</label>
           <input name="report_email" className={inputClass} defaultValue={account.report_email ?? ""} />
@@ -122,32 +118,27 @@ export function SettingsForm({ account, quotaReason }: SettingsFormProps) {
           </div>
         </div>
 
-        {/* API access */}
-        <div className="bg-bg border border-line rounded-lg p-5 col-span-2">
-          <h3 className="text-sm font-semibold mb-1">Legacy API key</h3>
-          <p className="text-[12.5px] text-ink-3 mb-4">
-            Deprecated. Agents and scripts should use a scoped key from the{" "}
-            <a href="/settings/api-keys" className="underline underline-offset-2 hover:text-ink">API keys</a> tab;
-            those can expire and be revoked one at a time.
-          </p>
-          <div className="flex gap-2.5 items-center px-3 py-2.5 bg-panel border border-line rounded-lg">
-            <span className="font-mono text-xs flex-1 select-all">{apiKey}</span>
-            <Button type="button" size="sm" onClick={handleRotate} disabled={rotating}>
-              {rotating ? "Rotating…" : "Rotate"}
-            </Button>
-            <Button type="button" size="sm" onClick={handleCopy}>
-              {copied ? "Copied!" : "Copy"}
-            </Button>
-          </div>
-        </div>
+        {/* The legacy single account key and its Rotate button are gone:
+            Rotate was refused by the database for everyone (the key is a
+            server-written column), a new account had no key to show, and
+            scoped keys on the API keys tab replace it. */}
+        <p className="col-span-2 text-[12.5px] text-ink-3">
+          API access is on the{" "}
+          <a href="/settings/api-keys" className="underline underline-offset-2 hover:text-ink">API keys</a> tab:
+          scoped keys that can expire and be revoked one at a time.
+        </p>
 
         {/* Save */}
         <div className="col-span-2 flex justify-end">
-          <Button type="submit" variant="accent" disabled={isPending}>
-            {isPending ? "Saving…" : "Save changes"}
-          </Button>
+          {canEdit ? (
+            <Button type="submit" variant="accent" disabled={isPending}>
+              {isPending ? "Saving…" : "Save changes"}
+            </Button>
+          ) : (
+            <p className="text-[12.5px] text-ink-3">Only an owner or admin can change these.</p>
+          )}
         </div>
-      </div>
+      </fieldset>
     </form>
   );
 }

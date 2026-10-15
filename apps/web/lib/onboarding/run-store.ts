@@ -15,6 +15,7 @@ import { loadFirstLookReport } from "./first-look-report";
 import { heldTopics } from "./plan";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { planHoldApplies } from "@/lib/billing/trial-hold";
+import { accountTrialGate } from "@/lib/billing/body-lock";
 import { followUpPromised } from "@/lib/auth/operators";
 import { providerRetryAllowed } from "./provider-retry-gate";
 import type { EmptyPool, OnboardingHeld } from "./events";
@@ -539,7 +540,17 @@ async function announceOutcome(
     const facts = setupFailedFacts(status, steps, reason, opts.emptyPool ?? null);
     // Promised only when the overnight retry will actually be allowed to run.
     const retryTonight = facts.provider ? await providerRetryAllowed(supabase, scope.accountId, scope.workspaceId).catch(() => false) : false;
-    await notifySetupFailed(supabase, { accountId: scope.accountId, workspaceId: scope.workspaceId }, { domain: (ws?.domain as string | null) ?? null, ...facts, retryTonight });
+    // Before the trial only /connect opens (lib/billing/gate-paths.ts), so
+    // the email must not send the person to Keywords. Asked as nobody, the
+    // way the other account mails ask; unreadable means the ordinary copy.
+    const beforeTrial = await accountTrialGate(supabase, scope.accountId, null)
+      .then((g) => g === "gated")
+      .catch(() => false);
+    await notifySetupFailed(
+      supabase,
+      { accountId: scope.accountId, workspaceId: scope.workspaceId },
+      { domain: (ws?.domain as string | null) ?? null, ...facts, retryTonight, beforeTrial },
+    );
   } catch (err) {
     // Never let the email take the run down with it: the row is already
     // final and the event above is already recorded.

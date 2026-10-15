@@ -45,4 +45,13 @@ describe("the keyword step's own copy", () => {
     expect(step("add-keywords").description).not.toMatch(/SERP position for every keyword/i);
     expect(step("add-keywords").description).toMatch(/nightly rank tracker/i);
   });
+
+  /** The button reads "Add keyword", and a hand-typed term has no volume or difficulty. */
+  it("names the real button and does not say a typed keyword's volume is recorded", () => {
+    const s = step("add-keywords");
+    expect(s.actionLabel).toContain('"Add keyword"');
+    expect(s.actionLabel).not.toContain("Find new keywords");
+    expect(s.completionMessageUnscheduled).not.toMatch(/Volume and difficulty are recorded/);
+    expect(s.description).not.toMatch(/for every keyword/);
+  });
 });

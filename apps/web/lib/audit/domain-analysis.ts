@@ -929,15 +929,20 @@ export async function analyseDomain(options: {
         //
         // Judge all candidates in bounded batches, strongest lexical matches
         // first. Missing decisions cannot enter the automatic writing pool.
+        //
+        // Best first, ties by the phrase, so a first look's budget that ends
+        // part-way leaves the weakest phrases unjudged rather than the end of
+        // the alphabet (`prioritized`), and the same pool is cut the same way
+        // on every run.
         const toJudge = [...byTerm.values()]
-          .sort((a, b) => rel(b.k.keyword) - rel(a.k.keyword))
+          .sort((a, b) => rel(b.k.keyword) - rel(a.k.keyword) || a.k.keyword.trim().toLowerCase().localeCompare(b.k.keyword.trim().toLowerCase()))
           .map((c) => c.k.keyword);
         // Asked in the market's language, exactly as qualification asks it
         // (judgeBuyerFitFor), so qualification can reuse these verdicts
         // instead of buying each kept term's answer a second time.
         // Its own stage in a first look's spend (lib/billing/spend-scope.ts):
         // the buyer test is the dearest model pass of discovery.
-        const fit = await timed("buyer_fit", () => withStage("buyer_fit", () => judgeBuyerFit(business ? { ...business, language: languageCodeOf(options.locale) } : business, toJudge, { spend })));
+        const fit = await timed("buyer_fit", () => withStage("buyer_fit", () => judgeBuyerFit(business ? { ...business, language: languageCodeOf(options.locale) } : business, toJudge, { spend, prioritized: true })));
         const refusedByBuyerTest = [...fit.verdicts.values()].filter((v) => !v.keep).length;
 
         // Collapse phrasings across ALL three sources, not just the seeded one.

@@ -254,9 +254,14 @@ export function firstLookTermUsd(twoReads: boolean): number {
   return page + firstLookReadUsd() * (twoReads ? 2 : 1);
 }
 
-/** One judge read, as `firstLookTermUsd` counts it. */
+/**
+ * One judge read, as `firstLookTermUsd` counts it: at the floor a read is
+ * granted at (OPPORTUNITY_MIN_TOKENS), which is what the room must hold for
+ * the read to be asked at all. Counted at its ceiling, a term needed $0.04 of
+ * room to start for about $0.015 of reads.
+ */
 export function firstLookReadUsd(): number {
-  return anthropicEstimate(anthropicModel("decision"), JUDGE_PROMPT_CHARS, OPPORTUNITY_MAX_TOKENS);
+  return anthropicEstimate(anthropicModel("decision"), JUDGE_PROMPT_CHARS, OPPORTUNITY_MIN_TOKENS);
 }
 
 /** Paid work is bounded and cached. A missing response remains pending. */
@@ -395,6 +400,9 @@ export async function qualifyOpportunities(
       active -= 1;
       await new Promise<void>((r) => waiters.push(r));
       active += 1;
+      // Another term met the budget's real end while this one waited: the
+      // stage is over, and this term is left not judged without asking.
+      if (stopped) return got;
       got = await call();
       if (!got.refused) wake();
     }
@@ -646,6 +654,12 @@ export function opportunitySchema(): Record<string, unknown> {
  * tokens. 800 is three times that.
  */
 export const OPPORTUNITY_MAX_TOKENS = 800;
+/**
+ * The least output a first look's judge read is sent with when the room is
+ * short of its ceiling (lib/keyword-research/buyer-model.ts `minTokens`):
+ * half the ceiling, still half again over the largest answer seen.
+ */
+export const OPPORTUNITY_MIN_TOKENS = 400;
 
 /** Business names the navigational rule should recognise in a phrase. */
 function namedBusinesses(business: FitProfile | null): string[] {
@@ -690,7 +704,7 @@ export function askResultsJudge(
   input: { term: string; context: OpportunityContext; verdict: Extract<FitVerdict, { keep: true }>; organic: ReadonlyArray<ResultsPageEntry> },
   options: { spend?: SpendSink | null; ask?: AskModel; today?: string } = {},
 ): Promise<string | null> {
-  return (options.ask ?? askStructured)("keyword-research/opportunity", opportunityPrompt({ ...input, today: options.today }), { maxTokens: OPPORTUNITY_MAX_TOKENS, spend: options.spend ?? null, tier: "decision", schema: opportunitySchema() });
+  return (options.ask ?? askStructured)("keyword-research/opportunity", opportunityPrompt({ ...input, today: options.today }), { maxTokens: OPPORTUNITY_MAX_TOKENS, minTokens: OPPORTUNITY_MIN_TOKENS, spend: options.spend ?? null, tier: "decision", schema: opportunitySchema() });
 }
 
 /**

@@ -1499,6 +1499,14 @@ async function writeArticle(
         // Always `review`, never `approved` or `scheduled`. The approval gate is
         // the point: a machine may write, a human decides whether it ships.
         status: "review",
+        // A new text carries no approval. A regenerate over an article whose
+        // publish failed (status `error`, approval kept for the retry) used
+        // to leave that approval on the new draft, under a person who never
+        // read it.
+        approved_by: null,
+        approved_at: null,
+        approval_kind: null,
+        scheduled_at: null,
         updated_at: new Date().toISOString(),
       }))
       .eq("id", article.id));

@@ -3,6 +3,7 @@ import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { generateReport } from "@/lib/reports/generate";
 import { reportRecipients } from "@/lib/reports/recipients";
+import { dayAfter } from "@/lib/reports/period";
 import { sendMonthlyReportEmails } from "@/lib/email/report-email";
 import { describeSendOutcome } from "@/lib/email/send-once";
 import { getQuota, entitledToScheduledWork } from "@/lib/billing/quota";
@@ -131,15 +132,17 @@ async function run(request: Request) {
 
         if (recipients.length) {
           // Get quick stats for the email
-          const { count: articleCount } = await supabase
+          // `published_at` is a timestamp: `.lte(endDate)` stopped at
+          // midnight at the start of the last day (see dayAfter).
+          const { count: articleCount, error: articleCountError } = await supabase
             .from("articles")
             .select("id", { count: "exact", head: true })
             .eq("workspace_id", ws.id)
             .eq("status", "live")
             .gte("published_at", startDate)
-            .lte("published_at", endDate);
+            .lt("published_at", dayAfter(endDate));
 
-          const { count: keywordCount } = await supabase
+          const { count: keywordCount, error: keywordCountError } = await supabase
             .from("keywords")
             .select("id", { count: "exact", head: true })
             .eq("workspace_id", ws.id);
@@ -158,9 +161,11 @@ async function run(request: Request) {
               accountName: accountInfo.name,
               period: `${startDate} to ${endDate}`,
               reportUrl: url,
+              // A count that could not be read is unknown, not zero: the
+              // email shows a dash, as it says it will.
               highlights: {
-                articlesPublished: articleCount ?? 0,
-                keywordsTracked: keywordCount ?? 0,
+                articlesPublished: articleCountError ? null : (articleCount ?? 0),
+                keywordsTracked: keywordCountError ? null : (keywordCount ?? 0),
               },
             },
             { accountId: ws.account_id, workspaceId: ws.id },

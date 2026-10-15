@@ -1,0 +1,15 @@
+{
+  "name": "altorank",
+  "description": "AltoRank plugins for Claude Code and Claude",
+  "owner": {
+    "name": "AltoRank",
+    "email": "hello@altorank.co"
+  },
+  "plugins": [
+    {
+      "name": "altorank",
+      "source": "./plugins/altorank",
+      "description": "Agent-readiness audits, Search Console, keyword research and SEO drafts into a human review queue."
+    }
+  ]
+}

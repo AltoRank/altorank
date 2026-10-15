@@ -71,9 +71,12 @@ Every response, every surface:
    This spends research credits: **ask before calling it**. Results are
    candidates, not saved.
 3. Agree the keyword (and optionally a title) with the human.
-4. `POST /articles/generate { workspace_id, keyword, title?, idempotency_key }`
+4. `POST /articles/generate { workspace_id, keyword, keyword_id?, title?, idempotency_key }`
    - returns 202 with `article_id`, `poll_url`, `editor_url`. Nothing is
-   published. Make up one `idempotency_key` per draft you intend (a UUID is
+   published. When the keyword came from step 1, send its `id` as
+   `keyword_id`: the draft is then briefed from that keyword's row and
+   linked to it. Without it the brief is found by matching the term, which
+   can pick the wrong row when two terms differ only in case or a plural. Make up one `idempotency_key` per draft you intend (a UUID is
    fine; the `Idempotency-Key` header works too) and keep it until the draft
    is in review.
 5. Poll `GET /articles/{id}` every 30-60 s until `status` is `review`
@@ -97,7 +100,7 @@ describe what happened to a person.
 | Move planned keywords | `POST /keywords/bulk-reschedule` `{ workspace_id, items:[{keyword_id,date}] }` or `{ workspace_id, keyword_ids, shift_days }` | Only unwritten planned entries move; `planned_for` on `GET /keywords` shows the current day. Per-keyword outcomes, never all-or-nothing. |
 | Take keywords off the plan | `POST /keywords/bulk-remove` `{ workspace_id, keyword_ids }` | Same as the planner's Remove: the calendar entry goes, the keyword stays tracked and is marked excluded. Nothing is deleted. |
 | Export keywords | `GET /keywords/export?workspace_id=&format=csv\|json` | `csv` returns a file, not an envelope. Empty cells are unmeasured, never 0. |
-| Find-and-replace in a draft | `POST /articles/{id}/replace` `{ find, replace, match_case?, whole_word?, preview_only? }` | **`preview_only` defaults to true.** Show the human the hits (before → after); only then resend with `preview_only: false`. Status never changes. Refused on approved, scheduled, live. |
+| Find-and-replace in a draft | `POST /articles/{id}/replace` `{ find, replace, match_case?, whole_word?, preview_only? }` | **`preview_only` defaults to true.** Show the human the hits (before → after); only then resend with `preview_only: false`. Status never changes. Refused on approved, scheduled, live, and on an approved article whose publish failed (status `error`). |
 | …across drafts | `POST /articles/bulk-replace` `{ workspace_id, find, replace, article_ids?, preview_only? }` | Capped at 10 articles. Approved/scheduled/live are skipped with the reason, never edited. |
 | Retry a failed publish | `POST /articles/{id}/retry-publish` | Only when `GET /articles/{id}` shows `allowed_mutations.retry_publish.allowed: true` (approved + last publish failed). Otherwise refused; a human must approve. Tell the human before calling. |
 | Pause / resume a workspace | `POST /workspaces/{id}/pause`, `POST /workspaces/{id}/resume` | Pause stops drafting and publishing; drafts, plan and pace stay. Resume re-plans from today. Cannot lift the account-wide billing pause. |

@@ -86,17 +86,12 @@ export async function publishArticleCore(
   if (!article.content) throw new Error("Article has no content to publish");
 
   // Approval-first gate (the single enforced checkpoint): nothing reaches the CMS
-  // unless it was explicitly approved, or scheduled WITH a recorded approval.
-  // Both the manual publish action and the cron flow through here. Rows scheduled
-  // before approval existed have approved_by = null and must not slip through.
-  const isApproved = article.status === "approved";
-  const isApprovedSchedule =
-    article.status === "scheduled" && article.approved_by != null;
-  if (!isApproved && !isApprovedSchedule) {
-    throw new Error(
-      `Article must be approved before publishing (current status: ${article.status}).`,
-    );
-  }
+  // unless it is approved or scheduled AND carries a recorded approval. Both
+  // the manual publish action and the cron flow through here. `approved` used
+  // to pass on its status alone, so a row that reached `approved` without
+  // the approve action (a status written straight to the table) published
+  // under nobody's name; the status is a state, the approval is the person.
+  publishGate(article);
 
   // The trial gate, here and not only at Approve. Approving asks for a plan
   // (app/actions/publish.ts), but `status` is also written through the
@@ -131,6 +126,24 @@ export async function publishArticleCore(
     return { ...result, ...context };
   } catch (err) {
     throw PublishError.wrap(err, context);
+  }
+}
+
+/**
+ * Whether an article may be pushed: approved or scheduled, with the approval
+ * recorded. Exported for the retry path and the tests; the refusal names the
+ * missing piece so the person knows to approve it, not to "fix" a status.
+ */
+export function publishGate(article: { status: string; approved_by?: string | null }): void {
+  if (article.status !== "approved" && article.status !== "scheduled") {
+    throw new Error(
+      `Article must be approved before publishing (current status: ${article.status}).`,
+    );
+  }
+  if (!article.approved_by) {
+    throw new Error(
+      `Article must be approved before publishing: it is ${article.status} but nobody's approval is recorded. Send it back to review and approve it.`,
+    );
   }
 }
 
@@ -369,7 +382,11 @@ async function pushToDestination(
   // dashboard count it as published, told agents not to regenerate it, and
   // shipped the keyword. It stays approved until the far side publishes it.
   const heldAsDraft = publishMode === "draft" || result.status === "draft";
-  const { error: updateErr } = await supabase
+  // Written by the server, whoever pressed Publish: `live` (and `approved`)
+  // are not statuses a signed-in user's client may set (migration 109). The
+  // caller's client has already shown, by reading the row, that they may act
+  // on this article.
+  const { error: updateErr } = await createServiceClient()
     .from("articles")
     .update({
       status: heldAsDraft ? "approved" : "live",

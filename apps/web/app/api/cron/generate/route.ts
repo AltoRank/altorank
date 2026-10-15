@@ -25,6 +25,7 @@ import {
   announcePausedSites,
   announceSetupUnfinished,
   nothingWrittenReason,
+  nothingWrittenVerdict,
   remindEndingPauses,
   sweepUnfinishedSetups,
 } from "@/lib/email/schedule-events";
@@ -641,7 +642,7 @@ async function skipped(
   const emailed = reason
     ? await announceNothingWritten(
         supabase,
-        { accountId: ws.account_id as string, workspaceId, domain },
+        { accountId: ws.account_id as string, workspaceId, domain, verdict: nothingWrittenVerdict(detail) },
         reason,
       )
     : undefined;

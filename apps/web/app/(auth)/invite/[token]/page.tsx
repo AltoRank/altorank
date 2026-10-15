@@ -1,5 +1,12 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import {
+  AFTER_INVITE_ACCEPTED,
+  inviteJoinPath,
+  inviteSignInPath,
+  lookupOpenInvite,
+} from "@/lib/team/invite";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = { title: "Accept Invitation" };
@@ -28,33 +35,61 @@ function Notice({ title, children }: { title: string; children: React.ReactNode 
  * ourselves, and writes the membership - with the invite's role and workspace
  * access - with the service role too. The token is the credential; the email
  * match is the check.
+ *
+ * Signed out, it offers the two ways in rather than bouncing to sign-in: an
+ * invitee with no login yet creates one on the join page (lib/team/invite.ts).
  */
 export default async function InvitePage({ params }: InvitePageProps) {
   const { token } = await params;
   const supabase = await createClient();
   const admin = createServiceClient();
 
-  const { data: invite } = await admin
-    .from("invites")
-    .select("id, account_id, email, role, workspace_ids, expires_at")
-    .eq("token", token)
-    .is("accepted_at", null)
-    .maybeSingle();
+  const lookup = await lookupOpenInvite(admin, token);
 
-  if (!invite) {
+  if (lookup.status === "invalid") {
     return <Notice title="Invalid or expired invitation">This invite link is no longer valid.</Notice>;
   }
-
-  if (new Date(invite.expires_at) < new Date()) {
+  if (lookup.status === "expired") {
     return <Notice title="Invitation expired">This invitation has expired. Ask your team admin for a new one.</Notice>;
   }
+  // Ownership is never handed out by email (migration 102 refuses such an
+  // invite at the door); one written before that rule is not honoured here.
+  if (lookup.status === "owner") {
+    return <Notice title="Invitation not valid">This invitation asks for owner access, which is given on the Team page, not by email. Ask the account owner to invite you as an admin.</Notice>;
+  }
+  const { invite } = lookup;
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect(`/signin?redirect=/invite/${token}`);
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {invite.accountName ? `Join ${invite.accountName}` : "Join your team"}
+          </h1>
+          <p className="mt-2 text-sm text-ink-3">
+            This invitation is for <strong>{invite.email}</strong>.
+          </p>
+        </div>
+        <div className="space-y-3">
+          <Link
+            href={inviteJoinPath(token)}
+            className="block w-full text-center py-2.5 bg-accent text-white font-medium text-[13px] rounded-[7px] hover:bg-accent-2 transition-colors"
+          >
+            Create your login
+          </Link>
+          <Link
+            href={inviteSignInPath(token)}
+            className="block w-full text-center py-2.5 border border-line bg-bg text-ink font-medium text-[13px] rounded-[7px] hover:bg-panel transition-colors"
+          >
+            I already have a login
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   if (user.email?.toLowerCase() !== invite.email.toLowerCase()) {
@@ -64,12 +99,6 @@ export default async function InvitePage({ params }: InvitePageProps) {
         accept it.
       </Notice>
     );
-  }
-
-  // Ownership is never handed out by email (migration 102 refuses such an
-  // invite at the door); one written before that rule is not honoured here.
-  if (invite.role === "owner") {
-    return <Notice title="Invitation not valid">This invitation asks for owner access, which is given on the Team page, not by email. Ask the account owner to invite you as an admin.</Notice>;
   }
 
   const { error: memberError } = await admin.from("account_members").insert({
@@ -87,5 +116,6 @@ export default async function InvitePage({ params }: InvitePageProps) {
 
   await admin.from("invites").update({ accepted_at: new Date().toISOString() }).eq("id", invite.id);
 
-  redirect("/");
+  // Not `/`: next.config.ts sends the root to the marketing site.
+  redirect(AFTER_INVITE_ACCEPTED);
 }

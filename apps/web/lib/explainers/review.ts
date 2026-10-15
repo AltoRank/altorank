@@ -2,12 +2,13 @@ import type { Explainer } from "./types";
 import { FREE_DRAFTS } from "@/lib/billing/quota";
 
 /**
- * Read from: app/actions/publish.ts (approveArticle, requestChanges,
- * unpublishArticle), app/actions/schedule.ts (scheduleArticle),
+ * Read from: app/actions/publish.ts (approveArticle, requestChanges;
+ * unpublishArticle has no caller), app/actions/schedule.ts (scheduleArticle,
+ * addToQueue),
  * lib/publishing/core.ts (the gate), app/api/cron/publish/route.ts and
  * vercel.json (when it runs), components/dashboard/article-row-menu.tsx
- * (what a status flip can and cannot set), lib/cms/types.ts (no update on
- * the adapter interface).
+ * (what a status flip can and cannot set), lib/cms/adapter.ts
+ * (UPDATABLE_CMS_TYPES: which connectors edit in place).
  */
 export const reviewExplainer: Explainer = {
   id: "review",
@@ -22,10 +23,10 @@ export const reviewExplainer: Explainer = {
         "Every draft, whoever or whatever wrote it, waits in Review until someone approves it.",
       bullets: [
         "Drafts from the scheduler, from New article and from a hand-made article all land with the status In review.",
-        "Approve records who approved and when. It is the only path to Approved: the row menu's status change offers Draft and Review and nothing else.",
+        "Approve records who approved and when. It is the only path to Approved: the row menu's status change offers Draft, Review and Archived, never Approved.",
         "Approving re-runs the fact check on what is in the editor at that moment. A bare figure with no source blocks approval until it is sourced or cut; a named but unverified source is left to your judgement, which is what review is for.",
         "Request changes sends an approved article back to Review and clears the sign-off, so it must be approved again before it can go anywhere.",
-        `On the hosted free tier, approving and publishing ask you to choose a plan. Reading, editing and rewriting the month's ${FREE_DRAFTS} free drafts do not.`,
+        `On the hosted free tier, approving and publishing ask you to choose a plan. Reading, editing and rewriting the ${FREE_DRAFTS} free drafts do not.`,
       ],
     },
     {
@@ -35,7 +36,7 @@ export const reviewExplainer: Explainer = {
       bullets: [
         "It publishes through the site's connection, or the one you pick when several are connected, sets the article Live and stores the URL and external id it came back with.",
         "Schedule needs Approved first. A scheduled article publishes when its date passes, or, without a date, on the site's cadence days at or after the set time, one per day.",
-        "The publish cron runs every hour (Vercel at 09:00 UTC, GitHub Actions the other hours) and only touches articles that are Approved, or Scheduled with a recorded approval. Rows scheduled before approval existed are refused.",
+        "The publish cron runs every hour (Vercel at 09:00 UTC, GitHub Actions the other hours) and only picks up articles that are Scheduled with a recorded approval. An approved article waits until someone schedules it, adds it to the queue or publishes it; the publishing rule's approvals are scheduled as they are made.",
         "After publishing, the URL is submitted to IndexNow and, when Search Console is connected, to Google. A git-based publish waits until the built page is live before telling anyone.",
         "Every attempt, manual or cron, success or failure, is written to the publish log.",
       ],
@@ -48,7 +49,6 @@ export const reviewExplainer: Explainer = {
         "Two things can write that approval, and only two: a person pressing Approve, or the publishing rule a member turned on for the workspace, which waits out a hold window and re-runs the same source, audit and plan checks before it signs off as that member. Held drafts say why on their own row. Nothing else, including an agent, can write one.",
         "The generator writes into Review and has no publish step of its own.",
         "A raw status change cannot make an article Approved, Scheduled or Live; those states are reached only through their own actions.",
-        "Unpublish takes the post down in the CMS, clears the published URL, and returns the article to Review.",
       ],
     },
   ],
@@ -59,8 +59,15 @@ export const reviewExplainer: Explainer = {
     // stale - the publish core calls adapter.update() when the adapter has
     // one and refuses a second create when it does not, six adapters
     // implement update, and the plugin adapter is registered. Narrowed to
-    // what is still true rather than deleted (2026-09-06).
-    "Update a post already live on Shopify, Magento, Framer, Wix, Notion, HubSpot or WooCommerce. WordPress, the WordPress plugin, Ghost, Webflow, a webhook and git edit in place; the rest have no update call, so a re-publish is refused rather than duplicated.",
+    // what is still true rather than deleted (2026-09-06). Narrowed again:
+    // the list named seven connectors, but every adapter except Notion and
+    // Wix implements update (UPDATABLE_CMS_TYPES in lib/cms/adapter.ts, which
+    // the explainer test checks this line against).
+    "Update a post already live on Notion or Wix. Those two have no update call, so a re-publish is refused rather than duplicated; every other connector edits the post in place.",
+    // Was a "What never happens" bullet: "Unpublish takes the post down in
+    // the CMS ...". unpublishArticle (app/actions/publish.ts) has no caller
+    // in the app or the agent API, so nothing a person can press does that.
+    "Unpublish from here. Take a live post down in the CMS itself; the article stays Live in AltoRank.",
     "Require a second reviewer, or approve on someone else's behalf.",
     "Publish from the Articles list for a site with no CMS connected. The editor's copy-and-record path is the route there.",
     "Show who requested changes, or why. The sign-off is cleared; the reason is not stored.",

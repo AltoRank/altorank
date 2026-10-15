@@ -1,4 +1,10 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// The operator list is read once, at import, and has no default: name one
+// before anything imports it.
+vi.hoisted(() => {
+  process.env.ADMIN_EMAILS = "operator@example.com";
+});
 import { clearOperatorAccountCache } from "@/lib/billing/operator-account";
 import type { Quota } from "@/lib/billing/quota";
 import {
@@ -92,7 +98,7 @@ describe("isOperatorAccount", () => {
   beforeEach(() => clearOperatorAccountCache());
 
   it("recognises an account an operator created", async () => {
-    expect(await isOperatorAccount(client("helloaltorank@gmail.com"), "a1")).toBe(true);
+    expect(await isOperatorAccount(client("operator@example.com"), "a1")).toBe(true);
   });
 
   it("does not flag a customer account", async () => {
@@ -100,7 +106,7 @@ describe("isOperatorAccount", () => {
   });
 
   it("does not flag an account with no creator on record", async () => {
-    expect(await isOperatorAccount(client("helloaltorank@gmail.com", { creator: null }), "a1")).toBe(false);
+    expect(await isOperatorAccount(client("operator@example.com", { creator: null }), "a1")).toBe(false);
   });
 
   it("answers false when the address cannot be read, rather than throwing", async () => {

@@ -1,0 +1,17 @@
+{
+  "name": "altorank",
+  "plugins": [
+    {
+      "name": "altorank",
+      "source": {
+        "source": "local",
+        "path": "./plugins/altorank"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

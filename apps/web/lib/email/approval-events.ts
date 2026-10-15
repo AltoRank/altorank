@@ -25,7 +25,6 @@ type ApprovedRow = {
   id: string;
   title: string | null;
   keyword: string | null;
-  scheduled_at: string | null;
   workspace_id: string;
   workspaces: { domain: string | null; account_id: string } | null;
 };
@@ -49,7 +48,7 @@ export async function announceDraftApproved(
     const supabase = createServiceClient();
     const { data } = await supabase
       .from("articles")
-      .select("id, title, keyword, scheduled_at, workspace_id, workspaces(domain, account_id)")
+      .select("id, title, keyword, workspace_id, workspaces(domain, account_id)")
       .eq("id", articleId)
       .maybeSingle();
     if (!data) return "";
@@ -69,10 +68,6 @@ export async function announceDraftApproved(
         keyword: row.keyword,
         articleId: row.id,
         approvedBy: actorName(user),
-        // Only a date the article itself carries. The workspace cadence knows
-        // a weekday and a time, not a date, and guessing one on an email that
-        // an account may forward to a client is the wrong place to be wrong.
-        scheduledFor: row.scheduled_at,
       },
     );
     return describeSendOutcome(out);

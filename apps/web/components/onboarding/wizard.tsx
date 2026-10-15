@@ -653,7 +653,7 @@ export function OnboardingWizard({
               <div className="flex flex-col items-start gap-3 rounded-[8px] border border-line bg-bg px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="text-[13px] font-medium">Connect Google Search Console</div>
-                  <div className="text-[12px] text-ink-3">So we skip what you already show up for on Google, and can show you real visits later.</div>
+                  <div className="text-[12px] text-ink-3">So research starts from searches Google already shows you for, and can show real clicks later.</div>
                 </div>
                 {/* New tab: this screen saves as you go, but the click below is what confirms it. */}
                 <a

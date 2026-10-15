@@ -87,8 +87,6 @@ export type DraftApprovedEmail = {
   articleId: string;
   /** Who pressed Approve, as they are known to the account. */
   approvedBy: string;
-  /** When the cadence will pick it up, when the workspace has one. */
-  scheduledFor: string | null;
 };
 
 /**
@@ -97,14 +95,19 @@ export type DraftApprovedEmail = {
  * without anybody else being asked. A colleague who edited the draft should
  * learn that it was signed off, not discover it live on the client's site.
  */
+//
+// What happens next is said as the code does it. Approve writes `approved`
+// (approveArticle in app/actions/publish.ts), and the publish cron reads only
+// `scheduled` (app/api/cron/publish/route.ts, both phases). An approved draft
+// therefore waits until somebody schedules it, adds it to the queue
+// (app/actions/schedule.ts) or publishes it from its page. This used to say
+// it "joins the publishing queue", or name a date the cron would never act on.
 export function renderDraftApproved(a: DraftApprovedEmail): RenderedEmail {
   const site = a.domain ?? "your site";
-  const when = a.scheduledFor
-    ? `It is queued to publish on ${dateLabel(a.scheduledFor)}.`
-    : `It joins the publishing queue and goes out on this workspace's next scheduled slot.`;
+  const when = `It is not scheduled yet: it publishes once somebody schedules it or publishes it from its page.`;
   return {
     subject: `Approved for ${site}: "${a.title}"`,
-    preheader: `${a.approvedBy} approved it. ${a.scheduledFor ? "Queued to publish." : "Waiting for the next slot."}`,
+    preheader: `${a.approvedBy} approved it. Not scheduled yet.`,
     footerNote: `Sent because you have access to ${site} on AltoRank.`,
     html:
       eyebrow(site) +
@@ -281,7 +284,13 @@ export type PublishFailedEmail = {
 /**
  * A failed publish is the one thing in this product that a customer must be
  * told about rather than shown, because the failure is silent everywhere else:
- * the article goes back to review and the calendar simply has a gap.
+ * the article is marked Failed and the calendar simply has a gap.
+ *
+ * Marked Failed, not "back in review": both publish cron phases write
+ * `status = error` on a failed publish (app/api/cron/publish/route.ts), which
+ * the Articles list labels Failed (STATUS_META in lib/constants.ts) and which
+ * is outside the review queue. Retry is on the article's page
+ * (retryPublishCore in lib/publishing/retry.ts).
  *
  * The reason is quoted verbatim. A paraphrase would send somebody looking at
  * the wrong thing, and these messages come from the CMS - "401 Unauthorized",
@@ -292,7 +301,9 @@ export function renderPublishFailed(a: PublishFailedEmail): RenderedEmail {
   const where = a.destination ? ` to ${a.destination}` : "";
   return {
     subject: `Could not publish to ${site}: "${a.title}"`,
-    preheader: `It is back in review. ${a.reason.slice(0, 90)}`,
+    // A committed-but-unconfirmed git publish is the one case that does go
+    // back to Review (the verify phase of app/api/cron/publish/route.ts).
+    preheader: `${a.committed ? "Back in review." : "Marked Failed."} ${a.reason.slice(0, 90)}`,
     footerNote: `Sent because you have access to ${site} on AltoRank.`,
     html:
       eyebrow(site) +
@@ -300,7 +311,7 @@ export function renderPublishFailed(a: PublishFailedEmail): RenderedEmail {
       emailParagraph(
         a.committed
           ? `<strong>${esc(a.title)}</strong> was committed to the repository, but the published address never resolved, so we cannot say where it is.`
-          : `<strong>${esc(a.title)}</strong> could not be published${esc(where)}. The article is back in review; nothing partial was left on the site.`,
+          : `<strong>${esc(a.title)}</strong> could not be published${esc(where)}. It is marked Failed in Articles, and Retry is on its page. Nothing partial was left on the site.`,
       ) +
       emailParagraph(`What the ${a.destination ? esc(a.destination) : "connection"} said:`) +
       quoted(a.reason) +
@@ -679,6 +690,13 @@ export type WelcomeEmail = {
    * copy that promises readable drafts.
    */
   beforeTrial: boolean;
+  /**
+   * An install with no billing (no STRIPE_SECRET_KEY): quota answers
+   * "self-host" with no limit (lib/billing/quota.ts), and there is no trial,
+   * card or free-draft count to describe. The open-dashboard copy promised
+   * all three to every self-hoster.
+   */
+  selfHost?: boolean;
 };
 
 /**
@@ -709,10 +727,15 @@ export function renderWelcome(a: WelcomeEmail): RenderedEmail {
       emailParagraph(
         `${fullArticleOn() ? "Setup writes your first article while you watch." : "Setup writes your first article and shows you its title, outline and length."} ${beforeTrialLine(1)} No card is on file until you start the trial.`,
       )
-    : emailButton(appLink("/dashboard"), "Open the dashboard") +
-      emailParagraph(
-        `Your first ${FREE_DRAFTS} articles are free to read, and no card is on file until you start the ${TRIAL_DAYS}-day trial that lets you approve and publish them. When the schedule writes a draft for you we will email you about it; you can turn those off from any of them.`,
-      );
+    : a.selfHost
+      ? emailButton(appLink("/dashboard"), "Open the dashboard") +
+        emailParagraph(
+          `This install has no plan, card or trial. When the schedule writes a draft for you we will email you about it; you can turn those off from any of them.`,
+        )
+      : emailButton(appLink("/dashboard"), "Open the dashboard") +
+        emailParagraph(
+          `Your first ${FREE_DRAFTS} articles are free to read, and no card is on file until you start the ${TRIAL_DAYS}-day trial that lets you approve and publish them. When the schedule writes a draft for you we will email you about it; you can turn those off from any of them.`,
+        );
   return {
     subject: "Your AltoRank account is live",
     preheader: "What happens next, and the one thing that needs you.",
@@ -757,7 +780,9 @@ export function renderPasswordChanged(a: PasswordChangedEmail): RenderedEmail {
       ) +
       emailButton(appLink("/reset-password"), "Reset the password") +
       emailParagraph(
-        `We will never ask you for your password by email, and no link we send asks you to type it anywhere but on altorank.co.`,
+        // The host this install signs in on (appUrl), not ours: a
+        // self-hosted install's users sign in on its own domain.
+        `We will never ask you for your password by email, and no link we send asks you to type it anywhere but on ${esc(new URL(appLink("/")).host)}.`,
       ),
   };
 }
@@ -765,9 +790,17 @@ export function renderPasswordChanged(a: PasswordChangedEmail): RenderedEmail {
 export type ApiKeyCreatedEmail = {
   keyName: string;
   prefix: string;
+  /** The member who made the key, or who granted the connector access. */
   createdBy: string;
   canWrite: boolean;
   expiresAt: string | null;
+  /**
+   * Set when the key was issued to a connector through OAuth
+   * (app/api/oauth/token/route.ts): the client's self-chosen name. Its key
+   * goes straight to that client, so "shown once, to whoever created it" is
+   * not what happened.
+   */
+  connector?: string;
 };
 
 /**
@@ -784,20 +817,25 @@ export function renderApiKeyCreated(a: ApiKeyCreatedEmail): RenderedEmail {
     ? `It can read <em>and change</em> things: drafts, keywords, the plan.`
     : `It can read only. It cannot change drafts, keywords or the plan.`;
   const expiry = a.expiresAt ? `It expires on ${dateLabel(a.expiresAt)}.` : `It does not expire.`;
+  const created = a.connector
+    ? `<strong>${esc(a.createdBy)}</strong> gave <strong>${esc(a.connector)}</strong> access to the account, which created an API key for it called <strong>${esc(a.keyName)}</strong>, starting <code>${esc(a.prefix)}</code>.`
+    : `<strong>${esc(a.createdBy)}</strong> created an API key called <strong>${esc(a.keyName)}</strong>, starting <code>${esc(a.prefix)}</code>.`;
   return {
     subject: `A new API key was created: ${a.keyName}`,
-    preheader: `${a.prefix}… created by ${a.createdBy}.`,
+    preheader: a.connector ? `${a.prefix}… for ${a.connector}, approved by ${a.createdBy}.` : `${a.prefix}… created by ${a.createdBy}.`,
     footerNote: `Sent because you are an owner or admin of this AltoRank account.`,
     html:
       heading("A new API key was created") +
-      emailParagraph(
-        `<strong>${esc(a.createdBy)}</strong> created an API key called <strong>${esc(a.keyName)}</strong>, starting <code>${esc(a.prefix)}</code>. ${scope} ${esc(expiry)}`,
-      ) +
+      emailParagraph(`${created} ${scope} ${esc(expiry)}`) +
       emailParagraph(
         `A key works without a password and without a browser. If you do not recognise this one, revoke it - that takes effect at once and nothing else on the account is affected.`,
       ) +
       emailButton(appLink("/settings/api-keys"), "See the account's keys") +
-      emailParagraph(`The key's value is not in this email. It is shown once, to whoever created it, and never stored.`),
+      emailParagraph(
+        a.connector
+          ? `The key's value is not in this email. It was handed to ${esc(a.connector)} when access was granted, and AltoRank does not store it.`
+          : `The key's value is not in this email. It is shown once, to whoever created it, and never stored.`,
+      ),
   };
 }
 
@@ -812,6 +850,13 @@ export type NothingWrittenEmail = {
   reason: NothingWrittenReason;
   /** For "paused", the date it lifts, when the pause carries one. */
   pausedUntil?: string | null;
+  /**
+   * For "queue-exhausted", the cron's tally of the buyer test's verdicts
+   * (summarizeQualification in lib/keyword-research/opportunity.ts), e.g.
+   * "0 qualified, 9 rejected (6 not a buyer search, 3 an existing page
+   * already targets it), 0 pending". Quoted as-is.
+   */
+  verdict?: string | null;
 };
 
 const NOTHING_WRITTEN: Record<
@@ -827,9 +872,14 @@ const NOTHING_WRITTEN: Record<
   },
   "queue-exhausted": {
     subject: (site) => `${site} has run out of keywords to write about`,
+    // Was "covered, already ranking, or filtered out as provider noise" and
+    // "the research page proposes new ones from what the site already ranks
+    // for": the reasons before the buyer test. Since then a keyword is
+    // passed over mostly because the buyer test rejected it, and the email
+    // quotes that tally (`verdict`) from the cron (cron/generate/route.ts).
     what:
-      "Every keyword in the queue is now covered, already ranking, or was filtered out as provider noise, so the scheduler passed over this workspace.",
-    fix: "Adding keywords starts it again. The research page proposes new ones from what the site already ranks for.",
+      "None of the keywords in the queue can be written: each one is already covered or ranking, or the buyer test turned it down, so the scheduler passed over this workspace.",
+    fix: "Adding keywords starts it again: type the searches your buyers make, or use Research keywords on the Keywords page.",
     cta: () => "Find more keywords",
     path: "/keywords",
   },
@@ -873,6 +923,7 @@ export function renderNothingWritten(a: NothingWrittenEmail): RenderedEmail {
       eyebrow(site) +
       heading("Nothing was written this week") +
       emailParagraph(esc(copy.what)) +
+      (a.reason === "queue-exhausted" && a.verdict ? emailParagraph(`What the last check found: ${esc(a.verdict)}.`) : "") +
       paused +
       emailParagraph(esc(copy.fix)) +
       emailButton(appLink(copy.path), copy.cta(copy.path)) +
@@ -1019,6 +1070,12 @@ export type SetupFailedEmail = {
   provider?: boolean;
   /** The overnight retry will run (lib/onboarding/provider-retry-gate.ts): only then is it promised. */
   retryTonight?: boolean;
+  /**
+   * The account has not started its trial. Its dashboard redirects every
+   * path but /connect back to /onboarding (lib/billing/gate-paths.ts), so
+   * "add a keyword from Keywords" sends it in a circle.
+   */
+  beforeTrial?: boolean;
 };
 
 /**
@@ -1069,7 +1126,9 @@ export function renderSetupFailed(a: SetupFailedEmail): RenderedEmail {
             `The next look is already scheduled and needs nothing from you. If you would rather not wait, try again now: it takes about a minute and nothing publishes without your approval.`,
           )
         : emailParagraph(
-            `Trying again takes about a minute. If the site still cannot be read, add a keyword by hand from Keywords or connect Search Console, and the plan can be built from there.`,
+            a.beforeTrial
+              ? `Trying again takes about a minute. If the site still cannot be read, connect Search Console from Integrations, and the plan can be built from there.`
+              : `Trying again takes about a minute. If the site still cannot be read, add a keyword by hand from Keywords or connect Search Console, and the plan can be built from there.`,
           )) +
       emailButton(appLink("/onboarding"), a.transient ? "Try again now" : "Try again") +
       emailParagraph(`Nothing has been written or published, and nothing is wrong with your account.`),

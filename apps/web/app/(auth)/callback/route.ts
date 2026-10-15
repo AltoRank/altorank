@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { notifyWelcome } from "@/lib/email/lifecycle";
 import { accountTrialGate } from "@/lib/billing/body-lock";
+import { billingEnabled } from "@/lib/stripe";
 import type { EmailOtpType } from "@supabase/supabase-js";
 
 const SAFE_NEXT = /^\/[a-zA-Z0-9/_-]*$/;
@@ -43,7 +44,10 @@ export async function GET(request: Request) {
       // already in their inbox, and a second email before they have clicked it
       // is two emails each saying to click the other one. `sendOnce` is keyed
       // by the user id, so re-opening the link does not send a second.
-      if (type === "signup" && verified.user) await sendWelcome(verified.user.id);
+      // Not for a teammate confirming from an invitation (the link returns to
+      // /invite/<token>): the welcome is about their own site and trial, and
+      // they have neither.
+      if (type === "signup" && verified.user && !next.startsWith("/invite/")) await sendWelcome(verified.user.id);
       return NextResponse.redirect(`${origin}${next}`);
     }
     return NextResponse.redirect(
@@ -103,11 +107,15 @@ async function sendWelcome(userId: string): Promise<void> {
     // address gets the mail that matches what they will see. With no account
     // to ask about yet, the account that will be made for them is a fresh
     // one, which is exactly the one the gate holds: the before-trial mail.
-    const beforeTrial = member?.account_id
-      ? (await accountTrialGate(admin, member.account_id as string, user?.user?.email ?? null)) === "gated"
-      : true;
+    // With no billing there is no gate, whatever the membership says.
+    const beforeTrial = !billingEnabled
+      ? false
+      : member?.account_id
+        ? (await accountTrialGate(admin, member.account_id as string, user?.user?.email ?? null)) === "gated"
+        : true;
 
-    await notifyWelcome(admin, userId, { name, domain, beforeTrial });
+    // A self-hosted install has no plan, card or trial to describe.
+    await notifyWelcome(admin, userId, { name, domain, beforeTrial, selfHost: !billingEnabled });
   } catch (err) {
     console.error(`[callback] welcome email for ${userId}: ${err instanceof Error ? err.message : err}`);
   }

@@ -379,6 +379,11 @@ server.registerTool(
     inputSchema: {
       ...workspaceArg,
       keyword: z.string().min(2).max(200),
+      keyword_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe("The id of the keyword from altorank_list_keywords, when the draft is for a tracked keyword. The draft is then briefed from that row and linked to it; without it the brief is found by matching the term."),
       title: z.string().min(2).max(200).optional(),
       article_id: z.string().uuid().optional().describe("Regenerate into this existing draft instead of creating a new one."),
       allow_overage: z.boolean().optional().describe("Only after the human agreed to pay overage."),
@@ -523,7 +528,7 @@ server.registerTool(
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     description:
       "Find-and-replace in one draft's title and body. Preview by default (hits with before → after excerpts); preview_only:false writes. " +
-      "Never changes status: refused on approved, scheduled or live articles. Needs write scope.",
+      "Never changes status: refused on approved, scheduled or live articles, and on an approved article whose publish failed. Needs write scope.",
     inputSchema: { article_id: z.string().uuid(), ...replaceArgs },
   },
   async ({ article_id, ...body }) => asEnvelope(await call(`/articles/${article_id}/replace`, { method: "POST", body })),

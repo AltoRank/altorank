@@ -39,15 +39,19 @@ export function renderGrowthPlanEmail(plan: GrowthPlan, signupUrl: string): stri
         )
         .join("");
 
-  const c = plan.cadence;
   return [
     `<h1 style="font-size:22px;margin:0 0 4px">Growth plan for ${esc(plan.domain)}</h1>`,
     p(`Generated ${new Date(plan.generatedAt).toUTCString()} from public data: what the site ranks for, who else ranks for it, and whether AI assistants can read it.`),
     h2("Closest wins"), p("Terms you already rank for on page two. One revision from page one."), wins,
     h2("Gaps"), p(plan.competitors.length ? `What ${plan.competitors.map((x) => esc(x.domain)).join(" and ")} rank for on page one and you do not.` : "Competitor comparison."), gaps,
     h2("Can AI read your site?"), readiness,
-    h2("The plan"),
-    p(`${c.articlesPerMonth} articles a month${c.firstTargets.length ? `, starting with ${c.firstTargets.map(esc).join(", ")}` : ""}. First one published in ${c.firstPublishDays} working days, after you approve it.`),
-    `<p style="margin:20px 0"><a href="${esc(signupUrl)}?domain=${encodeURIComponent(plan.domain)}" style="display:inline-block;background:#111;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-size:14px">Start publishing against this plan</a></p>`,
+    // The /check page's wording. This said "4 articles a month, starting with
+    // <terms>. First one published in 5 working days": signup does not carry
+    // the terms (app/(auth)/signup/page.tsx takes only the domain), the pace
+    // is the plan's, and nothing publishes before an approval and a connected
+    // site.
+    h2("Next step"),
+    p("Add the domain to AltoRank and it generates the schema and llms.txt for you to review. Open source; self-host it free."),
+    `<p style="margin:20px 0"><a href="${esc(signupUrl)}?domain=${encodeURIComponent(plan.domain)}" style="display:inline-block;background:#111;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none;font-size:14px">Add ${esc(plan.domain)} to AltoRank</a></p>`,
   ].join("\n");
 }

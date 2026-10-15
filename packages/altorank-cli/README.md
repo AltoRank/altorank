@@ -54,7 +54,7 @@ altorank keywords bulk-remove --workspace <id> --ids a,b
 altorank articles list --workspace <id> [--status review]
 altorank articles get <id>
 altorank articles content <id> [--format markdown|html|tiptap]
-altorank articles generate --workspace <id> --keyword "…" [--title "…"] [--article <id>] [--allow-overage] [--idempotency-key <key>]
+altorank articles generate --workspace <id> --keyword "…" [--keyword-id <id>] [--title "…"] [--article <id>] [--allow-overage] [--idempotency-key <key>]
 altorank articles replace <id> --find "…" --replace "…" [--match-case] [--whole-word] [--apply]
 altorank articles bulk-replace --workspace <id> --find "…" --replace "…" [--ids a,b] [--apply]
 altorank articles retry-publish <id>

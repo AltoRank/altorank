@@ -5,9 +5,10 @@
 // adds one. It is plain JavaScript rather than TypeScript so that `next build`,
 // whose type-check includes every .ts file under apps/web, never sees it.
 //
-// Each Cron Trigger in wrangler.jsonc is one of the nine schedules in
-// vercel.json. `controller.cron` carries the expression that fired, and this map
-// turns it back into the route the scheduler on Vercel would have called. The
+// Each Cron Trigger in wrangler.jsonc is one of the jobs in vercel.json.
+// `controller.cron` carries the expression that fired, and this map turns it
+// back into the route. publish, analyze and generate run on the docker/crontab
+// schedules rather than vercel.json's once-a-day ones (see wrangler.jsonc). The
 // routes keep their own auth (`x-cron-secret`), so the Worker needs the same
 // CRON_SECRET the routes compare against, as a Worker secret.
 
@@ -15,15 +16,18 @@
 import handler from "../.open-next/worker.js";
 
 const CRON_ROUTES = {
-  "0 2 * * *": "/api/cron/analyze",
+  "*/15 * * * *": "/api/cron/publish",
+  "*/10 * * * *": "/api/cron/analyze",
   "0 3 * * *": "/api/cron/serp",
   "20 3 * * *": "/api/cron/serp-collect",
   "0 4 * * *": "/api/cron/analytics",
   "0 5 * * *": "/api/cron/exchange",
   "0 6 1 * *": "/api/cron/reports",
-  "0 7 * * *": "/api/cron/generate",
+  "0 1,7,13,19 * * *": "/api/cron/generate",
+  "30 7 * * *": "/api/cron/refresh",
   "0 8 * * 1": "/api/cron/geo",
-  "0 9 * * *": "/api/cron/publish",
+  "0 10 * * *": "/api/cron/site-pages",
+  "0 11 * * *": "/api/cron/ops-digest",
 };
 
 const worker = {

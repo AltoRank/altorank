@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { sendPlainEmail } from "@/lib/email/resend";
+import { feedbackRecipient, NO_FEEDBACK_RECIPIENT } from "@/lib/email/feedback-recipient";
 import { requireAuth } from "@/lib/auth/require-auth";
 
 /**
@@ -14,8 +15,6 @@ import { requireAuth } from "@/lib/auth/require-auth";
  * It follows that this endpoint has no history and nothing to show in the UI.
  * That is the trade, and it is the right way round.
  */
-
-const FEEDBACK_TO = process.env.FEEDBACK_EMAIL ?? "helloaltorank@gmail.com";
 
 /** Screenshots are dataURL-encoded PNGs; anything past this is not a screenshot. */
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -36,6 +35,11 @@ export async function POST(request: Request) {
       { error: "Feedback email is not configured on this deployment (RESEND_API_KEY)." },
       { status: 503 },
     );
+  }
+
+  const to = feedbackRecipient();
+  if (!to) {
+    return NextResponse.json({ error: NO_FEEDBACK_RECIPIENT }, { status: 503 });
   }
 
   const body = (await request.json().catch(() => null)) as {
@@ -78,7 +82,7 @@ export async function POST(request: Request) {
    */
   try {
     await sendPlainEmail({
-      to: FEEDBACK_TO,
+      to,
       // Reply goes straight back to the person who wrote it.
       replyTo: user.email ?? undefined,
       subject: `Feedback from ${user.email ?? user.id}`,

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "altorank": {
+      "type": "http",
+      "url": "https://app.altorank.co/api/mcp"
+    }
+  }
+}

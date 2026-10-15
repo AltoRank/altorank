@@ -16,6 +16,7 @@ import { paceAllowed, planNeededFor } from "@/lib/plan/pace-options";
 import { PLAN_LABELS } from "@/lib/stripe";
 import { pauseWorkspace as pauseWorkspaceCore, resumeWorkspace as resumeWorkspaceCore } from "@/lib/workspaces/pause";
 import type { PausedMeta } from "@/lib/types";
+import { deleteWorkspaceForAccount, type DeleteWorkspaceResult } from "@/lib/workspaces/delete";
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1),
@@ -325,18 +326,24 @@ export async function activateWorkspace(id: string) {
  * Deleting a site takes its articles, keywords, calendar and reports with it
  * by cascade. That is an account-level decision, so it is an owner's or an
  * admin's; migration 072 says the same thing in the RLS policy, and this is
- * the message a person sees rather than a silent zero-row delete.
+ * the message a person sees rather than a silent zero-row delete. The rules
+ * are in lib/workspaces/delete.ts; the result travels as data because a
+ * thrown server-action message reaches production as a digest.
  */
-export async function deleteWorkspace(id: string) {
-  const { accountId } = await requireAuth(["owner", "admin"]);
+export async function deleteWorkspace(id: string, typedConfirmation: string): Promise<DeleteWorkspaceResult> {
+  let accountId: string;
+  try {
+    ({ accountId } = await requireAuth(["owner", "admin"], { workspaceId: id }));
+  } catch {
+    return { ok: false, message: "Only owners and admins can delete a workspace." };
+  }
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("workspaces")
-    .delete()
-    .eq("id", id)
-    .eq("account_id", accountId);
-  if (error) throw new Error(error.message);
-  revalidatePath("/workspaces");
+  const result = await deleteWorkspaceForAccount(supabase, accountId, id, typedConfirmation);
+  if (result.ok) {
+    revalidatePath("/workspaces");
+    revalidatePath("/dashboard");
+  }
+  return result;
 }
 
 /** Every page that shows a site's status or its calendar. */
