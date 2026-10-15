@@ -17,6 +17,7 @@ import { PLAN_LABELS } from "@/lib/stripe";
 import { pauseWorkspace as pauseWorkspaceCore, resumeWorkspace as resumeWorkspaceCore } from "@/lib/workspaces/pause";
 import type { PausedMeta } from "@/lib/types";
 import { deleteWorkspaceForAccount, type DeleteWorkspaceResult } from "@/lib/workspaces/delete";
+import { storageAdmin } from "@/lib/storage/purge";
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1),
@@ -338,7 +339,9 @@ export async function deleteWorkspace(id: string, typedConfirmation: string): Pr
     return { ok: false, message: "Only owners and admins can delete a workspace." };
   }
   const supabase = await createClient();
-  const result = await deleteWorkspaceForAccount(supabase, accountId, id, typedConfirmation);
+  // The service role removes the files a cascade does not reach, after the
+  // person's own delete has succeeded (lib/workspaces/delete.ts).
+  const result = await deleteWorkspaceForAccount(supabase, accountId, id, typedConfirmation, storageAdmin());
   if (result.ok) {
     revalidatePath("/workspaces");
     revalidatePath("/dashboard");
