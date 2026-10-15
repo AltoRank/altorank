@@ -8,8 +8,11 @@
  * response. /capabilities is the one unauthenticated route and says only
  * which plugin version this is and what it can do.
  *
- * Nothing in this file touches the public site: no scripts, no links, no
- * credits, no meta tags. It writes posts, media and post meta, and that is all.
+ * The public site is touched in one place only: the page of a post this plugin
+ * wrote carries that article's own structured data (JSON-LD) in its head,
+ * see altorank_print_structured_data(). No scripts, no links, no credits,
+ * nothing on any other page. Otherwise it writes posts, media and post meta,
+ * and that is all.
  *
  * @package AltoRank
  */
@@ -24,6 +27,10 @@ const ALTORANK_IFRAME_HOSTS = array(
 	'youtube-nocookie.com',
 	'youtu.be',
 );
+
+/** JSON-LD kept per article: at most this many blocks, and this many bytes encoded. */
+const ALTORANK_STRUCTURED_DATA_MAX_ITEMS = 10;
+const ALTORANK_STRUCTURED_DATA_MAX_BYTES = 65536;
 
 /** Post statuses the dashboard may ask for. */
 const ALTORANK_ALLOWED_STATUSES = array( 'publish', 'draft', 'pending', 'private' );
@@ -141,6 +148,50 @@ function altorank_register_routes(): void {
 }
 add_action( 'rest_api_init', 'altorank_register_routes' );
 
+/** The routes register_rest_route() adds above, as WordPress dispatches them. */
+const ALTORANK_ROUTES = array( 'capabilities', 'test-integration', 'submit', 'edit', 'indexnow', 'posts' );
+
+/**
+ * Error codes WordPress itself raises from `rest_authentication_errors`: the
+ * cookie nonce check and the application-password check. These are never
+ * cleared, on any route.
+ */
+const ALTORANK_CORE_AUTH_ERRORS = array(
+	'rest_cookie_invalid_nonce',
+	'incorrect_password',
+	'invalid_username',
+	'invalid_email',
+	'empty_username',
+	'empty_password',
+	'application_passwords_disabled',
+	'application_passwords_disabled_for_user',
+);
+
+/**
+ * The route WordPress is about to dispatch, read from the same query var
+ * rest_api_loaded() hands to the REST server (so a `rest_route` in the query
+ * string or the body is what is read here, as it is there). Empty outside a
+ * REST request.
+ */
+function altorank_dispatched_route(): string {
+	global $wp;
+	if ( ! is_object( $wp ) || ! isset( $wp->query_vars['rest_route'] ) || ! is_string( $wp->query_vars['rest_route'] ) ) {
+		return '';
+	}
+	$route = untrailingslashit( $wp->query_vars['rest_route'] );
+	return '' === $route ? '/' : $route;
+}
+
+/** Whether `$route` is exactly one of this plugin's routes. */
+function altorank_is_own_route( string $route ): bool {
+	foreach ( ALTORANK_ROUTES as $own ) {
+		if ( '/' . ALTORANK_REST_NAMESPACE . '/' . $own === $route ) {
+			return true;
+		}
+	}
+	return false;
+}
+
 /**
  * Some hosts and security plugins (Wordfence, iThemes, "Disable REST API") answer
  * every unauthenticated REST request with a 401 from `rest_authentication_errors`,
@@ -149,10 +200,17 @@ add_action( 'rest_api_init', 'altorank_register_routes' );
  * run: the connection test fails with "rest_not_logged_in" and the person is
  * told to disable their security plugin, which is the wrong fix.
  *
- * This clears that block for requests to altorank/v1 only. Every route in the
- * namespace still runs altorank_permission_check() (or is /capabilities, which
- * discloses only the plugin version), so nothing becomes reachable that the
- * token did not already guard. Other namespaces keep whatever the site decided.
+ * This clears such a block only when all of these hold:
+ *
+ * - the route WordPress will dispatch is exactly one of this plugin's routes
+ *   (decided from the dispatched route, never from the request path);
+ * - the request carries no logged-in user, so nothing runs with a session;
+ * - none of the errors is one WordPress itself raised (ALTORANK_CORE_AUTH_ERRORS).
+ *
+ * Every route it can apply to runs altorank_permission_check() (or is
+ * /capabilities, which discloses only the plugin version), so nothing becomes
+ * reachable that the token did not already guard. Every other route keeps
+ * whatever the site decided.
  *
  * Priority 999: after the plugins that set the error, so there is something to
  * clear.
@@ -164,21 +222,17 @@ function altorank_allow_own_namespace( $result ) {
 	if ( ! is_wp_error( $result ) ) {
 		return $result;
 	}
-
-	$needle = '/' . ALTORANK_REST_NAMESPACE . '/';
-
-	// Pretty permalinks: /wp-json/altorank/v1/... ; plain: ?rest_route=/altorank/v1/...
-	$path = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_PATH ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
-	if ( '' !== $path && false !== strpos( $path, '/' . rest_get_url_prefix() . $needle ) ) {
-		return true;
+	if ( is_user_logged_in() ) {
+		return $result;
 	}
-
-	$route = isset( $_GET['rest_route'] ) ? (string) wp_unslash( $_GET['rest_route'] ) : ''; // phpcs:ignore WordPress.Security.NonceVerification,WordPress.Security.ValidatedSanitizedInput
-	if ( '' !== $route && 0 === strpos( $route, $needle ) ) {
-		return true;
+	if ( array_intersect( $result->get_error_codes(), ALTORANK_CORE_AUTH_ERRORS ) ) {
+		return $result;
 	}
-
-	return $result;
+	if ( ! altorank_is_own_route( altorank_dispatched_route() ) ) {
+		return $result;
+	}
+	// No authentication was performed; the route's own permission_callback decides.
+	return null;
 }
 add_filter( 'rest_authentication_errors', 'altorank_allow_own_namespace', 999 );
 
@@ -257,6 +311,9 @@ function altorank_handle_capabilities(): WP_REST_Response {
 				'seo_meta'         => array_keys( ALTORANK_SEO_META ),
 				'indexnow_key'     => true,
 				'rest_unblock'     => true,
+				'edit_own_posts'   => true,
+				'structured_data'  => true,
+				'key_location'     => true,
 			),
 		)
 	);
@@ -301,16 +358,30 @@ function altorank_handle_test_integration() {
 }
 
 /**
+ * Where this site serves its IndexNow key: under home_url(), with its scheme
+ * and any subdirectory WordPress lives in, which is exactly the path
+ * altorank_serve_indexnow_key() answers. Null until a submit has carried a
+ * key.
+ */
+function altorank_indexnow_key_location(): ?string {
+	$key = (string) get_option( ALTORANK_OPTION_INDEXNOW_KEY, '' );
+	if ( '' === $key || ! preg_match( '/^[A-Za-z0-9-]{8,128}$/', $key ) ) {
+		return null;
+	}
+	return home_url( '/' . $key . '.txt' );
+}
+
+/**
  * GET /indexnow: the key this site serves, and where, so the dashboard can
  * confirm the file resolves before it submits URLs. `key` is null until a
  * submit has carried one.
  */
 function altorank_handle_indexnow(): WP_REST_Response {
-	$key = (string) get_option( ALTORANK_OPTION_INDEXNOW_KEY, '' );
+	$location = altorank_indexnow_key_location();
 	return new WP_REST_Response(
 		array(
-			'key'          => '' !== $key ? $key : null,
-			'key_location' => '' !== $key ? home_url( '/' . $key . '.txt' ) : null,
+			'key'          => null !== $location ? (string) get_option( ALTORANK_OPTION_INDEXNOW_KEY, '' ) : null,
+			'key_location' => $location,
 		)
 	);
 }
@@ -337,9 +408,11 @@ function altorank_handle_submit( WP_REST_Request $request ) {
 /**
  * PUT /edit: update a post the dashboard sent earlier.
  *
- * Found by post_id, then by external_id, then by current_slug. A body holding
- * only `status` is a status change (the dashboard's unpublish sends
- * status=draft); anything else replaces the fields it names.
+ * Found by post_id, then by external_id, then by current_slug, and only ever
+ * a post this plugin created (one carrying _altorank_external_id): posts
+ * written on the site itself are never touched. A body holding only `status`
+ * is a status change (the dashboard's unpublish sends status=draft); anything
+ * else replaces the fields it names.
  */
 function altorank_handle_edit( WP_REST_Request $request ) {
 	$params  = altorank_read_params( $request );
@@ -459,14 +532,21 @@ function altorank_read_params( WP_REST_Request $request ): array {
 		'author'             => sanitize_text_field( $str( 'author' ) ),
 		'status'             => sanitize_key( $str( 'status' ) ),
 		'has_status'         => isset( $p['status'] ),
-		'created_at'         => $str( 'created_at' ),
+		'published_at'       => $str( 'published_at' ),
 		'indexnow_key'       => preg_match( '/^[A-Za-z0-9-]{8,128}$/', $str( 'indexnow_key' ) ) ? $str( 'indexnow_key' ) : '',
 	);
 }
 
-/** The post a /edit request means, or 0. */
+/** Whether a post exists, is a post, and was created by this plugin. */
+function altorank_is_own_post( int $post_id ): bool {
+	return $post_id > 0
+		&& 'post' === get_post_type( $post_id )
+		&& '' !== (string) get_post_meta( $post_id, ALTORANK_META_EXTERNAL_ID, true );
+}
+
+/** The post a /edit request means, or 0. Only posts this plugin created qualify. */
 function altorank_locate_post( array $params ): int {
-	if ( $params['post_id'] && 'post' === get_post_type( $params['post_id'] ) ) {
+	if ( $params['post_id'] && altorank_is_own_post( $params['post_id'] ) ) {
 		return $params['post_id'];
 	}
 	if ( '' !== $params['external_id'] ) {
@@ -477,8 +557,8 @@ function altorank_locate_post( array $params ): int {
 	}
 	if ( '' !== $params['current_slug'] ) {
 		$post = get_page_by_path( sanitize_title( $params['current_slug'] ), OBJECT, 'post' );
-		if ( $post instanceof WP_Post ) {
-			return $post->ID;
+		if ( $post instanceof WP_Post && altorank_is_own_post( (int) $post->ID ) ) {
+			return (int) $post->ID;
 		}
 	}
 	return 0;
@@ -505,16 +585,53 @@ function altorank_find_post_by_external_id( string $external_id ): int {
  * "Post as draft" applies to new posts: the dashboard has approved the
  * article, and this setting decides whether that approval publishes it here
  * or hands it to an editor. Edits honour the status they ask for, so a
- * refresh of a live post does not demote it and an unpublish does demote it.
+ * refresh of a live post does not demote it and an unpublish does demote it,
+ * with one exception: while "Post as draft" is on, an edit cannot put a post
+ * on the site that is not already there. Publishing it is the editor's call.
+ *
+ * @param string $current The post's status now, for an edit; '' for a new post.
  */
-function altorank_resolve_status( array $params, bool $is_new ): ?string {
-	if ( $is_new && '1' === (string) get_option( ALTORANK_OPTION_POST_AS_DRAFT, '1' ) ) {
+function altorank_resolve_status( array $params, bool $is_new, string $current = '' ): ?string {
+	$hold = '1' === (string) get_option( ALTORANK_OPTION_POST_AS_DRAFT, '1' );
+	if ( $is_new && $hold ) {
 		return 'draft';
 	}
 	if ( ! $params['has_status'] ) {
 		return $is_new ? 'publish' : null;
 	}
-	return in_array( $params['status'], ALTORANK_ALLOWED_STATUSES, true ) ? $params['status'] : ( $is_new ? 'publish' : null );
+	if ( ! in_array( $params['status'], ALTORANK_ALLOWED_STATUSES, true ) ) {
+		return $is_new ? 'publish' : null;
+	}
+	if ( ! $is_new && $hold && 'publish' === $params['status'] && 'publish' !== $current ) {
+		return null;
+	}
+	return $params['status'];
+}
+
+/**
+ * The post's date, or nothing to let WordPress decide.
+ *
+ * Set only on a post this request creates and publishes, from `published_at`:
+ * when the article first went live, which is also the "Published" line in the
+ * body and the BlogPosting's datePublished. An edit never sends or changes a
+ * date, so a date an editor corrected stays. A post that lands as a draft
+ * keeps a floating date and gets the real one when an editor publishes it. A
+ * time in the future is ignored: WordPress would schedule the post instead of
+ * publishing it.
+ */
+function altorank_post_date_fields( string $published_at, bool $creates_row, ?string $status ): array {
+	if ( ! $creates_row || 'publish' !== $status || '' === $published_at ) {
+		return array();
+	}
+	$ts = strtotime( $published_at );
+	if ( false === $ts || $ts > time() ) {
+		return array();
+	}
+	$gmt = gmdate( 'Y-m-d H:i:s', $ts );
+	return array(
+		'post_date_gmt' => $gmt,
+		'post_date'     => get_date_from_gmt( $gmt ),
+	);
 }
 
 /**
@@ -536,10 +653,12 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 		$postarr['post_title'] = $params['title'];
 	}
 
-	$content = null;
+	$content    = null;
+	$structured = null;
 	if ( $params['has_content'] ) {
-		$content                 = altorank_sanitize_content( $params['content'] );
-		$postarr['post_content'] = $content;
+		list( $body, $structured ) = altorank_extract_structured_data( $params['content'] );
+		$content                   = altorank_sanitize_content( $body );
+		$postarr['post_content']   = $content;
 	}
 
 	if ( '' !== $params['slug'] ) {
@@ -548,7 +667,7 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 		$postarr['post_name'] = altorank_unique_slug( $params['title'], 0 );
 	}
 
-	$status = altorank_resolve_status( $params, $is_new );
+	$status = altorank_resolve_status( $params, $is_new, $post_id ? (string) get_post_status( $post_id ) : '' );
 	if ( null !== $status ) {
 		$postarr['post_status'] = $status;
 	}
@@ -570,13 +689,7 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 		$postarr['post_category'] = array( $category );
 	}
 
-	if ( '' !== $params['created_at'] ) {
-		$ts = strtotime( $params['created_at'] );
-		if ( false !== $ts ) {
-			$postarr['post_date_gmt'] = gmdate( 'Y-m-d H:i:s', $ts );
-			$postarr['post_date']     = get_date_from_gmt( $postarr['post_date_gmt'] );
-		}
-	}
+	$postarr += altorank_post_date_fields( $params['published_at'], ! $post_id, $status );
 
 	/**
 	 * SEO fields ride inside the same write as the post. Rank Math and Yoast
@@ -587,27 +700,19 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 	 * in the editor. `meta_input` is applied before those hooks run.
 	 */
 	$meta_input = altorank_seo_meta_input( $params['title'], $params['meta_description'], $params['focus_keyword'] );
-	if ( '' !== $params['external_id'] ) {
+	// Recorded when the dashboard sends the article; an edit never rewrites it.
+	if ( $is_new && '' !== $params['external_id'] ) {
 		$meta_input[ ALTORANK_META_EXTERNAL_ID ] = $params['external_id'];
+	}
+	if ( null !== $structured ) {
+		// A new body replaces the structured data too: none in it clears the old.
+		$meta_input[ ALTORANK_META_STRUCTURED_DATA ] = $structured ? (string) wp_json_encode( $structured, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) : '';
 	}
 	if ( $meta_input ) {
 		$postarr['meta_input'] = $meta_input;
 	}
 
-	/**
-	 * Token requests have no WordPress user, and for a request with no user
-	 * WordPress runs its own kses pass on save (content_save_pre), which strips
-	 * every iframe - including the YouTube embed altorank_sanitize_content()
-	 * just allowed. The body has already been through wp_kses_post() plus that
-	 * one rebuilt iframe, and the title and excerpt through sanitize_*_field(),
-	 * so the second pass is lifted for exactly this call and put back after.
-	 */
-	kses_remove_filters();
-	try {
-		$result = $post_id ? wp_update_post( $postarr, true ) : wp_insert_post( $postarr, true );
-	} finally {
-		kses_init_filters();
-	}
+	$result = altorank_write_post( $postarr );
 	if ( is_wp_error( $result ) ) {
 		return new WP_Error( 'altorank_write_failed', $result->get_error_message(), array( 'status' => 500 ) );
 	}
@@ -636,7 +741,7 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 		if ( null !== $content ) {
 			$imported = altorank_import_images( $post_id, $content, $images );
 			if ( $imported !== $content ) {
-				wp_update_post(
+				altorank_write_post(
 					array(
 						'ID'           => $post_id,
 						'post_content' => $imported,
@@ -664,8 +769,44 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 	$response = altorank_post_response( $post_id, $post_id && ! $is_new ? 200 : 201 );
 	$data     = $response->get_data();
 	$data['images'] = $images;
+	// The dashboard submits to IndexNow with this location (1.1.1); on a site
+	// in a subdirectory the host root is not where the key is served.
+	$data['indexnow_key_location'] = altorank_indexnow_key_location();
 	$response->set_data( $data );
 	return $response;
+}
+
+/**
+ * The one way this plugin writes a post: wp_insert_post() for a new row,
+ * wp_update_post() when `ID` is set.
+ *
+ * Slashed first. Both functions expect slashed input, the way a form post
+ * arrives, and strip one level of backslashes from every field and every
+ * meta_input value; the body, title and SEO fields here come from JSON, so
+ * without wp_slash() every backslash the article carried was lost (and a
+ * JSON-encoded meta value such as AIOSEO's keyphrase lost its escapes).
+ *
+ * With WordPress's save-time kses lifted. Token requests have no WordPress
+ * user, and for a request with no user WordPress runs its own kses pass on
+ * save (content_save_pre), which strips every iframe - including the YouTube
+ * embed altorank_sanitize_content() just allowed. Every body handed to this
+ * function has already been through altorank_sanitize_content(), and the
+ * title and excerpt through sanitize_*_field(), so the second pass is lifted
+ * for exactly this call and put back after, if it was on before.
+ *
+ * @return int|WP_Error post id
+ */
+function altorank_write_post( array $postarr ) {
+	$had_kses = false !== has_filter( 'content_save_pre', 'wp_filter_post_kses' );
+	kses_remove_filters();
+	try {
+		$slashed = wp_slash( $postarr );
+		return isset( $postarr['ID'] ) ? wp_update_post( $slashed, true ) : wp_insert_post( $slashed, true );
+	} finally {
+		if ( $had_kses ) {
+			kses_init_filters();
+		}
+	}
 }
 
 function altorank_post_response( int $post_id, int $code ): WP_REST_Response {
@@ -700,35 +841,46 @@ function altorank_unique_slug( string $wanted, int $post_id ): string {
 }
 
 /**
- * wp_kses_post(), keeping YouTube embeds.
+ * wp_kses() with the post allowlist plus inline SVG charts, keeping YouTube
+ * embeds.
  *
- * wp_kses_post() removes every iframe. The one embed an article body
- * legitimately carries is a YouTube video, so those are lifted out first,
- * rebuilt from a fixed attribute list (never the original markup), and put
- * back after sanitising. Any other iframe is dropped.
+ * kses removes every iframe. The one embed an article body legitimately
+ * carries is a YouTube video, so those are lifted out first, rebuilt from a
+ * fixed attribute list (never the original markup), and put back after
+ * sanitising. Any other iframe is dropped.
+ *
+ * Script blocks never reach here: altorank_extract_structured_data() has
+ * already taken the JSON-LD out and dropped every other script whole.
  */
 function altorank_sanitize_content( string $html ): string {
-	$kept = array();
+	$original = $html;
+	$kept     = array();
+	// Unique to this call, so no text in the body can name a placeholder: only
+	// the positions an embed was lifted from get one back.
+	$nonce = bin2hex( random_bytes( 12 ) );
 
 	$html = preg_replace_callback(
 		'#<iframe\b[^>]*>.*?</iframe>#is',
-		static function ( array $m ) use ( &$kept ): string {
+		static function ( array $m ) use ( &$kept, $nonce ): string {
 			if ( ! preg_match( '#\bsrc=["\']([^"\']+)["\']#i', $m[0], $src ) ) {
 				return '';
 			}
-			$url  = $src[1];
-			$host = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
-			if ( ! in_array( $host, ALTORANK_IFRAME_HOSTS, true ) ) {
+			// The host is read from the URL as it will be printed, so what is
+			// checked is what the browser loads.
+			$url    = esc_url( $src[1], array( 'https', 'http' ) );
+			$scheme = strtolower( (string) wp_parse_url( $url, PHP_URL_SCHEME ) );
+			$host   = strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) );
+			if ( ! in_array( $scheme, array( 'https', 'http' ), true ) || ! in_array( $host, ALTORANK_IFRAME_HOSTS, true ) ) {
 				return '';
 			}
 			$width  = preg_match( '#\bwidth=["\']?(\d+)#i', $m[0], $w ) ? (int) $w[1] : 560;
 			$height = preg_match( '#\bheight=["\']?(\d+)#i', $m[0], $h ) ? (int) $h[1] : 315;
 
 			// A text token, not an HTML comment: wp_kses_post() strips comments.
-			$key          = '[altorank-embed-' . count( $kept ) . ']';
+			$key          = '[altorank-embed-' . $nonce . '-' . count( $kept ) . ']';
 			$kept[ $key ] = sprintf(
 				'<iframe src="%s" width="%d" height="%d" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>',
-				esc_url( $url ),
+				$url,
 				$width,
 				$height
 			);
@@ -737,10 +889,166 @@ function altorank_sanitize_content( string $html ): string {
 		$html
 	);
 
-	$html = wp_kses_post( $html );
+	// A body too large for the pattern keeps no embeds; kses drops them.
+	if ( null === $html ) {
+		$html = $original;
+		$kept = array();
+	}
+
+	$html = wp_kses( $html, altorank_allowed_html() );
 
 	return $kept ? str_replace( array_keys( $kept ), array_values( $kept ), $html ) : $html;
 }
+
+/**
+ * What an article body may contain: WordPress's post allowlist, plus the
+ * inline SVG the dashboard draws charts with (shapes and text only).
+ *
+ * Without the SVG elements kses strips the tags and keeps their text, and a
+ * chart arrives as a run of loose labels and numbers. No element added here
+ * can load or run anything: no script, image, use, foreignObject or link, and
+ * no href or event-handler attribute. `style` is filtered by kses's own CSS
+ * allowlist.
+ */
+function altorank_allowed_html(): array {
+	$allowed = wp_kses_allowed_html( 'post' );
+
+	$paint = array(
+		'class'        => true,
+		'fill'         => true,
+		'fill-opacity' => true,
+		'opacity'      => true,
+		'stroke'       => true,
+		'stroke-width' => true,
+		'transform'    => true,
+		'aria-hidden'  => true,
+	);
+	$text  = $paint + array(
+		'x'                 => true,
+		'y'                 => true,
+		'dx'                => true,
+		'dy'                => true,
+		'text-anchor'       => true,
+		'dominant-baseline' => true,
+		'font-size'         => true,
+		'font-weight'       => true,
+		'font-family'       => true,
+	);
+
+	$allowed['svg']   = array(
+		'xmlns'               => true,
+		'viewbox'             => true,
+		'width'               => true,
+		'height'              => true,
+		'role'                => true,
+		'aria-label'          => true,
+		'aria-hidden'         => true,
+		'focusable'           => true,
+		'preserveaspectratio' => true,
+		'class'               => true,
+		'style'               => true,
+	);
+	$allowed['g']     = $paint;
+	$allowed['title'] = array();
+	$allowed['desc']  = array();
+	$allowed['text']  = $text;
+	$allowed['tspan'] = $text;
+	$allowed['rect']  = $paint + array(
+		'x'      => true,
+		'y'      => true,
+		'width'  => true,
+		'height' => true,
+		'rx'     => true,
+		'ry'     => true,
+	);
+	$allowed['line']  = $paint + array(
+		'x1' => true,
+		'y1' => true,
+		'x2' => true,
+		'y2' => true,
+	);
+
+	return $allowed;
+}
+
+/**
+ * Take the article's JSON-LD out of the body.
+ *
+ * The dashboard appends its structured data (a BlogPosting, a FAQPage) to the
+ * body as <script type="application/ld+json"> blocks. kses would strip the
+ * tags and leave the JSON as a visible paragraph at the end of the post, and
+ * a script in post content does not survive a later save by an editor
+ * without unfiltered_html either. So each block is decoded here and kept as
+ * data (ALTORANK_META_STRUCTURED_DATA), and altorank_print_structured_data()
+ * re-encodes it into the page head. A block that is not valid JSON is dropped;
+ * any other <script> is dropped whole, text included.
+ *
+ * @return array{0: string, 1: array} the body without scripts, and the decoded blocks
+ */
+function altorank_extract_structured_data( string $html ): array {
+	$items = array();
+	$bytes = 0;
+
+	$out = preg_replace_callback(
+		'#<script\b([^>]*)>(.*?)</script\s*>#is',
+		static function ( array $m ) use ( &$items, &$bytes ): string {
+			if ( ! preg_match( '#\btype\s*=\s*["\']?application/ld\+json\b#i', $m[1] ) ) {
+				return '';
+			}
+			$decoded = json_decode( trim( $m[2] ), true );
+			if ( ! is_array( $decoded ) || ! $decoded || count( $items ) >= ALTORANK_STRUCTURED_DATA_MAX_ITEMS ) {
+				return '';
+			}
+			$size = strlen( (string) wp_json_encode( $decoded ) );
+			if ( $bytes + $size > ALTORANK_STRUCTURED_DATA_MAX_BYTES ) {
+				return '';
+			}
+			$bytes  += $size;
+			$items[] = $decoded;
+			return '';
+		},
+		$html
+	);
+
+	// A body too large for the pattern is left to kses as it was.
+	if ( null === $out ) {
+		return array( $html, array() );
+	}
+	return array( rtrim( $out ), $items );
+}
+
+/**
+ * Print an AltoRank article's JSON-LD in its page head. Nothing on any other
+ * page, and nothing for a post without it.
+ *
+ * Re-encoded from the decoded data, never echoed as received: with
+ * JSON_HEX_TAG no `<` or `>` reaches the page, so the data cannot end the
+ * script element.
+ */
+function altorank_print_structured_data(): void {
+	if ( ! is_singular( 'post' ) ) {
+		return;
+	}
+	$raw = (string) get_post_meta( (int) get_queried_object_id(), ALTORANK_META_STRUCTURED_DATA, true );
+	if ( '' === $raw ) {
+		return;
+	}
+	$items = json_decode( $raw, true );
+	if ( ! is_array( $items ) ) {
+		return;
+	}
+	foreach ( array_slice( $items, 0, ALTORANK_STRUCTURED_DATA_MAX_ITEMS ) as $item ) {
+		if ( ! is_array( $item ) ) {
+			continue;
+		}
+		$json = wp_json_encode( $item, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+		if ( false === $json ) {
+			continue;
+		}
+		echo '<script type="application/ld+json">' . $json . "</script>\n"; // phpcs:ignore WordPress.Security.EscapeOutput -- JSON with every < and > hex-escaped.
+	}
+}
+add_action( 'wp_head', 'altorank_print_structured_data' );
 
 /**
  * Download every remote <img> into the media library and point the post at
@@ -865,7 +1173,6 @@ function altorank_extension_for_mime( string $mime ): string {
 		'image/gif'     => 'gif',
 		'image/webp'    => 'webp',
 		'image/avif'    => 'avif',
-		'image/svg+xml' => 'svg',
 	);
 	return $map[ $mime ] ?? '';
 }

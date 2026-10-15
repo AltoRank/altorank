@@ -17,6 +17,12 @@
 // The token is generated in the connect dialog, shown once, and stored
 // encrypted in workspace_integrations.config. It never appears in a URL or a
 // log line; the plugin compares it with hash_equals.
+//
+// Every request goes to an address someone typed, so it goes through
+// siteFetch (./site-fetch): public addresses only, checked after DNS, no
+// redirects followed. And what the site answers is not echoed back whole: a
+// failure carries the plugin's own error message, cut short, and nothing from
+// a body that is not a WordPress REST error.
 
 import type {
   AdapterContext,
@@ -27,13 +33,52 @@ import type {
 } from "./types";
 import type { WordPressPluginConfig } from "@/lib/types";
 import { deliverWithRetry } from "./delivery";
-import { TOKEN_HEADER } from "./wordpress-plugin-install";
+import { assertSiteUrl, siteFetch } from "./site-fetch";
+import { compareVersions, MIN_PLUGIN_VERSION, TOKEN_HEADER } from "./wordpress-plugin-install";
 
 // The download path, the install URL and this header live in
 // ./wordpress-plugin-install, which imports nothing: the connect dialog is a
 // client component and this file reaches the database. Re-exported so every
 // server-side caller keeps importing them from here.
-export { TOKEN_HEADER, PLUGIN_DOWNLOAD_PATH, pluginInstallUrl } from "./wordpress-plugin-install";
+export { TOKEN_HEADER, PLUGIN_DOWNLOAD_PATH, MIN_PLUGIN_VERSION, pluginInstallUrl } from "./wordpress-plugin-install";
+
+/** The longest piece of a site's own error message repeated in ours. */
+export const ERROR_DETAIL_MAX = 200;
+
+/**
+ * The message from a WordPress REST error body (`{ code, message }`), cut to
+ * ERROR_DETAIL_MAX characters on one line. Anything else the site answered,
+ * an HTML error page or another server's body, is not repeated, and the
+ * result is empty.
+ */
+export async function pluginErrorMessage(res: Response): Promise<string> {
+  const text = (await res.text().catch(() => "")).slice(0, 16_384);
+  try {
+    const json = JSON.parse(text) as { code?: unknown; message?: unknown };
+    if (typeof json?.code === "string" && typeof json.message === "string") {
+      const line = json.message.replace(/\s+/g, " ").trim();
+      return line.length > ERROR_DETAIL_MAX ? `${line.slice(0, ERROR_DETAIL_MAX - 1)}…` : line;
+    }
+  } catch {
+    // not JSON
+  }
+  return "";
+}
+
+/**
+ * A post address as the site reported it, kept only when it is an absolute
+ * http(s) URL; anything else becomes "". These are shown as links in the
+ * dashboard and placed in articles, so they are held to what a permalink is.
+ */
+export function sitePostUrl(raw: unknown): string {
+  if (typeof raw !== "string" || raw.length > 2048) return "";
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:" || u.protocol === "http:" ? raw : "";
+  } catch {
+    return "";
+  }
+}
 
 /** Response shape shared by /submit and /edit. */
 type PluginPostResponse = {
@@ -41,6 +86,8 @@ type PluginPostResponse = {
   url: string;
   slug?: string;
   status?: string;
+  /** Where the site serves the IndexNow key, or null when it has none (plugin >= 1.1.1). */
+  indexnow_key_location?: string | null;
 };
 
 type PluginListResponse = {
@@ -70,10 +117,12 @@ export class WordPressPluginAdapter implements CMSAdapter {
    * network error is retried, the plugin's own 403/404 explanations are kept
    * as the final error.
    */
-  private deliver(what: string, init: RequestInit & { path: string; query?: string }): Promise<Response> {
+  private deliver(what: string, init: { path: string; method: string; body?: string; query?: string }): Promise<Response> {
     const url = `${this.endpoint(init.path)}${init.query ? `?${init.query}` : ""}`;
+    // An address that can never be requested fails now, not after three tries.
+    assertSiteUrl(url);
     return deliverWithRetry({
-      send: () => fetch(url, { method: init.method, headers: this.headers(), body: init.body }),
+      send: () => siteFetch(url, { method: init.method, headers: this.headers(), body: init.body }),
       what: `WordPress plugin ${what}`,
       endpoint: url,
       onDelivery: this.onDelivery,
@@ -106,7 +155,11 @@ export class WordPressPluginAdapter implements CMSAdapter {
       focus_keyword: article.focusKeyword,
       featured_image_url: article.featuredImageUrl,
       tags: article.tags ?? [],
-      created_at: article.createdAt,
+      // When the article first went live (kept across republishes), which is
+      // also the body's "Published" line and the BlogPosting's
+      // datePublished. The plugin dates a post with it only when it creates
+      // and publishes one; never the draft's creation time.
+      published_at: article.publishedAt,
       // The plugin serves this at /{key}.txt (plugin >= 1.1.0), so the IndexNow
       // submission that follows the publish verifies without anyone placing a
       // file on the host. Older plugins ignore the field.
@@ -119,14 +172,12 @@ export class WordPressPluginAdapter implements CMSAdapter {
   }
 
   private async failure(res: Response, what: string): Promise<Error> {
-    const text = await res.text().catch(() => "");
-    let detail = text;
-    try {
-      const json = JSON.parse(text) as { message?: string };
-      if (json.message) detail = json.message;
-    } catch {
-      // plain text is fine
+    if (res.status >= 300 && res.status < 400) {
+      return new Error(
+        `WordPress plugin ${what} failed (${res.status}): the site answered with a redirect. Enter the site address exactly as WordPress shows it in Settings -> General (https, with or without www).`,
+      );
     }
+    const detail = await pluginErrorMessage(res);
     if (res.status === 403) {
       return new Error(
         `WordPress plugin ${what} rejected (403): the integration token does not match the one saved in Settings -> AltoRank`,
@@ -137,20 +188,41 @@ export class WordPressPluginAdapter implements CMSAdapter {
         `WordPress plugin ${what} failed (404): the AltoRank plugin is not installed or not activated on this site`,
       );
     }
-    return new Error(`WordPress plugin ${what} failed (${res.status}): ${detail}`);
+    return new Error(`WordPress plugin ${what} failed (${res.status})${detail ? `: ${detail}` : ""}`);
   }
 
-  private toResult(data: PluginPostResponse): PublishResult {
-    return {
-      externalId: String(data.id),
-      url: data.url,
-      status: data.status === "draft" ? "draft" : "publish",
-    };
+  private async toResult(data: PluginPostResponse, article: PublishPayload): Promise<PublishResult> {
+    const status = data.status === "draft" ? "draft" : "publish";
+    const result: PublishResult = { externalId: String(data.id), url: sitePostUrl(data.url), status };
+    // Only a live post is submitted to IndexNow, so only then is the location needed.
+    const keyLocation = status === "publish" ? await this.indexNowKeyLocation(data, article) : undefined;
+    if (keyLocation) result.indexNowKeyLocation = keyLocation;
+    return result;
+  }
+
+  /**
+   * Where the site serves the IndexNow key this publish carried. The host
+   * root is wrong for a WordPress in a subdirectory, and the plugin knows its
+   * own home URL: 1.1.1 says so in the post response, 1.1.0 only through GET
+   * /indexnow. Best effort: no answer means the indexing step uses the root.
+   */
+  private async indexNowKeyLocation(data: PluginPostResponse, article: PublishPayload): Promise<string | undefined> {
+    if (!article.indexNowKey) return undefined;
+    if (typeof data.indexnow_key_location === "string") return data.indexnow_key_location;
+    if ("indexnow_key_location" in data) return undefined;
+    try {
+      const res = await siteFetch(this.endpoint("indexnow"), { headers: this.headers() });
+      if (!res.ok) return undefined;
+      const body = (await res.json()) as { key?: unknown; key_location?: unknown };
+      return body.key === article.indexNowKey && typeof body.key_location === "string" ? body.key_location : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   async publish(article: PublishPayload): Promise<PublishResult> {
     const res = await this.deliver("publish", { path: "submit", method: "POST", body: JSON.stringify(this.body(article)) });
-    return this.toResult((await res.json()) as PluginPostResponse);
+    return this.toResult((await res.json()) as PluginPostResponse, article);
   }
 
   async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
@@ -158,9 +230,15 @@ export class WordPressPluginAdapter implements CMSAdapter {
       path: "edit",
       method: "PUT",
       // An update edits content; the post keeps whatever state it has on the site.
-      body: JSON.stringify({ ...this.body(article), status: undefined, post_id: externalId, external_id: article.id ?? externalId }),
+      // The post is named by its WordPress id; the article id rides along
+      // only when known, so the plugin can fall back to it. A post id is never
+      // sent as an external id: the plugin matches that against the id it
+      // recorded at submit.
+      // No date either: an edit keeps the post's date, including one an editor
+      // corrected on the site.
+      body: JSON.stringify({ ...this.body(article), status: undefined, published_at: undefined, post_id: externalId }),
     });
-    return this.toResult((await res.json()) as PluginPostResponse);
+    return this.toResult((await res.json()) as PluginPostResponse, article);
   }
 
   /** Back to draft, the same as the REST adapter: nothing is deleted. */
@@ -174,14 +252,14 @@ export class WordPressPluginAdapter implements CMSAdapter {
       per_page: String(opts.perPage ?? 50),
       status: opts.status ?? "publish",
     });
-    const res = await fetch(`${this.endpoint("posts")}?${params}`, { headers: this.headers() });
+    const res = await siteFetch(`${this.endpoint("posts")}?${params}`, { headers: this.headers() });
     if (!res.ok) throw await this.failure(res, "list");
     const data = (await res.json()) as PluginListResponse;
     return (data.posts ?? []).map((p) => ({
       externalId: String(p.id),
       title: p.title,
       slug: p.slug,
-      url: p.url,
+      url: sitePostUrl(p.url),
       status: p.status,
       modifiedAt: p.modified,
     }));
@@ -192,15 +270,30 @@ export class WordPressPluginAdapter implements CMSAdapter {
    * altorank-test-post-<timestamp> and deletes it again, which proves the token
    * matches, the REST route is reachable and the site can write posts. Nothing
    * is left behind.
+   *
+   * The answer carries the plugin's version, and a plugin older than
+   * MIN_PLUGIN_VERSION fails the test with how to update it: a connection is
+   * only made to a plugin this app still supports.
    */
   async testConnection(): Promise<{ ok: boolean; error?: string }> {
     try {
-      const res = await fetch(this.endpoint("test-integration"), {
+      const res = await siteFetch(this.endpoint("test-integration"), {
         method: "POST",
         headers: this.headers(),
         body: "{}",
       });
       if (!res.ok) return { ok: false, error: (await this.failure(res, "test")).message };
+      const body = (await res.json().catch(() => null)) as { version?: unknown } | null;
+      const version = typeof body?.version === "string" ? body.version : null;
+      if (!version || compareVersions(version, MIN_PLUGIN_VERSION) < 0) {
+        return {
+          ok: false,
+          error:
+            `The AltoRank plugin on this site is ${version ? `version ${version}` : "an older version"}; ` +
+            `version ${MIN_PLUGIN_VERSION} or later is required. Download the current plugin from this dialog and ` +
+            `upload it in WordPress under Plugins -> Add New -> Upload Plugin, choosing "Replace current with uploaded".`,
+        };
+      }
       return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error).message };

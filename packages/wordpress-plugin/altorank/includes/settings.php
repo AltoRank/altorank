@@ -86,8 +86,10 @@ add_action( 'admin_menu', 'altorank_add_settings_page' );
 
 /**
  * The "Test connection" button calls this site's own /test-integration route
- * with the saved token, from the browser, so what is tested is exactly what
- * the dashboard will do. Only loaded on our settings page.
+ * with the token in the field, from the browser and without the admin's
+ * session cookie, so what is tested is exactly what the dashboard will do: a
+ * request that carries the token and nothing else. Only loaded on our
+ * settings page.
  */
 function altorank_enqueue_settings_assets( string $hook ): void {
 	if ( 'settings_page_altorank' !== $hook ) {
@@ -118,7 +120,7 @@ function altorank_enqueue_settings_assets( string $hook ): void {
 		. 'var token=(field&&field.value||"").trim();'
 		. 'if(!token){out.textContent=cfg.messages.noToken;return;}'
 		. 'out.textContent=cfg.messages.testing;btn.disabled=true;'
-		. 'fetch(cfg.endpoint,{method:"POST",headers:{"Content-Type":"application/json","X-AltoRank-Token":token},body:"{}"})'
+		. 'fetch(cfg.endpoint,{method:"POST",credentials:"omit",headers:{"Content-Type":"application/json","X-AltoRank-Token":token},body:"{}"})'
 		. '.then(function(r){if(r.ok){out.textContent=cfg.messages.ok;return;}'
 		. 'if(r.status===403){out.textContent=cfg.messages.rejected;return;}'
 		. 'return r.text().then(function(t){out.textContent=cfg.messages.failed+r.status+" "+t.slice(0,200);});})'
@@ -144,7 +146,7 @@ function altorank_render_settings_page(): void {
 	<div class="wrap">
 		<h1><?php esc_html_e( 'AltoRank', 'altorank' ); ?></h1>
 		<p>
-			<?php esc_html_e( 'Articles approved in your AltoRank dashboard arrive here as posts. Nothing is added to your public pages: no scripts, no links, no credits.', 'altorank' ); ?>
+			<?php esc_html_e( 'Articles approved in your AltoRank dashboard arrive here as posts. The only thing added to your public pages is each article\'s own structured data (JSON-LD), on that article\'s page: no tracking, no links, no credits.', 'altorank' ); ?>
 		</p>
 
 		<?php settings_errors( 'altorank' ); ?>

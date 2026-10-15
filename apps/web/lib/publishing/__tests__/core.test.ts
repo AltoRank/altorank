@@ -310,6 +310,22 @@ describe("publishArticleCore", () => {
     expect(submitForIndexing).toHaveBeenCalledOnce();
   });
 
+  it("a live publish submits with the key location the destination reported", async () => {
+    process.env.ALLOW_INDEXING_SUBMISSIONS = "1";
+    (resolveCMSAdapter as ReturnType<typeof vi.fn>).mockReturnValue({
+      publish: vi.fn().mockResolvedValue({
+        externalId: "ext-1",
+        url: "https://example.com/blog/test",
+        indexNowKeyLocation: "https://example.com/blog/k.txt",
+      }),
+    });
+    vi.mocked(submitForIndexing).mockClear();
+    await publishArticleCore(mockSupabaseWithWorkspace("publish") as never, "a1");
+    expect(submitForIndexing).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "https://example.com/blog/test", keyLocation: "https://example.com/blog/k.txt" }),
+    );
+  });
+
   it("a draft publish stores the post but tells no search engine about it", async () => {
     (resolveCMSAdapter as ReturnType<typeof vi.fn>).mockReturnValue({
       publish: vi.fn().mockResolvedValue({ externalId: "ext-1", url: "" }),

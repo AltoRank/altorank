@@ -2,8 +2,8 @@
 /**
  * Plugin Name:       AltoRank
  * Plugin URI:        https://altorank.co
- * Description:       Receives articles from your AltoRank dashboard as posts. Imports images into the media library, fills in Rank Math, Yoast, SEOPress and AIOSEO fields. Adds nothing to your public pages.
- * Version:           1.1.0
+ * Description:       Receives articles from your AltoRank dashboard as posts. Imports images into the media library, fills in Rank Math, Yoast, SEOPress and AIOSEO fields. Adds no links, credits or tracking to your public pages.
+ * Version:           1.1.1
  * Requires at least: 6.4
  * Requires PHP:      8.0
  * Author:            AltoRank
@@ -11,13 +11,20 @@
  * License:           GPLv2 or later
  * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain:       altorank
+ * Update URI:        https://app.altorank.co/api/public/wordpress-plugin/update
+ *
+ * Update URI: the plugin is not listed on wordpress.org, and without this
+ * header WordPress would match it against whatever is listed there under the
+ * `altorank` slug and offer that as an update. With it, wordpress.org is never
+ * asked; updates come from AltoRank (installed by uploading the zip from the
+ * dashboard until an update channel exists).
  *
  * @package AltoRank
  */
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'ALTORANK_VERSION', '1.1.0' );
+define( 'ALTORANK_VERSION', '1.1.1' );
 define( 'ALTORANK_PLUGIN_FILE', __FILE__ );
 define( 'ALTORANK_PLUGIN_DIR', plugin_dir_path( __FILE__ ) );
 define( 'ALTORANK_REST_NAMESPACE', 'altorank/v1' );
@@ -33,6 +40,8 @@ define( 'ALTORANK_OPTION_INDEXNOW_KEY', 'altorank_indexnow_key' );
 /** Post meta keys this plugin owns. */
 define( 'ALTORANK_META_EXTERNAL_ID', '_altorank_external_id' );
 define( 'ALTORANK_META_SOURCE_URL', '_altorank_source_url' );
+/** The article's JSON-LD, lifted out of the body and printed in its page head. */
+define( 'ALTORANK_META_STRUCTURED_DATA', '_altorank_structured_data' );
 
 require_once ALTORANK_PLUGIN_DIR . 'includes/api.php';
 require_once ALTORANK_PLUGIN_DIR . 'includes/settings.php';
