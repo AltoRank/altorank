@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isEmbedSrc, isSafeUrl, sanitizeHtml, sanitizeSvg } from "../sanitize";
 
 // The one allowlist sanitiser behind every article, rewrite and scraped HTML
-// sink. Pinned: hostile inputs in every spelling come back inert; an article's
+// sink. Pinned: disallowed markup in every spelling comes back inert; an article's
 // own markup (links, figures, charts, embeds, tables, heading ids) comes back
 // as it was.
 
@@ -49,7 +49,7 @@ const HOSTILE = [
   '<IMG SRC="x" ONERROR="alert(1)">',
 ];
 
-describe("sanitizeHtml: hostile input", () => {
+describe("sanitizeHtml: disallowed markup", () => {
   it("comes back inert in every spelling", () => {
     for (const input of HOSTILE) expectInert(sanitizeHtml(input), input);
   });

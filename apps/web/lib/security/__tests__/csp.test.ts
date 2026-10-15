@@ -21,7 +21,7 @@ const PROD = directives(
 );
 
 describe("buildCsp", () => {
-  it("runs script only with the request's nonce: no inline, no eval, no host allowlist bypass", () => {
+  it("runs script only with the request's nonce: no inline, no eval, no host allowlist", () => {
     expect(PROD["script-src"]).toEqual(["'self'", "'nonce-abc123=='", "'strict-dynamic'"]);
     expect(PROD["script-src"]).not.toContain("'unsafe-inline'");
     expect(PROD["script-src"]).not.toContain("'unsafe-eval'");
