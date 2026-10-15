@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { TabRow, Icons, StatusPill, Chip, Card, SearchInput } from "@/components/ui";
 import { SetupWizard } from "@/components/dashboard/setup-wizard";
 import { PublishingCadenceForm } from "@/components/dashboard/publishing-cadence-form";
@@ -134,7 +135,7 @@ function OverviewTab({ workspace, articles, keywords, backlinks, voice, now }: {
                 {recentArticles.map((a) => (
                   <tr key={a.id} className="hover:[&>td]:bg-panel">
                     <td className="px-3.5 py-2.5 border-b border-line-soft">
-                      <div className="font-medium truncate">{a.title}</div>
+                      <Link href={`/content/${a.id}`} className="block font-medium truncate hover:text-accent-ink">{a.title}</Link>
                     </td>
                     <td className="px-3.5 py-2.5 border-b border-line-soft font-mono text-xs text-ink-2">{a.keyword}</td>
                     <td className="px-3.5 py-2.5 border-b border-line-soft"><StatusPill status={a.status} /></td>
@@ -196,7 +197,7 @@ function ArticlesTab({ articles }: { articles: Article[] }) {
               return (
                 <tr key={a.id} className="hover:[&>td]:bg-panel">
                   <td className="px-3.5 py-3 border-b border-line-soft" style={{ maxWidth: 0 }}>
-                    <div className="truncate font-medium">{a.title}</div>
+                    <Link href={`/content/${a.id}`} className="block truncate font-medium hover:text-accent-ink">{a.title}</Link>
                     <div className="text-[11px] text-ink-3 mt-0.5">{a.word_count ? `${a.word_count.toLocaleString()} words` : "Draft"}</div>
                   </td>
                   <td className="px-3.5 py-3 border-b border-line-soft font-mono text-xs text-ink-2">{a.keyword}</td>
