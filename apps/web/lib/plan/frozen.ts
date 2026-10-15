@@ -76,7 +76,7 @@ export function frozenReason(quota: Allowance): string {
       ? `Inactive: the free tier includes ${plural(quota.limit ?? 0, "draft")}, once, before a plan. Choose one on the Billing page to reactivate.`
       : `Inactive: all ${freeAllowanceUsedClause(quota.limit ?? undefined)} — they are a one-time allowance, not a monthly one. Choose a plan on the Billing page to reactivate.`;
   }
-  return `Inactive: this month's ${quota.limit} included articles are spoken for. Upgrade on the Billing page to reactivate, or it thaws next month.`;
+  return `Inactive: this month's ${quota.limit} included articles are spoken for. Upgrade on the Billing page to reactivate, or it thaws next month. To write one now as overage, use New article on the Articles page.`;
 }
 
 export type FrozenState = {

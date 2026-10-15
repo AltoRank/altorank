@@ -285,6 +285,22 @@ export async function saveKeywordPrompt(workspaceId: string, prompt: string): Pr
   revalidatePath("/settings", "layout");
 }
 
+/** The finish write: `on` for a site that is not paused, the opt-in alone for one that is. */
+async function finishOnboarding(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workspaceId: string,
+  now: string,
+): Promise<{ error: { message: string } | null }> {
+  const opted = { onboarded_at: now, auto_generate: true };
+  const running = await supabase
+    .from("workspaces")
+    .update({ ...opted, status: "on" })
+    .eq("id", workspaceId)
+    .neq("status", "paused");
+  if (running.error) return running;
+  return supabase.from("workspaces").update(opted).eq("id", workspaceId).eq("status", "paused");
+}
+
 /**
  * Mark the wizard done, or skipped. Either way the dashboard stops sending the
  * person back here. Skipping is allowed on purpose: a wizard that cannot read
@@ -299,10 +315,15 @@ export async function completeWizard(workspaceId: string, opts: { skipped?: bool
   // site added through "Add workspace" (T2 walk, 2026-09-05) — so days two
   // onward were never written. Skipping leaves the site in setup: no plan
   // was made, so no promise was made.
-  const { error } = await supabase
-    .from("workspaces")
-    .update(opts.skipped ? { onboarding_skipped_at: now } : { onboarded_at: now, status: "on", auto_generate: true })
-    .eq("id", workspaceId);
+  //
+  // Except on a paused site. The account pause on Billing pauses sites still
+  // in setup too, and the wizard opens for any site in scope; finishing it
+  // wrote `status: "on"` over the pause, so that one site drafted through a
+  // pause that promises nothing is drafted or billed. A paused site keeps its
+  // pause and takes the opt-in, which applies when the pause is lifted.
+  const { error } = opts.skipped
+    ? await supabase.from("workspaces").update({ onboarding_skipped_at: now }).eq("id", workspaceId)
+    : await finishOnboarding(supabase, workspaceId, now);
   if (error) throw new Error(error.message);
   revalidatePath("/dashboard");
   revalidatePath("/content");

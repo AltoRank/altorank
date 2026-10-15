@@ -58,22 +58,47 @@ export function canSeeWorkspace(workspaceIds: string[] | null | undefined, works
   return workspaceIds.includes(workspaceId);
 }
 
-/** Roles that can do something about a billing email. Editors cannot. */
-const BILLING_ROLES = new Set(["owner", "admin"]);
-
 /**
- * Who to tell about the account itself: a failed renewal, a cancellation, a
- * pause, a plan change, a new API key.
+ * Who to tell about money: a failed renewal, a cancellation, a pause, a plan
+ * change, a trial starting or ending.
  *
- * Not workspace-scoped, because none of those facts belong to a site. Scoped
- * by role instead: `canManageBilling` is owner-only and `canManageMembers` is
- * owner-or-admin (lib/team/access.ts), so an editor who cannot open the
- * Billing page has no use for "your card was declined" beyond learning what
- * their client pays. Owners and admins are told; editors are not.
+ * Owners only. `canManageBilling` is owner-only (lib/team/access.ts), and
+ * every one of these emails says "Sent because you manage billing" and leads
+ * with a button only an owner can use - "Update the card", "Keep the plan",
+ * "End the pause early". An admin used to get them too, and on Billing found
+ * "Only the account owner can update the card" under the same button.
+ *
+ * Not workspace-scoped, because none of those facts belong to a site.
  */
 export async function accountBillingRecipients(
   supabase: SupabaseClient,
   accountId: string,
+): Promise<string[]> {
+  return recipientsWithRoles(supabase, accountId, BILLING_ROLES);
+}
+
+/** Roles that can act on a billing email. */
+const BILLING_ROLES = new Set(["owner"]);
+
+/**
+ * Who to tell about the account's security: a new API key. Owners and admins,
+ * because `canManageMembers` is owner-or-admin and an admin who did not make
+ * the key is exactly who should hear that one exists. Editors are not told.
+ */
+export async function accountSecurityRecipients(
+  supabase: SupabaseClient,
+  accountId: string,
+): Promise<string[]> {
+  return recipientsWithRoles(supabase, accountId, SECURITY_ROLES);
+}
+
+const SECURITY_ROLES = new Set(["owner", "admin"]);
+
+/** Members of the account holding one of `roles`, resolved to addresses. Nobody on failure. */
+async function recipientsWithRoles(
+  supabase: SupabaseClient,
+  accountId: string,
+  roles: Set<string>,
 ): Promise<string[]> {
   const found = new Set<string>();
   try {
@@ -83,13 +108,44 @@ export async function accountBillingRecipients(
       .eq("account_id", accountId);
 
     for (const m of members ?? []) {
-      if (!BILLING_ROLES.has(String(m.role))) continue;
+      if (!roles.has(String(m.role))) continue;
       const { data } = await supabase.auth.admin.getUserById(m.user_id as string);
       const email = data?.user?.email?.trim().toLowerCase();
       if (email) found.add(email);
     }
   } catch {
     return [];
+  }
+  return [...found];
+}
+
+/**
+ * The account's owners: the people who can start its trial or choose its plan
+ * (`canManageBilling` is owner-only, lib/team/access.ts).
+ *
+ * For the one email that is both news about a site and an ask only an owner
+ * can answer: "we found your article live", which carries the trial line on an
+ * account that has not started it. An owner sees every site, so this needs no
+ * workspace scope. Throws when the member list cannot be read.
+ */
+export async function accountOwnerRecipients(
+  supabase: SupabaseClient,
+  accountId: string,
+): Promise<string[]> {
+  const found = new Set<string>();
+  // Throws when the member list cannot be read: "no owners" and "could not
+  // look" are different answers, and the one caller raises the second.
+  const { data: members, error } = await supabase
+    .from("account_members")
+    .select("user_id, role")
+    .eq("account_id", accountId)
+    .eq("role", "owner");
+  if (error) throw new Error(`could not read the account's owners: ${error.message}`);
+
+  for (const m of members ?? []) {
+    const { data } = await supabase.auth.admin.getUserById(m.user_id as string);
+    const email = data?.user?.email?.trim().toLowerCase();
+    if (email) found.add(email);
   }
   return [...found];
 }

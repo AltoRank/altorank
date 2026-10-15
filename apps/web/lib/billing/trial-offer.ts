@@ -32,7 +32,7 @@
 //
 // Pure and client-safe: the gate renders it, the tests read it.
 
-import { PLAN_ARTICLE_LIMITS, PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval } from "@/lib/stripe";
+import { PLAN_ARTICLE_LIMITS, PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
 import { formatTrialDate } from "./trial";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -56,16 +56,16 @@ function euros(price: string): number {
 }
 
 /** What a year on yearly saves against twelve months on monthly, in euros: €138 for Managed. */
-export function yearlySaving(): number {
-  return euros(PLAN_PRICES.starter) * 12 - euros(PLAN_YEARLY_PRICES.starter);
+export function yearlySaving(plan: SelfServePlan = "starter"): number {
+  return euros(PLAN_PRICES[plan]) * 12 - euros(PLAN_YEARLY_PRICES[plan]);
 }
 
-/** "€69/month" or "€690/year". */
-export function priceLabel(interval: BillingInterval): string {
-  return interval === "month" ? `${PLAN_PRICES.starter}/month` : `${PLAN_YEARLY_PRICES.starter}/year`;
+/** "€69/month" or "€690/year" (Managed), "€199/month" or "€1,990/year" (Agency). */
+export function priceLabel(interval: BillingInterval, plan: SelfServePlan = "starter"): string {
+  return interval === "month" ? `${PLAN_PRICES[plan]}/month` : `${PLAN_YEARLY_PRICES[plan]}/year`;
 }
 
-/** The plan the trial is of, by name: Managed. */
+/** The plan the gate offers first, by name: Managed. Agency is the quiet second choice. */
 export const TRIAL_PLAN = PLAN_LABELS.starter;
 
 /**
@@ -73,7 +73,7 @@ export const TRIAL_PLAN = PLAN_LABELS.starter;
  * read the article already, so the trial is for editing, approving and
  * publishing it; otherwise it is also what opens the text.
  */
-export function trialIncludes(fullArticle: boolean): string[] {
+export function trialIncludes(fullArticle: boolean, plan: SelfServePlan = "starter"): string[] {
   return [
     // How publishing works today: no CMS has a self-serve Connect button
     // (lib/cms/connectable.ts), so it is a copy, or a connection we set up on
@@ -81,15 +81,15 @@ export function trialIncludes(fullArticle: boolean): string[] {
     fullArticle
       ? "Edit and approve this article, then copy it to your site or ask us to connect your site"
       : "Read this article in full, approve it, then copy it to your site or ask us to connect your site",
-    `Up to ${PLAN_ARTICLE_LIMITS.starter} articles a month, written at the pace you set`,
+    `Up to ${PLAN_ARTICLE_LIMITS[plan]} articles a month, written at the pace you set`,
     "Nothing publishes until you approve it",
     "No extra costs: the writing and the research are included",
   ];
 }
 
 /** "€0 today, then €69/month from October 19." The first charge, said as one. */
-export function chargeLine(interval: BillingInterval, facts: TrialOfferFacts): string {
-  return `€0 today, then ${priceLabel(interval)} from ${formatTrialDate(facts.endsAt)}${facts.taxAdded ? ", plus VAT where it applies" : ""}.`;
+export function chargeLine(interval: BillingInterval, facts: TrialOfferFacts, plan: SelfServePlan = "starter"): string {
+  return `€0 today, then ${priceLabel(interval, plan)} from ${formatTrialDate(facts.endsAt)}${facts.taxAdded ? ", plus VAT where it applies" : ""}.`;
 }
 
 /** The reminder and the way out, both true in code (see the header). */
@@ -98,13 +98,24 @@ export function reassuranceLine(): string {
 }
 
 /** The quiet second option: yearly, with its real saving; or the way back to monthly. */
-export function otherIntervalLine(interval: BillingInterval): string {
+export function otherIntervalLine(interval: BillingInterval, plan: SelfServePlan = "starter"): string {
   return interval === "month"
-    ? `Or pay yearly: ${priceLabel("year")}, two months free (save €${yearlySaving()})`
-    : `Switch back to monthly: ${priceLabel("month")}`;
+    ? `Or pay yearly: ${priceLabel("year", plan)}, two months free (save €${yearlySaving(plan).toLocaleString("en")})`
+    : `Switch back to monthly: ${priceLabel("month", plan)}`;
+}
+
+/**
+ * The quiet plan switch (#280 put Agency on the trial screen: the pricing page
+ * sells "7-day free trial, then €199" on the Agency card). Managed stays the
+ * plan the box leads with; Agency is one line under it, for agencies.
+ */
+export function otherPlanLine(plan: SelfServePlan, interval: BillingInterval): string {
+  return plan === "starter"
+    ? `Running sites for clients? Try ${PLAN_LABELS.growth} instead: ${priceLabel(interval, "growth")}`
+    : `Back to ${PLAN_LABELS.starter}: ${priceLabel(interval, "starter")}`;
 }
 
 /** The sticky bar's sentence: the same price as the box, for the same button. */
-export function stickyOfferLine(interval: BillingInterval): string {
-  return `${TRIAL_DAYS} days free, then ${priceLabel(interval)}. Cancel any time.`;
+export function stickyOfferLine(interval: BillingInterval, plan: SelfServePlan = "starter"): string {
+  return `${TRIAL_DAYS} days free, then ${priceLabel(interval, plan)}. Cancel any time.`;
 }

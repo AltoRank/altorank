@@ -56,6 +56,16 @@ describe("the price box", () => {
     expect(text(markup)).toContain("Switch back to monthly");
   });
 
+  it("offers Agency as a quiet switch under Managed, and quotes Agency's price once chosen (#280)", () => {
+    const managed = text(renderToStaticMarkup(<TrialPriceBox canBuy interval="month" onInterval={() => undefined} plan="starter" onPlan={() => undefined} facts={FACTS} fullArticle />));
+    expect(managed).toContain("Managed plan");
+    expect(managed).toContain(`Try Agency instead: ${PLAN_PRICES.growth}/month`);
+    const agency = text(renderToStaticMarkup(<TrialPriceBox canBuy interval="month" onInterval={() => undefined} plan="growth" onPlan={() => undefined} facts={FACTS} fullArticle />));
+    expect(agency).toContain("Agency plan");
+    expect(agency).toContain(`€0 today, then ${PLAN_PRICES.growth}/month from October 19.`);
+    expect(agency).toContain(`Back to Managed: ${PLAN_PRICES.starter}/month`);
+  });
+
   it("tells a member who is not the owner who can start it, with no price", () => {
     const html = text(renderToStaticMarkup(<TrialPriceBox canBuy={false} interval="month" onInterval={() => undefined} facts={FACTS} fullArticle />));
     expect(html).toContain("Only the account owner can start the trial");

@@ -13,7 +13,7 @@
 // now says that, says a person has been told, and asks for nothing.
 
 import { TrialOffer, TrialPriceBox } from "@/components/billing/trial-offer";
-import type { BillingInterval } from "@/lib/stripe";
+import type { BillingInterval, SelfServePlan } from "@/lib/stripe";
 import type { TrialOfferFacts } from "@/lib/billing/trial-offer";
 import { asksForCard, type SetupEnding } from "@/lib/onboarding/setup-retry";
 import { judgedRows, type EmptyPool } from "@/lib/onboarding/events";
@@ -58,10 +58,12 @@ export function NothingPlannedNote({ followUp }: { followUp: boolean }) {
   );
 }
 
-/** The gate's offer: the interval it shares with the sticky bar, and the facts the server read. */
+/** The gate's offer: the plan and interval it shares with the sticky bar, and the facts the server read. */
 export interface GateOffer {
   interval: BillingInterval;
   onInterval: (next: BillingInterval) => void;
+  plan?: SelfServePlan;
+  onPlan?: (next: SelfServePlan) => void;
   facts: TrialOfferFacts;
   fullArticle: boolean;
   buttonRef?: React.Ref<HTMLDivElement>;
@@ -100,6 +102,8 @@ export function SetupAsk({
           canBuy={canBuy}
           interval={offer.interval}
           onInterval={offer.onInterval}
+          plan={offer.plan}
+          onPlan={offer.onPlan}
           facts={offer.facts}
           fullArticle={offer.fullArticle}
           returnTo={returnTo}

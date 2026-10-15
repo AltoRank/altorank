@@ -85,5 +85,9 @@ describe("quotaExceededMessage", () => {
     expect(message).toContain("100 articles");
     expect(message).toMatch(/overage/);
     expect(message).not.toMatch(/free draft/);
+    // The calendar cannot bill overage: at the limit every planned entry is
+    // frozen and Write now refuses it. New article is the door that can.
+    expect(message).toMatch(/New article on the Articles page/);
+    expect(message).not.toMatch(/from the calendar/);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PLAN_ARTICLE_LIMITS, PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, REQUIRED_STRIPE_EVENTS, TRIAL_DAYS } from "@/lib/stripe";
 import { isOptional } from "@/lib/email/categories";
-import { chargeLine, otherIntervalLine, priceLabel, reassuranceLine, stickyOfferLine, TRIAL_PLAN, trialIncludes, trialOfferFacts, yearlySaving } from "../trial-offer";
+import { chargeLine, otherIntervalLine, otherPlanLine, priceLabel, reassuranceLine, stickyOfferLine, TRIAL_PLAN, trialIncludes, trialOfferFacts, yearlySaving } from "../trial-offer";
 
 // The gate's price box, sentence by sentence, against the code that makes
 // each one true (UX audit 2026-10-12, #6 and #9).
@@ -53,5 +53,16 @@ describe("the trial offer", () => {
     expect(trialIncludes(false)[0]).toContain("Read this article in full");
     expect(trialIncludes(true)).toContain(`Up to ${PLAN_ARTICLE_LIMITS.starter} articles a month, written at the pace you set`);
     expect(trialIncludes(true)).toContain("Nothing publishes until you approve it");
+  });
+
+  it("quotes Agency's own price, limit and saving when the owner switches plan (#280)", () => {
+    expect(chargeLine("month", facts, "growth")).toBe(`€0 today, then ${PLAN_PRICES.growth}/month from October 19.`);
+    expect(chargeLine("year", facts, "growth")).toBe(`€0 today, then ${PLAN_YEARLY_PRICES.growth}/year from October 19.`);
+    expect(trialIncludes(true, "growth")).toContain(`Up to ${PLAN_ARTICLE_LIMITS.growth} articles a month, written at the pace you set`);
+    const monthly = Number(PLAN_PRICES.growth.replace(/\D/g, ""));
+    expect(yearlySaving("growth")).toBe(monthly * 2);
+    expect(stickyOfferLine("year", "growth")).toContain(priceLabel("year", "growth"));
+    expect(otherPlanLine("starter", "month")).toContain(`${PLAN_LABELS.growth} instead: ${PLAN_PRICES.growth}/month`);
+    expect(otherPlanLine("growth", "year")).toContain(`${PLAN_LABELS.starter}: ${PLAN_YEARLY_PRICES.starter}/year`);
   });
 });

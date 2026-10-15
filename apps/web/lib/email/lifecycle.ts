@@ -18,9 +18,11 @@
 //             produce one email.
 //   scoped    work on a site goes to `accountRecipients(supabase, account,
 //             workspace)`, which honours `account_members.workspace_ids`; money
-//             and account facts go to `accountBillingRecipients`, which is
-//             owner/admin. An editor scoped to one client never learns about
-//             another, and never learns what the account pays.
+//             goes to `accountBillingRecipients`, which is the owners - the
+//             only role that can act on it - and a new API key to
+//             `accountSecurityRecipients`, owners and admins. An editor scoped
+//             to one client never learns about another, and never learns what
+//             the account pays.
 //   quiet on  every function returns an outcome instead of throwing. All of
 //   failure   these announce work that is already done and recorded; a mail
 //             provider being down must not turn a published article into a
@@ -31,7 +33,7 @@
 // have not measured.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { accountRecipients, accountBillingRecipients, userEmail } from "./account-recipients";
+import { accountRecipients, accountBillingRecipients, accountOwnerRecipients, accountSecurityRecipients, userEmail } from "./account-recipients";
 import { appLink } from "@/lib/app-url";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_2, EMAIL_INK_3 } from "./layout";
 import { formatGraceDate } from "@/lib/billing/dunning";
@@ -149,6 +151,118 @@ export function renderArticlePublished(a: ArticlePublishedEmail): RenderedEmail 
       emailParagraph(
         `<a href="${esc(appLink(`/content/${a.articleId}`))}" style="color:${EMAIL_INK_2};">The draft and its history</a> stay in AltoRank. Ranking data for it appears once Search Console has something to report, which is usually days rather than hours.`,
       ),
+  };
+}
+
+/**
+ * Where the account stands, for the one line the found-live email adds:
+ *
+ *   paying         on a plan or trialing, an operator account, or self-hosted:
+ *                  rank tracking runs, and nothing is asked
+ *   trial-eligible has not started its trial: one line asking for it
+ *   lapsed         had its trial or a plan and has none now: one line asking
+ *                  for a plan
+ *   unknown        the plan could not be read: say nothing about it rather than
+ *                  ask a paying customer to pay
+ */
+export type AccountStanding = "paying" | "trial-eligible" | "lapsed" | "unknown";
+
+export type ArticleFoundLiveEmail = {
+  domain: string | null;
+  title: string;
+  articleId: string;
+  /** The page the nightly check found the article on. */
+  url: string;
+  /**
+   * The term rank tracking checks from tonight, or null when it does not
+   * (no term, no plan, or a term cron/serp would not select).
+   */
+  keyword: string | null;
+  /**
+   * The term goes into tracking once the account has a plan: the trial or
+   * plan line may say so. False when cron/serp would not select it anyway.
+   */
+  tracksAfterPlan?: boolean;
+  standing: AccountStanding;
+};
+
+/**
+ * "We found your article live at <url>."
+ *
+ * A customer copied one of our drafts onto their own site and the nightly
+ * check found it. Plain on purpose: say what we found and where, what happens
+ * next, and how to say it is not theirs. The page is the proof, so the link
+ * is the button.
+ */
+export function renderArticleFoundLive(a: ArticleFoundLiveEmail): RenderedEmail {
+  const site = a.domain ?? "your site";
+  const tracking =
+    a.standing === "paying" && a.keyword
+      ? emailParagraph(
+          `From tonight we check where it ranks for <strong>${esc(a.keyword)}</strong> once a day. The positions show on the Keywords page.`,
+        )
+      : "";
+  const rest = a.tracksAfterPlan
+    ? "the rest of this week's articles get written, and we start checking where this one ranks."
+    : "the rest of this week's articles get written.";
+  const ask =
+    a.standing === "trial-eligible"
+      ? emailParagraph(
+          `<a href="${esc(trialGateUrl())}" style="color:${EMAIL_INK};">Start your ${TRIAL_DAYS}-day trial</a> to keep the week going: ${rest}`,
+        )
+      : a.standing === "lapsed"
+        ? emailParagraph(
+            `<a href="${esc(appLink("/settings/billing"))}" style="color:${EMAIL_INK};">Choose a plan</a> to keep the week going: ${rest}`,
+          )
+        : "";
+  return {
+    subject: `We found your article live on ${site}`,
+    preheader: `"${a.title}" is at ${a.url}`,
+    footerNote: `Sent because you own ${site} on AltoRank.`,
+    html:
+      eyebrow(site) +
+      heading(a.title) +
+      emailParagraph(
+        `We found your article live at <a href="${esc(a.url)}" style="color:${EMAIL_INK};">${esc(a.url)}</a>. Our nightly check of your site compared the page with the draft we wrote, and it is the same text, so AltoRank now counts it as published.`,
+      ) +
+      emailButton(a.url, "Open the page") +
+      tracking +
+      ask +
+      emailParagraph(
+        `Not yours? <a href="${esc(appLink(`/content/${a.articleId}`))}" style="color:${EMAIL_INK_2};">Open the article</a> and choose "Not my article". We put it back the way it was and never match that page to it again.`,
+      ),
+  };
+}
+
+export type ArticleFoundLiveOpsEmail = ArticleFoundLiveEmail & {
+  /** What the owner email did, in describeSendOutcome's words. */
+  ownerEmail: string;
+  /** Whether the article's keyword is now in the nightly rank check. */
+  tracking: string;
+  /** The account's plan in the operators' words: trialing, paying, no plan... */
+  account: string;
+};
+
+/**
+ * The operators' note: a customer published one of our drafts. Rare and the
+ * one thing worth hearing about the same day, so it is its own email rather
+ * than a line in the error digest.
+ */
+export function renderArticleFoundLiveOps(a: ArticleFoundLiveOpsEmail): RenderedEmail {
+  const site = a.domain ?? "a site";
+  return {
+    subject: `Found live: ${site}`,
+    preheader: a.url,
+    footerNote: "Sent to the AltoRank operators (ADMIN_EMAILS).",
+    html:
+      eyebrow(site) +
+      heading(a.title) +
+      emailParagraph(`The nightly check found this draft live on the customer's site.`) +
+      quoted(a.url) +
+      emailParagraph(
+        `Account: ${esc(a.account)}. Keyword: ${a.keyword ? esc(a.keyword) : "none"}. Rank tracking: ${esc(a.tracking)}. Owner email: ${esc(a.ownerEmail)}.`,
+      ) +
+      emailButton(appLink(`/content/${a.articleId}`), "Open the article"),
   };
 }
 
@@ -419,13 +533,38 @@ export type PlanChangedEmail = {
   /** Included articles a month on the new tier; null for a plan with no ceiling. */
   articleLimit: number | null;
   upgrade: boolean;
+  /**
+   * The switch happened during the card trial. Nothing has been charged, so
+   * there is no difference to bill and no unused part to credit.
+   */
+  trialing?: boolean;
 };
+
+/**
+ * The money sentence said "Stripe has charged the difference" on an upgrade.
+ * The switch is prorated onto the NEXT invoice (`create_prorations`), so
+ * nothing was charged then, and during a trial nothing is charged at all.
+ * The downgrade line promised that a site writing above the new pace "will
+ * slow to it" when nothing changed the pace; the webhook now does
+ * (paceOnDowngrade), and the sentence says so.
+ */
+function planChangeMoney(a: PlanChangedEmail): string {
+  if (a.trialing) {
+    return `Nothing has been charged: your trial carries on, and its first charge is at the ${a.toLabel} price. The new allowance applies from now.`;
+  }
+  return a.upgrade
+    ? `The difference for the rest of this billing period, prorated, is added to your next invoice, and the new allowance applies from now.`
+    : `The unused part of the old price is credited against your next invoice. The new allowance applies from now.`;
+}
 
 export function renderPlanChanged(a: PlanChangedEmail): RenderedEmail {
   const allowance =
     a.articleLimit === null
       ? `There is no metered article ceiling on ${a.toLabel}.`
       : `That is ${a.articleLimit} articles a month.`;
+  const slowed = a.upgrade
+    ? ""
+    : ` Any workspace that was set to write faster than ${a.toLabel} includes has been slowed to fit it.`;
   return {
     subject: `Your plan is now ${a.toLabel}`,
     preheader: `Changed from ${a.fromLabel}. ${allowance}`,
@@ -435,19 +574,17 @@ export function renderPlanChanged(a: PlanChangedEmail): RenderedEmail {
       emailParagraph(
         `The plan changed from <strong>${esc(a.fromLabel)}</strong> to <strong>${esc(a.toLabel)}</strong>. ${esc(allowance)}`,
       ) +
-      emailParagraph(
-        a.upgrade
-          ? `Stripe has charged the difference for the rest of this billing period, prorated, and the new allowance applies from now.`
-          : `Stripe has credited the unused part of the old price against the next invoice. The new allowance applies from now, so a workspace already writing above the new pace will slow to it.`,
-      ) +
+      emailParagraph(esc(planChangeMoney(a) + slowed)) +
       emailButton(appLink("/settings/billing"), "See what is included") +
-      emailParagraph(`The invoice for this change is in the Stripe billing portal, linked from that page.`),
+      (a.trialing
+        ? ""
+        : emailParagraph(`The change shows on your next invoice, in the Stripe billing portal linked from that page.`)),
   };
 }
 
 export type TrialStartedEmail = {
   planLabel: string;
-  /** "€69/mo" style. */
+  /** What the card is charged on day eight: "€69", or "€690 for the year" (planChargeLabel). */
   planPrice: string;
   /** ISO end of the trial. */
   endsAt: string;
@@ -699,7 +836,7 @@ const NOTHING_WRITTEN: Record<
   paused: {
     subject: (site) => `${site} is paused, so nothing is being written`,
     what: "This workspace is paused. Drafting and publishing are both stopped.",
-    fix: "Resuming it from the workspace switcher puts it back into the next scheduled run.",
+    fix: "Resume it from the Workspaces page, or from the pause banner on its calendar, and it goes back into the next scheduled run.",
     cta: () => "Open the calendar",
     path: "/content",
   },
@@ -1062,6 +1199,54 @@ export async function notifyArticlePublished(
   );
 }
 
+/**
+ * The found-live receipt, to the account's owners, once per article and page.
+ * Optional ("publishing"), so an owner who switched publishing mail off is not
+ * sent it, and the unsubscribe link rides along.
+ */
+export async function notifyArticleFoundLive(
+  supabase: SupabaseClient,
+  scope: { accountId: string; workspaceId: string },
+  data: ArticleFoundLiveEmail,
+): Promise<SendOnceOutcome> {
+  const to = await accountOwnerRecipients(supabase, scope.accountId);
+  return sendOnce(
+    supabase,
+    to,
+    {
+      type: "article_found_live",
+      subjectId: `${data.articleId}:${data.url}`,
+      category: "publishing",
+      accountId: scope.accountId,
+      workspaceId: scope.workspaceId,
+    },
+    () => renderArticleFoundLive(data),
+  );
+}
+
+/** The operators' copy. Nothing when ADMIN_EMAILS is unset (`operatorRecipients` has no default). */
+export async function notifyOperatorsArticleFoundLive(
+  supabase: SupabaseClient,
+  scope: { accountId: string; workspaceId: string },
+  data: ArticleFoundLiveOpsEmail,
+): Promise<SendOnceOutcome> {
+  const to = operatorRecipients();
+  if (to.length === 0) return { sent: 0, skipped: 0, failed: 0 };
+  return sendOnce(
+    supabase,
+    to,
+    {
+      type: "ops_article_found_live",
+      subjectId: `${data.articleId}:${data.url}`,
+      // Required, as the other operator notes are: no unsubscribe link.
+      category: "account",
+      accountId: scope.accountId,
+      workspaceId: scope.workspaceId,
+    },
+    () => renderArticleFoundLiveOps(data),
+  );
+}
+
 export async function notifyPublishFailed(
   supabase: SupabaseClient,
   scope: { accountId: string; workspaceId: string },
@@ -1245,7 +1430,7 @@ export async function notifyApiKeyCreated(
   data: ApiKeyCreatedEmail,
   keyId: string,
 ): Promise<SendOnceOutcome> {
-  const to = await accountBillingRecipients(supabase, accountId);
+  const to = await accountSecurityRecipients(supabase, accountId);
   return sendOnce(
     supabase,
     to,

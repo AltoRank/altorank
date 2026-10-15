@@ -160,6 +160,43 @@ export const PLAN_YEARLY_PRICES: Record<PlanTier, string> = {
   scale: "Let's talk",
 };
 
+/** The slice of a Stripe subscription that says how often it bills. */
+type IntervalSource = {
+  items?: { data?: Array<{ price?: { id?: string | null; recurring?: { interval?: string | null } | null } | null }> } | null;
+  metadata?: Record<string, string> | null;
+};
+
+/**
+ * How often a subscription bills, read off the subscription itself.
+ *
+ * The price's own `recurring.interval` first: it is what Stripe charges. Then
+ * the price id against the yearly ids this deployment sells, then the
+ * `interval` our checkout writes into the metadata. A subscription that says
+ * nothing is monthly, the interval every plan is sold at by default.
+ *
+ * The trial emails used to quote `PLAN_PRICES` whatever was bought, so a
+ * yearly trialist was told the first charge was EUR 69 when the card was
+ * about to be charged EUR 690.
+ */
+export function intervalForSubscription(sub: IntervalSource | null | undefined): BillingInterval {
+  const price = sub?.items?.data?.[0]?.price;
+  const recurring = price?.recurring?.interval;
+  if (recurring === "year" || recurring === "month") return recurring;
+  const id = price?.id;
+  if (id && (id === process.env.STRIPE_PRICE_STARTER_YEARLY || id === process.env.STRIPE_PRICE_GROWTH_YEARLY)) return "year";
+  return sub?.metadata?.interval === "year" ? "year" : "month";
+}
+
+/**
+ * The amount a plan charges per period, as the billing emails quote it:
+ * "€69" for a month, "€690 for the year" for a year. The yearly figure says
+ * which period it pays for, because "€690" alone reads as a monthly price to
+ * somebody who last saw "€69".
+ */
+export function planChargeLabel(tier: PlanTier, interval: BillingInterval): string {
+  return interval === "year" ? `${PLAN_YEARLY_PRICES[tier]} for the year` : PLAN_PRICES[tier];
+}
+
 /** One line on who each rung is for. Mirrors `desc` in the pricing data. */
 export const PLAN_TAGLINES: Record<PlanTier, string> = {
   starter:

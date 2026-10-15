@@ -146,7 +146,7 @@ export async function announceNothingWritten(
 
 /**
  * The sites the generate cron never even looks at: opted into automatic
- * drafting and paused.
+ * drafting and paused by hand.
  *
  * `cron/generate` filters `status = 'paused'` out of its query, which is
  * correct - a paused site must not be written for - but it means the one state
@@ -160,7 +160,13 @@ export async function announcePausedSites(supabase: SupabaseClient, now: Date = 
       .from("workspaces")
       .select("id, domain, account_id, paused_until")
       .eq("auto_generate", true)
-      .eq("status", "paused");
+      .eq("status", "paused")
+      // Paused by hand only. A site paused by the account pause on Billing
+      // carries `paused_until`; its owner chose the pause, was emailed its
+      // date, and gets one reminder before it ends (remindEndingPauses). This
+      // used to send each such site a weekly "nothing is being written" -
+      // about 120 emails for ten sites paused for three months.
+      .is("paused_until", null);
     if (error) throw new Error(error.message);
 
     for (const ws of data ?? []) {

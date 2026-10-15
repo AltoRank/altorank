@@ -290,15 +290,29 @@ describe("announceNothingWritten", () => {
 describe("announcePausedSites", () => {
   it("covers the sites the cron's own query filters out", async () => {
     workspaceRows = [
-      { id: "ws-1", domain: "acme.com", account_id: "ag-1", paused_until: "2026-10-01", onboarded_at: "2026-08-01T00:00:00Z" },
+      { id: "ws-1", domain: "acme.com", account_id: "ag-1", paused_until: null, onboarded_at: "2026-08-01T00:00:00Z" },
     ];
     const lines = await announcePausedSites(client(), new Date("2026-09-07T07:00:00Z"));
 
     expect(lines).toEqual(["acme.com: emailed 2"]);
     expect(sends()[0].subject).toBe("acme.com is paused, so nothing is being written");
-    expect(sends()[0].html).toContain("October 1, 2026");
+    // Where the control is now: it left the workspace switcher.
+    expect(sends()[0].html).toContain("Workspaces page");
+    expect(sends()[0].html).not.toContain("workspace switcher");
     expect(workspaceFilters).toContainEqual(["eq auto_generate", true]);
     expect(workspaceFilters).toContainEqual(["eq status", "paused"]);
+  });
+
+  // A deliberate account pause has its own confirmation and one reminder;
+  // the weekly email per site was ~120 emails for ten sites over three months.
+  it("leaves sites paused by the account pause out", async () => {
+    workspaceRows = [
+      { id: "ws-1", domain: "acme.com", account_id: "ag-1", paused_until: "2026-10-01", onboarded_at: "2026-08-01T00:00:00Z" },
+      { id: "ws-2", domain: "beta.com", account_id: "ag-1", paused_until: "2026-10-01", onboarded_at: "2026-08-01T00:00:00Z" },
+    ];
+    expect(await announcePausedSites(client(), new Date("2026-09-07T07:00:00Z"))).toEqual([]);
+    expect(sends()).toHaveLength(0);
+    expect(workspaceFilters).toContainEqual(["is paused_until", null]);
   });
 
   it("says nothing when no paused site is set to write", async () => {

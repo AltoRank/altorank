@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **106** (run budgets; 105 is taken by an open branch), **107** (first-look timings, the streamed first body and the owed-body record) and **108** (the first body's counts-only progress), each with its section at the end. **101, 104, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099 and 100 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record) and **108** (the first body's counts-only progress), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099 and 100 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -155,6 +155,7 @@ m(file, applied) as (values
   ('100_pre_trial_spend_bounds',             not has_table_privilege('authenticated', 'public.workspaces', 'INSERT') and exists (select 1 from pg_trigger where tgname = 'account_members_guard_own_row') and not has_column_privilege('authenticated', 'public.workspaces', 'first_analysed_at', 'UPDATE')),
   ('101_account_creator',                    exists (select 1 from col where t='accounts' and c='created_by') and not has_table_privilege('authenticated', 'public.account_members', 'INSERT')),
   ('104_onboarding_nothing_planned',         exists (select 1 from col where t='onboarding_runs' and c='empty_pool') and exists (select 1 from chk where conname='onboarding_runs_status_check' and def like '%nothing_planned%')),
+  ('105_publish_log_found_on_site',          exists (select 1 from col where t='publish_log' and c='source') and exists (select 1 from col where t='publish_log' and c='url') and to_regclass('public.publish_log_found_on_site_once') is not null),
   ('106_run_budgets',                        to_regclass('public.run_budgets') is not null and exists (select 1 from col where t='provider_spend' and c='stage') and to_regprocedure('public.run_budget_claim(uuid,text,numeric,numeric)') is not null),
   ('107_fast_first_look',                    exists (select 1 from col where t='onboarding_runs' and c='timings') and exists (select 1 from col where t='articles' and c='body_stream') and not has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT') and to_regclass('public.owed_bodies') is not null and exists (select 1 from pg_trigger where tgname = 'articles_body_stream_server_only')),
   ('108_first_body_progress',                exists (select 1 from col where t='articles' and c='body_progress') and not has_column_privilege('authenticated', 'public.articles', 'body_progress', 'SELECT') and pg_get_functiondef('public.articles_body_stream_server_only'::regproc) like '%body_progress%')
@@ -292,6 +293,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 095_site_pages_extract.sql   # BEF
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 098_fact_check_unchecked.sql   # BEFORE its code is merged; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 101_account_creator.sql   # BEFORE its code is deployed; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 104_onboarding_nothing_planned.sql   # BEFORE its code is deployed; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 105_publish_log_found_on_site.sql   # BEFORE its code is merged (merge = deploy); see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 097_article_body_server_only.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 099_trial_gate_server_writes.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 100_pre_trial_spend_bounds.sql   # AFTER its code is live; see its section
@@ -356,7 +358,7 @@ no code in the repo references either).
 | 079_auto_approve.sql | `feat/auto-approve` | 001, 003 | yes | yes, loses hold stamps and approval kinds |
 | 080_oauth_connectors.sql | `distribution/hosted-mcp` #158 | 001, **051** | yes | yes, disconnects connectors |
 | 085_agencies_to_accounts.sql | `rename/agencies-to-accounts` | 001, 016, 053, 072 | yes (every step guarded) | by renaming back; nothing is dropped |
-| 082_system_events.sql | `round5/observability` #172 | 001 | yes | yes, loses the event log only |
+| 082_system_events.sql | `round5/observability` #172 | 001 | yes | yes, loses the event log and every signup's recorded source (export them first, see 082 below) |
 | 084_analysis_attempts.sql | `fix/reanalyse-and-cms-gate` | 001 | yes | yes, but the backfill's re-queue is not undone |
 | 091_public_tool_usage.sql | `tools/public-api` | none | yes | yes, `drop function public.reserve_public_tool_spend(text,numeric,numeric); drop table public.public_tool_usage;` (paid public tools then refuse to run) |
 | 093_draft_claims.sql | `fix/trial-hold-and-resume` | 001, 049 | yes | yes, drop the eight columns and the two indexes; the code that reads them must go first |
@@ -368,6 +370,7 @@ no code in the repo references either).
 | 100_pre_trial_spend_bounds.sql | `integration/root-causes-2026-09-25` | 076, 085, 053/072, 093; **its code deployed first** | yes | yes, see its section (the four holes it closes reopen) |
 | 101_account_creator.sql | `integration/root-causes-2026-09-25` | 085; **applied before its code is deployed** | yes | yes, see its section (an owner can again add any user as a member) |
 | 104_onboarding_nothing_planned.sql | `fix/onboarding-no-empty-gate` | 076; **applied before its code is deployed** | yes | only after its code is reverted and no row holds `nothing_planned`: see its section |
+| 105_publish_log_found_on_site.sql | `feat/found-live-receipt` | 003, 094; **applied before its code is merged** | yes | only after its code is reverted: see its section |
 | 106_run_budgets.sql | `fix/first-look-spend-reserve` | 025, 076; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section |
 | 107_fast_first_look.sql | `feat/fast-first-look` | 076, 097, 106; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section (loses the timing tables, any body mid-stream and the record of bodies owed) |
 | 108_first_body_progress.sql | `feat/first-look-ui` | 097, **107**; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section (loses only the progress of a body mid-write) |
@@ -713,13 +716,30 @@ renumbering after the branch was pushed would have been the riskier move —
 another session picking 082 in the meantime is a collision, a gap is only a
 gap. Nothing orders on the missing number and nothing waits for it.
 
-**Nothing reads this table to make a decision**, so it is safe to prune and
-safe to lose. There is no retention job yet; at eleven daily crons writing one
-row each plus failures, expect a few thousand rows a year. When it needs one:
-`delete from system_events where created_at < now() - interval '90 days';`
+**One kind of row is a record, not a log line: where each account came from.**
+The signup action writes one `level = 'info'`, `source = 'signup'` row per new
+account, `context->>'stage' = 'created'`, with the page, referring site and
+campaign in `context` (`src`, `ref`, `utm`; `lib/auth/signup-source.ts`). It is
+the only place that is stored, and grading a channel needs all of them, old
+ones included. Everything else here is operational and safe to prune or lose.
+There is no retention job yet; at eleven daily crons writing one row each plus
+failures, expect a few thousand rows a year. When it needs one, keep the signup
+rows:
 
-Roll back with `drop table if exists system_events;` — the code keeps working.
-`recordEvent` treats a missing table as a failed insert, logs one line and
+```sql
+delete from system_events
+where created_at < now() - interval '90 days'
+  and not (source = 'signup' and level = 'info' and context->>'stage' = 'created');
+```
+
+Roll back with `drop table if exists system_events;` — the code keeps working,
+but the signup sources go with it, so export them first:
+
+```sql
+\copy (select created_at, account_id, context from system_events where source = 'signup' and level = 'info' and context->>'stage' = 'created') to 'signup-sources.csv' csv header
+```
+
+After the drop, `recordEvent` treats a missing table as a failed insert, logs one line and
 returns false, and `/admin/events` says the log is unavailable rather than
 showing an empty table.
 
@@ -1237,6 +1257,56 @@ then re-add the four-value check and `alter table onboarding_runs drop column em
 
 Test: `lib/onboarding/__tests__/run-store.db.test.ts` (db tier). Green
 2026-09-29 on the local stack with 104 applied twice.
+
+## 105 — a find on the customer's site is a publish_log row, once
+
+`105_publish_log_found_on_site.sql`, for the found-live receipt
+(`lib/publishing/on-article-live.ts`, called by the nightly found-on-site
+check the moment it marks an article live). 094 wrote no publish_log row for
+a find; now one is written, and it is the claim that makes the receipt (the
+owner's email, the keyword in rank tracking, the operators' note) happen once.
+
+- `publish_log.source text not null default 'push'`, checked to `push` or
+  `found_on_site`. A constant default, so no table rewrite; every existing row
+  reads `push`, which is what it is.
+- `publish_log.url text`: the page a `found_on_site` row was found on; a check
+  requires it on those rows.
+- `publish_log_found_on_site_once`: unique `(article_id, url) where source =
+  'found_on_site'`. A second receipt for the same article and page fails with
+  23505 and sends nothing.
+
+**Apply BEFORE MERGING its code: a merge to `main` is the deploy.** The new
+code filters publish_log on `source = 'push'` in cron/publish's "already
+published today", the Retry button's last attempt (Articles list, editor,
+agent API) and the check's own "did we push it before"; on a database without
+the column those queries fail. cron/publish fails closed on that (it skips
+every cadence with "publish log unreadable" rather than reading "never
+published", which on an hourly cron would publish once an hour), so the cost
+of merging first is no scheduled publishing, the Retry button hidden and no
+finds recorded (the check's "did we push it before" read fails) until 105 is
+in. Old code never names
+either column, so applying early is harmless. Re-running is a no-op
+(`add column if not exists`, drop-and-add of the same checks, `create unique
+index if not exists`). Depends on 003 and 094.
+
+No backfill. Articles already found (`found_on_site_at is not null`) are
+never candidates again, so they never get a row or an email.
+
+Post-flight (expect `t`, `t`, `t`):
+
+```sql
+select exists (select 1 from information_schema.columns where table_name = 'publish_log' and column_name = 'source'),
+       exists (select 1 from information_schema.columns where table_name = 'publish_log' and column_name = 'url'),
+       to_regclass('public.publish_log_found_on_site_once') is not null;
+```
+
+Rollback, only after the code is reverted:
+`drop index if exists publish_log_found_on_site_once; delete from publish_log where source = 'found_on_site'; alter table publish_log drop constraint if exists publish_log_found_url_check, drop constraint if exists publish_log_source_check, drop column if exists url, drop column if exists source;`
+(the delete matters: without it, old cron/publish code reads a find as
+today's publish and skips the scheduled post).
+
+Test: `lib/publishing/__tests__/on-article-live.db.test.ts` (db tier). Green
+2026-10-02 on the local stack with 105 applied twice.
 
 ## 106 — run budgets
 

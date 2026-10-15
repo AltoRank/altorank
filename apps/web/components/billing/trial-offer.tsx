@@ -3,34 +3,46 @@ import Link from "next/link";
 import { useState } from "react";
 import { Icons } from "@/components/ui";
 import { StartTrialButton } from "./start-trial-button";
-import { PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval } from "@/lib/stripe";
-import { TRIAL_PLAN, chargeLine, otherIntervalLine, reassuranceLine, trialIncludes, type TrialOfferFacts } from "@/lib/billing/trial-offer";
+import { PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
+import { chargeLine, otherIntervalLine, otherPlanLine, reassuranceLine, trialIncludes, type TrialOfferFacts } from "@/lib/billing/trial-offer";
 
 /** The sentence for a member who cannot buy: who can, and what it opens. */
 export const MEMBER_CANNOT_BUY =
   "Only the account owner can start the trial. Ask them to: it opens the full article, approving and publishing, and the rest of the schedule.";
 
+
 /**
- * The trial offer outside the gate (the Articles page): the two intervals and
- * the button. The gate has its own, fuller box below (`TrialPriceBox`).
+ * The trial offer outside the gate (the Articles page): both hosted plans
+ * (#280: the pricing page sells a trial on the Agency card too), both
+ * intervals and the button. The gate has its own, fuller box below
+ * (`TrialPriceBox`).
  */
-export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, compact = false, onStart }: { canBuy?: boolean; returnTo?: string; secondary?: { href: string; label: string }; compact?: boolean; onStart?: () => void }) {
+export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, compact = false, initialPlan = "starter", onStart }: { canBuy?: boolean; returnTo?: string; secondary?: { href: string; label: string }; compact?: boolean; initialPlan?: SelfServePlan; onStart?: () => void }) {
+  const [plan, setPlan] = useState<SelfServePlan>(initialPlan);
   const [interval, setInterval] = useState<BillingInterval>("month");
   const [error, setError] = useState<string | null>(null);
   // Nothing here is readable before the trial (lib/billing/trial.ts,
   // draftBodyLocked), so the sentence for a member who cannot buy says who
   // can, and what it opens.
   if (!canBuy) return <p className="text-sm text-ink-2">{MEMBER_CANNOT_BUY}</p>;
+  const monthly = PLAN_PRICES[plan];
+  const yearly = PLAN_YEARLY_PRICES[plan];
   return <div className={`rounded-lg border border-line bg-panel ${compact ? "p-3" : "p-4"}`}>
+    <div className="mb-2 grid grid-cols-2 gap-2">
+      {(["starter", "growth"] as const).map((tier) =>
+        <button key={tier} type="button" aria-pressed={plan === tier} onClick={() => { setPlan(tier); setError(null); }} className={`rounded-lg border p-3 text-left ${plan === tier ? "border-accent bg-accent/10" : "border-line"}`}>
+          {PLAN_LABELS[tier]}
+        </button>)}
+    </div>
     <div className="mb-3 grid grid-cols-2 gap-2">
-      {([{id:"month",label:"Monthly",price:PLAN_PRICES.starter,unit:"month"},{id:"year",label:"Yearly",price:PLAN_YEARLY_PRICES.starter,unit:"year"}] as const).map((option) =>
+      {([{id:"month",label:"Monthly",price:monthly,unit:"month"},{id:"year",label:"Yearly",price:yearly,unit:"year"}] as const).map((option) =>
         <button key={option.id} type="button" aria-pressed={interval === option.id} onClick={() => { setInterval(option.id); setError(null); }} className={`rounded-lg border p-3 text-left ${interval === option.id ? "border-accent bg-accent/10" : "border-line"}`}>
           {option.label} · <span className="whitespace-nowrap">{option.price} per {option.unit}</span>
         </button>)}
     </div>
     {/* The first charge is not a renewal: said as the charge it is. */}
-    <p className="mb-3 text-sm">{TRIAL_DAYS} days free with a card, then {interval === "month" ? `${PLAN_PRICES.starter} per month` : `${PLAN_YEARLY_PRICES.starter} per year`}. Cancel from Billing before the trial ends and nothing is charged.</p>
-    <StartTrialButton interval={interval} returnTo={returnTo} onError={setError} onStart={onStart} />
+    <p className="mb-3 text-sm">{TRIAL_DAYS} days free with a card, then {PLAN_LABELS[plan]} at {interval === "month" ? `${monthly} per month` : `${yearly} per year`}. Cancel from Billing before the trial ends and nothing is charged.</p>
+    <StartTrialButton plan={plan} interval={interval} returnTo={returnTo} onError={setError} onStart={onStart} />
     {secondary && <Link className="ml-4 text-accent underline" href={secondary.href}>{secondary.label}</Link>}
     {error && <p role="alert" className="mt-2 text-sm text-err-ink">{error} <Link className="underline" href="/checkout/cancelled">Manage open checkout</Link></p>}
   </div>;
@@ -49,6 +61,8 @@ export function TrialPriceBox({
   canBuy,
   interval,
   onInterval,
+  plan = "starter",
+  onPlan,
   facts,
   fullArticle,
   returnTo = "/dashboard",
@@ -58,6 +72,9 @@ export function TrialPriceBox({
   canBuy: boolean;
   interval: BillingInterval;
   onInterval: (next: BillingInterval) => void;
+  /** Managed unless the owner switches to Agency; shared with the sticky bar like the interval. */
+  plan?: SelfServePlan;
+  onPlan?: (next: SelfServePlan) => void;
   facts: TrialOfferFacts;
   fullArticle: boolean;
   returnTo?: string;
@@ -72,12 +89,12 @@ export function TrialPriceBox({
     <section aria-labelledby="trial-offer-heading" className="rounded-[10px] border border-line bg-panel p-5">
       {/* The plan's name means nothing yet to someone on their first visit:
           it is a label over the heading, not the heading (review, 2026-10-12). */}
-      <p className="m-0 mb-1 text-[11px] uppercase tracking-wide text-ink-3">{TRIAL_PLAN} plan</p>
+      <p className="m-0 mb-1 text-[11px] uppercase tracking-wide text-ink-3">{PLAN_LABELS[plan]} plan</p>
       <h2 id="trial-offer-heading" className="m-0 text-[16px] font-semibold leading-snug text-ink">
         Start your free {TRIAL_DAYS}-day trial
       </h2>
       <ul className="m-0 mt-3 flex list-none flex-col gap-1.5 p-0" aria-label="What the trial includes">
-        {trialIncludes(fullArticle).map((line) => (
+        {trialIncludes(fullArticle, plan).map((line) => (
           <li key={line} className="flex items-start gap-2 text-[13px] leading-[1.5] text-ink-2">
             <span className="mt-[3px] shrink-0 text-ok-ink" aria-hidden>
               <Icons.check size={12} />
@@ -87,10 +104,11 @@ export function TrialPriceBox({
         ))}
       </ul>
       <p className="m-0 mt-4 text-[14px] font-medium leading-[1.5] text-ink" data-testid="trial-charge-line">
-        {chargeLine(interval, facts)}
+        {chargeLine(interval, facts, plan)}
       </p>
       <div ref={buttonRef} className="mt-3">
         <StartTrialButton
+          plan={plan}
           interval={interval}
           returnTo={returnTo}
           onError={setError}
@@ -108,8 +126,20 @@ export function TrialPriceBox({
         }}
         className="mt-2 text-left text-[12.5px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink-2"
       >
-        {otherIntervalLine(interval)}
+        {otherIntervalLine(interval, plan)}
       </button>
+      {onPlan && (
+        <button
+          type="button"
+          onClick={() => {
+            onPlan(plan === "starter" ? "growth" : "starter");
+            setError(null);
+          }}
+          className="mt-1 block text-left text-[12.5px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink-2"
+        >
+          {otherPlanLine(plan, interval)}
+        </button>
+      )}
       {error && (
         <p role="alert" className="m-0 mt-2 text-[12.5px] text-err-ink">
           {error}{" "}

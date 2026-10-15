@@ -122,9 +122,12 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
-const { constructEvent, retrieveSubscription } = vi.hoisted(() => ({
+const { constructEvent, retrieveSubscription, pendingItems, createInvoice, finalizeInvoice } = vi.hoisted(() => ({
   constructEvent: vi.fn(),
   retrieveSubscription: vi.fn(),
+  pendingItems: vi.fn(),
+  createInvoice: vi.fn(),
+  finalizeInvoice: vi.fn(),
 }));
 
 vi.mock("@/lib/stripe", async (importOriginal) => {
@@ -134,6 +137,8 @@ vi.mock("@/lib/stripe", async (importOriginal) => {
     getStripe: () => ({
       webhooks: { constructEvent },
       subscriptions: { retrieve: retrieveSubscription },
+      invoiceItems: { list: pendingItems },
+      invoices: { create: createInvoice, finalizeInvoice },
     }),
   };
 });
@@ -234,6 +239,9 @@ beforeEach(() => {
   constructEvent.mockReset();
   retrieveSubscription.mockReset();
   retrieveSubscription.mockResolvedValue({ items: { data: [{ price: { id: GROWTH } }] } });
+  pendingItems.mockReset().mockResolvedValue({ data: [] });
+  createInvoice.mockReset().mockResolvedValue({ id: "in_final" });
+  finalizeInvoice.mockReset().mockResolvedValue({ id: "in_final" });
   process.env.STRIPE_WEBHOOK_SECRET = "whsec_test";
   process.env.STRIPE_PRICE_STARTER = STARTER;
   process.env.STRIPE_PRICE_STARTER_YEARLY = "price_starter_year";
@@ -552,6 +560,97 @@ describe("customer.subscription.updated / deleted", () => {
   });
 });
 
+// A subscription cancelled at period end makes no final invoice, so the last
+// period's overage - pending items waiting for a next invoice - was never billed.
+describe("the final period's overage", () => {
+  it("is invoiced when the subscription ends", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
+    pendingItems.mockResolvedValue({ data: [{ id: "ii_1" }] });
+    const res = await deliver(subscriptionEvent("deleted"));
+    expect(res.status).toBe(200);
+    expect(pendingItems).toHaveBeenCalledWith({ customer: "cus_1", pending: true, limit: 1 });
+    expect(createInvoice).toHaveBeenCalledWith(expect.objectContaining({ customer: "cus_1", pending_invoice_items_behavior: "include", auto_advance: true }));
+    expect(finalizeInvoice).toHaveBeenCalledWith("in_final");
+  });
+
+  // Checkout saves the card on the subscription, not as the customer's
+  // invoice default; an invoice with no subscription would find no card.
+  it("is charged to the ended subscription's card", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
+    pendingItems.mockResolvedValue({ data: [{ id: "ii_1" }] });
+    await deliver(subscriptionEvent("deleted", { default_payment_method: "pm_card" }));
+    expect(createInvoice).toHaveBeenCalledWith(expect.objectContaining({ default_payment_method: "pm_card" }));
+  });
+
+  it("makes no invoice when nothing is pending, and none on an ordinary update", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
+    await deliver(subscriptionEvent("deleted"));
+    expect(createInvoice).not.toHaveBeenCalled();
+    pendingItems.mockResolvedValue({ data: [{ id: "ii_1" }] });
+    await deliver(subscriptionEvent("updated"));
+    expect(createInvoice).not.toHaveBeenCalled();
+  });
+
+  it("answers 500 when the invoice cannot be made, so Stripe delivers the end again", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
+    pendingItems.mockResolvedValue({ data: [{ id: "ii_1" }] });
+    createInvoice.mockRejectedValue(new Error("Stripe is down"));
+    await expect(deliver(subscriptionEvent("deleted"))).rejects.toThrow(/final period's overage/);
+  });
+
+  it("does not retry for ever for a customer deleted at Stripe", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null };
+    pendingItems.mockRejectedValue(Object.assign(new Error("No such customer"), { code: "resource_missing" }));
+    const res = await deliver(subscriptionEvent("deleted"));
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("a plan change", () => {
+  // The in-app switch writes the new tier to the row as soon as Stripe accepts
+  // it, so the event arrived to a row that already said Agency and the change
+  // email was skipped. The event's previous price says where it came from.
+  it("emails an in-app switch whose row already carries the new tier", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "growth" };
+    await deliver(subscriptionEvent("updated", {}, { items: { data: [{ price: { id: STARTER } }] } }));
+    expect(planChangedEmail).toHaveBeenCalledOnce();
+    expect(planChangedEmail.mock.calls[0][2]).toMatchObject({ fromLabel: "Managed", toLabel: "Agency", upgrade: true, trialing: false });
+  });
+
+  it("sends nothing for a monthly/yearly switch on the same tier", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "growth" };
+    await deliver(subscriptionEvent("updated", { items: { data: [{ price: { id: GROWTH_YEARLY } }] } }, { items: { data: [{ price: { id: GROWTH } }] } }));
+    expect(planChangedEmail).not.toHaveBeenCalled();
+  });
+
+  it("says it happened during the trial, when it did", async () => {
+    accountRow = { id: "account-1", plan_status: "trialing", payment_failed_at: null, plan: "starter" };
+    await deliver(subscriptionEvent("updated", { status: "trialing", trial_end: 1_790_604_800 }));
+    expect(planChangedEmail.mock.calls[0][2]).toMatchObject({ trialing: true });
+  });
+
+  // An Agency site at 25 a week kept that pace on Managed until the month's
+  // 100 were used and scheduled writing stopped dead.
+  it("slows every site above the new tier's ceiling on a downgrade, and only those", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "growth" };
+    workspaceRows = [
+      { id: "ws-fast", auto_generate_weekly_limit: 25 },
+      { id: "ws-slow", auto_generate_weekly_limit: 3 },
+    ];
+    await deliver(subscriptionEvent("updated", { items: { data: [{ price: { id: STARTER } }] } }, { items: { data: [{ price: { id: GROWTH } }] } }));
+    const paceWrites = writes.filter((w) => w.table === "workspaces" && "auto_generate_weekly_limit" in w.row);
+    expect(paceWrites).toEqual([expect.objectContaining({ row: { auto_generate_weekly_limit: 23 }, val: "ws-fast" })]);
+    expect(planChangedEmail.mock.calls[0][2]).toMatchObject({ upgrade: false });
+  });
+
+  it("leaves the pace alone on an upgrade", async () => {
+    accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "starter" };
+    workspaceRows = [{ id: "ws-1", auto_generate_weekly_limit: 3 }];
+    await deliver(subscriptionEvent("updated"));
+    expect(writes.filter((w) => w.table === "workspaces")).toEqual([]);
+  });
+});
+
 describe("the account pause ending on Stripe's side", () => {
   it("resumes the billing-paused workspaces when pause_collection is lifted", async () => {
     // Stripe's `resumes_at` clears the pause on the date and reports the old
@@ -735,6 +834,19 @@ describe("the seven-day card trial", () => {
     expect((await import("../route")).maxDuration).toBe(300);
   });
 
+  it("quotes the yearly price to a yearly trialist, and the monthly one otherwise", async () => {
+    const yearly = { status: "trialing", trial_end: TRIAL_END, items: { data: [{ price: { id: "price_starter_year", recurring: { interval: "year" } } }] } };
+    retrieveSubscription.mockResolvedValue(yearly);
+    trialStarted.mockClear();
+    await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter", interval: "year" } }));
+    expect(trialStarted.mock.calls[0][2]).toMatchObject({ planPrice: "€690 for the year" });
+
+    retrieveSubscription.mockResolvedValue({ status: "trialing", trial_end: TRIAL_END, items: { data: [{ price: { id: STARTER, recurring: { interval: "month" } } }] } });
+    trialStarted.mockClear();
+    await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter", interval: "month" } }));
+    expect(trialStarted.mock.calls[0][2]).toMatchObject({ planPrice: "€69" });
+  });
+
   it("does not tell the person the week went to the writer when nothing will write it", async () => {
     // The claim the email makes is checked, not assumed: no site set to write
     // automatically (or every one paused), or an install that cannot hand a
@@ -800,6 +912,20 @@ describe("customer.subscription.trial_will_end", () => {
     expect(trialEnding.mock.calls[0][1]).toBe("account-1");
     expect(trialEnding.mock.calls[0][2]).toMatchObject({ endsAt: new Date(1_790_604_800 * 1000).toISOString() });
     expect(trialEnding.mock.calls[0][3]).toBe("sub_1");
+  });
+
+  it("quotes the yearly price three days before a yearly trial's first charge", async () => {
+    trialEnding.mockClear();
+    accountRow = { id: "account-1", plan_status: "trialing", payment_failed_at: null, plan: "starter", trial_ends_at: null };
+    await deliver({
+      ...subscriptionEvent("updated", {
+        status: "trialing",
+        trial_end: 1_790_604_800,
+        items: { data: [{ price: { id: GROWTH_YEARLY, recurring: { interval: "year" } } }] },
+      }),
+      type: "customer.subscription.trial_will_end",
+    });
+    expect(trialEnding.mock.calls[0][2]).toMatchObject({ planLabel: "Agency", planPrice: "€1,990 for the year" });
   });
 
   it("sends nothing for a trial ended by a date on or before its end", async () => {

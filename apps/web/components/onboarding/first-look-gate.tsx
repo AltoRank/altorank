@@ -30,7 +30,7 @@ import type { FirstArticleCard } from "@/lib/onboarding/first-article";
 import type { OnboardingPlanned } from "@/lib/onboarding/events";
 import { asksForCard, type SetupEnding } from "@/lib/onboarding/setup-retry";
 import { trackStep } from "@/lib/onboarding/track-step";
-import { TRIAL_DAYS, type BillingInterval } from "@/lib/stripe";
+import { TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
 import { stickyOfferLine, type TrialOfferFacts } from "@/lib/billing/trial-offer";
 import { EMPTY_ATTRIBUTION, attributionComplete, type AttributionDraft } from "./attribution-picker";
 import { ATTRIBUTION_NOTE_MAX, ATTRIBUTION_SOURCES } from "@/lib/attribution";
@@ -153,6 +153,8 @@ export function GateTop({
   // same checkout. The bar's button used to start a monthly one whatever the
   // box said (UX audit 2026-10-12, #9).
   const [interval, setInterval] = useState<BillingInterval>("month");
+  // So is the plan: Managed unless the owner switches to Agency in the box.
+  const [plan, setPlan] = useState<SelfServePlan>("starter");
 
   // The slim bar keeps the trial a click away whenever the box's own button
   // is off screen - the whole time the article is being written, since the
@@ -228,7 +230,7 @@ export function GateTop({
             canBuy={canBuy}
             followUp={followUp}
             returnTo="/dashboard"
-            offer={{ interval, onInterval: setInterval, facts: offer, fullArticle, buttonRef }}
+            offer={{ interval, onInterval: setInterval, plan, onPlan: setPlan, facts: offer, fullArticle, buttonRef }}
             // The soft exit, under the button and quieter than it: a link
             // back by email, never the text (UX audit 2026-10-12, #3). Only
             // once there is an article to come back to: offered from the
@@ -246,9 +248,9 @@ export function GateTop({
           <div className="mx-auto flex max-w-[680px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
             <p className="m-0 min-w-0 text-[12.5px] leading-[1.4] text-ink-2">
               <span className="hidden sm:inline">{stickyLine(written, fullArticle)} </span>
-              <span>{stickyOfferLine(interval)}</span>
+              <span>{stickyOfferLine(interval, plan)}</span>
             </p>
-            <StartTrialButton returnTo="/dashboard" interval={interval} onStart={() => trackStep("trial_clicked")} className="shrink-0" />
+            <StartTrialButton returnTo="/dashboard" plan={plan} interval={interval} onStart={() => trackStep("trial_clicked")} className="shrink-0" />
           </div>
         </div>
       )}
