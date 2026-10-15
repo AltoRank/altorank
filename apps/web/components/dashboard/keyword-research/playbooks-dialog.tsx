@@ -18,6 +18,13 @@ interface PlaybooksDialogProps {
  * person's own profile. Each card shows the phrases it would actually search,
  * so the decision is made on the real seeds rather than on a template name.
  */
+/**
+ * Said "then schedule the best ones". The footer of the same dialog says
+ * nothing is scheduled, and runPlaybook only researches
+ * (app/actions/keyword-research.ts): results open in the drawer.
+ */
+export const PLAYBOOKS_DESCRIPTION = "Pick a playbook and we'll research the keywords for you. You choose which to keep from the results.";
+
 export function PlaybooksDialog({ workspaceId, open, onOpenChange, onResult }: PlaybooksDialogProps) {
   const [cards, setCards] = useState<PlaybookCard[] | null>(null);
   const [running, setRunning] = useState<PlaybookId | null>(null);
@@ -50,7 +57,7 @@ export function PlaybooksDialog({ workspaceId, open, onOpenChange, onResult }: P
       open={open}
       onOpenChange={onOpenChange}
       title="Playbooks"
-      description="Pick a playbook and we'll research the keywords for you, then schedule the best ones."
+      description={PLAYBOOKS_DESCRIPTION}
       className="max-w-[760px]"
     >
       {error && <div className="text-[12.5px] text-err-ink bg-err-soft rounded-md px-3 py-2 mb-3">{error}</div>}
