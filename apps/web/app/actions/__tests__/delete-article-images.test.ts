@@ -22,10 +22,7 @@ vi.mock("@/lib/supabase/server", () => ({
     throw new Error("not used: storageAdmin is mocked");
   },
 }));
-vi.mock("@/lib/storage/purge", async (importOriginal) => {
-  const real = await importOriginal<typeof import("@/lib/storage/purge")>();
-  return { ...real, storageAdmin: () => adminClient() };
-});
+vi.mock("@/lib/storage/admin", () => ({ storageAdmin: () => adminClient() }));
 
 /** The server's client: article facts from `facts`, storage from `files`. */
 let facts: Record<string, unknown> | null = null;

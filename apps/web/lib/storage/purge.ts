@@ -1,6 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { REPORTS_BUCKET } from "@/lib/reports/storage";
-import { createServiceClient } from "@/lib/supabase/server";
 
 // ---------------------------------------------------------------------------
 // Removing what a deleted article or site left in storage
@@ -17,18 +16,12 @@ import { createServiceClient } from "@/lib/supabase/server";
 // and the delete card promises nothing already published is touched. Images
 // of an article that never did are removed with it.
 //
-// Every call takes the service-role client, after the caller has checked the
-// person may delete the row (the RLS delete itself succeeded).
+// Every call takes the service-role client (lib/storage/admin.ts), after the
+// caller has checked the person may delete the row (the RLS delete itself
+// succeeded). No server-only import here: lib/workspaces/delete.ts, which a
+// client component reads its confirmation text from, imports this file.
 
 export const ARTICLE_IMAGES_BUCKET = "article-images";
-
-/**
- * The service-role client purges run with, or null on a self-host without the
- * key: nothing is removed there, as before, rather than failing the delete.
- */
-export function storageAdmin(): SupabaseClient | null {
-  return process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY ? createServiceClient() : null;
-}
 
 const PAGE = 1000;
 const REMOVE_BATCH = 500;

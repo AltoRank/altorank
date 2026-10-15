@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { removePendingOverage } from "@/lib/billing/overage";
 import { createClient } from "@/lib/supabase/server";
-import { LIVE_COLUMNS, purgeArticleImages, storageAdmin, wasEverLive, type LiveFacts } from "@/lib/storage/purge";
+import { LIVE_COLUMNS, purgeArticleImages, wasEverLive, type LiveFacts } from "@/lib/storage/purge";
+import { storageAdmin } from "@/lib/storage/admin";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { z } from "zod";
 import { assertEditorialStatus } from "@/lib/articles/editorial-status";

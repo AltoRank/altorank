@@ -17,7 +17,7 @@ import { PLAN_LABELS } from "@/lib/stripe";
 import { pauseWorkspace as pauseWorkspaceCore, resumeWorkspace as resumeWorkspaceCore } from "@/lib/workspaces/pause";
 import type { PausedMeta } from "@/lib/types";
 import { deleteWorkspaceForAccount, type DeleteWorkspaceResult } from "@/lib/workspaces/delete";
-import { storageAdmin } from "@/lib/storage/purge";
+import { storageAdmin } from "@/lib/storage/admin";
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1),
