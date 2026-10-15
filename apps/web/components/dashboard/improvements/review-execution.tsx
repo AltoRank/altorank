@@ -8,7 +8,8 @@ import { Dialog } from "@/components/ui/dialog";
 import { Icons } from "@/components/ui/icons";
 import { cn, plural } from "@/lib/utils";
 import { summarizeDecisions } from "@/lib/refresh/hunks";
-import { DecideAllButtons, KeepRejectButtons, KeptCounter, sanitizeHunkHtml } from "@/components/dashboard/review/hunk-controls";
+import { DecideAllButtons, KeepRejectButtons, KeptCounter } from "@/components/dashboard/review/hunk-controls";
+import { sanitizeHtml } from "@/lib/html/sanitize";
 import { describeEvidence } from "@/lib/refresh/brief";
 import {
   exportExecutionAction,
@@ -326,13 +327,13 @@ export function ReviewExecution({
                     {h.kind !== "added" && (
                       <div className={cn("p-3 prose-block text-[13.5px] leading-relaxed", h.kind === "changed" && "md:border-r border-line-soft", h.kind === "removed" && "bg-err-soft/40")}>
                         {h.kind === "changed" && <div className="text-[10.5px] uppercase tracking-[0.06em] text-ink-4 mb-1">Before</div>}
-                        <div dangerouslySetInnerHTML={{ __html: sanitizeHunkHtml(h.before ?? "") }} />
+                        <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(h.before ?? "") }} />
                       </div>
                     )}
                     {h.kind !== "removed" && h.kind !== "unchanged" && (
                       <div className={cn("p-3 prose-block text-[13.5px] leading-relaxed", h.kind === "added" && "bg-ok-soft/40")}>
                         {h.kind === "changed" && <div className="text-[10.5px] uppercase tracking-[0.06em] text-ink-4 mb-1">After</div>}
-                        <div dangerouslySetInnerHTML={{ __html: sanitizeHunkHtml(isEdited ? edited[h.id] : h.after ?? "") }} />
+                        <div dangerouslySetInnerHTML={{ __html: sanitizeHtml(isEdited ? edited[h.id] : h.after ?? "") }} />
                       </div>
                     )}
                   </div>

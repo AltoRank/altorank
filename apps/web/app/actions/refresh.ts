@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { analyzeWorkspace, headingsOf, type AnalyzeResult } from "@/lib/refresh/detect";
 import { writeBrief } from "@/lib/refresh/brief";
+import { sanitizeHtml } from "@/lib/html/sanitize";
 import { loadPageBody } from "@/lib/refresh/rewrite";
 import { readArticlesWhole } from "@/lib/articles/body-read";
 import { pushExecution, exportExecution, type PushResult } from "@/lib/refresh/push";
@@ -218,10 +219,13 @@ const decisionSchema = z.object({
 export async function saveExecutionDecisions(executionId: string, decisions: ExecutionDecisions): Promise<void> {
   await requireAuth();
   const parsed = decisionSchema.parse(decisions);
+  // A reviewer's own text is stored the way it will be pushed: rebuilt by the
+  // allowlist sanitiser, so what another member opens is never raw markup.
+  const edited = Object.fromEntries(Object.entries(parsed.edited).map(([id, html]) => [id, sanitizeHtml(html)]));
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("refresh_executions")
-    .update({ decisions: parsed })
+    .update({ decisions: { ...parsed, edited } })
     .eq("id", executionId)
     .eq("review_status", "awaiting_review")
     .select("id")

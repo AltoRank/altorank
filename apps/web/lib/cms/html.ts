@@ -2,13 +2,17 @@
  * Convert Tiptap ProseMirror JSON to clean HTML for CMS publishing.
  */
 
-import { isSafeSvg } from "@/lib/content/enrich/svg";
+import { headingLevel } from "@/lib/html/article-doc";
+import { isEmbedSrc, safeUrl, sanitizeSvg } from "@/lib/html/sanitize";
 
-/**
- * Hosts an embedded player may come from. Only YouTube, and preferably its
- * privacy-enhanced host; an iframe pointing anywhere else is not published.
- */
-const EMBED_HOSTS = /^https:\/\/(www\.)?(youtube-nocookie\.com|youtube\.com)\/embed\//i;
+// Every value that becomes markup or a URL here is held to lib/html/sanitize.ts,
+// the same rules the editor and the server-side content check apply: a link
+// keeps its href only when the scheme is one a page can navigate to
+// (relative, #, http, https, mailto, tel), an image only an http(s) or
+// relative src, an embed only a YouTube player, a heading only a level from 1
+// to 6, and an inline SVG figure is rebuilt from the SVG allowlist. The editor
+// blanks a disallowed href on screen, so publishing one would have shown the
+// reviewer a different link from the one the site serves.
 
 type TiptapNode = {
   type: string;
@@ -39,7 +43,9 @@ function renderMarks(text: string, marks?: { type: string; attrs?: Record<string
         // showed. A relative path never gets them: the editor's Link
         // extension stamps its defaults on a hand-added link, and a
         // nofollowed link to the site's own page is worse than a bare one.
-        const href = String(mark.attrs?.href ?? "");
+        const href = safeUrl(mark.attrs?.href, "link");
+        // A link the rules refuse is published as its text alone.
+        if (!href) break;
         const relative = !/^[a-z][a-z0-9+.-]*:/i.test(href);
         const attr = (name: "target" | "rel") => {
           const v = mark.attrs?.[name];
@@ -75,7 +81,7 @@ function renderNode(node: TiptapNode): string {
     case "paragraph":
       return `<p>${children}</p>\n`;
     case "heading": {
-      const level = node.attrs?.level ?? 2;
+      const level = headingLevel(node.attrs?.level);
       const id = node.attrs?.id ? ` id="${escapeAttr(String(node.attrs.id))}"` : "";
       return `<h${level}${id}>${children}</h${level}>\n`;
     }
@@ -90,7 +96,9 @@ function renderNode(node: TiptapNode): string {
     case "codeBlock":
       return `<pre><code>${children}</code></pre>\n`;
     case "image": {
-      const src = escapeAttr(String(node.attrs?.src ?? ""));
+      const safeSrc = safeUrl(node.attrs?.src, "image");
+      if (!safeSrc) return "";
+      const src = escapeAttr(safeSrc);
       const alt = escapeAttr(String(node.attrs?.alt ?? ""));
       const title = node.attrs?.title ? ` title="${escapeAttr(String(node.attrs.title))}"` : "";
       const caption = captionOf(node);
@@ -99,8 +107,8 @@ function renderNode(node: TiptapNode): string {
         : `<img src="${src}" alt="${alt}"${title} />\n`;
     }
     case "iframe": {
-      const src = String(node.attrs?.src ?? "");
-      if (!EMBED_HOSTS.test(src)) return "";
+      const src = String(node.attrs?.src ?? "").trim();
+      if (!isEmbedSrc(src)) return "";
       const title = escapeAttr(String(node.attrs?.title ?? ""));
       const caption = captionOf(node);
       return (
@@ -111,8 +119,9 @@ function renderNode(node: TiptapNode): string {
       );
     }
     case "svgFigure": {
-      const svg = node.attrs?.svg;
-      if (!isSafeSvg(typeof svg === "string" ? svg : null)) return "";
+      // Rebuilt from the SVG allowlist (lib/html/sanitize.ts), never emitted as stored.
+      const svg = sanitizeSvg(node.attrs?.svg);
+      if (!svg) return "";
       const caption = captionOf(node);
       return `<figure class="infographic">${svg}${caption ? `<figcaption>${caption}</figcaption>` : ""}</figure>\n`;
     }
@@ -146,8 +155,13 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/**
+ * A value inside a double-quoted attribute. `&` is left as written: stored
+ * hrefs carry the model's `&amp;`, and escaping it again would break them.
+ * The quote is what ends the value, and it is always escaped.
+ */
 function escapeAttr(text: string): string {
-  return text.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  return text.replace(/"/g, "&quot;").replace(/'/g, "&#39;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 export function tiptapToHtml(content: Record<string, unknown>): string {

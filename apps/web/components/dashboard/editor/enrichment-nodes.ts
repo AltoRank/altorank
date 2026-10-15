@@ -13,10 +13,7 @@
 // `@tiptap/react` re-exports `@tiptap/core`, so nothing new is installed.
 
 import { Node, Extension, mergeAttributes } from "@tiptap/react";
-import { isSafeSvg } from "@/lib/content/enrich/svg";
-
-/** Same allowlist as the serialiser. An iframe from anywhere else renders nothing. */
-const EMBED_HOSTS = /^https:\/\/(www\.)?(youtube-nocookie\.com|youtube\.com)\/embed\//i;
+import { isEmbedSrc, safeUrl, sanitizeSvg } from "@/lib/html/sanitize";
 
 /**
  * `id` on headings. The table of contents links to it and search results use
@@ -79,7 +76,11 @@ export const ArticleImage = Node.create({
   },
   renderHTML({ node, HTMLAttributes }) {
     const { caption, ...rest } = HTMLAttributes;
-    const img: [string, Record<string, unknown>] = ["img", mergeAttributes(rest, { loading: "lazy" })];
+    // Same URL rule as the serialiser (lib/html/sanitize.ts): http(s) or relative.
+    const img: [string, Record<string, unknown>] = [
+      "img",
+      mergeAttributes(rest, { src: safeUrl(rest.src, "image") ?? "", loading: "lazy" }),
+    ];
     if (!node.attrs.caption) return img;
     return ["figure", { class: "article-image" }, img, ["figcaption", {}, String(caption)]];
   },
@@ -118,8 +119,8 @@ export const VideoEmbed = Node.create({
     ];
   },
   renderHTML({ node }) {
-    const src = String(node.attrs.src ?? "");
-    if (!EMBED_HOSTS.test(src)) {
+    const src = String(node.attrs.src ?? "").trim();
+    if (!isEmbedSrc(src)) {
       return ["figure", { class: "video-embed video-embed-blocked" }, ["figcaption", {}, "Embed removed: not a YouTube player."]];
     }
     const frame: [string, Record<string, unknown>] = [
@@ -156,8 +157,8 @@ export const InfographicFigure = Node.create({
       {
         tag: "figure.infographic",
         getAttrs: (element) => {
-          const svg = (element as HTMLElement).querySelector("svg")?.outerHTML ?? null;
-          if (!isSafeSvg(svg)) return false;
+          const svg = sanitizeSvg((element as HTMLElement).querySelector("svg")?.outerHTML);
+          if (!svg) return false;
           return { svg, caption: captionText(element as HTMLElement) };
         },
       },
@@ -165,12 +166,13 @@ export const InfographicFigure = Node.create({
   },
   renderHTML({ node }) {
     // A DOM node rather than an output spec, because the chart is source
-    // markup and a spec has no way to carry markup. It is checked before it is
-    // rendered, here and again on publish.
+    // markup and a spec has no way to carry markup. What goes in is never the
+    // stored string: it is rebuilt from the SVG allowlist first, here and
+    // again on publish (lib/html/sanitize.ts).
     const figure = document.createElement("figure");
     figure.className = "infographic";
-    const svg = node.attrs.svg;
-    if (isSafeSvg(svg)) figure.innerHTML = svg;
+    const svg = sanitizeSvg(node.attrs.svg);
+    if (svg) figure.innerHTML = svg;
     if (node.attrs.caption) {
       const caption = document.createElement("figcaption");
       caption.textContent = String(node.attrs.caption);

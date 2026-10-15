@@ -1,4 +1,5 @@
 import { classifyHref } from "@/lib/seo/links";
+import { sanitizeArticleDoc } from "@/lib/html/article-doc";
 
 // ---------------------------------------------------------------------------
 // HTML -> Tiptap ProseMirror JSON converter
@@ -55,10 +56,13 @@ export function htmlToTiptapJson(html: string, opts: TiptapOptions = {}): Tiptap
   const tokens = tokenize(withPlaceholders);
   const content = parseTokens(tokens, { ...opts, svgs });
 
-  return {
+  // The model's HTML is steered by crawled pages, so what it produced is held
+  // to the same rules as an editor save before it is stored: unsafe hrefs and
+  // image sources dropped, SVG figures rebuilt from the allowlist.
+  return sanitizeArticleDoc({
     type: "doc",
     content: content.length > 0 ? content : [createParagraph([])],
-  };
+  }) as TiptapDoc;
 }
 
 // ---------------------------------------------------------------------------

@@ -52,14 +52,15 @@ export function ToolPageLayout({
   faqItems,
   children,
 }: ToolPageLayoutProps) {
-  // JSON-LD is built from static props we control — no user input, safe to inline
-  const jsonLd = buildJsonLd(name, subheadline, faqItems);
+  // JSON-LD is built from static props we control. `<` is still written as
+  // \u003c so no value can close the script element it sits in.
+  const jsonLd = JSON.stringify(buildJsonLd(name, subheadline, faqItems)).replace(/</g, "\\u003c");
 
   return (
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        dangerouslySetInnerHTML={{ __html: jsonLd }}
       />
 
       {/* Hero */}

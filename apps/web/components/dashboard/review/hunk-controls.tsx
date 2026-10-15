@@ -9,22 +9,14 @@ import type { HunkDecision } from "@/lib/refresh/types";
 // ---------------------------------------------------------------------------
 //
 // Two places review hunks: the Improvements execution page and the editor's
-// rewrite panel. The counter, the Keep/Reject pair, the Keep all/Reject all
-// pair and the sanitiser are the same in both, so they live here and neither
-// caller carries its own copy. Layout around them differs and stays local.
-
-/**
- * Model output is rendered as HTML so the reviewer sees the page, not the
- * markup. It is also model output, so anything executable is stripped first:
- * scripts, inline handlers, javascript: URLs, and embeds.
- */
-export function sanitizeHunkHtml(html: string): string {
-  return html
-    .replace(/<(script|style|iframe|object|embed|svg)\b[\s\S]*?<\/\1>/gi, "")
-    .replace(/<(script|iframe|object|embed)\b[^>]*\/?>/gi, "")
-    .replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/(href|src)\s*=\s*(["']?)\s*javascript:[^"'\s>]*\2/gi, '$1="#"');
-}
+// rewrite panel. The counter, the Keep/Reject pair and the Keep all/Reject all
+// pair are the same in both, so they live here and neither caller carries its
+// own copy. Layout around them differs and stays local.
+//
+// Hunk HTML (model output, a reviewer's edit, or a block read from the live
+// page) is rendered as HTML so the reviewer sees the page, not the markup.
+// Both callers pass it through `sanitizeHtml` (lib/html/sanitize.ts), the
+// allowlist sanitiser every other article HTML sink uses, first.
 
 /** "N / M kept": the one number a review is about. */
 export function KeptCounter({ kept, total, className }: { kept: number; total: number; className?: string }) {

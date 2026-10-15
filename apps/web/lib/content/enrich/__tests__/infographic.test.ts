@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { addInfographics, chartFromList, chartFromBeforeAfter, extractMeasures, renderBarChart } from "../infographic";
-import { isSafeSvg } from "../svg";
+import { sanitizeSvg } from "@/lib/html/sanitize";
 import { ARTICLE, SECTION } from "./fixtures";
 
 describe("infographic: recognising comparable numbers", () => {
@@ -37,7 +37,8 @@ describe("infographic: rendering", () => {
     expect(renderBarChart(spec, "en")).toContain('fill="currentColor"');
     const branded = renderBarChart(spec, "en", "#1a1815");
     expect(branded).toContain('fill="#1a1815"');
-    expect(isSafeSvg(branded.match(/<svg[\s\S]*<\/svg>/)?.[0])).toBe(true);
+    const brandedSvg = branded.match(/<svg[\s\S]*<\/svg>/)?.[0];
+    expect(sanitizeSvg(brandedSvg)).toBe(brandedSvg);
     expect(renderBarChart(spec, "en", 'red" onload="x')).toContain('fill="currentColor"');
   });
 
@@ -52,14 +53,17 @@ describe("infographic: rendering", () => {
     expect(figure).toContain("<title>from 42%, to 61%</title>");
     expect(figure).toContain("<figcaption>Figures from the text: “From 42% to 61%.”</figcaption>");
     expect(figure).not.toMatch(/<script|onload/i);
-    expect(isSafeSvg(figure.match(/<svg[\s\S]*<\/svg>/)?.[0])).toBe(true);
+    // The chart survives the sanitiser unchanged: nothing it writes is outside the allowlist.
+    const svg = figure.match(/<svg[\s\S]*<\/svg>/)?.[0];
+    expect(sanitizeSvg(svg)).toBe(svg);
   });
 
-  it("the safety check rejects scripts, handlers and external references", () => {
-    expect(isSafeSvg('<svg><script>1</script></svg>')).toBe(false);
-    expect(isSafeSvg('<svg><rect onload="x"/></svg>')).toBe(false);
-    expect(isSafeSvg('<svg><image href="https://x/y.png"/></svg>')).toBe(false);
-    expect(isSafeSvg('<svg viewBox="0 0 1 1"><rect width="1" height="1"/></svg>')).toBe(true);
+  it("the sanitiser keeps shapes and text and drops scripts, handlers and external references", () => {
+    expect(sanitizeSvg('<svg><script>1</script></svg>')).toBeNull();
+    expect(sanitizeSvg('<svg><rect onload="x"/></svg>')).toBe("<svg><rect></rect></svg>");
+    expect(sanitizeSvg('<svg><image href="https://x/y.png"/></svg>')).toBeNull();
+    expect(sanitizeSvg('<svg><image href="https://x/y.png"/><rect width="1"/></svg>')).toBe('<svg><rect width="1"></rect></svg>');
+    expect(sanitizeSvg('<svg viewBox="0 0 1 1"><rect width="1" height="1"/></svg>')).toBe('<svg viewBox="0 0 1 1"><rect width="1" height="1"></rect></svg>');
   });
 
   it("inserts one figure after the pricing list of the fixture and nothing elsewhere", () => {

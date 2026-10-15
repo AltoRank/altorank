@@ -72,6 +72,16 @@ describe("applyDecisions", () => {
     expect(out).not.toContain("<p>new</p>");
   });
 
+  it("rebuilds the rewrite and the reviewer's own text with the allowlist sanitiser; the original goes back as it was", () => {
+    const h = diffBlocks('<p>a</p><p class="theirs">b</p>', '<p>a</p><p>B<img src=x onerror="alert(1)"></p><p>c</p>');
+    const changed = h.find((x) => x.kind === "changed")!;
+    const added = h.find((x) => x.kind === "added")!;
+    const out = applyDecisions(h, { [changed.id]: "accepted" }, { [added.id]: '<p onclick="x()">mine<script>alert(1)</script></p>' });
+    expect(out).toBe('<p>a</p>\n<p>B<img src="x" /></p>\n<p>mine</p>');
+    // Rejected: the page's own block, untouched.
+    expect(applyDecisions(h, { [changed.id]: "rejected" })).toBe('<p>a</p>\n<p class="theirs">b</p>');
+  });
+
   it("added blocks appear only when accepted; removed blocks vanish only when accepted", () => {
     const h = diffBlocks("<p>a</p><p>b</p>", "<p>a</p><p>c</p><p>d</p>");
     // changed(b->c), added(d)

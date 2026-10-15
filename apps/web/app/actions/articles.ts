@@ -12,6 +12,8 @@ import { sessionBodyLockedForWorkspace } from "@/lib/billing/body-lock";
 import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { urlSlug } from "@/lib/i18n/locale";
 import { approvalAfterStatusChange, approvalAfterTextEdit } from "@/lib/articles/approval";
+import { sanitizeArticleDoc } from "@/lib/html/article-doc";
+import { safeUrl } from "@/lib/html/sanitize";
 
 const createArticleSchema = z.object({
   workspace_id: z.string().uuid(),
@@ -76,6 +78,16 @@ export async function updateArticle(
   // only. Approval, scheduling and publishing have their own actions and the
   // gate in lib/publishing/core.ts trusts status = "approved".
   if (data.status !== undefined) assertEditorialStatus(data.status);
+  // The body is checked here, on the server, against the same rules the
+  // publish serialiser and the editor apply: every link, image, embed and
+  // inline SVG figure in it is held to lib/html/sanitize.ts, and what does not
+  // pass is dropped. The client's JSON is never written as it arrived.
+  if (data.content !== undefined) data = { ...data, content: sanitizeArticleDoc(data.content) };
+  if (data.featured_image_url) {
+    const src = safeUrl(data.featured_image_url, "image");
+    if (!src) throw new Error("The featured image must be an http(s) address");
+    data = { ...data, featured_image_url: src };
+  }
   const supabase = await createClient();
   // The editor is what the trial opens. Before it the reads hand the editor
   // an article with its body withheld (lib/billing/body-lock.ts), and a Save
