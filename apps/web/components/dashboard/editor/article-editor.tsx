@@ -947,19 +947,18 @@ export function ArticleEditor({
           {article.research ? (
             <ResearchPanel research={article.research} />
           ) : (
+            // Said "Regenerate to pull the live search results", but the
+            // editor's Generate draft button is disabled ("Coming soon"), so
+            // there was nothing to press.
             <div className="text-[12.5px] text-ink-3 italic">
-              This draft was written before research was wired in. Regenerate to
-              pull the live search results, questions and intent for this keyword.
+              No research is stored for this draft. It was written by hand, or before drafts kept the search
+              results, questions and intent they were written from.
             </div>
           )}
         </SidebarSection>
 
-        {/* Voice check */}
-        <SidebarSection title="Voice check">
-          <div className="text-[12.5px] text-ink-3 italic">
-            Voice analysis available after content generation
-          </div>
-        </SidebarSection>
+        {/* The "Voice check" section is gone: it always read "available after
+            content generation", and nothing ever filled it, generated or not. */}
 
         {/* Publish to */}
         <SidebarSection title="Publish to" last>
