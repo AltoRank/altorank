@@ -15,6 +15,7 @@
 
 import { createServiceClient } from "@/lib/supabase/server";
 import { notifyApiKeyCreated, notifyPasswordChanged } from "./lifecycle";
+import { actorName } from "./approval-events";
 
 /**
  * Tell an address that its password changed.
@@ -49,6 +50,8 @@ export async function announceApiKeyCreated(opts: {
   createdBy: string;
   canWrite: boolean;
   expiresAt: string | null;
+  /** The OAuth client's name, when the key was issued to a connector. */
+  connector?: string;
 }): Promise<void> {
   try {
     await notifyApiKeyCreated(
@@ -60,10 +63,26 @@ export async function announceApiKeyCreated(opts: {
         createdBy: opts.createdBy,
         canWrite: opts.canWrite,
         expiresAt: opts.expiresAt,
+        ...(opts.connector ? { connector: opts.connector } : {}),
       },
       opts.keyId,
     );
   } catch (err) {
     console.error(`[api-keys] creation notice for ${opts.keyId}: ${err instanceof Error ? err.message : err}`);
   }
+}
+
+/**
+ * How the account knows the member with this id: their name, else their
+ * address. For a key issued through OAuth, where the request carries the
+ * client's name and not the person who approved it. Never throws.
+ */
+export async function memberLabel(userId: string): Promise<string> {
+  try {
+    const { data } = await createServiceClient().auth.admin.getUserById(userId);
+    if (data?.user) return actorName(data.user);
+  } catch (err) {
+    console.error(`[api-keys] could not read member ${userId}: ${err instanceof Error ? err.message : err}`);
+  }
+  return "A member of the account";
 }

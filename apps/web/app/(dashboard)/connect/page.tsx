@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { INTEGRATION_DESCRIPTIONS } from "@/lib/cms/integration-descriptions";
+import { ANALYTICS_DESCRIPTIONS, INTEGRATION_DESCRIPTIONS } from "@/lib/cms/integration-descriptions";
 import Link from "next/link";
 import { getIntegrations } from "@/lib/queries/integrations";
 import { getWorkspaces } from "@/lib/queries/workspaces";
@@ -145,7 +145,7 @@ export default async function IntegrationsPage({
                       065 yet tell the truth too.
                     */}
                     <p className="text-[12.5px] text-ink-2 my-2.5 leading-[1.5]">
-                      {INTEGRATION_DESCRIPTIONS[i.id] ?? i.description}
+                      {INTEGRATION_DESCRIPTIONS[i.id] ?? ANALYTICS_DESCRIPTIONS[i.id] ?? i.description}
                     </p>
                     {GOOGLE_INTEGRATIONS.has(i.id) ? (
                       <GoogleConnectButton

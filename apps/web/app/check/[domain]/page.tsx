@@ -10,6 +10,7 @@ import {
   scoreLabel,
   shortDate,
   badgeText,
+  describeCheckWeights,
   APP_URL,
   type PublicCheck,
   type PublicCheckData,
@@ -175,8 +176,8 @@ export default async function CheckPage(props: Props) {
           structured data that says what the organisation is, and ideally a plain-text copy of the content. Each row
           above is one of those requirements, checked against what the site actually serves. A fail is something the
           site owner can change today; an unknown means the server did not give a clear answer and nothing is being
-          claimed about it. The score weights crawler access and structured data above titles and headings, because a
-          blocked crawler reads nothing at all.
+          claimed about it. Each check is worth points by how much it affects whether AI assistants can read the site:{" "}
+          {describeCheckWeights()} A blocked crawler reads nothing at all, so it counts for the most.
         </p>
       </section>
 

@@ -383,7 +383,16 @@ export default async function DashboardPage() {
           </Card>
 
           {/* Today's queue */}
-          <Card title="Needs your review" meta={`${pendingReviews} waiting`} className="md:col-span-4" flush>
+          <Card
+            title="Needs your review"
+            meta={
+              <Link href="/articles?status=review" className="hover:text-accent-ink">
+                {pendingReviews} waiting
+              </Link>
+            }
+            className="md:col-span-4"
+            flush
+          >
             <div className="px-2 py-1.5">
               {allArticles
                 .filter((a) => a.status === "review")
@@ -391,14 +400,14 @@ export default async function DashboardPage() {
                 .map((item) => {
                   const w = wsMap.get(item.workspace_id);
                   return (
-                    <div key={item.id} className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-[7px] hover:bg-panel">
+                    <Link key={item.id} href={`/content/${item.id}`} className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-[7px] hover:bg-panel">
                       {w && <Avatar initials={w.initials} color={w.color} size="sm" />}
                       <div className="flex-1 min-w-0">
                         <div className="text-[13px] truncate">{item.title}</div>
                         <div className="font-mono text-[10.5px] text-ink-3">{w?.domain ?? "—"}</div>
                       </div>
                       <StatusPill status={item.status} />
-                    </div>
+                    </Link>
                   );
                 })}
               {pendingReviews === 0 && (
@@ -535,7 +544,7 @@ export default async function DashboardPage() {
                     className: "max-w-0",
                     render: (a) => (
                       <>
-                        <div className="truncate font-medium">{a.title}</div>
+                        <Link href={`/content/${a.id}`} className="block truncate font-medium hover:text-accent-ink">{a.title}</Link>
                         <div className="font-mono text-[11px] text-ink-3 mt-0.5">{a.keyword}</div>
                       </>
                     ),

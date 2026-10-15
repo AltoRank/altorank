@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button, Card, Dialog, Icons, SearchInput } from "@/components/ui";
 import type { DetectResult, LinkSourceRow, SourceKind } from "@/lib/linking/detect";
+import { DEFAULT_SOURCE_NOTE, isDefaultSource, type DefaultSourceUrls } from "@/lib/linking/default-sources";
 import {
   addLinkSource,
   removeLinkSource,
@@ -41,7 +42,9 @@ const KIND_LABEL: Record<SourceKind, string> = {
   manual_url: "Single URL",
 };
 
-const PRIORITY_LABEL = ["Normal", "Preferred", "High", "Always"];
+// The top level ranks a page first in the list a draft is offered; it does not
+// make a draft link to it, so it is not called "Always" (lib/linking/targets.ts).
+const PRIORITY_LABEL = ["Normal", "Preferred", "High", "Highest"];
 
 function relative(iso: string | null): string {
   if (!iso) return "never";
@@ -86,10 +89,13 @@ export function LinkingConfig({
   workspaceId,
   sources,
   targets,
+  defaults = null,
 }: {
   workspaceId: string;
   sources: LinkSourceRow[];
   targets: LinkTargetRow[];
+  /** The workspace's sitemap and blog root, which are re-created and so cannot be removed. */
+  defaults?: DefaultSourceUrls | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -203,15 +209,21 @@ export function LinkingConfig({
                           label={s.enabled ? "Disable this source" : "Enable this source"}
                           onChange={(v) => run(() => setLinkSourceEnabled(workspaceId, s.id, v))}
                         />
-                        <button
-                          type="button"
-                          title="Remove source"
-                          disabled={pending}
-                          onClick={() => run(() => removeLinkSource(workspaceId, s.id))}
-                          className="grid h-6 w-6 place-items-center rounded text-ink-3 hover:bg-panel-2 hover:text-ink disabled:opacity-40"
-                        >
-                          <Icons.x size={12} />
-                        </button>
+                        {isDefaultSource(s, defaults) ? (
+                          <span className="grid h-6 w-6 place-items-center text-ink-4" title={DEFAULT_SOURCE_NOTE} aria-label={DEFAULT_SOURCE_NOTE}>
+                            <Icons.lock size={12} />
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            title="Remove source"
+                            disabled={pending}
+                            onClick={() => run(() => removeLinkSource(workspaceId, s.id))}
+                            className="grid h-6 w-6 place-items-center rounded text-ink-3 hover:bg-panel-2 hover:text-ink disabled:opacity-40"
+                          >
+                            <Icons.x size={12} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>

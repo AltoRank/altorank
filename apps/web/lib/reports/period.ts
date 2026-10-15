@@ -49,3 +49,15 @@ export function assertReportPeriod(startDate: string, endDate: string): void {
     throw new Error(`A report covers at most ${MAX_REPORT_DAYS} days (Search Console keeps 16 months); ${startDate} to ${endDate} is ${days}.`);
   }
 }
+
+/**
+ * The day after `endDate`, YYYY-MM-DD: the exclusive upper bound for a
+ * timestamp column. `.lte("published_at", "2026-08-31")` compares against
+ * 2026-08-31T00:00:00, so everything published on the period's last day fell
+ * outside its own monthly report; `.lt(dayAfter)` keeps the whole day.
+ */
+export function dayAfter(endDate: string): string {
+  const end = calendarDay(endDate);
+  if (end === null) throw new Error(`Not a YYYY-MM-DD date: ${JSON.stringify(endDate)}`);
+  return new Date((end + 1) * DAY_MS).toISOString().slice(0, 10);
+}

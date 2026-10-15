@@ -31,4 +31,11 @@ describe("SettingsForm", () => {
     expect(html).toContain("Only an owner or admin can change these.");
     expect(html).toMatch(/<fieldset[^>]*disabled/);
   });
+
+  it("labels the name as the account's, since it signs every site's reports", () => {
+    const html = renderToStaticMarkup(<SettingsForm account={account} quotaReason="plan" canEdit />);
+    expect(html).toContain("Account name");
+    expect(html).toContain("Shared by every site in this account");
+    expect(html).not.toContain("Workspace name");
+  });
 });

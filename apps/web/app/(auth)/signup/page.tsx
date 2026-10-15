@@ -68,7 +68,7 @@ async function signUp(formData: FormData) {
   // registered" with no link to confirm.
   let userId: string;
   try {
-    userId = await sendSignupConfirmation({ email, password, name, next: "/onboarding" });
+    userId = await sendSignupConfirmation({ email, password, next: "/onboarding" });
   } catch (e) {
     redirect(
       "/signup?error=" +

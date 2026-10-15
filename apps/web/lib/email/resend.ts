@@ -21,6 +21,23 @@ function fromAddress(): string {
 }
 
 /**
+ * Where a reply goes. The sending address, noreply@updates.altorank.co, has
+ * no mail server behind it, and nothing set a Reply-To, so a reply bounced -
+ * while the unsubscribe page tells anyone whose link failed to "reply to any
+ * email from us". On our own sender, replies now go to hello@altorank.co, the
+ * address the billing errors already give. Decided by the sender's domain,
+ * not by whether RESEND_FROM_EMAIL is set, so a deployment that names our own
+ * sender explicitly still gets it. An install that sends from its own domain
+ * gets no Reply-To unless it sets RESEND_REPLY_TO: its replies are not ours
+ * to receive.
+ */
+export function replyToAddress(): string | undefined {
+  const configured = process.env.RESEND_REPLY_TO?.trim();
+  if (configured) return configured;
+  return /@(?:[a-z0-9-]+\.)*altorank\.co>?\s*$/i.test(fromAddress()) ? "AltoRank <hello@altorank.co>" : undefined;
+}
+
+/**
  * Every email leaves through here.
  *
  * Resend's SDK does not throw when the API refuses a send. It resolves to
@@ -32,6 +49,10 @@ function fromAddress(): string {
  * carrying Resend's own code and status, for the caller to log or show.
  */
 async function deliver(payload: CreateEmailOptions): Promise<string> {
+  // A caller's own Reply-To (the feedback and integration-request mails reply
+  // to the person who wrote them) wins; everything else replies to us.
+  const replyTo = replyToAddress();
+  if (!payload.replyTo && replyTo) payload = { ...payload, replyTo };
   let sent: Awaited<ReturnType<ReturnType<typeof getResend>["emails"]["send"]>>;
   try {
     sent = await getResend().emails.send(payload);

@@ -5,17 +5,18 @@ const posthogProjectToken = process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN;
 const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST;
 
 if (!posthogProjectToken || !posthogHost) {
-  // The e2e runner is a development server started without PostHog keys on
-  // purpose - tests must not send events - so the development throw below
-  // would take down every page it renders. NEXT_PUBLIC_E2E_STUBS mirrors the
-  // server-side E2E_STUBS through next.config.ts.
+  // Analytics are optional. A self-hosted install or a fresh checkout runs
+  // without PostHog, and the e2e runner leaves it out on purpose so tests send
+  // no events. This used to throw in development, which took down every page
+  // of `npm run dev` for anyone who had not set two variables documented
+  // nowhere. A warning in the browser console says what is off instead.
   if (process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_E2E_STUBS !== "1") {
     const missingVariable = !posthogProjectToken
       ? "NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN"
       : "NEXT_PUBLIC_POSTHOG_HOST";
 
-    throw new Error(
-      `${missingVariable} variable required by PostHog is missing or un-configured, this causes events to be silently missed. This error stops appearing once ${missingVariable} is configured`,
+    console.warn(
+      `PostHog analytics are off: ${missingVariable} is not set. Set NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN and NEXT_PUBLIC_POSTHOG_HOST to send product analytics; nothing else depends on them.`,
     );
   }
 } else {

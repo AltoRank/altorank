@@ -43,12 +43,15 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: "add-keywords",
     title: "Add target keywords",
+    // The button is "Add keyword" (components/dashboard/keyword-actions.tsx),
+    // and a term typed there is stored with no volume or difficulty
+    // (app/actions/keywords.ts): only researched keywords carry them.
     description:
-      "Track search volume and ranking difficulty for every keyword, and filter by intent type and difficulty to find easy wins. SERP positions are added by the nightly rank tracker.",
-    actionLabel: 'Click "Find new keywords" to add a keyword to track.',
+      "Keywords found by research carry search volume and ranking difficulty; filter by intent and difficulty to find easy wins. SERP positions are added by the nightly rank tracker.",
+    actionLabel: 'Click "Add keyword" to add a keyword to track.',
     completionMessage: "Keywords added. The nightly rank tracker picks them up on its next run.",
     completionMessageUnscheduled:
-      "Keywords added. Volume and difficulty are recorded; nightly rank tracking runs for accounts on a plan, so positions stay “—” until then.",
+      "Keywords added. Nightly rank tracking runs for accounts on a plan, so positions stay “—” until then.",
     route: "/keywords",
     targetSelector: '[data-onboarding="add-keywords"]',
     tooltipPosition: "bottom",

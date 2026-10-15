@@ -11,6 +11,7 @@
 //      score and labelled so.
 
 import {
+  CHECK_IMPACT,
   scoreFindings,
   type ReadinessCheckId,
   type ReadinessFinding,
@@ -31,7 +32,7 @@ export interface PublicCheck {
 
 export interface PublicCheckData {
   domain: string;
-  /** Severity-weighted 0-100 over the checks that completed. Null when none did. */
+  /** Impact-weighted 0-100 (CHECK_IMPACT) over the checks that completed. Null when none did. */
   score: number | null;
   checks: PublicCheck[];
   passed: number;
@@ -46,7 +47,13 @@ export interface PublicCheckData {
   error?: string;
 }
 
-export const APP_URL = "https://app.altorank.co";
+/**
+ * This install's address, for share links and the badge snippet. It was the
+ * hosted app's on every install, so a self-hosted badge sent its visitors to
+ * app.altorank.co. The hosted address is the fallback only when
+ * NEXT_PUBLIC_APP_URL is unset (it is inlined at build time).
+ */
+export const APP_URL = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/+$/, "") || "https://app.altorank.co";
 
 export const AGENT_GUIDANCE =
   "Each check is pass, fail or unknown. Unknown means the check did not " +
@@ -101,6 +108,39 @@ export const CHECK_META: Record<ReadinessCheckId, { label: string; fix: string }
 };
 
 export const CHECK_ORDER = Object.keys(CHECK_META) as ReadinessCheckId[];
+
+/** A check's label as it reads mid-sentence: "AI" and schema type names keep their capital. */
+function inSentence(label: string): string {
+  return /^(AI|Organization)\b/.test(label) ? label : label.charAt(0).toLowerCase() + label.slice(1);
+}
+
+function joinAnd(items: string[]): string {
+  return items.length < 2 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
+ * What each check is worth in the score, in words, built from CHECK_IMPACT so
+ * the copy cannot drift from the weights again. The dashboard explainer and
+ * the public /check page both said "high 3, medium 2, low 1" and "structured
+ * data above titles" for months after the weights changed to impact.
+ *
+ *   "AI crawlers allowed 5 points; robots.txt reachable, ... 3 points each; ..."
+ */
+export function describeCheckWeights(): string {
+  const byWeight = new Map<number, string[]>();
+  for (const id of CHECK_ORDER) {
+    const w = CHECK_IMPACT[id];
+    byWeight.set(w, [...(byWeight.get(w) ?? []), inSentence(CHECK_META[id].label)]);
+  }
+  const groups = [...byWeight.entries()]
+    .sort(([a], [b]) => b - a)
+    .map(([w, labels]) =>
+      labels.length === 1
+        ? `${labels[0]} ${w === 1 ? "1 point" : `${w} points`}`
+        : `${joinAnd(labels)} ${w === 1 ? "1 point" : `${w} points`} each`,
+    );
+  return `${groups.join("; ")}.`;
+}
 
 export function shareUrlFor(domain: string, appUrl: string = APP_URL): string {
   return `${appUrl}/check/${encodeURIComponent(domain)}`;

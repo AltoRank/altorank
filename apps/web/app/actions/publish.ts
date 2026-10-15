@@ -156,8 +156,9 @@ export async function approveArticle(articleId: string) {
   if (error || !data) throw new Error("Article must be in review to approve");
 
   // The sign-off is the one editorial moment somebody else needs to hear
-  // about: after it the article ships on its own, and a colleague who was
-  // still editing the draft would otherwise find out from the live site.
+  // about: after it the article can be scheduled or published, and a
+  // colleague who was still editing the draft would otherwise find out from
+  // the live site.
   // Never allowed to fail the approval, which is already recorded.
   await announceDraftApproved(articleId, user);
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_REPORT_DAYS, assertReportPeriod } from "../period";
+import { MAX_REPORT_DAYS, assertReportPeriod, dayAfter } from "../period";
 
 describe("assertReportPeriod", () => {
   it("accepts a month, a single day and the longest allowed period", () => {
@@ -32,5 +32,18 @@ describe("assertReportPeriod", () => {
   ])("refuses %s", (_label, value) => {
     expect(() => assertReportPeriod(value, "2026-08-31")).toThrow(/start date is not a YYYY-MM-DD date/);
     expect(() => assertReportPeriod("2026-08-01", value)).toThrow(/end date is not a YYYY-MM-DD date/);
+  });
+});
+
+describe("dayAfter", () => {
+  /** published_at is a timestamp: `.lte("2026-08-31")` dropped everything published on the 31st. */
+  it("gives the exclusive upper bound that keeps the whole last day", () => {
+    expect(dayAfter("2026-08-31")).toBe("2026-09-01");
+    expect(dayAfter("2026-12-31")).toBe("2027-01-01");
+    expect(dayAfter("2028-02-28")).toBe("2028-02-29");
+  });
+
+  it("refuses a string that is not a date", () => {
+    expect(() => dayAfter("2026-02-30")).toThrow();
   });
 });

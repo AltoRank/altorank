@@ -19,11 +19,23 @@ import { spendClient } from "@/lib/billing/default-spend";
 
 export const DEFAULT_DAILY_CAP_CENTS = 500;
 
+/**
+ * The cap when PUBLIC_TOOLS_DAILY_CAP_CENTS is unset (or not a number).
+ *
+ * With billing off (no STRIPE_SECRET_KEY, i.e. a self-hosted install) the
+ * paid tools would spend the operator's own Anthropic and DataForSEO keys on
+ * anonymous visitors, so the default there is 0: off until the operator
+ * chooses a budget. With billing on it is DEFAULT_DAILY_CAP_CENTS.
+ */
+function defaultCapCents(): number {
+  return process.env.STRIPE_SECRET_KEY ? DEFAULT_DAILY_CAP_CENTS : 0;
+}
+
 export function dailyCapCents(): number {
   const raw = process.env.PUBLIC_TOOLS_DAILY_CAP_CENTS?.trim();
-  if (!raw) return DEFAULT_DAILY_CAP_CENTS;
+  if (!raw) return defaultCapCents();
   const n = Number(raw);
-  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_DAILY_CAP_CENTS;
+  return Number.isFinite(n) && n >= 0 ? n : defaultCapCents();
 }
 
 type RpcClient = {

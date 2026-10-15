@@ -7,6 +7,17 @@ import { Button, Card } from "@/components/ui";
 import { saveKeywordPrompt } from "@/app/actions/onboarding-wizard";
 import { Field, inputClass } from "./fields";
 
+/**
+ * What the field does, scoped to its real readers. readKeywordInstructions
+ * (lib/keyword-research/instructions.ts) is called only by the Research
+ * keywords drawer and Playbooks (app/actions/keyword-research.ts). The
+ * research that runs by itself, at setup (lib/audit/domain-analysis.ts) and
+ * when the queue is topped up, never reads it, so "research follows these"
+ * was true of one door out of three.
+ */
+export const KEYWORD_PROMPT_HINT =
+  "Describe the topics, angles, or audiences that matter most to you. Research keywords and Playbooks on the Keywords page start every search from this. The research that runs on its own, at setup and when the queue runs low, does not read it yet; the audiences and competitors you confirmed steer that.";
+
 /** `workspace_output_settings.global_keyword_prompt`, the research brief. */
 export function KeywordPromptForm({ workspaceId, initial }: { workspaceId: string; initial: string }) {
   const router = useRouter();
@@ -18,7 +29,7 @@ export function KeywordPromptForm({ workspaceId, initial }: { workspaceId: strin
     start(async () => {
       try {
         await saveKeywordPrompt(workspaceId, prompt);
-        toast.success("Saved. The next research run reads this first.");
+        toast.success("Saved. Research keywords and Playbooks read this first.");
         router.refresh();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Could not save.");
@@ -30,7 +41,7 @@ export function KeywordPromptForm({ workspaceId, initial }: { workspaceId: strin
     <Card title="What research should look for">
       <Field
         label="Topics, angles and audiences"
-        hint="Describe the topics, angles, or audiences that matter most to you; research follows these. Optional, and the audiences and competitors you confirmed already steer it."
+        hint={KEYWORD_PROMPT_HINT}
       >
         <textarea
           rows={5}

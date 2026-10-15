@@ -13,6 +13,7 @@ import { HowItWorks } from "@/components/dashboard/how-it-works";
 import { backlinksExplainer } from "@/lib/explainers";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
+import { BACKLINK_FETCH_LIMIT } from "@/lib/seo/backlinks";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 
 export const metadata: Metadata = { title: "Backlinks" };
@@ -98,11 +99,22 @@ export default async function BacklinksPage({ searchParams }: Props) {
       <StatStrip
         compact
         stats={[
-          { label: "Total backlinks", value: String(allBacklinks.length), delta: `${liveCount} live`, deltaType: "pos", hint: "Links pointing at this site, one row per referring domain. From DataForSEO's backlink index, refreshed weekly." },
+          {
+            // One row per referring domain, and one check reads the top
+            // BACKLINK_FETCH_LIMIT of them by authority, so this is not the
+            // index's total for a site with more (lib/seo/backlinks.ts).
+            // Not "Top 200": a capped check marks nothing lost, so the stored
+            // rows can pass the limit over several checks.
+            label: liveCount >= BACKLINK_FETCH_LIMIT ? "Top referring domains" : "Referring domains",
+            value: String(allBacklinks.length),
+            delta: `${liveCount} live`,
+            deltaType: "pos",
+            hint: `Sites linking here, one row per referring domain, including ones marked lost. Each check reads the ${BACKLINK_FETCH_LIMIT} with the highest authority from DataForSEO's backlink index, refreshed weekly; a site with more has more than this count.`,
+          },
           { label: "Avg DR", value: avgDr, delta: "source authority", hint: "Average authority of the linking domains: DataForSEO's 0-1000 domain rank mapped to 0-100. Not Ahrefs DR." },
           { label: "Followed", value: String(allBacklinks.filter((b) => b.is_dofollow).length), delta: "pass authority", hint: "Links without rel=nofollow, ugc or sponsored. Only these pass authority; the rest are mentions." },
           { label: "Pending", value: String(pendingCount), delta: "awaiting publisher", hint: "Exchange requests accepted but not yet placed by the other site." },
-          { label: "Lost", value: String(allBacklinks.filter((b) => b.status === "lost").length), delta: "gone since last check", hint: "Links present in an earlier check and missing from the latest one." },
+          { label: "Lost", value: String(allBacklinks.filter((b) => b.status === "lost").length), delta: "gone since last check", hint: `Links present in an earlier check and missing from the latest one. When a check reaches its ${BACKLINK_FETCH_LIMIT}-domain limit, nothing is marked lost, because a missing domain may only have ranked lower.` },
         ]}
       />
 
