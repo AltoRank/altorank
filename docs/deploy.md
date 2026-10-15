@@ -402,8 +402,6 @@ env at all, which is exactly what CI does.
 rebuild. Then revert the commit on `main`, or the next push re-deploys the
 bad one.
 
-re-deploy the old `dist/` from the matching commit with the command above.
-
 **Database.** There are no down migrations. Rolling back a schema change means
 restoring the backup you took before applying it, or writing a new forward
 migration that undoes it. Application rollbacks that cross a migration are the
@@ -425,13 +423,11 @@ least once.
 3. **Arming the GitHub Actions crons.** `CRON_SECRET` as a repository secret,
    and `APP_URL` as a repository variable outside `AltoRank/altorank`.
    Without them a Vercel deployment generates and publishes once a day.
-4. **The marketing deploy.** By hand, unless one of the two automatic paths
-   above is switched on.
-5. **Stripe webhook registration** (`/api/webhooks/stripe`) and the price ids. See [Stripe](#stripe) above for the events and the price setting nothing here can set.
-6. **Google OAuth client** and its redirect URI.
-7. **Supabase Auth URL configuration** (Site URL, redirect allow-list) and a
+4. **Stripe webhook registration** (`/api/webhooks/stripe`) and the price ids. See [Stripe](#stripe) above for the events and the price setting nothing here can set.
+5. **Google OAuth client** and its redirect URI.
+6. **Supabase Auth URL configuration** (Site URL, redirect allow-list) and a
    verified Resend sender domain.
-8. **Keeping `docker/crontab`, `vercel.json`, `apps/web/wrangler.jsonc` and
+7. **Keeping `docker/crontab`, `vercel.json`, `apps/web/wrangler.jsonc` and
    `apps/web/cloudflare/worker.mjs` in step.** They schedule the same twelve
    jobs, and `cron-schedules.test.ts` fails when one misses a route. The three
    schedules Hobby forbids (`publish`, `analyze`, `generate`) differ on
@@ -448,7 +444,7 @@ least once.
 [ ] Vercel project: root apps/web, Node 22, region fra1, every env var set for Production
 [ ] ENCRYPTION_KEY and CRON_SECRET generated with `openssl rand -hex 32` and stored somewhere you can recover them
 [ ] ADMIN_EMAILS set to your own address
-[ ] First push to main → deployment READY → /login renders
+[ ] First push to main → deployment READY → /signin renders
 [ ] curl -H "x-cron-secret: …" https://<app>/api/cron/analyze returns 200, not 401
 [ ] CRON_SECRET as a GitHub repository secret and APP_URL as a repository variable (optional, for the extra generate and publish runs)
 ```

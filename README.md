@@ -78,8 +78,9 @@ outside AltoRank, sends nothing to a CMS, carries no approval, and can be
 undone from the editor.
 
 What cannot write an approval: an agent. The **MCP server and the agent API
-expose no publish or approve tool** - not disabled, absent. See the comment at
-the top of `apps/web/scripts/mcp.ts`.
+expose no publish or approve tool** - not disabled, absent. The MCP tools are
+all registered in `apps/web/lib/mcp/server.ts`, and its server instructions
+say so to the agent.
 
 Competing tools ship the words "you stay in control" as copy. The difference
 is checkable here: every `live` row is an approved article (by click or by
@@ -172,7 +173,6 @@ says analytics are off and nothing else changes.
 Other entry points:
 
 ```bash
-npm run mcp      # MCP server, for driving the engine from an AI assistant
 npm run test     # vitest, unit tier: mocks only, needs no services
 npm run test:db  # vitest, db tier: *.db.test.ts against the local Supabase only
 npm run smoke    # research → prompt → model → fact check, against real APIs
@@ -181,6 +181,7 @@ npm run smoke    # research → prompt → model → fact check, against real AP
 and from `apps/web`:
 
 ```bash
+npm run mcp                  # MCP server over stdio, for driving the engine from an AI assistant
 npm run cli -- --help        # the agent API from a shell; auth with ALTORANK_API_KEY
 npm run readiness -- <domain>  # the agent-readiness checks on their own
 ```
