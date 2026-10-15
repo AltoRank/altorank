@@ -32,7 +32,7 @@ beforeEach(() => {
 describe("gatherArticleResearch related keywords", () => {
   it("uses the workspace market for both providers instead of the language default", async () => {
     await gatherArticleResearch({ keyword: "practice website", locale: "en", locationCode: 2826 });
-    expect(serp).toHaveBeenCalledWith("practice website", { languageCode: "en", locationCode: 2826 });
+    expect(serp).toHaveBeenCalledWith("practice website", { languageCode: "en", locationCode: 2826 }, { rich: true });
     expect(related).toHaveBeenCalledWith("practice website", { languageCode: "en", locationCode: 2826 });
   });
   it("uses the rows it was handed and does not call the provider", async () => {

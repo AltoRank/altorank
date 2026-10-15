@@ -17,10 +17,12 @@ import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { planHoldApplies } from "@/lib/billing/trial-hold";
 import { accountTrialGate } from "@/lib/billing/body-lock";
 import { followUpPromised } from "@/lib/auth/operators";
+import { providerRetryAllowed } from "./provider-retry-gate";
 import type { EmptyPool, OnboardingHeld } from "./events";
 import {
   initialOnboardingState,
   onboardingOutcome,
+  providerDown,
   plannedNothingCleanly,
   isRunStale,
   RUN_STALE_MS,
@@ -535,7 +537,9 @@ async function announceOutcome(
   if (opts.produced || !scope.workspaceId || !scope.accountId) return;
   try {
     const { data: ws } = await supabase.from("workspaces").select("domain").eq("id", scope.workspaceId).maybeSingle();
-    const facts = setupFailedFacts(status, steps, reason);
+    const facts = setupFailedFacts(status, steps, reason, opts.emptyPool ?? null);
+    // Promised only when the overnight retry will actually be allowed to run.
+    const retryTonight = facts.provider ? await providerRetryAllowed(supabase, scope.accountId, scope.workspaceId).catch(() => false) : false;
     // Before the trial only /connect opens (lib/billing/gate-paths.ts), so
     // the email must not send the person to Keywords. Asked as nobody, the
     // way the other account mails ask; unreadable means the ordinary copy.
@@ -545,7 +549,7 @@ async function announceOutcome(
     await notifySetupFailed(
       supabase,
       { accountId: scope.accountId, workspaceId: scope.workspaceId },
-      { domain: (ws?.domain as string | null) ?? null, ...facts, beforeTrial },
+      { domain: (ws?.domain as string | null) ?? null, ...facts, retryTonight, beforeTrial },
     );
   } catch (err) {
     // Never let the email take the run down with it: the row is already
@@ -627,21 +631,30 @@ async function announceNothingPlanned(
  */
 export function setupFailedFacts(
   status: string,
-  steps: readonly { phase: string; status: string; detail?: string | null }[] | null,
+  steps: readonly { phase: string; status: string; detail?: string | null; cause?: string | null }[] | null,
   reason?: string,
-): { line: string; transient: boolean } {
+  emptyPool?: EmptyPool | null,
+): { line: string; transient: boolean; provider: boolean } {
   const state: OnboardingState = {
     ...initialOnboardingState(),
-    steps: (steps ?? []).map((s) => ({ phase: s.phase as OnboardingState["steps"][number]["phase"], status: s.status as OnboardingState["steps"][number]["status"], ...(s.detail ? { detail: s.detail } : {}) })),
+    steps: (steps ?? []).map((s) => ({
+      phase: s.phase as OnboardingState["steps"][number]["phase"],
+      status: s.status as OnboardingState["steps"][number]["status"],
+      ...(s.detail ? { detail: s.detail } : {}),
+      ...(s.cause === "provider" ? { cause: "provider" as const } : {}),
+    })),
     ready: true,
     error: status === "error" ? (reason ?? "Onboarding failed.") : null,
+    emptyPool: emptyPool ?? null,
   };
   const line = onboardingOutcome(state).line;
   // The pipeline writes this exact clause on the keywords phase when the
   // crawl failed for a reason that clears on its own (#191); reading the
   // phrase keeps this module off domain-analysis and its provider clients.
   const transient = status !== "error" && (steps ?? []).some((s) => /next look is already scheduled/i.test(s.detail ?? ""));
-  return { line, transient };
+  // A provider that did not answer: ours, not the site's (lib/onboarding/provider-retry.ts).
+  const provider = status !== "error" && providerDown(state);
+  return { line, transient, provider };
 }
 
 /** The ids an `update(...).select(...)` handed back, if it handed back a row. */

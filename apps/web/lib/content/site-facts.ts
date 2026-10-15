@@ -416,7 +416,9 @@ export async function loadSiteFacts(
       const facts = empty(`The business's pages could not be read from the database (${error.message}).`);
       return { facts, layer: { id: "site_facts", status: "failed", detail: facts.notes[0] } };
     }
-    const rows = (data ?? []) as SitePageRow[];
+    // A stable order: without one the facts, and so the writer's prompt, came
+    // back in a different order on two drafts of the same site.
+    const rows = ((data ?? []) as SitePageRow[]).slice().sort((a, b) => a.url.localeCompare(b.url));
     const facts = buildSiteFacts(rows, domain);
 
     const p = (profile && typeof profile === "object" ? profile : {}) as {

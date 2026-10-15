@@ -8,10 +8,16 @@
 // half second and the reader asks every second; what arrives is a target,
 // and this decides how much of it is on screen.
 //
-// - The pace is a reader's, with a catch-up: the backlog is shown over about
-//   a second and a half, so a burst never lands at once and a slow stretch
-//   never stalls the text that has already arrived. A backlog too big to type
-//   (a reload half-way through) is shown at once, all but its tail.
+// - The pace is a reader's, not the writer's. The writer streams about 250
+//   characters a second (2026-10-12), five times faster than anyone reads,
+//   and a page typing at that speed read as a firehose and then a wall (UX
+//   audit 2026-10-12, #10). So while the body is being written the text is
+//   typed at a steady reading pace, a little quicker when a backlog has
+//   built up, never faster than a quick reader. Once the body is saved the
+//   rest is typed faster, finishing within about FINISH_S, still a character
+//   at a time. The speed changes gently (ACCEL), so there is never a burst.
+// - A reload half-way through starts with what was already there shown, all
+//   but its tail (`startAt`): that is the first frame, not a jump mid-read.
 // - Counting is in visible characters: a tag costs nothing and is never cut,
 //   an entity is one character, and every prefix is closed so it renders.
 // - The text is split into top-level blocks, each its own element keyed by
@@ -21,34 +27,65 @@
 //
 // Pure, so the pace and the cuts are tested without a browser.
 
-/** Characters a second when there is no backlog to speak of: a calm typing pace. */
-export const BASE_CPS = 60;
-/** The backlog is shown over about this long, so text keeps pace with the writer. */
-export const CATCH_UP_S = 1.2;
-/** A little faster than the text arrives, so the backlog drains instead of building. */
-const AHEAD = 1.15;
-/** Past this many characters behind, the rest is shown at once but for the tail. */
+/** Characters a second with no backlog: about 330 words a minute, a steady reader. */
+export const READ_CPS = 30;
+/** The most while the body is still being written: a quick reader, never a skim. */
+export const WRITING_MAX_CPS = 48;
+/** How fast the backlog is worked off while writing: a 25-second view of it. */
+const WRITING_CATCH_UP_S = 25;
+/** Once the body is saved, what is left is typed within about this long. */
+export const FINISH_S = 15;
+/** The most the speed changes in a second, either way: no lurch, no burst. */
+export const ACCEL = 160;
+/** On the first frame, more than this already arrived is shown at once, but for the tail. */
 export const MAX_BACKLOG = 1_400;
-/** The tail still typed out after a snap. */
+/** The tail still typed out after that first frame. */
 const SNAP_TAIL = 400;
 
+/** The reveal between frames: how much is shown, and how fast it is moving. */
+export interface RevealState {
+  shown: number;
+  cps: number;
+}
+
 /**
- * How many visible characters to show after `dtMs`, given `shown` and the
- * `available` text. Never past what has arrived, never backwards, never
- * stalled while there is text to show.
- *
- * `arrivalCps`: how fast text has been arriving lately (the reader keeps a
- * moving average). The writer is several times faster than anyone reads -
- * about 250 characters a second on 2026-10-12 - so the text is typed at its
- * pace, a little ahead, and the backlog term catches up after a burst.
+ * Where a reveal starts: everything when the body was already written when
+ * the page opened (there is nothing to watch), all but a typed tail when a
+ * reload lands half-way through, and nothing otherwise.
  */
-export function nextShown(shown: number, available: number, dtMs: number, arrivalCps = 0): number {
-  if (available <= shown) return Math.min(shown, available);
-  const backlog = available - shown;
-  if (backlog > MAX_BACKLOG) return available - SNAP_TAIL;
-  const cps = Math.max(BASE_CPS, arrivalCps * AHEAD, backlog / CATCH_UP_S);
-  const step = Math.max(1, (cps * Math.max(0, dtMs)) / 1000);
-  return Math.min(available, shown + step);
+export function startAt(available: number, done: boolean): RevealState {
+  if (done) return { shown: available, cps: 0 };
+  return { shown: available > MAX_BACKLOG ? available - SNAP_TAIL : 0, cps: READ_CPS };
+}
+
+/**
+ * The speed the reveal is heading for, given what is waiting and how fast it
+ * is going. While the body is written: a reading pace, nudged up by the
+ * backlog, capped at a quick reader. Once it is saved: fast enough to finish
+ * in about FINISH_S, holding that speed rather than easing off as the
+ * backlog shrinks (an easing finish never finishes), then slowing into the
+ * last half-second of text.
+ */
+export function targetCps(backlog: number, done: boolean, cps = READ_CPS): number {
+  if (backlog <= 0) return 0;
+  if (!done) return Math.min(WRITING_MAX_CPS, READ_CPS + backlog / WRITING_CATCH_UP_S);
+  if (backlog <= cps * 0.4) return Math.max(READ_CPS, backlog * 2);
+  return Math.max(cps, READ_CPS, backlog / (FINISH_S * 0.8));
+}
+
+/**
+ * The next frame: `dtMs` later, with `available` characters arrived and the
+ * body `done` or not. Never past what has arrived, never backwards, never
+ * stalled while there is text to show, and the speed moves by at most ACCEL
+ * a second. `shown` is fractional; the cut rounds it down.
+ */
+export function revealStep(state: RevealState, available: number, dtMs: number, done: boolean): RevealState {
+  if (available <= state.shown) return { shown: Math.min(state.shown, available), cps: Math.min(state.cps, READ_CPS) };
+  const dt = Math.max(0, dtMs) / 1000;
+  const target = targetCps(available - state.shown, done, state.cps);
+  const delta = Math.max(-ACCEL * dt, Math.min(ACCEL * dt, target - state.cps));
+  const cps = Math.max(READ_CPS, state.cps + delta);
+  return { shown: Math.min(available, state.shown + cps * dt), cps };
 }
 
 /** One piece of the html: a tag, an entity, or a run of text. */

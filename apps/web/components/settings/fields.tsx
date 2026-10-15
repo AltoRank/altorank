@@ -9,10 +9,20 @@
 // from, so a label changed here changes in both places.
 
 import { useState } from "react";
-import { Button } from "@/components/ui";
+import { Button, Icons } from "@/components/ui";
 
+// 16px below `sm`: iOS Safari zooms the page into any field under 16px on
+// focus and does not zoom back out (UX audit 2026-10-12, #13). A visible
+// ring on keyboard focus, not only a 1px border recolour.
 export const inputClass =
-  "w-full rounded-lg border border-line bg-panel px-3 py-2 text-[13px] text-ink outline-none focus:border-accent transition-colors disabled:opacity-60";
+  "w-full rounded-lg border border-line bg-panel px-3 py-2 text-base sm:text-[13px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/40 transition-colors disabled:opacity-60";
+
+/**
+ * The remove "x" on a chip: a 32px target (it was 8.7x20 - under WCAG
+ * 2.5.8's 24px minimum), with a hover and a focus ring.
+ */
+export const removeButtonClass =
+  "grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-md text-ink-3 transition-colors hover:bg-panel-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40";
 
 export function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -105,11 +115,17 @@ export function ChipList({
   onChange,
   placeholder,
   max,
+  label,
+  inputId,
 }: {
   items: string[];
   onChange: (next: string[]) => void;
   placeholder: string;
   max: number;
+  /** The field's name for a screen reader; the placeholder disappears once typing starts. */
+  label?: string;
+  /** For a caller that scrolls to and focuses the box. */
+  inputId?: string;
 }) {
   const [draft, setDraft] = useState("");
   function add() {
@@ -122,6 +138,8 @@ export function ChipList({
     <div className="flex flex-col gap-2.5">
       <div className="flex gap-2">
         <input
+          id={inputId}
+          aria-label={label ?? placeholder}
           className={inputClass}
           placeholder={placeholder}
           value={draft}
@@ -138,17 +156,17 @@ export function ChipList({
           Add
         </Button>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {items.map((item) => (
-          <div key={item} className="flex items-start gap-2 rounded-[8px] border border-line bg-bg px-3 py-2">
-            <span className="flex-1 text-[12.5px] leading-[1.5]">{item}</span>
+          <div key={item} className="flex items-center gap-2 rounded-[8px] border border-line bg-bg py-1 pl-3 pr-1">
+            <span className="min-w-0 flex-1 break-words text-[12.5px] leading-[1.5]">{item}</span>
             <button
               type="button"
               aria-label={`Remove ${item}`}
-              className="mt-0.5 cursor-pointer text-ink-3 hover:text-ink"
+              className={removeButtonClass}
               onClick={() => onChange(items.filter((i) => i !== item))}
             >
-              ×
+              <Icons.x size={13} />
             </button>
           </div>
         ))}

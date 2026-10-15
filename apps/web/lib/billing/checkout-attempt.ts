@@ -55,7 +55,13 @@ export async function createPendingCheckout(
   const attempt = data?.[0];
   if (error || !attempt) throw new Error("Checkout could not be reserved. Please try again.");
   const held = attempt.parameters as Stripe.Checkout.SessionCreateParams;
-  const samePrice = held.line_items?.[0]?.price === parameters.line_items?.[0]?.price;
+  // The same price on the same surface: a session opened as Stripe's hosted
+  // page has no client secret to mount, and an embedded one has no URL to
+  // visit, so a reservation for the other surface is replaced like one for
+  // another price.
+  const samePrice =
+    held.line_items?.[0]?.price === parameters.line_items?.[0]?.price &&
+    (held.ui_mode ?? "hosted_page") === (parameters.ui_mode ?? "hosted_page");
 
   async function clear(onlyWithoutSession: boolean): Promise<void> {
     let query = db.from("billing_checkout_attempts").delete().eq("account_id", accountId).eq("id", attempt.id);

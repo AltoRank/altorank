@@ -1,68 +1,71 @@
-import { randomBytes } from "node:crypto";
 import { test, expect } from "@playwright/test";
 import { admin, uniqueTag } from "./fixtures/account";
 
 /**
- * Without a workspace there is nothing to onboard, so signup refuses a bad
- * domain before it creates anything. Asserted on the database, not just the
- * screen: no account and no auth user for this attempt.
- *
- * The password field is filled with random bytes generated here and discarded;
- * the form cannot be submitted without one, and the server rejects the domain
- * before it ever reads it.
+ * Signup asks one question at a time: the website, then the email, then a
+ * code typed on /signup/verify. Without a workspace there is nothing to
+ * onboard, so a bad domain is refused before anything is created. Asserted on
+ * the database, not just the screen.
  */
-test("signup refuses an invalid domain and creates no account", async ({ page }) => {
-  const tag = uniqueTag();
-  const email = `e2e+signup-${tag}@altorank.test`;
-
+test("signup refuses an invalid domain at the first step and creates no account", async ({ page }) => {
   await page.goto("/signup");
-  await expect(page.getByRole("heading", { name: "Create your account" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Read your first article before you start a trial/ })).toBeVisible();
 
-  // No company name to fill: signup asks for the website and derives the
-  // account's name from it (lib/domain/account-name.ts).
-  await page.locator('input[name="domain"]').fill("not a domain");
-  await page.locator('input[name="email"]').fill(email);
-  await page.locator('input[name="password"]').fill(randomBytes(18).toString("base64url"));
-  await page.getByRole("button", { name: "Create account" }).click();
+  await page.getByLabel("Your website").fill("not a domain");
+  await page.getByRole("button", { name: "Continue" }).click();
 
-  await expect(page).toHaveURL(/\/signup\?error=/);
+  // Refused on the page: the email step never opens, and no password is asked.
   await expect(page.getByText("Enter your website as a domain, like acme.com.")).toBeVisible();
-  await expect(page.getByText("Check your email", { exact: false })).toHaveCount(0);
+  await expect(page.locator('input[name="email"]')).toHaveCount(0);
+  await expect(page.locator('input[name="password"]')).toHaveCount(0);
 
-  // Nothing was created. The account name is no longer typed, so the check is
-  // on the two rows a real signup would have written: the user, and a
-  // workspace for the domain that was refused.
-  const db = admin();
-  const { count } = await db
-    .from("workspaces")
-    .select("id", { count: "exact", head: true })
-    .eq("domain", "not a domain");
+  const { count } = await admin().from("workspaces").select("id", { count: "exact", head: true }).eq("domain", "not a domain");
   expect(count).toBe(0);
-  const { data: users } = await db.auth.admin.listUsers({ perPage: 1000 });
-  expect(users?.users.some((u) => u.email === email)).toBe(false);
+});
+
+test("a good domain moves on to the email, with the domain kept and changeable", async ({ page }) => {
+  const domain = `acme-${uniqueTag()}.altorank.test`;
+  await page.goto("/signup");
+  await page.getByLabel("Your website").fill(`https://www.${domain}/pricing`);
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByLabel("Work email")).toBeFocused();
+  await expect(page.locator('input[type="hidden"][name="domain"]')).toHaveValue(domain);
+  await expect(page.getByRole("button", { name: "Send my code" })).toBeVisible();
+  await page.getByRole("button", { name: "Change" }).click();
+  await expect(page.getByLabel("Your website")).toHaveValue(domain);
 });
 
 /**
  * The marketing site adds where a visitor came from to the signup link
- * (`src`, `ref`, `utm_*`; lib/auth/signup-source.ts). Through the real form and
- * the real action: the page turns them into hidden inputs, and a refused first
- * submit lands back on a URL that still has them, so the second submit can
- * record them. The domain is refused before anything is created, as above.
+ * (`src`, `ref`, `utm_*`; lib/auth/signup-source.ts). The domain step is also
+ * checked on the server: a native submit (what a press before hydration does)
+ * skips the page's own check, and the server refuses a bad domain and lands
+ * back on a URL that still carries the source, so the next submit records it.
  */
-test("signup keeps the signup source through a refused submit", async ({ page }) => {
-  const tag = uniqueTag();
+test.describe("the server checks the domain step too", () => {
+  const submitNatively = (page: import("@playwright/test").Page) =>
+    page.evaluate(() => (document.querySelector("form") as HTMLFormElement).requestSubmit());
 
-  await page.goto("/signup?src=/pricing/&ref=news.ycombinator.com&utm_source=newsletter");
-  await expect(page.locator('input[type="hidden"][name="src"]')).toHaveValue("/pricing/");
+  test("signup keeps the signup source through a refused submit", async ({ page }) => {
+    await page.goto("/signup?src=/pricing/&ref=news.ycombinator.com&utm_source=newsletter");
+    await expect(page.locator('input[type="hidden"][name="src"]')).toHaveValue("/pricing/");
 
-  await page.locator('input[name="domain"]').fill("not a domain");
-  await page.locator('input[name="email"]').fill(`e2e+signup-src-${tag}@altorank.test`);
-  await page.locator('input[name="password"]').fill(randomBytes(18).toString("base64url"));
-  await page.getByRole("button", { name: "Create account" }).click();
+    await page.getByLabel("Your website").fill("not a domain");
+    await submitNatively(page);
 
-  await expect(page).toHaveURL(/\/signup\?error=.*&src=%2Fpricing%2F&ref=news\.ycombinator\.com&utm_source=newsletter$/);
-  await expect(page.getByText("Enter your website as a domain, like acme.com.")).toBeVisible();
-  await expect(page.locator('input[type="hidden"][name="src"]')).toHaveValue("/pricing/");
-  await expect(page.locator('input[type="hidden"][name="ref"]')).toHaveValue("news.ycombinator.com");
-  await expect(page.locator('input[type="hidden"][name="utm_source"]')).toHaveValue("newsletter");
+    await expect(page).toHaveURL(/\/signup\?error=.*&src=%2Fpricing%2F&ref=news\.ycombinator\.com&utm_source=newsletter$/);
+    await expect(page.getByText("Enter your website as a domain, like acme.com.")).toBeVisible();
+    await expect(page.locator('input[type="hidden"][name="src"]')).toHaveValue("/pricing/");
+    await expect(page.locator('input[type="hidden"][name="ref"]')).toHaveValue("news.ycombinator.com");
+    await expect(page.locator('input[type="hidden"][name="utm_source"]')).toHaveValue("newsletter");
+  });
+
+  test("a good domain comes back on the email step", async ({ page }) => {
+    const domain = `acme-${uniqueTag()}.altorank.test`;
+    await page.goto("/signup");
+    await page.getByLabel("Your website").fill(domain);
+    await submitNatively(page);
+    await expect(page).toHaveURL(new RegExp(`/signup\\?domain=${domain.replace(/\./g, "\\.")}$`));
+    await expect(page.getByLabel("Work email")).toBeVisible();
+  });
 });

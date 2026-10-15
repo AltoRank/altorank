@@ -248,6 +248,10 @@ async function measureCompetitorLengths(
           redirect: "follow",
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        // A PDF read as text became "figures" of binary garbage in the
+        // writer's prompt (draft A/B, 2026-10-15). Only pages are read.
+        const type = res.headers?.get?.("content-type") ?? "";
+        if (type && !/html|xml|text\/plain/i.test(type)) throw new Error(`not a page: ${type}`);
         const html = await res.text();
         const { words, markdown } = htmlToMarkdown(html, c.url);
         if (words > 0) measured[i] = { ...c, wordCount: words };
@@ -484,7 +488,7 @@ export async function gatherArticleResearch(options: {
     (options.serp
       ? Promise.resolve(options.serp)
       : hasDataForSeo
-        ? fetchAdvancedSerp(keyword, localeParam)
+        ? fetchAdvancedSerp(keyword, localeParam, { rich: true })
         : Promise.reject(new Error("DataForSEO credentials not configured"))
     ).then((serp) => {
       options.onSerp?.(serp);

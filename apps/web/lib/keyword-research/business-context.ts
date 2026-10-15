@@ -27,6 +27,7 @@ export interface BusinessFields {
   audiences?: string[] | null;
   offerings?: string[] | null;
   competitors?: string[] | null;
+  competitorNames?: string[] | null;
   language?: string | null;
   country?: string | null;
 }
@@ -79,6 +80,8 @@ export async function ensureBusinessProfile(
     audiences: business?.audiences?.length ? business.audiences : result.profile.audiences,
     competitors: business?.competitors?.length ? business.competitors : result.profile.competitors,
     offerings: business?.offerings?.length ? business.offerings : result.profile.offerings,
+    // Names the owner gave with no website: the site read cannot know them.
+    ...(business?.competitorNames?.length ? { competitorNames: business.competitorNames } : {}),
     // Read off the site by a model and saved with nobody looking: not
     // confirmed, and the writer is told so (lib/ai/prompts.ts).
     confirmedAt: null,

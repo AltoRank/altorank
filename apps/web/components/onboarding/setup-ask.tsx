@@ -12,13 +12,15 @@
 // setup had finished. Nothing was broken; nothing cleared the bar. The screen
 // now says that, says a person has been told, and asks for nothing.
 
-import { TrialOffer } from "@/components/billing/trial-offer";
+import { TrialOffer, TrialPriceBox } from "@/components/billing/trial-offer";
+import type { BillingInterval, SelfServePlan } from "@/lib/stripe";
+import type { TrialOfferFacts } from "@/lib/billing/trial-offer";
 import { asksForCard, type SetupEnding } from "@/lib/onboarding/setup-retry";
 import { judgedRows, type EmptyPool } from "@/lib/onboarding/events";
 import { trackStep } from "@/lib/onboarding/track-step";
 import { TrackStep } from "./track-step";
 
-export const NOTHING_PLANNED_HEADING = "Nothing cleared the bar for a first article yet";
+export const NOTHING_PLANNED_HEADING = "We did not find a clear first topic yet";
 
 /**
  * The lede under that heading. The count is the searches a judge actually
@@ -56,26 +58,62 @@ export function NothingPlannedNote({ followUp }: { followUp: boolean }) {
   );
 }
 
+/** The gate's offer: the plan and interval it shares with the sticky bar, and the facts the server read. */
+export interface GateOffer {
+  interval: BillingInterval;
+  onInterval: (next: BillingInterval) => void;
+  plan?: SelfServePlan;
+  onPlan?: (next: SelfServePlan) => void;
+  facts: TrialOfferFacts;
+  fullArticle: boolean;
+  buttonRef?: React.Ref<HTMLDivElement>;
+}
+
 /** The card ask, or, when setup planned nothing, the note that replaces it. */
 export function SetupAsk({
   ending,
   canBuy,
   followUp,
   returnTo = "/dashboard",
+  offer,
+  below,
 }: {
   ending: SetupEnding;
   canBuy: boolean;
   followUp: boolean;
   returnTo?: string;
+  /** The gate's price box; without it, the plain offer. */
+  offer?: GateOffer;
+  /** Under the ask: the soft exits (email me this article). */
+  below?: React.ReactNode;
 }) {
   // A retry: the button is above, and there is nothing to ask for.
   if (ending === "retry") return <p className="m-0 text-[12.5px] text-ink-2">Nothing has been charged, and running setup again costs nothing.</p>;
+  // Our provider's outage: no card, no retry button, nobody promised beyond
+  // what the heading says (the overnight retry and its email).
+  if (ending === "provider-down") return <NothingPlannedNote followUp={false} />;
   if (!asksForCard(ending)) return <NothingPlannedNote followUp={followUp} />;
   // The gate is the card ask: shown is when this renders it (onboarding.step).
   return (
     <>
       <TrackStep step="gate_shown" />
-      <TrialOffer canBuy={canBuy} returnTo={returnTo} onStart={() => trackStep("trial_clicked")} />
+      {offer ? (
+        <TrialPriceBox
+          canBuy={canBuy}
+          interval={offer.interval}
+          onInterval={offer.onInterval}
+          plan={offer.plan}
+          onPlan={offer.onPlan}
+          facts={offer.facts}
+          fullArticle={offer.fullArticle}
+          returnTo={returnTo}
+          onStart={() => trackStep("trial_clicked")}
+          buttonRef={offer.buttonRef}
+        />
+      ) : (
+        <TrialOffer canBuy={canBuy} returnTo={returnTo} onStart={() => trackStep("trial_clicked")} />
+      )}
+      {below}
     </>
   );
 }

@@ -5,10 +5,12 @@
 // A hosted plan starts with TRIAL_DAYS of trial. The card is taken at
 // checkout and charged when the trial ends unless the customer cancels first.
 // The offer is made after onboarding: setup writes the account's first
-// article before any card is entered, and the account sees its shape (title,
-// outline, length, sources) on the gate screen. The text opens with the
-// trial, and so do the dashboard, approve, publish and the rest of the
-// week's drafts.
+// article before any card is entered. On the gate screen the account's owner
+// reads it in full, read-only (PRETRIAL_FULL_ARTICLE, on by default since
+// 2026-10-12; lib/onboarding/first-article-body.ts); anyone else, or anyone
+// at all with the switch at "0", sees its shape (title, outline, length,
+// sources). Editing, approve, publish, the dashboard and the rest of the
+// week's drafts open with the trial.
 //
 // One trial per account. Stripe does not enforce that on its own (a customer
 // can open a second trialing subscription), so eligibility is decided here

@@ -233,6 +233,7 @@ export function describeBusiness(business: {
   audiences?: string[] | null;
   offerings?: string[] | null;
   competitors?: string[] | null;
+  competitorNames?: string[] | null;
   buyingJobs?: string[] | null;
   differentiators?: string[] | null;
   exclusions?: string[] | null;
@@ -246,6 +247,8 @@ export function describeBusiness(business: {
   if (business.offerings?.length) lines.push(`What people buy from it: ${business.offerings.join("; ")}`);
   if (business.audiences?.length) lines.push(`Who buys: ${business.audiences.join("; ")}`);
   if (business.competitors?.length) lines.push(`Competitors: ${business.competitors.join(", ")}`);
+  // Named by the owner with no website found: names, never hosts.
+  if (business.competitorNames?.length) lines.push(`Competitors named by the owner (no website): ${business.competitorNames.join(", ")}`);
   if (business.buyingJobs?.length) lines.push(`Buying jobs: ${business.buyingJobs.join("; ")}`);
   if (business.differentiators?.length) lines.push(`Supported differences: ${business.differentiators.join("; ")}`);
   if (business.exclusions?.length) lines.push(`Not served: ${business.exclusions.join("; ")}`);

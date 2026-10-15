@@ -32,6 +32,15 @@ export interface BusinessProfile {
   /** Domains, not company names, so they can seed competitive research. */
   competitors: string[];
   /**
+   * Rivals the owner named that no website could be found for: a local
+   * clinic knows the practice down the road by name, not by domain. Kept
+   * apart from `competitors` on purpose: discovery resolves and reads every
+   * entry there as a host (lib/keyword-research/discovery.ts), and these are
+   * never looked up. They reach the prompts as names (describeBusiness) and
+   * the navigational rule as brands (opportunity.ts), nothing else.
+   */
+  competitorNames?: string[];
+  /**
    * Rivals read off the results pages for this site's buyer searches and
    * vetted as selling against it (lib/keyword-research/serp-rivals.ts). Found
    * once and kept: the search that finds them starts from model-worded seeds

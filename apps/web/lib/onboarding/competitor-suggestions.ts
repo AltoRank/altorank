@@ -44,6 +44,13 @@ export interface CompetitorSuggestions {
   suggestions: CompetitorSuggestion[];
   /** The vetted results-page rivals, for `business_profile.searchRivals`. */
   searchRivals: string[];
+  /**
+   * The lookup could not look: the results-page search failed (it threw, or
+   * every search it made failed) and the index gave nothing either. Each
+   * source answers empty rather than throwing, so without this a provider
+   * outage read as "no similar businesses found" (review, 2026-10-12).
+   */
+  lookupFailed?: boolean;
 }
 
 /** Keywords a host must share with the site before the index calls it a competitor. */
@@ -100,20 +107,31 @@ export async function suggestCompetitors(options: {
   const locale = { languageCode: options.languageCode, locationCode: options.locationCode };
   const named = options.business.competitors.map(host).filter(Boolean);
 
+  let serpFailed = false;
+  let indexFailed = false;
   const [serp, index] = await Promise.all([
     (async () => {
       const seeds = await proposeBuyerSeeds(options.business, { spend: options.spend });
       const searchable = seeds.seeds.filter((t) => !isBrandTerm(t, own, named));
       if (!searchable.length) return { rivals: [] as string[] };
-      return findSerpRivals(searchable, locale, new Set([own, ...named]), { business: options.business, spend: options.spend });
-    })().catch(() => ({ rivals: [] as string[] })),
+      const found = await findSerpRivals(searchable, locale, new Set([own, ...named]), { business: options.business, spend: options.spend });
+      // Every results page it asked for failed: it did not look.
+      if (found.searched.length > 0 && found.failed.length >= found.searched.length) serpFailed = true;
+      return found;
+    })().catch(() => {
+      serpFailed = true;
+      return { rivals: [] as string[] };
+    }),
     fetchOrganicCompetitors(own, { ...locale, limit: 20 })
       // A site with three rankings "shares keywords" with whoever holds one
       // of them: fitsuite.co's index competitors were a tech blog and a
       // running coach. Sharing one keyword is a coincidence; sharing several
       // is a market.
       .then((items) => rankCompetitors(own, items.filter((c) => c.sharedKeywords >= MIN_SHARED_KEYWORDS), 8).map((c) => c.domain))
-      .catch(() => [] as string[]),
+      .catch(() => {
+        indexFailed = true;
+        return [] as string[];
+      }),
   ]);
   // The index answers "who ranks for what you rank for", and for a site with
   // a handful of rankings that is whoever holds them: a tech blog, a health
@@ -137,5 +155,8 @@ export async function suggestCompetitors(options: {
       return { ...m, authority: a, size: classifyRivalSize(ownAuthority, a) };
     }),
     searchRivals: serp.rivals,
+    // The index is empty for most young sites, so with the results pages
+    // unread there is nothing behind an empty list: say the lookup failed.
+    ...(serpFailed && (indexFailed || indexVetted.length === 0) ? { lookupFailed: true } : {}),
   };
 }

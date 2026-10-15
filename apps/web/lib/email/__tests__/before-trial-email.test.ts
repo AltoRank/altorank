@@ -52,9 +52,19 @@ describe("renderArticleDrafted, before the trial", () => {
     expect(r.html).not.toContain("/content/");
     expect(r.html).toContain("https://app.example/onboarding");
     expect(r.html).not.toMatch(/Read the draft/i);
-    expect(r.html).toContain("The full text opens when your 7-day trial starts");
+    // PRETRIAL_FULL_ARTICLE is on by default: the owner reads it on the setup page.
+    expect(r.html).toContain("The account owner can read it in full on the setup page now");
+    expect(r.html).not.toContain("rest of the week");
     expect(r.subject).toBe("Your first article for acme-agency.example is written");
-    expect(r.preheader).toContain("Start your 7-day trial to read it");
+    expect(r.preheader).toContain("It is on your setup page");
+    process.env.PRETRIAL_FULL_ARTICLE = "0";
+    try {
+      const off = renderArticleDrafted({ ...ONE, beforeTrial: true });
+      expect(off.html).toContain("The full text opens when your 7-day trial starts");
+      expect(off.preheader).toContain("Start your 7-day trial to read it");
+    } finally {
+      delete process.env.PRETRIAL_FULL_ARTICLE;
+    }
   });
 
   it("is unchanged for a paying account", () => {
@@ -133,7 +143,8 @@ describe("renderWelcome, before the trial", () => {
     expect(r.html).not.toContain("/dashboard");
     expect(r.html).toContain("https://app.example/onboarding");
     expect(r.html).toContain("Continue setup");
-    expect(r.html).toContain("The full text opens when your 7-day trial starts");
+    expect(r.html).toContain("Setup writes your first article while you watch.");
+    expect(r.html).toContain("The account owner can read it in full on the setup page now");
     expect(r.html).toContain("No card is on file until you start the trial");
   });
 

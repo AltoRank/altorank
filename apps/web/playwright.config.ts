@@ -48,6 +48,10 @@ export default defineConfig({
     env: {
       ...process.env,
       E2E_STUBS: "1",
+      // The check-what-we-found form stays the fallback when a site read
+      // fails, so the specs that walk it keep running with auto-start off;
+      // first-look-gate.spec turns it on per browser (lib/dev/simulation.ts).
+      ONBOARDING_AUTOSTART: "0",
       // Own build directory, so this server can start beside a plain `next dev`
       // of the same checkout (Next 16 locks `.next/dev` per process).
       NEXT_DIST_DIR: ".next-e2e",

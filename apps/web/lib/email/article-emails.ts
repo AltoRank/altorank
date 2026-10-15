@@ -51,6 +51,7 @@ import { sendOnce, type SendOnceOutcome } from "./send-once";
 import { appLink } from "@/lib/app-url";
 import type { FactCheckReport } from "@/lib/ai/fact-check";
 import { TRIAL_DAYS } from "@/lib/stripe";
+import { fullArticleOn } from "@/lib/onboarding/full-article-switch";
 
 /** Everything here is a keyword, a title or a domain: all of it user data. */
 export const esc = (s: unknown) =>
@@ -112,9 +113,17 @@ export function trialGateUrl(): string {
   return appLink("/onboarding");
 }
 
-/** The sentence a mail to an account before its trial says instead of "read it". */
-export function beforeTrialLine(count: number): string {
-  return `The full text opens when your ${TRIAL_DAYS}-day trial starts, with approving, publishing and the rest of the week's articles. Nothing publishes until you approve ${count === 1 ? "it" : "them"}.`;
+/**
+ * The sentence a mail to an account before its trial says instead of "read
+ * it". The mail goes to every member, so it says who can read what: with
+ * PRETRIAL_FULL_ARTICLE on (the default) the owner reads the first article in
+ * full on the setup page now, and everyone else sees its outline.
+ */
+export function beforeTrialLine(count: number, env: Record<string, string | undefined> = process.env): string {
+  const approve = `Nothing publishes until you approve ${count === 1 ? "it" : "them"}.`;
+  return fullArticleOn(env)
+    ? `The account owner can read ${count === 1 ? "it" : "the first one"} in full on the setup page now. Editing, approving and publishing open when your ${TRIAL_DAYS}-day trial starts. ${approve}`
+    : `The full text opens when your ${TRIAL_DAYS}-day trial starts, with approving and publishing. ${approve}`;
 }
 
 /**
@@ -255,7 +264,9 @@ export function renderArticleDrafted(a: ArticleDraftedEmail, recipient?: string)
   if (a.beforeTrial) {
     return {
       subject: `Your first article for ${site} is written`,
-      preheader: `${a.wordCount.toLocaleString()} words on "${a.keyword}". Start your ${TRIAL_DAYS}-day trial to read it.`,
+      preheader: fullArticleOn()
+        ? `${a.wordCount.toLocaleString()} words on "${a.keyword}". It is on your setup page.`
+        : `${a.wordCount.toLocaleString()} words on "${a.keyword}". Start your ${TRIAL_DAYS}-day trial to read it.`,
       footerNote: `Sent because AltoRank wrote this article for ${esc(site)}.`,
       html:
         emailLabel(site) +

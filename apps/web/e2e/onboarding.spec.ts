@@ -40,7 +40,8 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   await expect(page.getByText("Based on your website, we've filled this in.", { exact: false })).toBeVisible();
 
   // Open by default: the two lists that seed keyword research.
-  await expect(page.getByText("slow travel itineraries italy")).toBeVisible();
+  // Exact: the help line under the list quotes the first one as its example.
+  await expect(page.getByText("slow travel itineraries italy", { exact: true })).toBeVisible();
   await expect(page.getByText("tripcraft.example")).toBeVisible();
 
   // Collapsed to a line, and the line carries the content rather than a tick:
@@ -58,7 +59,9 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   // The sitemap and blog were found, not guessed, and the line says so.
   const blog = page.locator("details", { has: page.getByRole("heading", { name: "Where your content lives" }) });
   await expect(blog).toContainText("Found");
-  await blog.locator("summary").click();
+  await blog.locator(":scope > summary").click();
+  // The sitemap sits behind "Advanced (optional)" since 2026-10-12.
+  await page.getByText("Advanced (optional)").click();
   const sitemapUrl = `https://${ws.domain}/sitemap.xml`;
   await expect(page.getByLabel(/^Sitemap/)).toHaveValue(sitemapUrl);
   await expect(page.getByLabel(/^Blog address/)).toHaveValue(`https://${ws.domain}/blog/`);
@@ -66,7 +69,7 @@ test("a new account is walked from /dashboard to five qualified topics and one d
   // One button. It saves everything on the screen, marks the wizard done and
   // starts the run; there is no Back and no Skip, because there is nowhere to
   // go back to and nothing left worth skipping.
-  await page.getByRole("button", { name: "Plan my first articles" }).click();
+  await page.getByRole("button", { name: /^(Write my first article|Plan my first articles)$/ }).click();
 
   // --- The run ---------------------------------------------------------------
   await expect(page.getByRole("heading", { name: "Creating your content plan" })).toBeVisible();

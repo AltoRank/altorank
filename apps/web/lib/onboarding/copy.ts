@@ -30,3 +30,44 @@ export function freeAllowanceClause(freeDrafts: number | null, opts: { preTrial?
   if (opts.preTrial) return `Setup writes your first article free; the ${TRIAL_DAYS}-day trial opens it and writes the rest.`;
   return `The first ${freeDrafts === 1 ? "one is" : `${freeDrafts} are`} free to read; the ${TRIAL_DAYS}-day trial writes the rest.`;
 }
+
+/** How long the wait after the wizard takes: the one estimate every screen quotes. */
+export { FIRST_LOOK_MINUTES } from "./setup-progress";
+import { FIRST_LOOK_MINUTES } from "./setup-progress";
+
+/**
+ * The wizard bar's promise, which has to be what the next three minutes
+ * deliver (UX audit 2026-10-12, #5). It said "keywords, a 30-day plan" and
+ * "your first article free", and the gate then showed one scheduled article
+ * behind a lock. What is true now:
+ *
+ * - the run reads the site, picks the first topic and writes the first
+ *   article on screen, in about FIRST_LOOK_MINUTES;
+ * - before the trial, the account's owner reads it in full, free
+ *   (PRETRIAL_FULL_ARTICLE, on by default: `canRead`); anyone else sees its
+ *   shape until the trial opens it;
+ * - the trial opens publishing and the rest of the drafts
+ *   (lib/billing/trial.ts).
+ *
+ * `short` is the one line a phone has room for beside a full-width button.
+ */
+export function wizardNextLine(opts: { preTrial: boolean; canRead: boolean; freeDrafts: number | null }): { full: string; short: string } {
+  const minutes = `about ${FIRST_LOOK_MINUTES} minutes`;
+  if (opts.preTrial) {
+    const lead = `Next: we read your site, pick your first topic and write your first article while you watch, in ${minutes}.`;
+    return opts.canRead
+      ? {
+          full: `${lead} Read it free; the ${TRIAL_DAYS}-day trial lets you publish it and writes the rest.`,
+          short: `About ${FIRST_LOOK_MINUTES} minutes. Read your first article free.`,
+        }
+      : {
+          full: `${lead} The ${TRIAL_DAYS}-day trial opens it, lets you publish it and writes the rest.`,
+          short: `About ${FIRST_LOOK_MINUTES} minutes. Watch your first article being written.`,
+        };
+  }
+  const clause = freeAllowanceClause(opts.freeDrafts);
+  return {
+    full: `Next: we read your site, pick your first topics and write your first article while you watch, in ${minutes}.${clause ? ` ${clause}` : ""}`,
+    short: `About ${FIRST_LOOK_MINUTES} minutes. Watch your first article being written.`,
+  };
+}

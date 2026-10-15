@@ -766,6 +766,14 @@ export interface SyncOptions {
    * `Disallow` is the one instruction they can leave.
    */
   respectRobots?: boolean;
+  /**
+   * The site's ranked keywords, when the caller already holds them. A first
+   * look reads its pages while the domain analysis is still running, before
+   * `domain_audits` has them: without this every page got a keyword guessed
+   * from its slug, and the planner's "already covered" check compared topics
+   * against those guesses.
+   */
+  ranked?: RankedKeyword[];
 }
 
 /**
@@ -833,7 +841,7 @@ export async function syncSitePages(
   const crawlDelayMs = Math.min((robots.crawlDelaySeconds ?? 0) * 1000, 5_000);
   const workers = crawlDelayMs > 0 ? 1 : concurrency;
 
-  const rankedByPath = await loadRankedKeywords(supabase, workspaceId);
+  const rankedByPath = opts.ranked?.length ? bestByPage(opts.ranked) : await loadRankedKeywords(supabase, workspaceId);
   const language = await readWorkspaceLanguage(supabase, workspaceId, "site-crawl");
 
   const { data: existing } = await supabase
@@ -960,7 +968,12 @@ async function loadRankedKeywords(
 
   const ranked = (data?.ranked_keywords as RankedKeyword[] | null) ?? null;
   if (!ranked?.length) return out;
+  return bestByPage(ranked);
+}
 
+/** Each page's best-positioned ranked keyword. */
+function bestByPage(ranked: RankedKeyword[]): Map<string, { keyword: string; position: number | null }> {
+  const out = new Map<string, { keyword: string; position: number | null }>();
   for (const [path, kws] of groupByPage(ranked)) {
     const best = kws
       .filter((k) => k.position !== null)

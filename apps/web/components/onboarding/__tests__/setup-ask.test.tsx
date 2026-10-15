@@ -3,7 +3,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 // The card form itself is tested with billing; here it is a marker, so the
 // question is only whether the ask is rendered at all.
-vi.mock("@/components/billing/trial-offer", () => ({ TrialOffer: () => <div data-testid="trial-offer">Start 7-day trial</div> }));
+vi.mock("@/components/billing/trial-offer", () => ({
+  TrialOffer: () => <div data-testid="trial-offer">Start 7-day trial</div>,
+  TrialPriceBox: () => <div data-testid="trial-offer">Start 7-day trial</div>,
+}));
 
 import { SetupAsk, NOTHING_PLANNED_HEADING, nothingPlannedLede } from "../setup-ask";
 import { asksForCard, setupEnding } from "@/lib/onboarding/setup-retry";
@@ -103,7 +106,7 @@ describe("SetupAsk", () => {
   });
 
   it("the heading and lede say nothing cleared the bar, that the team knows, and when they will hear back", () => {
-    expect(NOTHING_PLANNED_HEADING).toBe("Nothing cleared the bar for a first article yet");
+    expect(NOTHING_PLANNED_HEADING).toBe("We did not find a clear first topic yet");
     const lede = nothingPlannedLede("acme-clinic.example", POOL, true);
     // The 117 a judge decided, not the 27 it never reached.
     expect(lede).toContain("checked 117 searches");

@@ -36,8 +36,11 @@ describe("the reader's HTML, rebuilt from an allowlist", () => {
 
   it("keeps an article's own markup, links and tables", () => {
     const article = '<h2>Section</h2><p>Read <a href="https://ok.example/x?a=1&amp;b=2">this</a> &amp; <strong>that</strong>.</p><ul><li>one</li></ul><table><tr><td colspan="2">c</td></tr></table>';
-    expect(readableHtml(article)).toBe('<h2>Section</h2><p>Read <a href="https://ok.example/x?a=1&amp;b=2" rel="nofollow noopener noreferrer">this</a> &amp; <strong>that</strong>.</p><ul><li>one</li></ul><table><tr><td colspan="2">c</td></tr></table>');
-    expect(readableHtml('<p><a href="/pricing">pricing</a></p>')).toBe('<p><a href="/pricing" rel="nofollow noopener noreferrer">pricing</a></p>');
+    expect(readableHtml(article)).toBe('<h2>Section</h2><p>Read <a href="https://ok.example/x?a=1&amp;b=2" rel="nofollow noopener noreferrer" target="_blank" tabindex="-1">this</a> &amp; <strong>that</strong>.</p><ul><li>one</li></ul><table><tr><td colspan="2">c</td></tr></table>');
+    // A relative path is the customer's site's; on the gate it would resolve
+    // against this app. Its text is kept, the link is not.
+    expect(readableHtml('<p><a href="/pricing">pricing</a></p>')).toBe("<p><a>pricing</a></p>");
+    expect(readableHtml('<p><a href="mailto:hi@acme-shop.example">mail</a></p>')).toBe('<p><a href="mailto:hi@acme-shop.example" rel="nofollow noopener noreferrer" target="_blank" tabindex="-1">mail</a></p>');
   });
 
   it("escapes stray text, closes what a half-written body left open, and hides a half-written tag", () => {
