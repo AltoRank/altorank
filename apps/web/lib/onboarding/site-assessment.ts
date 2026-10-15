@@ -20,6 +20,7 @@
 // that refuses us, a server that times out - none of those is a reason for
 // someone's onboarding to fail, and all of them are worth saying out loud.
 
+import type { RankedKeyword } from "@/lib/seo/ranked-keywords";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { syncSitePages, type CrawlSummary } from "@/lib/seo/site-crawl";
 import { e2eStubsEnabled, isReservedTestDomain, stubAssessExistingPages } from "@/lib/e2e/stubs";
@@ -134,6 +135,7 @@ export async function assessExistingPages(
   supabase: SupabaseClient,
   workspaceId: string,
   domain: string,
+  options: { ranked?: RankedKeyword[] } = {},
 ): Promise<PagesPhaseOutcome> {
   // E2E_STUBS on a reserved test name: fixture pages and findings, no fetch
   // (lib/e2e/stubs.ts). Every e2e domain is `*.altorank.test`, which resolves
@@ -162,6 +164,7 @@ export async function assessExistingPages(
       // fetch would leave `tech_findings` null on exactly the pages we already
       // know about.
       skipUnchanged: false,
+      ranked: options.ranked,
     });
     return describeAssessment(summary);
   } catch (err) {

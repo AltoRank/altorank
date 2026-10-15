@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rankTargets, relevance, type PoolTarget } from "../targets";
+import { rankTargets, relevance, isPlaceholderTarget, type PoolTarget } from "../targets";
 import type { LinkTarget } from "@/lib/seo/link-resolver";
 
 // The prompt shows twenty targets. These pin which twenty: a person's
@@ -73,6 +73,31 @@ describe("rankTargets", () => {
 
   it("respects the limit", () => {
     expect(rankTargets({ pool, published, limit: 2 })).toHaveLength(2);
+  });
+});
+
+describe("isPlaceholderTarget", () => {
+  it("drops the posts and pages a CMS ships with", () => {
+    expect(isPlaceholderTarget({ title: "Hello world!", url: "https://acme.example/2019/01/hello-world/" })).toBe(true);
+    expect(isPlaceholderTarget({ title: "Ciao mondo!", url: "https://acme.example/ciao-mondo/" })).toBe(true);
+    expect(isPlaceholderTarget({ title: "Hallo wereld!", url: "https://acme.example/x/" })).toBe(true);
+    expect(isPlaceholderTarget({ title: null, url: "https://acme.example/sample-page/" })).toBe(true);
+  });
+
+  it("keeps a real page that only mentions the words", () => {
+    expect(isPlaceholderTarget({ title: "Hello world: our first boiler install", url: "https://acme.example/first-install/" })).toBe(false);
+  });
+
+  it("is applied by rankTargets", () => {
+    const out = rankTargets({
+      pool: [],
+      published: [
+        { title: "Hello world!", keyword: "hello world", url: "https://acme.example/hello-world/" },
+        { title: "Boiler servicing", keyword: "boiler service", url: "https://acme.example/boiler-servicing/" },
+      ],
+      keyword: "boiler service",
+    });
+    expect(out.map((t) => t.url)).toEqual(["https://acme.example/boiler-servicing/"]);
   });
 });
 

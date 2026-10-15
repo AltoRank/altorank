@@ -436,14 +436,15 @@ export function figureRules(research: ArticleResearch | undefined, opts: { refre
       "  its page states it, name the source in the sentence and link that page",
       "  inside the same sentence. These, and figures the business's own pages",
       "  state, are the only figures you may use: never a number from memory.",
+      "  Never a price from another country or in another currency than the reader's.",
     ];
   }
   return [
     "- No page researched for this article states a figure you could cite, so",
     "  write no statistic, price or percentage beyond what the business's own",
     "  pages state: not from memory, not rounded, not \"about\". Make each point in",
-    "  words; saying plainly that no reliable figure exists is itself a quotable",
-    "  answer.",
+    "  words. When the search asks for a number (how long, how often, how much),",
+    "  answer with what it depends on and how the reader finds their own figure.",
   ];
 }
 
@@ -932,6 +933,10 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
       "  results come from 20% of pages\", \"most experts agree\", \"studies show\" -",
       "  the fact checker flags these and it is right to. Either attribute the",
       "  figure to something citable or make the point without the number.",
+      "- The article speaks to the reader only. Never write about the research behind it:",
+      "  no sources you did or did not find, no brief, no profile, nothing the business has",
+      "  not published. Never paste the site's own text (an about-page greeting, a bio)",
+      "  into the article.",
       "- Phrase at least two H2s as the question a person would actually type.",
       "- Keep paragraphs under 120 words.",
       "- Use a real HTML table for any comparison of three or more things.",

@@ -92,6 +92,15 @@ function wordsFromPath(url: string): string {
 /**
  * Merge, de-duplicate and rank. Pure, so the order is testable.
  */
+/** The posts and pages a CMS ships with ("Hello world!", "Sample Page"), never written by the owner. */
+const CMS_PLACEHOLDER = /^(hello world|ciao mondo|hola mundo|bonjour tout le monde|hallo welt|hallo wereld|ol[aá] mundo|sample page|pagina di esempio|p[aá]gina de ejemplo|page d.exemple|beispiel-seite)!?$/i;
+
+export function isPlaceholderTarget(t: { title?: string | null; url: string }): boolean {
+  const title = (t.title ?? "").trim();
+  if (title && CMS_PLACEHOLDER.test(title)) return true;
+  return /\/(hello-world|ciao-mondo|hola-mundo|sample-page|pagina-di-esempio)\/?$/i.test(t.url);
+}
+
 export function rankTargets({ pool, published, keyword, limit = DEFAULT_LIMIT, excluded = [] }: RankInput): LinkTarget[] {
   type Scored = { target: LinkTarget; priority: number; relevance: number; origin: number };
   const byUrl = new Map<string, Scored>();
@@ -132,7 +141,7 @@ export function rankTargets({ pool, published, keyword, limit = DEFAULT_LIMIT, e
     byUrl.set(key, { target: { ...t }, priority: 0, relevance: 0, origin: 1 - i / Math.max(1, published.length) });
   });
 
-  const scored = [...byUrl.values()];
+  const scored = [...byUrl.values()].filter((s) => !isPlaceholderTarget(s.target));
   for (const s of scored) s.relevance = relevance(keyword, s.target);
 
   scored.sort((a, b) =>

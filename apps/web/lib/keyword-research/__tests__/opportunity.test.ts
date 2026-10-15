@@ -98,7 +98,7 @@ describe("topic qualification", () => {
   it("records an article's buyer, angle, observed sources and correct market", async () => {
     const result = await run();
     expect(result).toMatchObject({status:"qualified",audience:approval.audience,angle:approval.angle,format:"article",evidenceUrls:urls});
-    expect(fetchSerp).toHaveBeenCalledWith(term, context);
+    expect(fetchSerp).toHaveBeenCalledWith(term, context, { rich: true });
   });
   it("cites only observed editorial results, whatever the model names", async () => {
     answerWith("article", { evidenceUrls: ["https://invented.test/a", "https://invented.test/b"] });

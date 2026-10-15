@@ -429,7 +429,7 @@ export async function qualifyOpportunities(
       let failed = false;
       const page = await patiently(() => watchRefusals(async () => {
         try {
-          const serp = await timed("results_pages", () => withStage("results_pages", () => fetchAdvancedSerp(c.term, context)));
+          const serp = await timed("results_pages", () => withStage("results_pages", () => fetchAdvancedSerp(c.term, context, { rich: true })));
           firstLook?.serps?.set(c.term.trim().toLowerCase(), serp);
           return serp;
         } catch (err) {
