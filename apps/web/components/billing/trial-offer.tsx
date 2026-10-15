@@ -115,6 +115,9 @@ export function TrialPriceBox({
           onStart={onStart}
           label={`Start ${TRIAL_DAYS}-day trial`}
           className="w-full justify-center py-2.5 text-[14px]"
+          // In the box itself the form opens in place of the button: on the
+          // gate that is the rail beside the article.
+          embed="inline"
         />
       </div>
       <p className="m-0 mt-2.5 text-[12.5px] leading-[1.55] text-ink-2">{reassuranceLine()}</p>

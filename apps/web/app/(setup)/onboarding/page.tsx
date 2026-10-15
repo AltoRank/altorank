@@ -202,6 +202,10 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       // When a trial started now would end, on the server's clock, and
       // whether checkout adds VAT: the two facts the price box states.
       offer={trialOfferFacts(new Date(), stripeTaxEnabled)}
+      // The run starts as soon as the site read lands, with what was read
+      // shown beside it (components/onboarding/what-we-understood.tsx). On
+      // unless ONBOARDING_AUTOSTART=0 puts the check screen back first.
+      autoStart={process.env.ONBOARDING_AUTOSTART !== "0"}
     />
     </>
   );
