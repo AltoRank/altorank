@@ -312,6 +312,40 @@ describe("runOnboarding", () => {
     expect(emptyPool).not.toHaveBeenCalled();
   });
 
+  // 2026-10-15, a US e-bike shop: every demand lookup answered 402, and the
+  // screen said "No keyword clear enough to plan yet" for 25 obvious searches.
+  it("says demand could not be measured, and that the next look is scheduled, when every lookup failed", async () => {
+    emptyPool.mockClear();
+    analyse.mockResolvedValue({
+      keywordsFound: 0,
+      layers: [{ id: "keywords", status: "ok", detail: "0 keywords found: 25 held until their search demand can be measured" }],
+      demandUnmeasured: { reason: "DataForSEO API error: 402 Payment Required", held: 25 },
+      firstLook: { attempts: 1, settled: false, reason: "unmeasured" },
+    });
+    const events = await collect();
+    const keywords = events.find((e) => e.phase === "keywords" && "status" in e && e.status === "skipped") as { detail: string };
+    expect(keywords.detail).toMatch(/found 25 topics but could not measure search demand/);
+    expect(keywords.detail).toMatch(/next look is already scheduled/);
+    expect(keywords.detail).not.toMatch(/demand:|no measured demand|Nothing rankable|Payment Required/i);
+    const planning = events.find((e) => e.phase === "planning" && "status" in e && e.status === "skipped") as { detail: string };
+    expect(planning.detail).not.toMatch(/No keyword clear enough/);
+    // Nothing was measured, so the empty pool is not this site's verdict.
+    expect(emptyPool).not.toHaveBeenCalled();
+  });
+
+  it("names the topics it held beside the ones it stored", async () => {
+    analyse.mockResolvedValue({
+      keywordsFound: 4,
+      layers: [{ id: "keywords", status: "ok", detail: "4 keywords found: 4 it already ranks for" }],
+      demandUnmeasured: { reason: "keyword_overview gave no answer for 21 terms", held: 21 },
+      firstLook: { attempts: 1, settled: false, reason: "unmeasured" },
+    });
+    const events = await collect();
+    const keywords = events.find((e) => e.phase === "keywords" && "status" in e && e.status === "done") as { detail: string };
+    expect(keywords.detail).toMatch(/^4 keywords found/);
+    expect(keywords.detail).toMatch(/21 more topics are held: we could not measure search demand for them just now/);
+  });
+
   it("skips the draft, with the reason, when the free allowance is used", async () => {
     quota.mockResolvedValue({ limit: 7, used: 7, remaining: 0, reason: "no-plan" });
     const events = await collect();

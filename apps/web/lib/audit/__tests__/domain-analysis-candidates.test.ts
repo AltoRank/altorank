@@ -71,8 +71,9 @@ const nothingDiscovered = () => ({ fromCompetitors: [], fromIdeas: [], seeds: { 
 const rivalsRank = (rows: unknown[]) => ({ ...nothingDiscovered(), fromCompetitors: rows, competitorsAsked: ["rival.co"] });
 
 /** Just enough client for the keyword write path. */
-function fakeSupabase(business: Record<string, unknown> | null = null) {
+function fakeSupabase(business: Record<string, unknown> | null = null, existing: Array<Record<string, unknown>> = []) {
   const inserted: Array<Record<string, unknown>[]> = [];
+  const updates: Array<{ table: string; patch: Record<string, unknown>; filters: Array<[string, string, unknown]> }> = [];
   const client = {
     from(table: string) {
       return {
@@ -80,7 +81,7 @@ function fakeSupabase(business: Record<string, unknown> | null = null) {
           // `.eq(...)` is awaited for the keyword table and `.single()`d for the
           // workspace's business profile, so it has to be both.
           eq: () =>
-            Object.assign(Promise.resolve({ data: [] }), {
+            Object.assign(Promise.resolve({ data: table === "keywords" ? existing : [] }), {
               single: async () => ({ data: { business_profile: business } }),
             }),
         }),
@@ -91,22 +92,34 @@ function fakeSupabase(business: Record<string, unknown> | null = null) {
             then: (res: (v: { data: null }) => unknown) => res({ data: null }),
           };
         },
-        update: () => ({ eq: async () => ({ data: null }) }),
+        // Chainable and awaitable, and every call is recorded with its filters.
+        update: (patch: Record<string, unknown>) => {
+          const call = { table, patch, filters: [] as Array<[string, string, unknown]> };
+          updates.push(call);
+          const q = {
+            eq: (k: string, v: unknown) => { call.filters.push(["eq", k, v]); return q; },
+            is: (k: string, v: unknown) => { call.filters.push(["is", k, v]); return q; },
+            then: (res: (v: { data: null; error: null }) => unknown) => res({ data: null, error: null }),
+          };
+          return q;
+        },
         upsert: async () => ({ data: null }),
       };
     },
   };
-  return { client: client as never, inserted };
+  return { client: client as never, inserted, updates };
 }
 
 const analyse = (
   extra: Record<string, unknown> = {},
   business: Record<string, unknown> | null = null,
+  existing: Array<Record<string, unknown>> = [],
 ) => {
-  const { client, inserted } = fakeSupabase(business);
+  const { client, inserted, updates } = fakeSupabase(business, existing);
   return analyseDomain({ domain: "x.co", supabase: client, workspaceId: "ws1", ...extra }).then((a) => ({
     analysis: a,
     stored: inserted.flat(),
+    updates,
   }));
 };
 
@@ -322,6 +335,84 @@ describe("the stored hundred", () => {
  * A crawl that yields a topical profile able to judge relevance. Without one
  * the site is unreadable and the spend gate stores nothing at all.
  */
+// ---------------------------------------------------------------------------
+// A volume lookup that failed is not "nobody searches this"
+// ---------------------------------------------------------------------------
+
+describe("when the demand lookup failed", () => {
+  beforeEach(() => pages.mockReturnValue(newsletterSite()));
+
+  const WORDS = ["newsletter", "publishing", "deliverability", "subscriber", "analytics", "archive", "hosting"];
+  const terms = (n: number) => Array.from({ length: n }, (_, i) => `${WORDS[i % WORDS.length]} ${WORDS[(i + 1 + Math.floor(i / WORDS.length)) % WORDS.length]} ${1000 + i}`);
+  const idea = (keyword: string, failed: boolean) => ({
+    keyword, volume: 0, difficulty: null, cpc: 0, competition: 0, intent: "info" as const, unmeasured: true,
+    ...(failed ? { measureFailed: true } : {}),
+  });
+  const failedLookup = (n: number) => {
+    const t = terms(n);
+    return { ...nothingDiscovered(), fromIdeas: t.map((k) => idea(k, true)), demandLookupFailed: { reason: "DataForSEO API error: 402 Payment Required", terms: t } };
+  };
+
+  // The 2026-10-15 first look: 25 topics, every lookup 402, all 25 stored
+  // with no volume, all 25 then "no measured demand" in the US.
+  it("stores none of 25 topics whose lookup failed, judges none, and leaves the look open", async () => {
+    discover.mockResolvedValue(failedLookup(25));
+    const { analysis, stored, updates } = await analyse();
+    expect(stored).toEqual([]);
+    expect(stored.some((r) => r.volume === null)).toBe(false);
+    // No buyer verdict is bought for a topic this look cannot keep.
+    const judged = (fit.mock.calls[0]?.[1] as string[] | undefined) ?? [];
+    expect(judged).toEqual([]);
+    expect(analysis.keywordsFound).toBe(0);
+    expect(analysis.demandUnmeasured).toEqual({ reason: "DataForSEO API error: 402 Payment Required", held: 25 });
+    expect(analysis.firstLook).toMatchObject({ settled: false, reason: "unmeasured" });
+    const ws = updates.find((u) => u.table === "workspaces" && "analysis_attempts" in u.patch);
+    expect(ws).toBeDefined();
+    expect(ws!.patch.first_analysed_at).toBeUndefined();
+    expect(analysis.layers.find((l) => l.id === "keywords")?.detail).toContain("25 held until their search demand can be measured");
+  });
+
+  it("stores what was measured and holds only what was not", async () => {
+    const measured = { keyword: "newsletter archive hosting", volume: 320, difficulty: 12, cpc: 1, competition: 0, intent: "info" as const };
+    discover.mockResolvedValue({ ...failedLookup(5), fromIdeas: [measured, ...failedLookup(5).fromIdeas] });
+    const { analysis, stored } = await analyse();
+    expect(stored.map((r) => r.term)).toEqual(["newsletter archive hosting"]);
+    expect(stored[0].volume).toBe(320);
+    expect(analysis.demandUnmeasured?.held).toBe(5);
+    expect(analysis.firstLook?.settled).toBe(false);
+  });
+
+  // Rule 5 is untouched: a provider that answered with no row is an answer.
+  it("still stores a topic the provider answered for with no row, and settles the look", async () => {
+    discover.mockResolvedValue({ ...nothingDiscovered(), fromIdeas: terms(3).map((k) => idea(k, false)), demandLookupFailed: null });
+    const { analysis, stored } = await analyse();
+    expect(stored).toHaveLength(3);
+    expect(stored.every((r) => r.volume === null)).toBe(true);
+    expect(analysis.demandUnmeasured).toBeUndefined();
+    expect(analysis.firstLook).toMatchObject({ settled: true, reason: "read" });
+  });
+
+  it("prices the rows an earlier look left with no volume, and writes what it measured", async () => {
+    discover.mockResolvedValue({
+      ...nothingDiscovered(),
+      demandLookupFailed: null,
+      remeasured: new Map([["electric mountain bikes", { term: "electric mountain bikes", volume: 27100, difficulty: 41, cpc: 1.2, intent: "commercial" }]]),
+    });
+    const existing = [
+      { id: "k-old", term: "electric mountain bikes", volume: null },
+      { id: "k-absent", term: "fat tire e-bike", volume: null },
+      { id: "k-known", term: "newsletter hosting", volume: 90 },
+    ];
+    const { updates } = await analyse({}, null, existing);
+    expect(discover.mock.calls[0][0]).toMatchObject({ remeasure: ["electric mountain bikes", "fat tire e-bike"] });
+    const written = updates.filter((u) => u.table === "keywords");
+    expect(written).toHaveLength(1);
+    expect(written[0].patch).toEqual({ volume: 27100, difficulty: 41, cpc: 1.2 });
+    // Only the row, and only while it is still null: a number written since stands.
+    expect(written[0].filters).toEqual([["eq", "workspace_id", "ws1"], ["eq", "id", "k-old"], ["is", "volume", null]]);
+  });
+});
+
 function newsletterSite() {
   const page = (url: string, title: string, h1: string, h2: string[]) => ({
     url, status: 200, title, metaDescription: "", h1: [h1], h2, images: [], links: [], loadTimeMs: 10,

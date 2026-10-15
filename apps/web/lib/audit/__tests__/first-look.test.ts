@@ -53,6 +53,29 @@ describe("decideFirstLook", () => {
   it("takes the cap as an argument so the test does not pin the constant", () => {
     expect(decideFirstLook(blip, 1)).toMatchObject({ settled: true, reason: "gave-up" });
   });
+
+  // 2026-10-15: the site read fine (40 pages) while every demand lookup
+  // answered 402. A look that measured no demand has not finished.
+  it("does not settle a run that read the site but could not measure demand", () => {
+    expect(decideFirstLook({ ...blip, pagesCrawled: 40, demandUnmeasured: true })).toEqual({
+      attempts: 1,
+      settled: false,
+      reason: "unmeasured",
+    });
+    expect(firstLookPatch(decideFirstLook({ ...blip, pagesCrawled: 40, demandUnmeasured: true }), NOW_ISO).first_analysed_at).toBeUndefined();
+  });
+
+  it("stops retrying an unmeasured look once the attempts are spent", () => {
+    expect(decideFirstLook({ ...blip, pagesCrawled: 40, demandUnmeasured: true, attemptsBefore: MAX_ANALYSIS_ATTEMPTS - 1 })).toEqual({
+      attempts: MAX_ANALYSIS_ATTEMPTS,
+      settled: true,
+      reason: "gave-up",
+    });
+  });
+
+  it("settles a read look whose demand was measured, as before", () => {
+    expect(decideFirstLook({ ...blip, pagesCrawled: 40, demandUnmeasured: false })).toMatchObject({ settled: true, reason: "read" });
+  });
 });
 
 describe("firstLookPatch", () => {
