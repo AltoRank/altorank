@@ -89,11 +89,12 @@ pre-<nnn>.sql` or `pg_dump`). There are no down migrations.
 
 ### 3. Things the migrations do not do
 
-- **The `reports` storage bucket.** `lib/reports/generate.ts` uploads PDF
-  reports to a bucket called `reports` and reads them back with
-  `getPublicUrl`. No migration creates it (045 creates `article-images`, the
-  only bucket that is scripted). Create `reports` in *Storage* as a public
-  bucket, or monthly reports fail with "Bucket not found".
+- **Do not create the `reports` bucket by hand.** Migration 066 creates it,
+  private and PDF only, and the app hands out signed links to each report
+  (`lib/reports/generate.ts`). A public `reports` bucket serves every client's
+  traffic and keyword figures to anyone holding a link. If you made one by
+  hand on an earlier version, applying 066 switches it back to private; check
+  *Storage → reports* says private afterwards.
 - **Auth URL configuration.** Set *Authentication → URL Configuration → Site
   URL* to your app's origin and add `<origin>/callback` to the redirect
   allow-list. The app sends its own auth emails (below), but OAuth codes
@@ -414,20 +415,19 @@ least once.
 1. **Database migrations.** Not run by CI, not run by the deploy. A merged
    PR with a migration is not live until someone runs `supabase db push`
    against production.
-2. **The `reports` storage bucket.** Not created by any migration.
-3. **Environment variables on Vercel.** A new variable added to the code is a
+2. **Environment variables on Vercel.** A new variable added to the code is a
    new variable to set in the dashboard; `NEXT_PUBLIC_*` additions also need
    a redeploy.
-4. **Arming the GitHub Actions crons.** `CRON_SECRET` as a repository secret,
+3. **Arming the GitHub Actions crons.** `CRON_SECRET` as a repository secret,
    and `APP_URL` as a repository variable outside `AltoRank/altorank`.
    Without them a Vercel deployment generates and publishes once a day.
-5. **The marketing deploy.** By hand, unless one of the two automatic paths
+4. **The marketing deploy.** By hand, unless one of the two automatic paths
    above is switched on.
-6. **Stripe webhook registration** (`/api/webhooks/stripe`) and the price ids. See **Stripe** below for the six events and the price setting nothing here can set.
-7. **Google OAuth client** and its redirect URI.
-8. **Supabase Auth URL configuration** (Site URL, redirect allow-list) and a
+5. **Stripe webhook registration** (`/api/webhooks/stripe`) and the price ids. See **Stripe** below for the six events and the price setting nothing here can set.
+6. **Google OAuth client** and its redirect URI.
+7. **Supabase Auth URL configuration** (Site URL, redirect allow-list) and a
    verified Resend sender domain.
-9. **Keeping `docker/crontab`, `vercel.json`, `apps/web/wrangler.jsonc` and
+8. **Keeping `docker/crontab`, `vercel.json`, `apps/web/wrangler.jsonc` and
    `apps/web/cloudflare/worker.mjs` in step.** They schedule the same twelve
    jobs, and `cron-schedules.test.ts` fails when one misses a route. The three
    schedules Hobby forbids (`publish`, `analyze`, `generate`) differ on
@@ -438,7 +438,7 @@ least once.
 ```
 [ ] Supabase project created; URL, anon key, service_role key, DB connection string noted
 [ ] supabase link && supabase db push  (all migrations show as applied in `supabase migration list`)
-[ ] `reports` bucket created (public)
+[ ] Storage → `reports` exists and is private (migration 066 creates it)
 [ ] Auth: Site URL + /callback in the redirect allow-list
 [ ] Resend: sender domain verified; RESEND_API_KEY + RESEND_FROM_EMAIL
 [ ] Vercel project: root apps/web, Node 22, region fra1, every env var set for Production
