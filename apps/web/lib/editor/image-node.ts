@@ -1,4 +1,5 @@
 import { Node, mergeAttributes } from "@tiptap/react";
+import { safeUrl } from "@/lib/html/sanitize";
 
 // ---------------------------------------------------------------------------
 // An <img> the editor can hold
@@ -46,7 +47,8 @@ export const ArticleImage = Node.create({
   },
 
   renderHTML({ HTMLAttributes }) {
-    return ["img", mergeAttributes(HTMLAttributes)];
+    // Same URL rule as the serialiser (lib/html/sanitize.ts): http(s) or relative.
+    return ["img", mergeAttributes(HTMLAttributes, { src: safeUrl(HTMLAttributes.src, "image") ?? "" })];
   },
 
   addCommands() {

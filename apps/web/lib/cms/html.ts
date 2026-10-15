@@ -2,7 +2,7 @@
  * Convert Tiptap ProseMirror JSON to clean HTML for CMS publishing.
  */
 
-import { isSafeSvg } from "@/lib/content/enrich/svg";
+import { sanitizeSvg } from "@/lib/html/sanitize";
 
 /**
  * Hosts an embedded player may come from. Only YouTube, and preferably its
@@ -111,8 +111,9 @@ function renderNode(node: TiptapNode): string {
       );
     }
     case "svgFigure": {
-      const svg = node.attrs?.svg;
-      if (!isSafeSvg(typeof svg === "string" ? svg : null)) return "";
+      // Rebuilt from the SVG allowlist (lib/html/sanitize.ts), never emitted as stored.
+      const svg = sanitizeSvg(node.attrs?.svg);
+      if (!svg) return "";
       const caption = captionOf(node);
       return `<figure class="infographic">${svg}${caption ? `<figcaption>${caption}</figcaption>` : ""}</figure>\n`;
     }
