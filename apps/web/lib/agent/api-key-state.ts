@@ -34,7 +34,7 @@ export const EXPIRY_OPTIONS: readonly { label: string; days: number | null }[] =
 ];
 
 /**
- * The one scope a blog key carries (migration 114). It is not an agent scope:
+ * The one scope a blog key carries (migration 118). It is not an agent scope:
  * the agent API and the hosted MCP refuse a key that has it, and an OAuth
  * connector cannot ask for it. A blog key reads one site's live articles
  * through /api/blog/v1 and nothing else; `api_keys.workspace_id` names the site.

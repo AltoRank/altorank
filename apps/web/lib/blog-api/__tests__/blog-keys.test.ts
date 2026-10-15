@@ -6,7 +6,7 @@ import { generateApiKey } from "@/lib/agent/api-keys";
 // Which keys the blog API takes, and for which site
 // ---------------------------------------------------------------------------
 //
-// A blog key (scopes {blog}, migration 114) reads the one site it names. The
+// A blog key (scopes {blog}, migration 118) reads the one site it names. The
 // agent keys and the legacy account key that sites were set up with before
 // keep working. A workspace the key cannot read is a 403, never a 404 the
 // client would take for "no articles".
@@ -33,7 +33,7 @@ function seed() {
       { id: "k-write", account_id: "acc-1", key_hash: writeOnlyKey.hash, scopes: ["write"], workspace_id: null, revoked_at: null, expires_at: null, last_used_at: null },
       { id: "k-revoked", account_id: "acc-1", key_hash: revokedBlogKey.hash, scopes: ["blog"], workspace_id: SITE_A, revoked_at: "2026-10-01T00:00:00Z", expires_at: null, last_used_at: null },
       { id: "k-expired", account_id: "acc-1", key_hash: expiredBlogKey.hash, scopes: ["blog"], workspace_id: SITE_A, revoked_at: null, expires_at: "2026-01-01T00:00:00Z", last_used_at: null },
-      // Shapes migration 114's check refuses, in case a row predates it.
+      // Shapes migration 118's check refuses, in case a row predates it.
       { id: "k-siteless", account_id: "acc-1", key_hash: siteLessBlogKey.hash, scopes: ["blog", "read"], workspace_id: null, revoked_at: null, expires_at: null, last_used_at: null },
       // Bound to a site that is no longer on the key's account.
       { id: "k-moved", account_id: "acc-1", key_hash: movedSiteBlogKey.hash, scopes: ["blog"], workspace_id: OTHER_ACCOUNT_SITE, revoked_at: null, expires_at: null, last_used_at: null },
@@ -169,7 +169,7 @@ describe("rate limit", () => {
   });
 });
 
-describe("before migration 114", () => {
+describe("before migration 118", () => {
   it("reads the key without workspace_id and serves agent keys as before", async () => {
     const real = seed();
     db = {

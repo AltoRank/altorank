@@ -18,10 +18,16 @@ vi.mock("@/lib/shopify/tokens", async (orig) => ({
   exchangeIdToken,
 }));
 vi.mock("@/lib/shopify/installations", () => ({ saveInstallationTokens }));
-vi.mock("@/lib/supabase/server", () => ({ createServiceClient: () => ({}) }));
+vi.mock("@/lib/supabase/server", () => ({
+  createServiceClient: () => ({
+    from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { shop_gid: null } }) }) }) }),
+  }),
+}));
 vi.mock("@/lib/shopify/provision", () => ({ provisionShop }));
 vi.mock("@/lib/shopify/first-look", () => ({ startShopFirstLook }));
 vi.mock("@/lib/onboarding/run-dispatch", () => ({ dispatchWorker }));
+vi.mock("@/lib/shopify/billing", () => ({ syncShopifyBilling: async () => ({ resume: null }) }));
+vi.mock("@/lib/observability/record", () => ({ recordEvent: async () => true }));
 vi.mock("next/server", async (orig) => ({
   ...(await orig<typeof import("next/server")>()),
   after: (fn: () => unknown) => fn(),
@@ -56,7 +62,7 @@ describe("POST /api/shopify/session", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ shop: "fern.myshopify.com", installationId: "inst-1", created: false });
     expect(exchangeIdToken.mock.calls[0][0]).toBe("fern.myshopify.com");
-    expect(provisionShop).toHaveBeenCalledWith({}, { id: "inst-1", shop: "fern.myshopify.com" });
+    expect(provisionShop).toHaveBeenCalledWith(expect.anything(), { id: "inst-1", shop: "fern.myshopify.com" });
     // An existing store does not get a second first look.
     expect(startShopFirstLook).not.toHaveBeenCalled();
   });
@@ -67,7 +73,7 @@ describe("POST /api/shopify/session", () => {
     provisionShop.mockResolvedValue({ accountId: "acc", workspaceId: "ws", created: true, ownerReachable: true });
     startShopFirstLook.mockResolvedValue({ runId: "run-1", created: true });
     await POST(req(idToken()));
-    expect(startShopFirstLook).toHaveBeenCalledWith({}, expect.objectContaining({ accountId: "acc", workspaceId: "ws" }));
+    expect(startShopFirstLook).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ accountId: "acc", workspaceId: "ws" }));
     expect(dispatchWorker).toHaveBeenCalledWith("run-1");
   });
 
