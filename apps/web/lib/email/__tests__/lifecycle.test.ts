@@ -36,7 +36,6 @@ describe("draft approved", () => {
     keyword: "best crm",
     articleId: "art-1",
     approvedBy: "Dana",
-    scheduledFor: null as string | null,
   };
 
   it("names the site, the title and who approved it, and links to the article", () => {
@@ -47,9 +46,12 @@ describe("draft approved", () => {
     expect(e.footerNote).toContain("acme.com");
   });
 
-  it("states the date when the cadence has one, and the honest version when it does not", () => {
-    expect(renderDraftApproved({ ...base, scheduledFor: "2026-10-04T09:00:00Z" }).html).toContain("October 4, 2026");
-    expect(renderDraftApproved(base).html).toContain("next scheduled slot");
+  /** Approve writes `approved`; the publish cron reads only `scheduled`. */
+  it("says the approved draft is not scheduled yet, not that it joined a queue", () => {
+    const e = renderDraftApproved(base);
+    expect(e.html).toContain("It is not scheduled yet");
+    expect(e.html).not.toContain("publishing queue");
+    expect(e.preheader).toBe("Dana approved it. Not scheduled yet.");
   });
 
   /** Titles and keywords are customer data and reach the inbox as HTML. */

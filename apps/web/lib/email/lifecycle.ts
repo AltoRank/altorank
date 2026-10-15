@@ -86,8 +86,6 @@ export type DraftApprovedEmail = {
   articleId: string;
   /** Who pressed Approve, as they are known to the account. */
   approvedBy: string;
-  /** When the cadence will pick it up, when the workspace has one. */
-  scheduledFor: string | null;
 };
 
 /**
@@ -96,14 +94,19 @@ export type DraftApprovedEmail = {
  * without anybody else being asked. A colleague who edited the draft should
  * learn that it was signed off, not discover it live on the client's site.
  */
+//
+// What happens next is said as the code does it. Approve writes `approved`
+// (approveArticle in app/actions/publish.ts), and the publish cron reads only
+// `scheduled` (app/api/cron/publish/route.ts, both phases). An approved draft
+// therefore waits until somebody schedules it, adds it to the queue
+// (app/actions/schedule.ts) or publishes it from its page. This used to say
+// it "joins the publishing queue", or name a date the cron would never act on.
 export function renderDraftApproved(a: DraftApprovedEmail): RenderedEmail {
   const site = a.domain ?? "your site";
-  const when = a.scheduledFor
-    ? `It is queued to publish on ${dateLabel(a.scheduledFor)}.`
-    : `It joins the publishing queue and goes out on this workspace's next scheduled slot.`;
+  const when = `It is not scheduled yet: it publishes once somebody schedules it or publishes it from its page.`;
   return {
     subject: `Approved for ${site}: "${a.title}"`,
-    preheader: `${a.approvedBy} approved it. ${a.scheduledFor ? "Queued to publish." : "Waiting for the next slot."}`,
+    preheader: `${a.approvedBy} approved it. Not scheduled yet.`,
     footerNote: `Sent because you have access to ${site} on AltoRank.`,
     html:
       eyebrow(site) +
