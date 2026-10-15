@@ -76,6 +76,74 @@ export const FIRST_LOOK_DRAFT_RESERVE_USD = FIRST_DRAFT_MIN_USD;
 export const FIRST_LOOK_SWAP_RESERVE_USD = 0;
 
 /**
+ * Room the keyword research leaves for qualification. Discovery and its
+ * buyer test run first and used to take everything they could: a production
+ * first look (2026-10-15) spent $0.35 on discovery and $0.22 on the buyer
+ * test, judging 360 of its phrases, and left $0.08 for judging results pages
+ * - less than one term's claim - so nothing was planned. Qualification judges
+ * a batch of fifteen terms at about a cent each (a results page and one or
+ * two judge reads, settled), so it is held this much; the research uses the
+ * rest. Not a reserve in the database: held by the research's own claims
+ * (`leavingRoom`), and qualification may use all of it and more.
+ */
+export const FIRST_LOOK_QUALIFY_ROOM_USD = 0.15;
+/**
+ * Room discovery's provider calls leave for the buyer test, on top of
+ * qualification's: about four batches of forty phrases at the $0.025 a
+ * batch costs. Discovery spent $0.35 of its ~$0.42 on the run above.
+ */
+export const FIRST_LOOK_BUYER_TEST_ROOM_USD = 0.1;
+
+/**
+ * What the keyword research's claims must leave, by stage, scaled with the
+ * ceiling as the reserves are: the buyer test leaves qualification's room,
+ * and every other research call leaves the buyer test's as well.
+ */
+export function firstLookResearchLeave(ceilingUsd: number = FIRST_LOOK_CEILING_USD): (stage: SpendStage) => number {
+  const scale = Math.min(1, Math.max(0, ceilingUsd / FIRST_LOOK_CEILING_USD));
+  const qualify = round6(FIRST_LOOK_QUALIFY_ROOM_USD * scale);
+  const buyerTest = round6(FIRST_LOOK_BUYER_TEST_ROOM_USD * scale);
+  return (stage) => (stage === "buyer_fit" ? qualify : qualify + buyerTest);
+}
+
+/**
+ * The same budget, with claims made through it leaving `leave(stage)` of the
+ * room untouched for the stages after them. A claim is granted at most the
+ * room less that, refused when that is under its floor, and nothing else
+ * changes: the database's claim still decides against the ceiling, so the
+ * hard dollar is the row's whatever this says. The room check and the claim
+ * take turns in this process, so claims made side by side cannot both count
+ * the same margin; a room that cannot be read leaves the claim to decide.
+ */
+export function leavingRoom(budget: RunBudget, leave: (stage: SpendStage) => number): RunBudget {
+  let turn: Promise<unknown> = Promise.resolve();
+  const inTurn = <T>(fn: () => Promise<T>): Promise<T> => {
+    const next = turn.then(fn, fn);
+    turn = next.catch(() => undefined);
+    return next;
+  };
+  return {
+    runId: budget.runId,
+    claim(stage, wantUsd, minUsd) {
+      const keep = Math.max(0, leave(stage));
+      if (keep <= 0) return budget.claim(stage, wantUsd, minUsd);
+      return inTurn(async () => {
+        const room = await budget.room(stage).catch(() => null);
+        if (room === null) return budget.claim(stage, wantUsd, minUsd);
+        const usable = room - keep;
+        if (usable < minUsd) return null;
+        return budget.claim(stage, Math.min(wantUsd, usable), minUsd);
+      });
+    },
+    settle: (stage, grantedUsd, actualUsd) => budget.settle(stage, grantedUsd, actualUsd),
+    async room(stage) {
+      const room = await budget.room(stage);
+      return room === null ? null : room - Math.max(0, leave(stage));
+    },
+  };
+}
+
+/**
  * The ceiling a first look opens with. `FIRST_LOOK_BUDGET_USD` lowers it for
  * a proof run (a forced $0.50 shows the run stopping); it never raises it, and
  * a value that is not a positive number is ignored.

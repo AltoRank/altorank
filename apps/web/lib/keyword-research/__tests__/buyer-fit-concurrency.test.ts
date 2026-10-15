@@ -73,4 +73,61 @@ describe("judgeBuyerFit, batches side by side", () => {
     expect(a.asked.length).toBe(2);
     expect(out.verdicts.size).toBe(MAX_JUDGED * 2);
   });
+
+  it("ends the stage with what it has when the room drops below one batch's claim mid-stage, five batches in flight: bounded, and nothing asked after the end", async () => {
+    // A production first look's shape (2026-10-15): fifteen batches, five at
+    // a time, each claimed at about $0.085 and charged about $0.025, with
+    // room for a few of them. Each refused batch, and its retry, used to
+    // claim and be refused on its own after the room was gone.
+    const many = Array.from({ length: MAX_JUDGED * 15 }, (_, i) => `acme phrase ${String(i).padStart(4, "0")}`);
+    let refusals = 0;
+    let grants = 0;
+    const ask = async (_op: string, prompt: string) => {
+      let claim;
+      try {
+        claim = await claimSpend("keyword-research/buyer-fit", 0.0855);
+      } catch {
+        refusals += 1;
+        return null;
+      }
+      grants += 1;
+      await new Promise((r) => setTimeout(r, 5 + (phrasesIn(prompt).length % 7)));
+      await claim.settle(0.025);
+      return JSON.stringify({ verdicts: phrasesIn(prompt).map((t) => ({ t, s: "solution", r: "test" })) });
+    };
+    const budget = memoryRunBudget("run-hang", 0.3, {});
+    const stage = withSpendScope({ budget, stage: "buyer_fit" }, () => judgeBuyerFit(business, many, { ask, concurrency: 5 }));
+    const out = await Promise.race([stage, new Promise<"hung">((r) => setTimeout(() => r("hung"), 5_000))]);
+    expect(out).not.toBe("hung");
+    if (out === "hung") return;
+    // What was bought is judged, what was not stays out - no verdict made up.
+    expect(out.verdicts.size).toBeGreaterThan(0);
+    expect(out.verdicts.size).toBeLessThan(many.length);
+    expect(out.verdicts.size % MAX_JUDGED).toBe(0);
+    expect(budget.state().committedUsd).toBeLessThanOrEqual(0.3 + 1e-9);
+    // Once refused with nobody else asking, nothing more is claimed: at most
+    // the batches that were in flight at the end are refused, not every
+    // batch and retry still to come.
+    // About one refusal a settle while the room lasts (a settle frees room
+    // for one batch, and one waiter asks again), and the in-flight ones at
+    // the end: 14 here, where every waiter asking at every settle was 68.
+    expect(refusals).toBeLessThanOrEqual(grants + 5);
+    // And nothing goes on asking after the stage has returned.
+    const settled = { grants, refusals };
+    await new Promise((r) => setTimeout(r, 50));
+    expect({ grants, refusals }).toEqual(settled);
+  });
+
+  it("asks a prioritized pool best first, so a budget that ends part-way leaves the weakest phrases out, not the end of the alphabet", async () => {
+    // Best first is reverse-alphabetical here: the strongest phrase sorts last.
+    const ranked = [...terms].reverse();
+    const a = asker({ costUsd: 0.05, chargedUsd: 0.05 });
+    const budget = memoryRunBudget("run-p", 0.1, {});
+    const out = await withSpendScope({ budget, stage: "buyer_fit" }, () => judgeBuyerFit(business, ranked, { ask: a.ask, concurrency: 1, prioritized: true }));
+    expect(out.verdicts.size).toBe(MAX_JUDGED * 2);
+    expect([...out.verdicts.keys()].sort()).toEqual(ranked.slice(0, MAX_JUDGED * 2).sort());
+    // Each batch is still sorted inside, so its neighbours do not depend on discovery's order.
+    for (const batch of a.asked) expect(batch).toEqual([...batch].sort());
+  });
 });
+

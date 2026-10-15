@@ -133,6 +133,8 @@ const SCHEMA: Record<string, unknown> = {
 };
 
 const MAX_TOKENS = 1_500;
+/** The least an outline is sent with when a first look's room is short of the ceiling: a title, eight headings and their sources fit well inside it. */
+const MIN_TOKENS = 800;
 
 /** The prompt for one outline. Exported for the test that pins what it is told. */
 export function outlinePrompt(input: OutlineInput, plan: { faq: boolean; summaryLabel: string | null; faqLabel: string | null; sources: string[] }): string {
@@ -203,7 +205,7 @@ export async function planOutline(
   // outline is shown to the owner and then held to, so a reply the parser
   // loses or a heading list that changes between two asks is a gate that
   // opens late or an article that contradicts it.
-  const raw = await ask("content/outline", outlinePrompt(input, plan), { maxTokens: MAX_TOKENS, tier: "decision", schema: SCHEMA, spend: options.spend ?? null });
+  const raw = await ask("content/outline", outlinePrompt(input, plan), { maxTokens: MAX_TOKENS, minTokens: MIN_TOKENS, tier: "decision", schema: SCHEMA, spend: options.spend ?? null });
   const parsed = extractJson<Record<string, unknown>>(raw, "{", "}");
   if (!parsed || typeof parsed !== "object") return null;
   const body = (Array.isArray(parsed.sections) ? parsed.sections : []).map((s) => clean(s)).filter(Boolean);
