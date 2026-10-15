@@ -115,9 +115,7 @@ const CREDENTIAL_RECORD_KEYS = ["refresh_token", "access_token", "id_token", "ex
 /**
  * Whether a decrypted value is one of those records rather than a config
  * secret. Every value is encrypted with the same key, so a config field is
- * checked to hold a plain secret: a connection's config is written by the
- * person's own client, and a decrypted config field is sent to the address
- * that config names.
+ * checked to hold the kind of secret a config is saved with: a plain string.
  */
 function isCredentialRecord(plain: string): boolean {
   if (!plain.trimStart().startsWith("{")) return false;

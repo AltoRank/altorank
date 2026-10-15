@@ -7,9 +7,9 @@
 -- (/storage/v1/object/public/article-images/<path>) with no policy at all,
 -- which is how a published post, a CMS and the editor show an image. 045 also
 -- created a SELECT policy on storage.objects for the bucket with no role, and
--- that policy is what the storage API's list and authenticated download ask:
--- with it, the anon key could list every folder and file name in the bucket,
--- across every account. Every write and every listing the app makes goes
+-- that policy is what the storage API's list and authenticated download ask.
+-- Nothing needs either through an API role. Every write and every listing the
+-- app makes goes
 -- through the service role (lib/storage/images.ts, app/actions/editor-ai.ts,
 -- lib/storage/purge.ts), which bypasses RLS, so the policy is dropped and
 -- nothing that works by path changes.

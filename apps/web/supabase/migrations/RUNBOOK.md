@@ -1705,11 +1705,10 @@ grant select on table public.account_integrations to authenticated;
 `112_article_images_private.sql` drops 045's `"Article images are readable by
 anyone"` SELECT policy on `storage.objects`. The bucket stays public, so every
 image keeps loading from its public URL (published posts, CMS drafts, the
-editor): a public bucket serves `/object/public/...` with no policy. What the
-policy also allowed, with no role named, was the storage API's list and
-authenticated read for anyone holding the anon key: every folder and file
-name in the bucket across all accounts, draft images and uploaded proposals
-included. Every write and listing the app makes uses the service role
+editor): a public bucket serves `/object/public/...` with no policy. The
+policy, with no role named, also answered the storage API's list and
+authenticated read, which nothing needs through an API role. Every write and
+listing the app makes uses the service role
 (`lib/storage/images.ts`, `app/actions/editor-ai.ts`,
 `lib/storage/purge.ts`), which bypasses RLS.
 
