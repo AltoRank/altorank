@@ -395,6 +395,13 @@ describe("setup fell short", () => {
     expect(e.html).not.toContain("add a keyword by hand");
   });
 
+  /** Before the trial, Keywords redirects back to /onboarding; only /connect opens. */
+  it("does not send an account before its trial to Keywords", () => {
+    const e = renderSetupFailed({ domain: "acme.com", line: "We could not read the site.", transient: false, beforeTrial: true });
+    expect(e.html).not.toContain("Keywords");
+    expect(e.html).toContain("connect Search Console from Integrations");
+  });
+
   it("never claims anything was written", () => {
     const e = renderSetupFailed({ domain: null, line: "Onboarding failed.", transient: false });
     expect(e.subject).toBe("Setup didn't finish for your site");

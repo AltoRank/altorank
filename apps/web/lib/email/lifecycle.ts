@@ -1036,6 +1036,12 @@ export type SetupFailedEmail = {
   line: string;
   /** True when the reason clears on its own and the next look is scheduled. */
   transient: boolean;
+  /**
+   * The account has not started its trial. Its dashboard redirects every
+   * path but /connect back to /onboarding (lib/billing/gate-paths.ts), so
+   * "add a keyword from Keywords" sends it in a circle.
+   */
+  beforeTrial?: boolean;
 };
 
 /**
@@ -1069,7 +1075,9 @@ export function renderSetupFailed(a: SetupFailedEmail): RenderedEmail {
             `The next look is already scheduled and needs nothing from you. If you would rather not wait, try again now: it takes about a minute and nothing publishes without your approval.`,
           )
         : emailParagraph(
-            `Trying again takes about a minute. If the site still cannot be read, add a keyword by hand from Keywords or connect Search Console, and the plan can be built from there.`,
+            a.beforeTrial
+              ? `Trying again takes about a minute. If the site still cannot be read, connect Search Console from Integrations, and the plan can be built from there.`
+              : `Trying again takes about a minute. If the site still cannot be read, add a keyword by hand from Keywords or connect Search Console, and the plan can be built from there.`,
           )) +
       emailButton(appLink("/onboarding"), a.transient ? "Try again now" : "Try again") +
       emailParagraph(`Nothing has been written or published, and nothing is wrong with your account.`),
