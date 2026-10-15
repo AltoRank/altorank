@@ -7,6 +7,8 @@ import { sendInviteEmail } from "@/lib/email/resend";
 import { appLink } from "@/lib/app-url";
 import {
   INVITABLE_ROLES,
+  LIMITED_REMOVE_REACH,
+  LIMITED_REVOKE_REACH,
   LIMITED_ROLE_REACH,
   canEditMember,
   decideInviteSites,
@@ -155,8 +157,21 @@ export async function inviteMember(formData: FormData): Promise<InviteResult> {
 
 /** Take back a pending invite. The link stops working at once. */
 export async function revokeInvite(inviteId: string) {
-  const { accountId } = await requireAuth(["owner", "admin"]);
+  const { user, accountId } = await requireAuth(["owner", "admin"]);
   const supabase = await createClient();
+  // A member limited to some sites revokes only invites within them, the
+  // same reach as inviting (migration 111 holds the database to it).
+  const actorSites = await readMemberSites(supabase, accountId, user.id);
+  if (actorSites !== null) {
+    const { data: invite } = await supabase
+      .from("invites")
+      .select("workspace_ids")
+      .eq("id", inviteId)
+      .eq("account_id", accountId)
+      .maybeSingle();
+    if (!invite) throw new Error("That invite is not on this account.");
+    if (!withinScope(actorSites, (invite.workspace_ids as string[] | null) ?? null)) throw new Error(LIMITED_REVOKE_REACH);
+  }
   const { error } = await supabase
     .from("invites")
     .delete()
@@ -245,6 +260,11 @@ export async function removeMember(memberId: string) {
   const { supabase, member } = await loadMember(memberId, accountId);
   if (!canEditMember({ userId: user.id, role: actorRole }, { userId: member.user_id, role: member.role })) {
     throw new Error("You cannot remove this member.");
+  }
+  // Removing is the widest change there is to someone's access, so a member
+  // limited to some sites removes only members within them (migration 111).
+  if (!withinScope(await readMemberSites(supabase, accountId, user.id), member.workspace_ids ?? null)) {
+    throw new Error(LIMITED_REMOVE_REACH);
   }
   const { error } = await supabase.from("account_members").delete().eq("id", memberId);
   if (error) throw new Error(error.message);

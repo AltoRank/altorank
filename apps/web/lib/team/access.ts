@@ -106,6 +106,12 @@ export const LIMITED_EVERY_SITE_TARGET =
   "This member has every site. Only a member with every site can change their access.";
 export const LIMITED_ROLE_REACH =
   "This member has sites you do not. Only a member with every site can change their role.";
+export const LIMITED_REMOVE_REACH =
+  "This member has sites you do not. Only a member with every site can remove them.";
+export const LIMITED_REVOKE_REACH =
+  "This invite gives sites you do not have. Only a member with every site can revoke it.";
+export const LIMITED_DOMAIN =
+  "Only a member with access to every site can change a site's domain: its Search Console, Analytics and Bing data are matched by it.";
 
 /** Whether this member is limited to some sites. */
 export function isSiteLimited(sites: SiteScope | undefined): sites is readonly string[] {

@@ -22,8 +22,11 @@ let target: { id: string; user_id: string; role: string; workspace_ids: string[]
 };
 /** What the caller's RLS shows of the account's sites. */
 let visibleSites: string[] = ["ws-a", "ws-b"];
+/** The pending invite being revoked. */
+let invite: { workspace_ids: string[] | null } | null = { workspace_ids: ["ws-a"] };
 
 const updates: Record<string, unknown>[] = [];
+const deletes: string[] = [];
 const inserts: Record<string, unknown>[] = [];
 
 function reads(table: string) {
@@ -39,7 +42,7 @@ function reads(table: string) {
       if (filters.id === target.id) return target;
       return null;
     }
-    if (table === "invites") return null;
+    if (table === "invites") return filters.id ? invite : null;
     return null;
   };
   Object.assign(q, {
@@ -67,6 +70,16 @@ vi.mock("@/lib/supabase/server", () => ({
         updates.push({ table, ...row });
         return { eq: () => Promise.resolve({ error: null }) };
       },
+      delete: () => {
+        deletes.push(table);
+        const done: Record<string, unknown> = {};
+        Object.assign(done, {
+          eq: () => done,
+          is: () => done,
+          then: (r: (v: unknown) => unknown) => r({ error: null }),
+        });
+        return done;
+      },
     }),
   }),
 }));
@@ -86,8 +99,10 @@ beforeEach(() => {
   actorSites = null;
   target = { id: "m-target", user_id: "u-target", role: "editor", workspace_ids: ["ws-a"] };
   visibleSites = ["ws-a", "ws-b"];
+  invite = { workspace_ids: ["ws-a"] };
   updates.length = 0;
   inserts.length = 0;
+  deletes.length = 0;
   void ACCOUNT;
 });
 
@@ -189,5 +204,61 @@ describe("inviteMember for a member limited to some sites", () => {
     await inviteMember(inviteForm([]));
     const [row] = inserts.filter((r) => r.table === "invites");
     expect(row.workspace_ids).toBeNull();
+  });
+});
+
+describe("removeMember and revokeInvite for a member limited to some sites", () => {
+  beforeEach(() => {
+    actorSites = ["ws-a"];
+    visibleSites = ["ws-a"];
+  });
+
+  it("does not remove a member with every site", async () => {
+    target = { ...target, workspace_ids: null };
+    const { removeMember } = await import("../team");
+    await expect(removeMember("m-target")).rejects.toThrow(/sites you do not/);
+    expect(deletes).toHaveLength(0);
+  });
+
+  it("does not remove a member who reaches further", async () => {
+    target = { ...target, workspace_ids: ["ws-a", "ws-b"] };
+    const { removeMember } = await import("../team");
+    await expect(removeMember("m-target")).rejects.toThrow(/sites you do not/);
+    expect(deletes).toHaveLength(0);
+  });
+
+  it("removes a member inside the actor's sites", async () => {
+    target = { ...target, workspace_ids: ["ws-a"] };
+    const { removeMember } = await import("../team");
+    await removeMember("m-target");
+    expect(deletes).toEqual(["account_members"]);
+  });
+
+  it("does not revoke an invite to every site or to sites the actor lacks", async () => {
+    const { revokeInvite } = await import("../team");
+    for (const sites of [null, ["ws-a", "ws-b"]]) {
+      invite = { workspace_ids: sites };
+      await expect(revokeInvite("inv-1")).rejects.toThrow(/sites you do not have/);
+    }
+    invite = null;
+    await expect(revokeInvite("inv-1")).rejects.toThrow(/not on this account/);
+    expect(deletes).toHaveLength(0);
+  });
+
+  it("revokes an invite inside the actor's sites", async () => {
+    invite = { workspace_ids: ["ws-a"] };
+    const { revokeInvite } = await import("../team");
+    await revokeInvite("inv-1");
+    expect(deletes).toEqual(["invites"]);
+  });
+
+  it("an actor with every site removes and revokes as before", async () => {
+    actorSites = null;
+    target = { ...target, workspace_ids: null };
+    invite = { workspace_ids: null };
+    const { removeMember, revokeInvite } = await import("../team");
+    await removeMember("m-target");
+    await revokeInvite("inv-1");
+    expect(deletes).toEqual(["account_members", "invites"]);
   });
 });

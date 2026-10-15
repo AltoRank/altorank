@@ -150,7 +150,13 @@ export default async function TeamPage() {
                       <td className={`${td} text-right`}>
                         <span className="inline-flex items-center gap-2">
                           {!isExpired && <CopyInviteLink token={inv.token} />}
-                          {manager && <RevokeInviteButton inviteId={inv.id} email={inv.email} />}
+                          {manager && (
+                            <RevokeInviteButton
+                              inviteId={inv.id}
+                              email={inv.email}
+                              canRevoke={withinScope(actorSites, inv.workspace_ids ?? null)}
+                            />
+                          )}
                         </span>
                       </td>
                     </tr>

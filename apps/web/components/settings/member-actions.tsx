@@ -5,7 +5,14 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button, Dialog } from "@/components/ui";
 import { updateMemberAccess, removeMember, revokeInvite } from "@/app/actions/team";
-import { LIMITED_EVERY_SITE_TARGET, LIMITED_ROLE_REACH, ROLE_LABEL, type Role } from "@/lib/team/access";
+import {
+  LIMITED_EVERY_SITE_TARGET,
+  LIMITED_REMOVE_REACH,
+  LIMITED_REVOKE_REACH,
+  LIMITED_ROLE_REACH,
+  ROLE_LABEL,
+  type Role,
+} from "@/lib/team/access";
 import type { Workspace } from "@/lib/types";
 import { WorkspaceAccessPicker } from "./workspace-access-picker";
 import { inputClass } from "./fields";
@@ -34,7 +41,7 @@ export function MemberActions({
   actorIsOwner: boolean;
   /** The signed-in member holds only some sites (lib/team/access.ts). */
   limited?: boolean;
-  /** False when this member reaches sites the signed-in member does not. */
+  /** False when this member reaches sites the signed-in member does not (role and Remove). */
   canChangeRole?: boolean;
   /** False when this member has every site and the signed-in member does not. */
   canChangeSites?: boolean;
@@ -82,7 +89,13 @@ export function MemberActions({
       <Button size="sm" onClick={() => setOpen(true)} disabled={pending}>
         Edit access
       </Button>
-      <Button size="sm" variant="ghost" onClick={remove} disabled={pending}>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={remove}
+        disabled={pending || !canChangeRole}
+        title={canChangeRole ? undefined : LIMITED_REMOVE_REACH}
+      >
         Remove
       </Button>
 
@@ -125,14 +138,24 @@ export function MemberActions({
   );
 }
 
-export function RevokeInviteButton({ inviteId, email }: { inviteId: string; email: string }) {
+export function RevokeInviteButton({
+  inviteId,
+  email,
+  canRevoke = true,
+}: {
+  inviteId: string;
+  email: string;
+  /** False when the invite gives sites the signed-in member does not have. */
+  canRevoke?: boolean;
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   return (
     <Button
       size="sm"
       variant="ghost"
-      disabled={pending}
+      disabled={pending || !canRevoke}
+      title={canRevoke ? undefined : LIMITED_REVOKE_REACH}
       onClick={() =>
         start(async () => {
           try {
