@@ -311,6 +311,9 @@ function altorank_handle_capabilities(): WP_REST_Response {
 				'seo_meta'         => array_keys( ALTORANK_SEO_META ),
 				'indexnow_key'     => true,
 				'rest_unblock'     => true,
+				'edit_own_posts'   => true,
+				'structured_data'  => true,
+				'key_location'     => true,
 			),
 		)
 	);

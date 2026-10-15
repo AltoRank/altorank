@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { WordPressPluginAdapter, pluginInstallUrl, TOKEN_HEADER } from "../wordpress-plugin";
+import { WordPressPluginAdapter, pluginInstallUrl, MIN_PLUGIN_VERSION, TOKEN_HEADER } from "../wordpress-plugin";
+import { compareVersions } from "../wordpress-plugin-install";
 import { resolveCMSAdapter } from "../adapter";
 
 // Every request the adapter makes goes through siteFetch (its address policy
@@ -227,7 +228,7 @@ describe("WordPressPluginAdapter", () => {
   });
 
   it("testConnection() POSTs /test-integration and reports the outcome", async () => {
-    mockFetch.mockResolvedValueOnce(Response.json({ ok: true }));
+    mockFetch.mockResolvedValueOnce(Response.json({ ok: true, version: MIN_PLUGIN_VERSION }));
     expect(await adapter.testConnection()).toEqual({ ok: true });
     expect(mockFetch.mock.calls[0][0]).toBe("https://example.com/wp-json/altorank/v1/test-integration");
 
@@ -240,10 +241,35 @@ describe("WordPressPluginAdapter", () => {
     expect(await adapter.testConnection()).toEqual({ ok: false, error: "ECONNREFUSED" });
   });
 
+  it("testConnection() refuses a plugin older than the minimum, saying how to update", async () => {
+    mockFetch.mockResolvedValueOnce(Response.json({ ok: true, version: "1.1.0" }));
+    const old = await adapter.testConnection();
+    expect(old.ok).toBe(false);
+    expect(old.error).toContain("version 1.1.0");
+    expect(old.error).toContain(`version ${MIN_PLUGIN_VERSION} or later is required`);
+    expect(old.error).toContain("Replace current with uploaded");
+
+    mockFetch.mockResolvedValueOnce(Response.json({ ok: true }));
+    expect((await adapter.testConnection()).ok).toBe(false);
+
+    mockFetch.mockResolvedValueOnce(Response.json({ ok: true, version: "1.10.0" }));
+    expect(await adapter.testConnection()).toEqual({ ok: true });
+  });
+
   it("is resolved by resolveCMSAdapter for type wordpress-plugin", () => {
     expect(
       resolveCMSAdapter({ type: "wordpress-plugin", siteUrl: "https://x.example", token: TOKEN }),
     ).toBeInstanceOf(WordPressPluginAdapter);
+  });
+});
+
+describe("compareVersions", () => {
+  it("compares dotted versions numerically", () => {
+    expect(compareVersions("1.1.0", "1.1.1")).toBe(-1);
+    expect(compareVersions("1.1.1", "1.1.1")).toBe(0);
+    expect(compareVersions("1.10.0", "1.9.9")).toBe(1);
+    expect(compareVersions("2", "1.9.9")).toBe(1);
+    expect(compareVersions("1.1", "1.1.0")).toBe(0);
   });
 });
 

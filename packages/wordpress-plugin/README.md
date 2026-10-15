@@ -84,14 +84,40 @@ bin/build-zip.sh            # -> packages/wordpress-plugin/altorank.zip
 
 Lint without a local PHP: `docker run --rm -v "$PWD/altorank:/p" wordpress:latest sh -c 'find /p -name "*.php" -exec php -l {} \;'`.
 
-## Hardening (1.1.0)
+## Tests
+
+```
+php tests/run.php           # plugin functions against in-memory WordPress fakes
+```
+
+`tests/bootstrap.php` fakes only the WordPress functions the plugin calls, so
+a new WordPress call needs a fake on purpose. The app's unit suite runs this
+and `php -l` over every file whenever `php` is on the PATH
+(`apps/web/lib/cms/__tests__/wordpress-plugin-php.test.ts`); the static
+checks beside it run everywhere.
+
+## Releases and updates
+
+The plugin is not on wordpress.org. The app serves the zip it was built with
+at `/api/public/wordpress-plugin` (built from this directory at `next build`,
+`X-Plugin-Version` header), and the dashboard's connection test refuses a
+plugin older than `MIN_PLUGIN_VERSION` in `apps/web/lib/cms/wordpress-plugin.ts`.
+Since 1.1.1 the header carries `Update URI`, so WordPress never offers a
+wordpress.org plugin with the same slug as an update; there is no automatic
+update channel yet, and an update is a re-upload of the zip.
+
+A release bumps, together: `Version:` and `ALTORANK_VERSION` in
+`altorank.php`, `Stable tag:` and a changelog entry in `readme.txt`, and
+`MIN_PLUGIN_VERSION` when older installs must not connect.
+
+## Hardening (1.1.0, revised in 1.1.1)
 
 Four behaviours read out of the plugins the autopilot tools ship, ported
 because each one is a real support ticket:
 
 | Behaviour | Why |
 | --- | --- |
-| `rest_authentication_errors` cleared for `altorank/v1` only (priority 999) | Wordfence, iThemes and several managed hosts 401 every unauthenticated REST call before any `permission_callback` runs, so the token check never got a chance. Every route still checks the token. |
+| `rest_authentication_errors` cleared for the plugin's own routes only (priority 999) | Wordfence, iThemes and several managed hosts 401 every unauthenticated REST call before any `permission_callback` runs, so the token check never got a chance. Since 1.1.1 the decision reads the route WordPress dispatches (`$wp->query_vars['rest_route']`, the value `rest_api_loaded()` serves), matches the exact routes, skips requests with a logged-in user, never clears WordPress's own codes (`rest_cookie_invalid_nonce`, application-password errors), and returns `null` so the route's `permission_callback` decides. Every route still checks the token. |
 | SEO meta via `meta_input` inside `wp_insert_post`, then an explicit Yoast indexable rebuild | Rank Math and Yoast build their rows on `save_post`; meta written afterwards was invisible until the next save, so a fresh post rendered with the default `<title>`. |
 | Image import and featured image in `try/catch (\Throwable)`, reported in `images` | A dead image URL used to 500 the publish after the post row existed. |
 | IndexNow key served at `/{key}.txt` from an option, on `parse_request` | Writing a file to the web root fails on read-only hosts and survives uninstall. The dashboard sends the key in `indexnow_key` and submits to IndexNow with the location the plugin reports (`indexnow_key_location` in the post response from 1.1.1, `GET /indexnow` before), so a WordPress in a subdirectory verifies. |

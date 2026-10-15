@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { findPluginSourceDir } from "../wordpress-plugin-zip";
+import { inflateRawSync } from "node:zlib";
+import { findPluginSourceDir, readPluginVersion } from "../wordpress-plugin-zip";
+import { compareVersions, MIN_PLUGIN_VERSION } from "../wordpress-plugin-install";
+import { GET } from "@/app/api/public/wordpress-plugin/route";
 import { renderBarChart } from "@/lib/content/enrich/infographic";
 
 // Static checks on the plugin source that hold with or without a PHP binary.
@@ -107,5 +110,64 @@ describe("structured data and charts", () => {
     for (const el of elements) expect(allowlist, `<${el}>`).toContain(`$allowed['${el}']`);
     const attributes = new Set([...svg.matchAll(/\s([a-zA-Z][\w:-]*)=/g)].map((m) => m[1].toLowerCase()));
     for (const attr of attributes) expect(allowlist, attr).toContain(`'${attr}'`);
+  });
+});
+
+/** One file's bytes out of a zip, found through the central directory. */
+function zipFile(buf: Buffer, name: string): Buffer | null {
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0; i--) if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  let p = buf.readUInt32LE(eocd + 16);
+  for (let n = buf.readUInt16LE(eocd + 10); n > 0; n--) {
+    const method = buf.readUInt16LE(p + 10);
+    const csize = buf.readUInt32LE(p + 20);
+    const nameLen = buf.readUInt16LE(p + 28);
+    const skip = nameLen + buf.readUInt16LE(p + 30) + buf.readUInt16LE(p + 32);
+    const local = buf.readUInt32LE(p + 42);
+    if (buf.subarray(p + 46, p + 46 + nameLen).toString("utf8") === name) {
+      const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+      const body = buf.subarray(start, start + csize);
+      return method === 8 ? inflateRawSync(body) : Buffer.from(body);
+    }
+    p += 46 + skip;
+  }
+  return null;
+}
+
+describe("release 1.1.1", () => {
+  it("names one version everywhere: header, constant, Stable tag, top changelog entry", async () => {
+    const main = await read("altorank.php");
+    const readme = await read("readme.txt");
+    const version = await readPluginVersion(dir);
+    expect(version).toBe("1.1.1");
+    expect(main).toContain(`define( 'ALTORANK_VERSION', '${version}' );`);
+    expect(/^Stable tag:\s*(\S+)/m.exec(readme)?.[1]).toBe(version);
+    expect(/== Changelog ==\s*= ([^ ]+) =/.exec(readme)?.[1]).toBe(version);
+    expect(/== Upgrade Notice ==\s*= ([^ ]+) =/.exec(readme)?.[1]).toBe(version);
+  });
+
+  it("carries an Update URI that is not wordpress.org, so a listing under the same slug is never offered", async () => {
+    const uri = /^\s*\*\s*Update URI:\s*(\S+)/m.exec(await read("altorank.php"))?.[1];
+    expect(uri).toBeTruthy();
+    const host = new URL(uri!).hostname;
+    expect(["w.org", "wordpress.org"]).not.toContain(host);
+    expect(host.endsWith("altorank.co")).toBe(true);
+  });
+
+  it("the dashboard never requires a plugin newer than the one it serves", async () => {
+    const shipped = (await readPluginVersion(dir))!;
+    expect(compareVersions(MIN_PLUGIN_VERSION, shipped)).toBeLessThanOrEqual(0);
+    expect(compareVersions(MIN_PLUGIN_VERSION, "1.1.1")).toBeGreaterThanOrEqual(0);
+  });
+
+  it("GET /api/public/wordpress-plugin serves this source as 1.1.1", async () => {
+    const res = await GET();
+    expect(res.headers.get("x-plugin-version")).toBe("1.1.1");
+    const zip = Buffer.from(await res.arrayBuffer());
+    for (const rel of ["altorank.php", "readme.txt", "includes/api.php", "includes/settings.php", "uninstall.php"]) {
+      expect(zipFile(zip, `altorank/${rel}`)?.toString("utf8"), rel).toBe(await read(rel));
+    }
+    // The test harness lives beside the plugin, not in what customers install.
+    expect(zipFile(zip, "altorank/tests/run.php")).toBeNull();
   });
 });

@@ -1,7 +1,9 @@
 #!/usr/bin/env sh
-# Build altorank.zip, the file that is uploaded to wordpress.org or installed
-# through Plugins -> Add New -> Upload. The archive holds a single top-level
-# `altorank/` directory, which is what WordPress expects.
+# Build altorank.zip, the file installed through Plugins -> Add New -> Upload
+# (the plugin is not listed on wordpress.org; the app serves the same archive
+# at /api/public/wordpress-plugin, built by apps/web/lib/cms/wordpress-plugin-zip.ts).
+# The archive holds a single top-level `altorank/` directory, which is what
+# WordPress expects.
 set -eu
 
 here="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,7 +17,8 @@ if [ "$version" != "$stable" ]; then
 fi
 
 if command -v php >/dev/null 2>&1; then
-  find "$here/altorank" -name '*.php' -exec php -l {} \; >/dev/null
+  find "$here/altorank" "$here/tests" -name '*.php' -exec php -l {} \; >/dev/null
+  php "$here/tests/run.php"
 fi
 
 rm -f "$out"

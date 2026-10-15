@@ -4,7 +4,7 @@ Tags: seo, publishing, rank math, yoast, content
 Requires at least: 6.4
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -39,6 +39,13 @@ it into Settings -> AltoRank. Every request from the dashboard carries it in the
 constant time. An unmatched token is answered with 403 and nothing else. A
 site with no token saved refuses every request.
 
+Some security plugins and hosts refuse every REST request that has no
+logged-in user before any route can check its own credentials. For this
+plugin's own routes only, and only for requests without a session, the
+plugin lifts such a block so the token check can run. WordPress's own checks
+(the cookie nonce, application passwords) are never lifted, and every other
+route keeps whatever your site decided.
+
 = REST routes =
 
 All under `/wp-json/altorank/v1/`:
@@ -50,6 +57,11 @@ All under `/wp-json/altorank/v1/`:
 * `GET /posts`: paginated list of the site's posts (`page`, `per_page`, `status`), used for refreshes and internal linking.
 
 == Installation ==
+
+The plugin is not listed on wordpress.org. Download it from your AltoRank
+dashboard (Integrations -> WordPress plugin) and upload it under Plugins ->
+Add New -> Upload Plugin. To update, upload the new zip the same way and
+choose "Replace current with uploaded".
 
 1. Install and activate the plugin.
 2. In your AltoRank dashboard, open Integrations and choose "WordPress plugin". Enter your site URL; a token is shown.
@@ -83,6 +95,15 @@ content and stay.
 
 == Changelog ==
 
+= 1.1.1 =
+* Security hardening: the REST unblock for security plugins applies only to this plugin's own routes, decided from the route WordPress dispatches, only to requests without a logged-in session, and never to WordPress's own authentication checks.
+* PUT /edit changes only posts this plugin created, and while "Post as draft" is on it cannot publish a post that is not already live.
+* Structured data (JSON-LD) sent with an article is printed in that post's page head instead of appearing as text at the end of the body. Inline SVG charts are kept through sanitising.
+* Backslashes in titles, bodies and SEO fields are kept, and YouTube embeds survive the image import step.
+* A post is dated when the article first went live, not when its draft was written; drafts keep a floating date and edits never change it.
+* The post response reports where the IndexNow key is served, so sites in a subdirectory verify.
+* Adds an Update URI header: WordPress no longer checks wordpress.org for updates to this plugin.
+
 = 1.1.0 =
 * Works on sites whose security plugin or host blocks unauthenticated REST calls: the block is lifted for the altorank/v1 namespace only; every route still checks the token.
 * SEO plugin fields are written inside the same save as the post, so Rank Math and Yoast render the title and description on the first view; Yoast's indexable is rebuilt explicitly.
@@ -91,3 +112,8 @@ content and stay.
 
 = 1.0.0 =
 * First release: submit, edit, posts and test-integration routes; media library import with de-duplication; Rank Math, Yoast, SEOPress and AIOSEO fields; post-as-draft default.
+
+== Upgrade Notice ==
+
+= 1.1.1 =
+Security hardening. Update recommended for every site.

@@ -34,13 +34,13 @@ import type {
 import type { WordPressPluginConfig } from "@/lib/types";
 import { deliverWithRetry } from "./delivery";
 import { assertSiteUrl, siteFetch } from "./site-fetch";
-import { TOKEN_HEADER } from "./wordpress-plugin-install";
+import { compareVersions, MIN_PLUGIN_VERSION, TOKEN_HEADER } from "./wordpress-plugin-install";
 
 // The download path, the install URL and this header live in
 // ./wordpress-plugin-install, which imports nothing: the connect dialog is a
 // client component and this file reaches the database. Re-exported so every
 // server-side caller keeps importing them from here.
-export { TOKEN_HEADER, PLUGIN_DOWNLOAD_PATH, pluginInstallUrl } from "./wordpress-plugin-install";
+export { TOKEN_HEADER, PLUGIN_DOWNLOAD_PATH, MIN_PLUGIN_VERSION, pluginInstallUrl } from "./wordpress-plugin-install";
 
 /** The longest piece of a site's own error message repeated in ours. */
 export const ERROR_DETAIL_MAX = 200;
@@ -255,6 +255,10 @@ export class WordPressPluginAdapter implements CMSAdapter {
    * altorank-test-post-<timestamp> and deletes it again, which proves the token
    * matches, the REST route is reachable and the site can write posts. Nothing
    * is left behind.
+   *
+   * The answer carries the plugin's version, and a plugin older than
+   * MIN_PLUGIN_VERSION fails the test with how to update it: a connection is
+   * only made to a plugin this app still supports.
    */
   async testConnection(): Promise<{ ok: boolean; error?: string }> {
     try {
@@ -264,6 +268,17 @@ export class WordPressPluginAdapter implements CMSAdapter {
         body: "{}",
       });
       if (!res.ok) return { ok: false, error: (await this.failure(res, "test")).message };
+      const body = (await res.json().catch(() => null)) as { version?: unknown } | null;
+      const version = typeof body?.version === "string" ? body.version : null;
+      if (!version || compareVersions(version, MIN_PLUGIN_VERSION) < 0) {
+        return {
+          ok: false,
+          error:
+            `The AltoRank plugin on this site is ${version ? `version ${version}` : "an older version"}; ` +
+            `version ${MIN_PLUGIN_VERSION} or later is required. Download the current plugin from this dialog and ` +
+            `upload it in WordPress under Plugins -> Add New -> Upload Plugin, choosing "Replace current with uploaded".`,
+        };
+      }
       return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error).message };
