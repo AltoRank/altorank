@@ -116,6 +116,19 @@ describe("WordPressPluginAdapter", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
+  it("post addresses from the site are kept only when they are http(s) URLs", async () => {
+    for (const url of ["javascript:alert(1)", "data:text/html,x", "/relative", "not a url", 42]) {
+      mockFetch.mockResolvedValueOnce(Response.json({ id: 20, url, status: "draft" }, { status: 201 }));
+      expect((await adapter.publish({ title: "T", html: "<p>x</p>", slug: "t" })).url).toBe("");
+    }
+    mockFetch.mockResolvedValueOnce(
+      Response.json({ posts: [{ id: 1, title: "A", slug: "a", url: "javascript:void(0)", status: "publish", modified: "" }] }),
+    );
+    expect((await adapter.listPosts())[0].url).toBe("");
+    mockFetch.mockResolvedValueOnce(Response.json({ id: 21, url: "http://example.com/caf%C3%A9/", status: "draft" }, { status: 201 }));
+    expect((await adapter.publish({ title: "T", html: "<p>x</p>", slug: "t" })).url).toBe("http://example.com/caf%C3%A9/");
+  });
+
   it("publish() reports when the site held the post as a draft", async () => {
     mockFetch.mockResolvedValueOnce(
       Response.json({ id: 13, url: "https://example.com/?p=13", status: "draft" }, { status: 201 }),

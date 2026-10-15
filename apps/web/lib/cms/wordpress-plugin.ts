@@ -65,6 +65,21 @@ export async function pluginErrorMessage(res: Response): Promise<string> {
   return "";
 }
 
+/**
+ * A post address as the site reported it, kept only when it is an absolute
+ * http(s) URL; anything else becomes "". These are shown as links in the
+ * dashboard and placed in articles, so they are held to what a permalink is.
+ */
+export function sitePostUrl(raw: unknown): string {
+  if (typeof raw !== "string" || raw.length > 2048) return "";
+  try {
+    const u = new URL(raw);
+    return u.protocol === "https:" || u.protocol === "http:" ? raw : "";
+  } catch {
+    return "";
+  }
+}
+
 /** Response shape shared by /submit and /edit. */
 type PluginPostResponse = {
   id: number | string;
@@ -178,7 +193,7 @@ export class WordPressPluginAdapter implements CMSAdapter {
 
   private async toResult(data: PluginPostResponse, article: PublishPayload): Promise<PublishResult> {
     const status = data.status === "draft" ? "draft" : "publish";
-    const result: PublishResult = { externalId: String(data.id), url: data.url, status };
+    const result: PublishResult = { externalId: String(data.id), url: sitePostUrl(data.url), status };
     // Only a live post is submitted to IndexNow, so only then is the location needed.
     const keyLocation = status === "publish" ? await this.indexNowKeyLocation(data, article) : undefined;
     if (keyLocation) result.indexNowKeyLocation = keyLocation;
@@ -244,7 +259,7 @@ export class WordPressPluginAdapter implements CMSAdapter {
       externalId: String(p.id),
       title: p.title,
       slug: p.slug,
-      url: p.url,
+      url: sitePostUrl(p.url),
       status: p.status,
       modifiedAt: p.modified,
     }));
