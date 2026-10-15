@@ -687,6 +687,13 @@ export type WelcomeEmail = {
    * copy that promises readable drafts.
    */
   beforeTrial: boolean;
+  /**
+   * An install with no billing (no STRIPE_SECRET_KEY): quota answers
+   * "self-host" with no limit (lib/billing/quota.ts), and there is no trial,
+   * card or free-draft count to describe. The open-dashboard copy promised
+   * all three to every self-hoster.
+   */
+  selfHost?: boolean;
 };
 
 /**
@@ -717,10 +724,15 @@ export function renderWelcome(a: WelcomeEmail): RenderedEmail {
       emailParagraph(
         `Setup writes your first article and shows you its title, outline and length. ${beforeTrialLine(1)} No card is on file until you start the trial.`,
       )
-    : emailButton(appLink("/dashboard"), "Open the dashboard") +
-      emailParagraph(
-        `Your first ${FREE_DRAFTS} articles are free to read, and no card is on file until you start the ${TRIAL_DAYS}-day trial that lets you approve and publish them. When the schedule writes a draft for you we will email you about it; you can turn those off from any of them.`,
-      );
+    : a.selfHost
+      ? emailButton(appLink("/dashboard"), "Open the dashboard") +
+        emailParagraph(
+          `This install has no plan, card or trial. When the schedule writes a draft for you we will email you about it; you can turn those off from any of them.`,
+        )
+      : emailButton(appLink("/dashboard"), "Open the dashboard") +
+        emailParagraph(
+          `Your first ${FREE_DRAFTS} articles are free to read, and no card is on file until you start the ${TRIAL_DAYS}-day trial that lets you approve and publish them. When the schedule writes a draft for you we will email you about it; you can turn those off from any of them.`,
+        );
   return {
     subject: "Your AltoRank account is live",
     preheader: "What happens next, and the one thing that needs you.",
@@ -765,7 +777,9 @@ export function renderPasswordChanged(a: PasswordChangedEmail): RenderedEmail {
       ) +
       emailButton(appLink("/reset-password"), "Reset the password") +
       emailParagraph(
-        `We will never ask you for your password by email, and no link we send asks you to type it anywhere but on altorank.co.`,
+        // The host this install signs in on (appUrl), not ours: a
+        // self-hosted install's users sign in on its own domain.
+        `We will never ask you for your password by email, and no link we send asks you to type it anywhere but on ${esc(new URL(appLink("/")).host)}.`,
       ),
   };
 }

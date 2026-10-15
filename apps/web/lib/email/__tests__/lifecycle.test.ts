@@ -293,6 +293,25 @@ describe("account emails", () => {
     expect(e.html).toContain("Add a workspace");
   });
 
+  /** Self-host has no billing: quota is "self-host", unmetered, with no trial or card. */
+  it("promises a self-hosted install no trial, card or free-draft count", () => {
+    const e = renderWelcome({ name: null, domain: "acme.com", beforeTrial: false, selfHost: true });
+    expect(e.html).toContain("This install has no plan, card or trial.");
+    expect(e.html).not.toMatch(/day trial|are free to read|card is on file/);
+  });
+
+  it("names this install's own host as the only place to type the password", () => {
+    const prev = process.env.NEXT_PUBLIC_APP_URL;
+    process.env.NEXT_PUBLIC_APP_URL = "https://seo.selfhost.example";
+    try {
+      const e = renderPasswordChanged({ email: "a@x.co", at: "2026-09-06T12:00:00Z" });
+      expect(e.html).toContain("anywhere but on seo.selfhost.example.");
+      expect(e.html).not.toContain("on altorank.co");
+    } finally {
+      process.env.NEXT_PUBLIC_APP_URL = prev;
+    }
+  });
+
   it("tells somebody their password changed and how to act if it was not them", () => {
     const e = renderPasswordChanged({ email: "a@x.co", at: "2026-09-06T12:00:00Z" });
     expect(e.subject).toBe("Your AltoRank password was changed");
