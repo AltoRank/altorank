@@ -14,7 +14,7 @@ The Cloudflare question ("can all of it run there?") has its own page:
 |---|---|---|---|
 | `apps/web` | Next.js 16 dashboard and engine | Vercel (`fra1`) | automatically, on every push to `main` |
 | Database, auth, storage | Supabase (Postgres 17 + GoTrue + Storage) | a hosted Supabase project, or `supabase start` locally | migrations applied **by hand** |
-| Scheduled jobs | nine `/api/cron/*` routes | Vercel Cron, plus GitHub Actions for the extra generate runs | `apps/web/vercel.json` on deploy; the workflow needs a repository secret |
+| Scheduled jobs | twelve `/api/cron/*` routes | Vercel Cron, plus GitHub Actions for the extra generate and publish runs | `apps/web/vercel.json` on deploy; the workflows need a repository secret |
 
 There is also a `docker/` setup that runs `apps/web` and a cron sidecar as two
 containers against a Supabase you provide. It is the self-host path if you do
@@ -129,7 +129,7 @@ build args, not runtime env.
 | `SUPABASE_SERVICE_ROLE_KEY` | every cron route, billing spend recording, invites, operator "view as", auth emails and the onboarding pipeline build a service client with an undefined key and fail. Server-only; never give it a `NEXT_PUBLIC_` prefix |
 | `ANTHROPIC_API_KEY` | no generation, no fact-check, no briefs, no summaries |
 | `ENCRYPTION_KEY` | `lib/crypto.ts` throws; **no CMS can be connected** and existing connections cannot be decrypted. 64 hex chars (`openssl rand -hex 32`); any other string is SHA-256'd to a key. Rotating it makes stored credentials unreadable, by design |
-| `CRON_SECRET` | `isAuthorizedCron()` returns `false` for every request; **all nine scheduled jobs answer 401** and nothing runs unattended. See [How cron auth works](#how-cron-auth-works) |
+| `CRON_SECRET` | `isAuthorizedCron()` returns `false` for every request; **every scheduled job answers 401** and nothing runs unattended. See [How cron auth works](#how-cron-auth-works) |
 | `NEXT_PUBLIC_APP_URL` | links in every email, Stripe return URLs and the audit worker's self-call fall back to `http://localhost:3000` (or `:3100` in two files). Set it to the public origin |
 
 ### Each one disables exactly one feature
@@ -181,7 +181,7 @@ below 300 seconds will cut generation off mid-draft.
 
 ### Crons, and the Hobby limitation
 
-`apps/web/vercel.json` registers nine schedules. Vercel reads them from the
+`apps/web/vercel.json` registers twelve schedules. Vercel reads them from the
 deployed file, so a change to the file is live on the next deploy and
 nowhere else.
 
@@ -194,41 +194,55 @@ nowhere else.
 | `/api/cron/exchange` | `0 5 * * *` | backlink exchange |
 | `/api/cron/reports` | `0 6 1 * *` | monthly PDF reports |
 | `/api/cron/generate` | `0 7 * * *` | autonomous drafts (bounded, see above) |
+| `/api/cron/refresh` | `30 7 * * *` | content refresh for workspaces that turned it on in Settings |
 | `/api/cron/geo` | `0 8 * * 1` | AI-visibility measurement, weekly; measures only workspaces with `geo_tracking` on and prompts in `geo_prompts`, which nothing in the app sets yet |
 | `/api/cron/publish` | `0 9 * * *` | scheduled publishing |
+| `/api/cron/site-pages` | `0 10 * * *` | re-reads one site's sitemap pages per run, stalest first, and checks whether a draft already went live on the site |
+| `/api/cron/ops-digest` | `0 11 * * *` | daily operations digest to `ADMIN_EMAILS` |
 
 **The Vercel account is on Hobby.** Hobby's documented rule is one run per day
 per cron and hour-level precision (a `0 7 * * *` fires somewhere between 07:00
 and 07:59). A schedule that would fire more than once a day does not get
 silently throttled: **the deployment fails**, with *"Hobby accounts are limited
 to daily cron jobs"*, and no build is created. That is why `vercel.json` has
-nothing more frequent than daily, and why the self-host `docker/crontab` runs
-`publish` every 15 minutes and `analyze` every 10 while the hosted product
-gets them once a day: the container has no such rule.
+nothing more frequent than daily, and why the self-host `docker/crontab` (and
+the Cloudflare triggers) run `publish` every 15 minutes, `analyze` every 10 and
+`generate` four times a day while the hosted product gets them once a day from
+Vercel: the container has no such rule.
 
-`/api/cron/site-pages` exists and is authenticated like the others but is on
-**no schedule anywhere** (not in `vercel.json`, not in `docker/crontab`). It
-runs when someone calls it.
+`docker/crontab`, `apps/web/wrangler.jsonc` and `apps/web/cloudflare/worker.mjs`
+schedule the same twelve jobs; `apps/web/lib/__tests__/cron-schedules.test.ts`
+fails when any of them misses a route under `app/api/cron/`, and when a job
+other than those three runs on a different schedule from `vercel.json`.
 
 Cloudflare Cron Triggers have no once-a-day rule; if the Hobby limitation is
 the reason to move, [deploy-cloudflare.md](deploy-cloudflare.md#crons-the-hobby-problem-goes-away)
-maps the nine schedules onto them.
+maps the schedules onto them.
 
 ### The GitHub Actions cron fallback
 
-`.github/workflows/generate-cron.yml` calls `/api/cron/generate` three more
-times a day (01, 13, 19 UTC) so a site can reach its weekly pace. It hits the
-same URL with the same secret as Vercel, so there is one code path and two
-schedulers.
+Two workflows add the runs Hobby will not schedule. They hit the same URLs
+with the same secret as Vercel, so there is one code path and two schedulers.
 
-It is **dormant until `CRON_SECRET` is set as a repository secret** (*Settings
-→ Secrets and variables → Actions*). Unset, the job prints that and exits 0
-rather than failing four times a day. `APP_URL` can be overridden with a
-repository *variable* to point at another deployment.
+- `.github/workflows/generate-cron.yml` calls `/api/cron/generate` three more
+  times a day (01, 13, 19 UTC). Each run writes at most two drafts, so the
+  extra runs are what let a site reach its weekly pace.
+- `.github/workflows/publish-cron.yml` calls `/api/cron/publish` every hour
+  except 09 UTC (Vercel's run). Without it a site whose local publish time is
+  later than 09:00 UTC is never reached: the cadence gate is "at or after the
+  publish time", and there is no later run to satisfy it.
+
+Both are **dormant until `CRON_SECRET` is set as a repository secret**
+(*Settings → Secrets and variables → Actions*). Unset, the job prints that and
+exits 0 rather than failing every run. Set the `APP_URL` repository
+*variable* to your deployment's origin. Only `AltoRank/altorank` itself falls
+back to the hosted URL; in any other repository the workflows refuse to run
+without `APP_URL`, so a fork never sends its secret to someone else's server.
 
 GitHub runs scheduled workflows best-effort and can be minutes late under
 load. The generator is bounded by each workspace's weekly limit, not by
-landing on the hour, so that is fine.
+landing on the hour, and the publisher publishes at most once per local day,
+so that is fine.
 
 ### How cron auth works
 
@@ -403,19 +417,20 @@ least once.
 3. **Environment variables on Vercel.** A new variable added to the code is a
    new variable to set in the dashboard; `NEXT_PUBLIC_*` additions also need
    a redeploy.
-4. **Arming the GitHub Actions cron.** `CRON_SECRET` as a repository secret.
-   Without it the hosted product generates once a day, not four times.
+4. **Arming the GitHub Actions crons.** `CRON_SECRET` as a repository secret,
+   and `APP_URL` as a repository variable outside `AltoRank/altorank`.
+   Without them a Vercel deployment generates and publishes once a day.
 5. **The marketing deploy.** By hand, unless one of the two automatic paths
    above is switched on.
 6. **Stripe webhook registration** (`/api/webhooks/stripe`) and the price ids. See **Stripe** below for the six events and the price setting nothing here can set.
 7. **Google OAuth client** and its redirect URI.
 8. **Supabase Auth URL configuration** (Site URL, redirect allow-list) and a
    verified Resend sender domain.
-9. **The `site-pages` cron** has no schedule at all.
-10. **Keeping `docker/crontab`, `vercel.json` and `apps/web/wrangler.jsonc`
-    in step.** They are meant to be the same nine jobs. The two intervals that
-    Hobby forbids (`publish`, `analyze`) differ on purpose between the crontab
-    and `vercel.json`. Change one, look at the others.
+9. **Keeping `docker/crontab`, `vercel.json`, `apps/web/wrangler.jsonc` and
+   `apps/web/cloudflare/worker.mjs` in step.** They schedule the same twelve
+   jobs, and `cron-schedules.test.ts` fails when one misses a route. The three
+   schedules Hobby forbids (`publish`, `analyze`, `generate`) differ on
+   purpose between the crontab and `vercel.json`.
 
 ## Checklist for a fresh production deployment
 
@@ -430,5 +445,5 @@ least once.
 [ ] ADMIN_EMAILS set to your own address
 [ ] First push to main → deployment READY → /login renders
 [ ] curl -H "x-cron-secret: …" https://<app>/api/cron/analyze returns 200, not 401
-[ ] CRON_SECRET added as a GitHub repository secret (optional, for the extra generate runs)
+[ ] CRON_SECRET as a GitHub repository secret and APP_URL as a repository variable (optional, for the extra generate and publish runs)
 ```

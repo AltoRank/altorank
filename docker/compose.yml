@@ -76,7 +76,8 @@ services:
       retries: 3
       start_period: 20s
 
-  # Runs the nine scheduled jobs that the hosted deployment gets from Vercel.
+  # Runs the scheduled jobs that the hosted deployment gets from Vercel
+  # (docker/crontab lists them).
   #
   # Without this, self-hosting shipped the dashboard but not the automation,
   # which is the part the product is actually about: analysis, drafting, rank
