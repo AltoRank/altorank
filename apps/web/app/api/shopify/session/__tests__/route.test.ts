@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createHmac } from "node:crypto";
 
-const { exchangeIdToken, saveInstallationTokens } = vi.hoisted(() => {
+const { exchangeIdToken, saveInstallationTokens, provisionShop, startShopFirstLook, dispatchWorker } = vi.hoisted(() => {
   process.env.SHOPIFY_API_KEY = "cid";
   process.env.SHOPIFY_API_SECRET = "shpss_secret";
-  return { exchangeIdToken: vi.fn(), saveInstallationTokens: vi.fn() };
+  return {
+    exchangeIdToken: vi.fn(),
+    saveInstallationTokens: vi.fn(),
+    provisionShop: vi.fn(),
+    startShopFirstLook: vi.fn(),
+    dispatchWorker: vi.fn(),
+  };
 });
 
 vi.mock("@/lib/shopify/tokens", async (orig) => ({
@@ -12,10 +18,13 @@ vi.mock("@/lib/shopify/tokens", async (orig) => ({
   exchangeIdToken,
 }));
 vi.mock("@/lib/shopify/installations", () => ({ saveInstallationTokens }));
-vi.mock("@/lib/supabase/server", () => ({
-  createServiceClient: () => ({
-    from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { account_id: null, workspace_id: null } }) }) }) }),
-  }),
+vi.mock("@/lib/supabase/server", () => ({ createServiceClient: () => ({}) }));
+vi.mock("@/lib/shopify/provision", () => ({ provisionShop }));
+vi.mock("@/lib/shopify/first-look", () => ({ startShopFirstLook }));
+vi.mock("@/lib/onboarding/run-dispatch", () => ({ dispatchWorker }));
+vi.mock("next/server", async (orig) => ({
+  ...(await orig<typeof import("next/server")>()),
+  after: (fn: () => unknown) => fn(),
 }));
 
 import { POST } from "../route";
@@ -35,18 +44,31 @@ const req = (token?: string) =>
   });
 
 beforeEach(() => {
-  exchangeIdToken.mockReset();
-  saveInstallationTokens.mockReset();
+  for (const m of [exchangeIdToken, saveInstallationTokens, provisionShop, startShopFirstLook, dispatchWorker]) m.mockReset();
+  provisionShop.mockResolvedValue({ accountId: "acc", workspaceId: "ws", created: false, ownerReachable: true });
 });
 
 describe("POST /api/shopify/session", () => {
-  it("exchanges a valid ID token and stores the installation", async () => {
+  it("exchanges a valid ID token, stores the installation and sets the store up", async () => {
     exchangeIdToken.mockResolvedValue({ accessToken: "a" });
     saveInstallationTokens.mockResolvedValue({ id: "inst-1" });
     const res = await POST(req(idToken()));
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ shop: "fern.myshopify.com", installationId: "inst-1", linked: false });
+    expect(await res.json()).toEqual({ shop: "fern.myshopify.com", installationId: "inst-1", created: false });
     expect(exchangeIdToken.mock.calls[0][0]).toBe("fern.myshopify.com");
+    expect(provisionShop).toHaveBeenCalledWith({}, { id: "inst-1", shop: "fern.myshopify.com" });
+    // An existing store does not get a second first look.
+    expect(startShopFirstLook).not.toHaveBeenCalled();
+  });
+
+  it("starts the first look for a store opening the app for the first time", async () => {
+    exchangeIdToken.mockResolvedValue({ accessToken: "a" });
+    saveInstallationTokens.mockResolvedValue({ id: "inst-1" });
+    provisionShop.mockResolvedValue({ accountId: "acc", workspaceId: "ws", created: true, ownerReachable: true });
+    startShopFirstLook.mockResolvedValue({ runId: "run-1", created: true });
+    await POST(req(idToken()));
+    expect(startShopFirstLook).toHaveBeenCalledWith({}, expect.objectContaining({ accountId: "acc", workspaceId: "ws" }));
+    expect(dispatchWorker).toHaveBeenCalledWith("run-1");
   });
 
   it.each([

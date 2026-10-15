@@ -284,6 +284,21 @@ async function shopifyGraphql<T>(
   }
 }
 
+/**
+ * A one-off Admin API query outside the adapter, through the same client:
+ * the embedded app reads the shop's name, email and domains with it when a
+ * store is first set up. Credentials go through `shopifyCredential`, so the
+ * installed-app store check applies here too.
+ */
+export function queryShopify<T>(
+  storeUrl: string,
+  credentials: ShopifyCredentials,
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<T> {
+  return shopifyGraphql<T>(normaliseStoreUrl(storeUrl), shopifyCredential(credentials), query, variables);
+}
+
 interface UserError {
   field?: string[] | null;
   message: string;
