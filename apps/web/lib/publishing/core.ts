@@ -512,6 +512,7 @@ async function pushToDestination(
       url: result.url,
       indexNowKey,
       gscToken,
+      keyLocation: result.indexNowKeyLocation ?? null,
     });
     await supabase
       .from("articles")

@@ -355,16 +355,30 @@ function altorank_handle_test_integration() {
 }
 
 /**
+ * Where this site serves its IndexNow key: under home_url(), with its scheme
+ * and any subdirectory WordPress lives in, which is exactly the path
+ * altorank_serve_indexnow_key() answers. Null until a submit has carried a
+ * key.
+ */
+function altorank_indexnow_key_location(): ?string {
+	$key = (string) get_option( ALTORANK_OPTION_INDEXNOW_KEY, '' );
+	if ( '' === $key || ! preg_match( '/^[A-Za-z0-9-]{8,128}$/', $key ) ) {
+		return null;
+	}
+	return home_url( '/' . $key . '.txt' );
+}
+
+/**
  * GET /indexnow: the key this site serves, and where, so the dashboard can
  * confirm the file resolves before it submits URLs. `key` is null until a
  * submit has carried one.
  */
 function altorank_handle_indexnow(): WP_REST_Response {
-	$key = (string) get_option( ALTORANK_OPTION_INDEXNOW_KEY, '' );
+	$location = altorank_indexnow_key_location();
 	return new WP_REST_Response(
 		array(
-			'key'          => '' !== $key ? $key : null,
-			'key_location' => '' !== $key ? home_url( '/' . $key . '.txt' ) : null,
+			'key'          => null !== $location ? (string) get_option( ALTORANK_OPTION_INDEXNOW_KEY, '' ) : null,
+			'key_location' => $location,
 		)
 	);
 }
@@ -752,6 +766,9 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 	$response = altorank_post_response( $post_id, $post_id && ! $is_new ? 200 : 201 );
 	$data     = $response->get_data();
 	$data['images'] = $images;
+	// The dashboard submits to IndexNow with this location (1.1.1); on a site
+	// in a subdirectory the host root is not where the key is served.
+	$data['indexnow_key_location'] = altorank_indexnow_key_location();
 	$response->set_data( $data );
 	return $response;
 }

@@ -54,7 +54,10 @@ otherwise. The token is never accepted in a query string.
 }
 ```
 
-Response `201 { id, url, slug, status, edit_url, images }`. `images` is
+Response `201 { id, url, slug, status, edit_url, images, indexnow_key_location }`.
+`indexnow_key_location` is where the site serves the IndexNow key
+(`home_url('/{key}.txt')`, so a WordPress in a subdirectory gets the right
+path), or null; the dashboard submits to IndexNow with it (1.1.1). `images` is
 `{ imported, failed, featured: "set" | "failed" | "none", featured_error }`:
 an image that cannot be fetched never fails the publish (1.1.0). `status` is what the site
 did, which may be `draft`; the dashboard reads it and does not submit a draft's
@@ -91,4 +94,4 @@ because each one is a real support ticket:
 | `rest_authentication_errors` cleared for `altorank/v1` only (priority 999) | Wordfence, iThemes and several managed hosts 401 every unauthenticated REST call before any `permission_callback` runs, so the token check never got a chance. Every route still checks the token. |
 | SEO meta via `meta_input` inside `wp_insert_post`, then an explicit Yoast indexable rebuild | Rank Math and Yoast build their rows on `save_post`; meta written afterwards was invisible until the next save, so a fresh post rendered with the default `<title>`. |
 | Image import and featured image in `try/catch (\Throwable)`, reported in `images` | A dead image URL used to 500 the publish after the post row existed. |
-| IndexNow key served at `/{key}.txt` from an option, on `parse_request` | Writing a file to the web root fails on read-only hosts and survives uninstall. The dashboard sends the key in `indexnow_key`; `GET /indexnow` reports it. |
+| IndexNow key served at `/{key}.txt` from an option, on `parse_request` | Writing a file to the web root fails on read-only hosts and survives uninstall. The dashboard sends the key in `indexnow_key` and submits to IndexNow with the location the plugin reports (`indexnow_key_location` in the post response from 1.1.1, `GET /indexnow` before), so a WordPress in a subdirectory verifies. |

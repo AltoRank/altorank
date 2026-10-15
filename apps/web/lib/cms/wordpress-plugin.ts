@@ -41,6 +41,8 @@ type PluginPostResponse = {
   url: string;
   slug?: string;
   status?: string;
+  /** Where the site serves the IndexNow key, or null when it has none (plugin >= 1.1.1). */
+  indexnow_key_location?: string | null;
 };
 
 type PluginListResponse = {
@@ -144,17 +146,38 @@ export class WordPressPluginAdapter implements CMSAdapter {
     return new Error(`WordPress plugin ${what} failed (${res.status}): ${detail}`);
   }
 
-  private toResult(data: PluginPostResponse): PublishResult {
-    return {
-      externalId: String(data.id),
-      url: data.url,
-      status: data.status === "draft" ? "draft" : "publish",
-    };
+  private async toResult(data: PluginPostResponse, article: PublishPayload): Promise<PublishResult> {
+    const status = data.status === "draft" ? "draft" : "publish";
+    const result: PublishResult = { externalId: String(data.id), url: data.url, status };
+    // Only a live post is submitted to IndexNow, so only then is the location needed.
+    const keyLocation = status === "publish" ? await this.indexNowKeyLocation(data, article) : undefined;
+    if (keyLocation) result.indexNowKeyLocation = keyLocation;
+    return result;
+  }
+
+  /**
+   * Where the site serves the IndexNow key this publish carried. The host
+   * root is wrong for a WordPress in a subdirectory, and the plugin knows its
+   * own home URL: 1.1.1 says so in the post response, 1.1.0 only through GET
+   * /indexnow. Best effort: no answer means the indexing step uses the root.
+   */
+  private async indexNowKeyLocation(data: PluginPostResponse, article: PublishPayload): Promise<string | undefined> {
+    if (!article.indexNowKey) return undefined;
+    if (typeof data.indexnow_key_location === "string") return data.indexnow_key_location;
+    if ("indexnow_key_location" in data) return undefined;
+    try {
+      const res = await fetch(this.endpoint("indexnow"), { headers: this.headers() });
+      if (!res.ok) return undefined;
+      const body = (await res.json()) as { key?: unknown; key_location?: unknown };
+      return body.key === article.indexNowKey && typeof body.key_location === "string" ? body.key_location : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   async publish(article: PublishPayload): Promise<PublishResult> {
     const res = await this.deliver("publish", { path: "submit", method: "POST", body: JSON.stringify(this.body(article)) });
-    return this.toResult((await res.json()) as PluginPostResponse);
+    return this.toResult((await res.json()) as PluginPostResponse, article);
   }
 
   async update(externalId: string, article: PublishPayload): Promise<PublishResult> {
@@ -170,7 +193,7 @@ export class WordPressPluginAdapter implements CMSAdapter {
       // corrected on the site.
       body: JSON.stringify({ ...this.body(article), status: undefined, published_at: undefined, post_id: externalId }),
     });
-    return this.toResult((await res.json()) as PluginPostResponse);
+    return this.toResult((await res.json()) as PluginPostResponse, article);
   }
 
   /** Back to draft, the same as the REST adapter: nothing is deleted. */

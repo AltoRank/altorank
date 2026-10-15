@@ -61,13 +61,53 @@ describe("WordPressPluginAdapter", () => {
   });
 
   it("publish() hands the plugin the workspace's IndexNow key, and omits it when there is none", async () => {
-    mockFetch.mockResolvedValueOnce(Response.json({ id: 1, url: "https://example.com/a", status: "publish" }, { status: 201 }));
+    mockFetch.mockResolvedValueOnce(
+      Response.json({ id: 1, url: "https://example.com/a", status: "publish", indexnow_key_location: null }, { status: 201 }),
+    );
     await adapter.publish({ id: "art-2", title: "A", html: "<p>a</p>", slug: "a", indexNowKey: "k1234567" });
     expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toMatchObject({ indexnow_key: "k1234567" });
 
     mockFetch.mockResolvedValueOnce(Response.json({ id: 2, url: "https://example.com/b", status: "publish" }, { status: 201 }));
     await adapter.publish({ id: "art-3", title: "B", html: "<p>b</p>", slug: "b", indexNowKey: null });
     expect(JSON.parse(mockFetch.mock.calls[1][1].body)).not.toHaveProperty("indexnow_key");
+  });
+
+  it("publish() passes on where the plugin serves the IndexNow key", async () => {
+    mockFetch.mockResolvedValueOnce(
+      Response.json(
+        { id: 5, url: "https://example.com/blog/a", status: "publish", indexnow_key_location: "https://example.com/blog/k1234567.txt" },
+        { status: 201 },
+      ),
+    );
+    const result = await adapter.publish({ id: "art-5", title: "A", html: "<p>a</p>", slug: "a", indexNowKey: "k1234567" });
+    expect(result.indexNowKeyLocation).toBe("https://example.com/blog/k1234567.txt");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("publish() asks an older plugin's /indexnow for the key location", async () => {
+    mockFetch
+      .mockResolvedValueOnce(Response.json({ id: 6, url: "https://example.com/blog/b", status: "publish" }, { status: 201 }))
+      .mockResolvedValueOnce(Response.json({ key: "k1234567", key_location: "https://example.com/blog/k1234567.txt" }));
+    const result = await adapter.publish({ id: "art-6", title: "B", html: "<p>b</p>", slug: "b", indexNowKey: "k1234567" });
+    expect(result.indexNowKeyLocation).toBe("https://example.com/blog/k1234567.txt");
+    const [url, opts] = mockFetch.mock.calls[1];
+    expect(url).toBe("https://example.com/wp-json/altorank/v1/indexnow");
+    expect(opts.headers[TOKEN_HEADER]).toBe(TOKEN);
+  });
+
+  it("publish() ignores a reported location for a different key, and asks nothing without a key or for a draft", async () => {
+    mockFetch
+      .mockResolvedValueOnce(Response.json({ id: 7, url: "https://example.com/c", status: "publish" }, { status: 201 }))
+      .mockResolvedValueOnce(Response.json({ key: "other-key", key_location: "https://example.com/other-key.txt" }));
+    const stale = await adapter.publish({ id: "art-7", title: "C", html: "<p>c</p>", slug: "c", indexNowKey: "k1234567" });
+    expect(stale.indexNowKeyLocation).toBeUndefined();
+
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValueOnce(Response.json({ id: 8, url: "https://example.com/d", status: "publish" }, { status: 201 }));
+    expect((await adapter.publish({ id: "art-8", title: "D", html: "<p>d</p>", slug: "d" })).indexNowKeyLocation).toBeUndefined();
+    mockFetch.mockResolvedValueOnce(Response.json({ id: 9, url: "", status: "draft" }, { status: 201 }));
+    await adapter.publish({ id: "art-9", title: "E", html: "<p>e</p>", slug: "e", indexNowKey: "k1234567" });
+    expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
   it("publish() reports when the site held the post as a draft", async () => {

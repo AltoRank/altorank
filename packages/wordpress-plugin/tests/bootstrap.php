@@ -332,4 +332,9 @@ function get_date_from_gmt( $date_string, $format = 'Y-m-d H:i:s' ) {
 	return $date_string;
 }
 
+/** The fake site's home, which a test may move into a subdirectory. */
+function home_url( $path = '', $scheme = null ) {
+	return rtrim( $GLOBALS['altorank_wp']['options']['home'] ?? 'https://example.com', '/' ) . '/' . ltrim( (string) $path, '/' );
+}
+
 require dirname( __DIR__ ) . '/altorank/altorank.php';
