@@ -61,6 +61,9 @@ const ALLOWED: Record<string, string> = {
   "lib/shopify/installations.ts:workspace_integrations":
     "uninstall and shop/redact act on every connection made through one store's " +
     "installation (matched by config.installationId), whichever workspace holds it",
+  "lib/shopify/link.ts:articles":
+    "counts shipped articles across the whole account a Shopify install created (scoped by " +
+    "workspaces.account_id), to decide whether that account can be retired when the store is linked elsewhere",
   "lib/content/generate.ts:articles":
     "generation resolves its article by id first (and checks workspace_id when " +
     "it does); the later writes address that same row",
