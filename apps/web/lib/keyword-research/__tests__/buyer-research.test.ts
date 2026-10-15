@@ -276,6 +276,62 @@ describe("discoverBuyerKeywords", () => {
     expect(out.alternativeSeeds).toHaveLength(6);
   });
 
+  /**
+   * 2026-10-15, a US e-bike shop: every DataForSEO call that minute answered
+   * 402 Payment Required, the overview's error was swallowed into an empty
+   * map, and 25 topics like "electric mountain bikes" were stored with no
+   * volume, which the recommender reads as nobody searching them in the US.
+   * A lookup that threw is not the provider's answer.
+   */
+  it("marks every topic of a failed volume lookup as not measured, and says why", async () => {
+    const terms = Array.from({ length: 25 }, (_, i) => `electric bike topic ${i}`);
+    ask.mockResolvedValue(JSON.stringify(terms.slice(0, 15)));
+    price.mockRejectedValue(new Error("DataForSEO API error: 402 Payment Required"));
+    const out = await discoverBuyerKeywords({ domain: "bikes.example", business: { ...PACKHUB, competitors: [] }, languageCode: "en", locationCode: 2840 });
+    expect(out.seedsPriced).toBe(0);
+    expect(out.fromIdeas.length).toBeGreaterThan(0);
+    expect(out.fromIdeas.every((k) => k.unmeasured && k.measureFailed)).toBe(true);
+    expect(out.demandLookupFailed?.reason).toMatch(/402 Payment Required/);
+    expect(out.demandLookupFailed?.terms).toHaveLength(out.fromIdeas.length);
+  });
+
+  it("does not call a provider answer with no rows a failure", async () => {
+    ask.mockResolvedValue('["warehouse picking app", "order picking software"]');
+    price.mockResolvedValue(new Map());
+    const out = await discoverBuyerKeywords({ domain: "x.co", business: { ...PACKHUB, competitors: [] } });
+    expect(out.demandLookupFailed).toBeNull();
+    expect(out.fromIdeas.some((k) => k.measureFailed)).toBe(false);
+    expect(out.fromIdeas.every((k) => k.unmeasured)).toBe(true);
+  });
+
+  it("clears the failure for a topic a suggestions probe measured after all", async () => {
+    ask.mockResolvedValueOnce('["editorial workflow"]');
+    price.mockRejectedValue(new Error("provider unavailable"));
+    suggest.mockResolvedValue([{ keyword: "editorial workflow", volume: 30, difficulty: 12, cpc: 0, competition: 0, intent: "info" }]);
+    const out = await discoverBuyerKeywords({ domain: "example.test", business: { ...PACKHUB, competitors: [] } });
+    expect(out.fromIdeas.find((k) => k.keyword === "editorial workflow")?.measureFailed).toBeUndefined();
+    // Only the recovery seeds the model did not answer for are left, and there are none.
+    expect(out.demandLookupFailed).toBeNull();
+  });
+
+  it("prices the stored topics with no volume in the seeds' overview call", async () => {
+    ask.mockResolvedValue('["packing slip template"]');
+    price.mockResolvedValue(new Map([
+      ["packing slip template", { term: "packing slip template", volume: 1300, difficulty: 20, cpc: 3, intent: "info" }],
+      ["electric mountain bikes", { term: "electric mountain bikes", volume: 27100, difficulty: 41, cpc: 1.2, intent: "commercial" }],
+    ]));
+    const out = await discoverBuyerKeywords({
+      domain: "x.co",
+      business: { ...PACKHUB, competitors: [] },
+      remeasure: ["Electric Mountain Bikes", "fat tire e-bike"],
+    });
+    expect(price).toHaveBeenCalledOnce();
+    expect(price.mock.calls[0][0]).toEqual(expect.arrayContaining(["packing slip template", "electric mountain bikes", "fat tire e-bike"]));
+    expect(out.remeasured.get("electric mountain bikes")?.volume).toBe(27100);
+    // The provider had no row for it: that stays unknown, not a measurement.
+    expect(out.remeasured.has("fat tire e-bike")).toBe(false);
+  });
+
   it("survives a rival lookup that throws", async () => {
     ranked.mockRejectedValue(new Error("40501"));
     const out = await discoverBuyerKeywords({ domain: "x.co", business: { competitors: ["rival.co"] } });

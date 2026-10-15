@@ -76,6 +76,15 @@ export interface DomainAnalysis {
    * business (lib/keyword-research/hygiene.ts). For the run's funnel.
    */
   screened?: Screened;
+  /**
+   * Set when the search-demand lookup failed (a provider error, not a
+   * provider answer): how many topics were held back unstored, and the
+   * provider's reason, for the operator. Held, because a topic stored with no
+   * volume reads as "nobody searches this" in the markets the provider covers
+   * well, and nothing was measured. The look is not settled
+   * (`firstLook.reason` "unmeasured"), so the next one measures them.
+   */
+  demandUnmeasured?: { reason: string; held: number };
   /** Keywords the domain ranks for today, joined to the page that earns them. */
   rankedKeywords: RankedKeyword[];
   /** Of those, the ones close enough to page one to be worth a revision. */
@@ -383,6 +392,56 @@ async function crawlWithRetry(
   // Read some, then refused: the crawler stopped itself (crawler.ts).
   if (usablePages(fetched).length > 0 && fetched.some((p) => isRefused(p) && /rate-limits/.test(p.error ?? ""))) rateLimited = true;
   return { fetched, attempts, rateLimited };
+}
+
+/** How many stored, unmeasured rows one look prices again: about $0.02 at most. */
+export const REMEASURE_MAX = 200;
+
+/**
+ * This workspace's rows with no volume, to be priced again. Empty without a
+ * workspace, or when the read fails: a failed read is a missed re-measure,
+ * never a reason to stop the look.
+ */
+async function storedWithoutVolume(
+  supabase: SupabaseClient | undefined,
+  workspaceId: string | undefined,
+): Promise<Array<{ id: string; term: string }>> {
+  if (!supabase || !workspaceId) return [];
+  try {
+    const { data } = await supabase.from("keywords").select("id, term, volume").eq("workspace_id", workspaceId);
+    return ((data ?? []) as Array<{ id: string; term: string; volume: number | null }>)
+      .filter((r) => r.volume === null && typeof r.term === "string" && r.term.trim())
+      .slice(0, REMEASURE_MAX)
+      .map((r) => ({ id: r.id, term: r.term }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Write the volumes discovery measured for rows stored without one. Only a
+ * row still null is touched, so a number a person or another pass wrote in the
+ * meantime stands. A term the provider has no row for stays null: that is the
+ * provider's answer, not a failure.
+ */
+async function storeRemeasured(
+  supabase: SupabaseClient | undefined,
+  workspaceId: string | undefined,
+  rows: ReadonlyArray<{ id: string; term: string }>,
+  measured: ReadonlyMap<string, { volume: number | null; difficulty: number | null; cpc: number | null }> | undefined,
+): Promise<void> {
+  if (!supabase || !workspaceId || !measured?.size) return;
+  for (const row of rows) {
+    const m = measured.get(row.term.trim().toLowerCase());
+    if (!m || m.volume === null) continue;
+    const { error } = await supabase
+      .from("keywords")
+      .update({ volume: m.volume, difficulty: m.difficulty, cpc: storedCpc(m.cpc) })
+      .eq("workspace_id", workspaceId)
+      .eq("id", row.id)
+      .is("volume", null);
+    if (error) console.warn(`[keywords] could not store the volume measured for "${row.term}": ${error.message}`);
+  }
 }
 
 export async function analyseDomain(options: {
@@ -795,6 +854,7 @@ export async function analyseDomain(options: {
 
   let keywordsFound = 0;
   let screened: Screened | undefined;
+  let demandUnmeasured: { reason: string; held: number } | undefined;
   if (!hasDataForSeo) {
     layers.push({
       id: "keywords",
@@ -878,6 +938,12 @@ export async function analyseDomain(options: {
         // says why these two replaced the competitor gap, the heading seeds
         // and the Google Ads fallback on 2026-09-11). A quick run buys neither.
         const spend = supabase && workspaceId ? { supabase, workspaceId } : null;
+        // Rows this workspace already holds with no volume, priced again in
+        // discovery's overview call. A look that ran while the provider could
+        // not answer stored its topics that way before 2026-10-15, and the
+        // insert below skips a term that is already stored, so a later look
+        // that measured it threw the number away and the null stood.
+        const stillUnmeasured = depth === "full" ? await storedWithoutVolume(supabase, workspaceId) : [];
         const discovered =
           depth === "full"
             ? await timed("discovery", () => discoverBuyerKeywords({
@@ -887,8 +953,9 @@ export async function analyseDomain(options: {
                 locationCode: options.locationCode,
                 spend,
                 vocabulary: profile?.topTerms ?? [],
+                remeasure: stillUnmeasured.map((r) => r.term),
               }))
-            : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [], alternativeSeeds: [] as string[], competitorsUnresolved: [] as string[], competitorsFailed: [] as string[], serpRivals: [] as string[], serpRivalsKept: false, serpRivalsVetted: true, fromSerpRivals: 0, serpRivalSearchesFailed: [] as string[], screened: undefined };
+            : { fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" as const }, seedsPriced: 0, competitorsAsked: [], alternativeSeeds: [] as string[], competitorsUnresolved: [] as string[], competitorsFailed: [] as string[], serpRivals: [] as string[], serpRivalsKept: false, serpRivalsVetted: true, fromSerpRivals: 0, serpRivalSearchesFailed: [] as string[], screened: undefined, demandLookupFailed: null, remeasured: undefined };
         screened = discovered.screened;
         // Keep the rivals a fresh search found, so tomorrow reads the same
         // market - and drop a kept one that turned out to be a general site.
@@ -900,7 +967,17 @@ export async function analyseDomain(options: {
           if (keepError) console.warn("[keywords] search rivals not saved:", keepError.message);
         }
         const fromCompetitors = discovered.fromCompetitors;
-        const fromIdeas = discovered.fromIdeas;
+        // A topic whose volume lookup failed is held, not stored: stored with
+        // no volume it is "no measured demand" in the US and the UK, and
+        // nothing was measured. Held before the buyer test, so no verdict is
+        // bought for a topic this look cannot keep. The look stays unsettled
+        // (below), and the next one prices them again.
+        const fromIdeas = discovered.fromIdeas.filter((k) => !k.measureFailed);
+        const held = discovered.fromIdeas.length - fromIdeas.length;
+        if (discovered.demandLookupFailed && held > 0) {
+          demandUnmeasured = { reason: discovered.demandLookupFailed.reason, held };
+        }
+        await storeRemeasured(supabase, workspaceId, stillUnmeasured, discovered.remeasured);
 
         // Position per ranked term, for the reserve rule below.
         const positionByTerm = new Map<string, number | null>();
@@ -1153,6 +1230,9 @@ export async function analyseDomain(options: {
           fromIdeas.length
             ? `${fromIdeas.length} around the ${discovered.seedsPriced} thing${discovered.seedsPriced === 1 ? "" : "s"} you said people buy from you`
             : "",
+          demandUnmeasured
+            ? `${demandUnmeasured.held} held until their search demand can be measured (the lookup failed: ${demandUnmeasured.reason})`
+            : "",
           refusedByBuyerTest
             ? `${refusedByBuyerTest} parked as not what your buyers would search`
             : "",
@@ -1248,6 +1328,7 @@ export async function analyseDomain(options: {
     pagespeed,
     keywordsFound,
     ...(screened ? { screened } : {}),
+    ...(demandUnmeasured ? { demandUnmeasured } : {}),
     rankedKeywords: ranked,
     strikingDistance: strikingDistance(ranked),
     layers,
@@ -1317,6 +1398,9 @@ export async function analyseDomain(options: {
     const firstLook = decideFirstLook({
       attemptsBefore: options.analysisAttempts ?? 0,
       pagesCrawled,
+      // Read, but the demand of what it found could not be measured: not a
+      // finished look (lib/audit/first-look.ts).
+      demandUnmeasured: demandUnmeasured !== undefined,
       failedForGood:
         crawlReason !== null && !isTransientCrawlFailure(crawlReason) && !(crawlRateLimited && pagesCrawled === 0),
     });

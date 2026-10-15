@@ -345,13 +345,35 @@ async function runPhases(
       const crawlFailed = crawl?.status === "failed" ? crawl.detail : null;
       const willRetry = crawlFailed !== null && isTransientCrawlFailure(crawlFailed);
       const budgetStopped = keywordsFound === 0 && discoveryRefused;
-      researchFoundNothing = keywordsFound === 0 && crawlFailed === null && !why && !budgetStopped;
+      // The site was read and topics were found, but their search demand could
+      // not be measured (the provider failed, it did not answer "no data"):
+      // `analyseDomain` held them rather than store them as "nobody searches
+      // this", and left the look unsettled so the nightly pass measures them.
+      // On 2026-10-15 a US e-bike shop was told "No keyword clear enough to
+      // plan yet" for 25 obvious searches while every provider call that
+      // minute answered 402.
+      const demand = analysis.demandUnmeasured;
+      const demandRetry = demand !== undefined && analysis.firstLook?.settled !== true;
+      researchFoundNothing = keywordsFound === 0 && crawlFailed === null && !why && !budgetStopped && !demand;
+      const demandNote = !demand
+        ? ""
+        : demandRetry
+          ? ` ${demand.held} more topic${demand.held === 1 ? " is" : "s are"} held: we could not measure search demand for ${demand.held === 1 ? "it" : "them"} just now, a problem on our side. The next look is already scheduled and measures ${demand.held === 1 ? "it" : "them"}.`
+          : ` ${demand.held} more topic${demand.held === 1 ? " is" : "s are"} held: we could not measure search demand for ${demand.held === 1 ? "it" : "them"}, a problem on our side.`;
       emit({
         phase: "keywords",
         status: keywordsFound > 0 ? "done" : "skipped",
         detail:
           keywordsFound > 0
-            ? (breakdown ?? `Found ${keywordsFound.toLocaleString()} keyword${keywordsFound === 1 ? "" : "s"} worth tracking.`)
+            ? `${breakdown ?? `Found ${keywordsFound.toLocaleString()} keyword${keywordsFound === 1 ? "" : "s"} worth tracking.`}${demandNote}`
+            : demand
+              // Measured nothing, so judged nothing: not "nothing rankable",
+              // and never "no demand". The provider's own message stays on the
+              // keywords layer for the operator; the person hears whose
+              // problem it is and what happens next.
+              ? demandRetry
+                ? `We found ${demand.held} topic${demand.held === 1 ? "" : "s"} but could not measure search demand for ${demand.held === 1 ? "it" : "them"} just now, a problem on our side, so none was judged on a guess. The next look is already scheduled; keywords and the plan will follow without you doing anything.`
+                : `We found ${demand.held} topic${demand.held === 1 ? "" : "s"} but could not measure search demand for ${demand.held === 1 ? "it" : "them"}, a problem on our side, so none was judged on a guess. Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there.`
             : willRetry
               ? `We could not reach your site just now (${crawlFailed}). The next look is already scheduled; keywords and the plan will follow without you doing anything.`
               : crawlFailed
