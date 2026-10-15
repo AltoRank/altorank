@@ -30,7 +30,7 @@ describe("auth emails", () => {
 
   it("puts the code in the confirmation's subject and body, and keeps the link for another device", () => {
     const url = "https://app.altorank.co/callback?token_hash=x&type=signup";
-    const r = renderConfirmSignup(url, "a@x.co", "123456");
+    const r = renderConfirmSignup(url, "a@x.co", { code: "123456" });
     expect(r.subject).toBe("123456 is your AltoRank code");
     expect(r.html).toContain("123456");
     expect(r.html).toContain(url.replace("&", "&amp;"));
@@ -51,6 +51,31 @@ describe("auth emails", () => {
       expect(full).toContain("SUPALABS SRL");
       expect(full).toContain("#4B52D4");
     }
+  });
+});
+
+describe("renderConfirmSignup", () => {
+  const url = "https://app.altorank.co/callback?token_hash=x&type=signup";
+
+  it("gives the link the one-hour lifetime the OTP setting has (otp_expiry = 3600)", () => {
+    for (const beforeTrial of [true, false]) {
+      const { html } = renderConfirmSignup(url, "a@x.co", { beforeTrial });
+      expect(html).toContain("expires in one hour");
+      expect(html).not.toContain("24 hours");
+    }
+  });
+
+  it("before the trial, promises the first article's shape and not its text", () => {
+    const { html } = renderConfirmSignup(url, "a@x.co", { beforeTrial: true });
+    expect(html).toContain("title, outline and sources");
+    expect(html).toContain("The full text opens with the trial.");
+    expect(html).not.toMatch(/read your first drafts/);
+  });
+
+  it("asks for no card where there is no trial gate", () => {
+    const { html } = renderConfirmSignup(url, "a@x.co");
+    expect(html).not.toMatch(/card/i);
+    expect(html).not.toMatch(/trial/i);
   });
 });
 
@@ -122,9 +147,19 @@ describe("sendSignupConfirmation", () => {
       data: { properties: { hashed_token: "h" }, user: { id: "u1" } },
       error: null,
     });
-    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw", name: "A" })).resolves.toBe("u1");
+    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw" })).resolves.toBe("u1");
     expect(sendTransactionalEmail).toHaveBeenCalledTimes(1);
     expect(deleteUser).not.toHaveBeenCalled();
+  });
+
+  /** The account name made from the domain was stored as the person's name, and emails greeted them by it. */
+  it("stores no name in the user metadata", async () => {
+    generateLink.mockResolvedValue({
+      data: { properties: { hashed_token: "h" }, user: { id: "u1" } },
+      error: null,
+    });
+    await sendSignupConfirmation({ email: "a@x.co", password: "pw" });
+    expect(generateLink).toHaveBeenCalledWith({ type: "signup", email: "a@x.co", password: "pw" });
   });
 
   /**
@@ -138,7 +173,7 @@ describe("sendSignupConfirmation", () => {
       error: null,
     });
     sendTransactionalEmail.mockRejectedValue(new Error("Resend refused the email (validation_error 403): domain not verified"));
-    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw", name: "A" })).rejects.toThrow(
+    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw" })).rejects.toThrow(
       "could not send the confirmation email, so the account was not created",
     );
     expect(deleteUser).toHaveBeenCalledWith("u1");
@@ -152,7 +187,7 @@ describe("sendSignupConfirmation", () => {
     });
     memberCount.mockResolvedValue({ count: 1, error: null });
     sendTransactionalEmail.mockRejectedValue(new Error("RESEND_API_KEY not configured"));
-    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw", name: "A" })).rejects.toThrow("not created");
+    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw" })).rejects.toThrow("not created");
     expect(deleteUser).not.toHaveBeenCalled();
   });
 
@@ -163,7 +198,7 @@ describe("sendSignupConfirmation", () => {
     });
     sendTransactionalEmail.mockRejectedValue(new Error("refused"));
     deleteUser.mockRejectedValue(new Error("network"));
-    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw", name: "A" })).rejects.toThrow("not created");
+    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw" })).rejects.toThrow("not created");
   });
 
   it("does not delete anyone when the user could not be created at all", async () => {
@@ -171,7 +206,7 @@ describe("sendSignupConfirmation", () => {
       data: { properties: null, user: null },
       error: { code: "email_exists", status: 422, message: "A user with this email address has already been registered" },
     });
-    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw", name: "A" })).rejects.toThrow("already been registered");
+    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw" })).rejects.toThrow("already been registered");
     expect(sendTransactionalEmail).not.toHaveBeenCalled();
     expect(deleteUser).not.toHaveBeenCalled();
   });

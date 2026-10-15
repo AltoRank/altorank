@@ -45,12 +45,16 @@ export interface GapTerm {
   rankedBy: { domain: string; position: number | null }[];
 }
 
+/**
+ * The terms the plan would write against first. It used to carry
+ * `articlesPerMonth: 4` and `firstPublishDays: 5` as well: two numbers no
+ * code path delivers (the pace is the plan's and the first publish waits for
+ * an approval and a connected site), which the homepage had already stopped
+ * showing and only the emailed plan still printed.
+ */
 export interface PlanCadence {
-  articlesPerMonth: number;
   /** Terms to write against first, in order. */
   firstTargets: string[];
-  /** Working days from domain to first published article. */
-  firstPublishDays: number;
 }
 
 export interface GrowthPlan {
@@ -197,22 +201,15 @@ export function pickGaps(
 }
 
 /**
- * What to publish, and in what order.
- *
- * TODO(mike): this is the one judgment call in the plan. The default below is
- * the weekly cadence the headline promises (four a month), wins before gaps
- * because a revision of a ranking page moves faster than a new article, and
- * five working days to the first one, which is the Monday-to-Friday claim.
- * Tune it here and the API, the homepage and the PDF all follow, because this
- * is the only place the number lives.
+ * What to write against first: wins before gaps, because a revision of a
+ * ranking page moves faster than a new article. Four, the number of terms the
+ * homepage lists.
  */
+const FIRST_TARGETS = 4;
+
 export function planCadence(wins: ClosestWin[], gaps: GapTerm[]): PlanCadence {
-  const articlesPerMonth = 4;
-  const firstTargets = [...wins.map((w) => w.keyword), ...gaps.map((g) => g.keyword)].slice(
-    0,
-    articlesPerMonth,
-  );
-  return { articlesPerMonth, firstTargets, firstPublishDays: 5 };
+  const firstTargets = [...wins.map((w) => w.keyword), ...gaps.map((g) => g.keyword)].slice(0, FIRST_TARGETS);
+  return { firstTargets };
 }
 
 export function summarizeFindings(findings: ReadinessFinding[]) {

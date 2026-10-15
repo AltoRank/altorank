@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { authErrorMessage } from "@/lib/auth/errors";
 import { DEFAULT_AFTER_SIGN_IN, safeNextPath } from "@/lib/auth/next-path";
 import { SubmitButton } from "@/components/auth/submit-button";
+import { inviteJoinPath, inviteTokenFromNext } from "@/lib/team/invite";
 
 export const metadata: Metadata = {
   title: "Sign In",
@@ -36,6 +37,9 @@ export default async function SignInPage(props: {
 }) {
   const searchParams = await props.searchParams;
   const next = safeNextPath(searchParams?.next);
+  // Signing in to accept an invitation: somebody with no login yet needs the
+  // invitee's join form, not the owner signup that makes an account and a site.
+  const inviteToken = inviteTokenFromNext(next);
 
   return (
     <div className="space-y-6">
@@ -100,8 +104,9 @@ export default async function SignInPage(props: {
         Don&apos;t have an account?{" "}
         {/* No `next` here: signup ends at the confirm email and then the
             wizard, so carrying a destination through would promise a landing
-            this flow does not make. */}
-        <Link href="/signup" className="font-medium text-accent-ink hover:underline">
+            this flow does not make. An invitation is the exception: its join
+            form returns to the invite. */}
+        <Link href={inviteToken ? inviteJoinPath(inviteToken) : "/signup"} className="font-medium text-accent-ink hover:underline">
           Sign up
         </Link>
       </p>

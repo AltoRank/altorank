@@ -1,0 +1,159 @@
+-- Check for migration 109, run by hand against a database that has
+-- migrations up to 109 applied (an isolated copy is best: this file writes
+-- nothing that survives it, but it does write inside its transaction).
+--
+--   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/109_approval_written_by_server.rls.sql
+--
+-- Self-contained: it seeds two invented users, one account, two sites and
+-- six articles inside one transaction, checks every case, and rolls back. A
+-- case that does not behave raises, so ON_ERROR_STOP turns it into a non-zero
+-- exit; a green run ends with "109: all cases passed". auth.uid() is
+-- simulated with request.jwt.claims, as PostgREST sets it.
+
+begin;
+
+insert into auth.users (id, email, instance_id, aud, role) values
+  ('00000000-0000-4000-8000-0000000109a1', 'owner@acme-agency.example', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated'),
+  ('00000000-0000-4000-8000-0000000109a2', 'editor@acme-agency.example', '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated');
+
+insert into accounts (id, name, slug, plan, plan_status) values
+  ('00000000-0000-4000-8000-00000000109a', 'Acme', 'rls-109-acme', 'starter', 'active');
+insert into workspaces (id, account_id, name, domain) values
+  ('00000000-0000-4000-8000-0000000109c1', '00000000-0000-4000-8000-00000000109a', 'acme site', 'acme.acme-agency.example'),
+  ('00000000-0000-4000-8000-0000000109c2', '00000000-0000-4000-8000-00000000109a', 'acme shop', 'shop.acme-agency.example');
+insert into account_members (account_id, user_id, role, workspace_ids) values
+  ('00000000-0000-4000-8000-00000000109a', '00000000-0000-4000-8000-0000000109a1', 'owner', null),
+  ('00000000-0000-4000-8000-00000000109a', '00000000-0000-4000-8000-0000000109a2', 'editor', null);
+-- d1: a draft in review. d2: approved by the owner. d3: scheduled by the
+-- owner. d4: approved, then its text edited. d5: live. d6: approved, then
+-- moved to the other site.
+insert into articles (id, workspace_id, title, slug, content, status, approved_by, approved_at, approval_kind, scheduled_at) values
+  ('00000000-0000-4000-8000-0000000109d1', '00000000-0000-4000-8000-0000000109c1', 'Draft', 'draft', '{"type":"doc"}', 'review', null, null, null, null),
+  ('00000000-0000-4000-8000-0000000109d2', '00000000-0000-4000-8000-0000000109c1', 'Approved', 'approved', '{"type":"doc"}', 'approved', '00000000-0000-4000-8000-0000000109a1', now(), 'human', null),
+  ('00000000-0000-4000-8000-0000000109d3', '00000000-0000-4000-8000-0000000109c1', 'Scheduled', 'scheduled', '{"type":"doc"}', 'scheduled', '00000000-0000-4000-8000-0000000109a1', now(), 'human', now() + interval '1 day'),
+  ('00000000-0000-4000-8000-0000000109d4', '00000000-0000-4000-8000-0000000109c1', 'Approved, then edited', 'edited', '{"type":"doc"}', 'approved', '00000000-0000-4000-8000-0000000109a1', now(), 'human', null),
+  ('00000000-0000-4000-8000-0000000109d5', '00000000-0000-4000-8000-0000000109c1', 'Live', 'live', '{"type":"doc"}', 'live', '00000000-0000-4000-8000-0000000109a1', now(), 'human', null),
+  ('00000000-0000-4000-8000-0000000109d6', '00000000-0000-4000-8000-0000000109c1', 'Approved, then moved', 'moved', '{"type":"doc"}', 'approved', '00000000-0000-4000-8000-0000000109a1', now(), 'human', null);
+
+-- The shop runs the auto-approve rule, turned on by the owner.
+update workspaces set auto_approve = true, auto_approve_set_by = '00000000-0000-4000-8000-0000000109a1', auto_approve_set_at = now()
+ where id = '00000000-0000-4000-8000-0000000109c2';
+
+create function pg_temp.expect_refused(label text, stmt text) returns void language plpgsql as $$
+begin
+  begin
+    execute stmt;
+  exception when insufficient_privilege then
+    raise notice 'ok   refused: %', label;
+    return;
+  end;
+  raise exception 'FAIL %: was allowed', label;
+end $$;
+
+create function pg_temp.expect_rows(label text, stmt text, n int) returns void language plpgsql as $$
+declare
+  got int;
+begin
+  execute stmt;
+  get diagnostics got = row_count;
+  if got <> n then raise exception 'FAIL %: % rows, expected %', label, got, n; end if;
+  raise notice 'ok   allowed: %', label;
+end $$;
+
+grant execute on function pg_temp.expect_refused(text, text), pg_temp.expect_rows(text, text, int) to authenticated;
+
+-- --- The editor, over PostgREST --------------------------------------------
+set local role authenticated;
+select set_config('request.jwt.claims', '{"sub":"00000000-0000-4000-8000-0000000109a2","role":"authenticated"}', true);
+
+select pg_temp.expect_refused('approve a draft by status alone',
+  $q$update articles set status = 'approved' where id = '00000000-0000-4000-8000-0000000109d1'$q$);
+select pg_temp.expect_refused('schedule a draft under a colleague''s name',
+  $q$update articles set status = 'scheduled', approved_by = '00000000-0000-4000-8000-0000000109a1' where id = '00000000-0000-4000-8000-0000000109d1'$q$);
+select pg_temp.expect_refused('mark a draft live',
+  $q$update articles set status = 'live' where id = '00000000-0000-4000-8000-0000000109d1'$q$);
+select pg_temp.expect_refused('re-sign an approval as someone else',
+  $q$update articles set approved_by = '00000000-0000-4000-8000-0000000109a2' where id = '00000000-0000-4000-8000-0000000109d2'$q$);
+select pg_temp.expect_refused('approved to scheduled without the action',
+  $q$update articles set status = 'scheduled' where id = '00000000-0000-4000-8000-0000000109d2'$q$);
+select pg_temp.expect_refused('move a schedule',
+  $q$update articles set scheduled_at = now() where id = '00000000-0000-4000-8000-0000000109d3'$q$);
+select pg_temp.expect_refused('write a found-on-site record to launder an approval through the undo',
+  $q$update articles set found_on_site_at = now(), found_on_site_prior = '{"status":"approved"}' where id = '00000000-0000-4000-8000-0000000109d5'$q$);
+select pg_temp.expect_refused('rewrite only the record of the state before a find',
+  $q$update articles set found_on_site_prior = '{"status":"scheduled"}' where id = '00000000-0000-4000-8000-0000000109d5'$q$);
+select pg_temp.expect_refused('turn auto-approve on in a colleague''s name',
+  $q$update workspaces set auto_approve = true, auto_approve_set_by = '00000000-0000-4000-8000-0000000109a1' where id = '00000000-0000-4000-8000-0000000109c1'$q$);
+select pg_temp.expect_refused('insert an article already approved',
+  $q$insert into articles (workspace_id, title, slug, status, approved_by) values ('00000000-0000-4000-8000-0000000109c1', 'Forged', 'forged', 'approved', '00000000-0000-4000-8000-0000000109a1')$q$);
+
+select pg_temp.expect_rows('edit a draft''s title',
+  $q$update articles set title = 'Draft, renamed' where id = '00000000-0000-4000-8000-0000000109d1'$q$, 1);
+select pg_temp.expect_rows('insert a new draft',
+  $q$insert into articles (workspace_id, title, slug, status) values ('00000000-0000-4000-8000-0000000109c1', 'New', 'new', 'draft')$q$, 1);
+select pg_temp.expect_rows('cancel a schedule (back to review, held)',
+  $q$update articles set status = 'review', held_by = auth.uid(), held_at = now() where id = '00000000-0000-4000-8000-0000000109d3'$q$, 1);
+select pg_temp.expect_rows('request changes, clearing the approval by hand',
+  $q$update articles set status = 'review', approved_by = null, approved_at = null, approval_kind = null where id = '00000000-0000-4000-8000-0000000109d2'$q$, 1);
+
+select pg_temp.expect_rows('edit the text of an approved article',
+  $q$update articles set content = '{"type":"doc","content":[]}' where id = '00000000-0000-4000-8000-0000000109d4'$q$, 1);
+select pg_temp.expect_rows('move an approved article to the other site',
+  $q$update articles set workspace_id = '00000000-0000-4000-8000-0000000109c2' where id = '00000000-0000-4000-8000-0000000109d6'$q$, 1);
+select pg_temp.expect_rows('lower the floor of a rule a colleague turned on',
+  $q$update workspaces set auto_approve_min_seo = 0 where id = '00000000-0000-4000-8000-0000000109c2'$q$, 1);
+select pg_temp.expect_rows('turn auto-approve on in one''s own name',
+  $q$update workspaces set auto_approve = true, auto_approve_set_by = auth.uid() where id = '00000000-0000-4000-8000-0000000109c1'$q$, 1);
+select pg_temp.expect_rows('edit the title of a live article',
+  $q$update articles set title = 'Live, retitled' where id = '00000000-0000-4000-8000-0000000109d5'$q$, 1);
+
+reset role;
+
+do $$
+begin
+  if not exists (select 1 from articles
+                  where id = '00000000-0000-4000-8000-0000000109d4' and status = 'review' and approved_by is null
+                    and approved_at is null and held_by = '00000000-0000-4000-8000-0000000109a2') then
+    raise exception 'FAIL an edit after approval kept the approval';
+  end if;
+  if not exists (select 1 from articles
+                  where id = '00000000-0000-4000-8000-0000000109d5' and status = 'live' and approved_by is not null) then
+    raise exception 'FAIL a live article''s edit moved it';
+  end if;
+  if exists (select 1 from articles
+              where id = '00000000-0000-4000-8000-0000000109d3'
+                and (approved_by is not null or approved_at is not null or approval_kind is not null or scheduled_at is not null)) then
+    raise exception 'FAIL leaving scheduled kept the approval';
+  end if;
+  if not exists (select 1 from articles
+                  where id = '00000000-0000-4000-8000-0000000109d6' and status = 'review' and approved_by is null
+                    and held_by = '00000000-0000-4000-8000-0000000109a2') then
+    raise exception 'FAIL an approved article moved to another site kept its approval';
+  end if;
+  if (select auto_approve_set_by from workspaces where id = '00000000-0000-4000-8000-0000000109c2')
+     is distinct from '00000000-0000-4000-8000-0000000109a2' then
+    raise exception 'FAIL a changed auto-approve rule is still in the name of whoever set it before';
+  end if;
+  if (select status from articles where id = '00000000-0000-4000-8000-0000000109d1') <> 'review' then
+    raise exception 'FAIL the draft moved';
+  end if;
+end $$;
+
+-- The server (service role, no auth.uid()) still approves and schedules.
+set local role service_role;
+select set_config('request.jwt.claims', '', true);
+update articles set status = 'approved', approved_by = '00000000-0000-4000-8000-0000000109a1', approved_at = now(), approval_kind = 'human'
+ where id = '00000000-0000-4000-8000-0000000109d1';
+update articles set status = 'scheduled', scheduled_at = now() + interval '2 days'
+ where id = '00000000-0000-4000-8000-0000000109d1';
+reset role;
+
+do $$
+begin
+  if (select approved_by from articles where id = '00000000-0000-4000-8000-0000000109d1') is distinct from '00000000-0000-4000-8000-0000000109a1' then
+    raise exception 'FAIL the server could not approve';
+  end if;
+end $$;
+
+\echo '109: all cases passed'
+rollback;

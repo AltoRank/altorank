@@ -6,23 +6,23 @@ framework, no provider, no client bundle.
 
 ## Setup
 
-1. In the dashboard, Settings -> API key. Copy the key.
+1. In the dashboard, open Settings, then the API keys tab
+   (`/settings/api-keys`). Create a key and copy it; it is shown once. An
+   owner or admin can create one; edits are not needed for reading articles.
 2. Note the workspace id of the site (the id in `/workspaces/<id>`).
 3. Add to your `.env.local`:
 
 ```
-ALTORANK_BLOG_API_KEY=fr_live_sk_...
+ALTORANK_BLOG_API_KEY=altorank_live_...
 ALTORANK_WORKSPACE_ID=<uuid>
 # ALTORANK_API_URL=https://app.altorank.co   # only when self-hosting the dashboard
 ```
 
-4. Install the package. It is not on npm yet; install from the repository:
-
-```
-npm install github:AltoRank/altorank#main --workspace-path packages/altorank-next-blog
-```
-
-or copy `src/client.ts` into your project; it has no dependencies.
+4. Copy `src/client.ts` into your project (for example `lib/altorank.ts`).
+   It has no dependencies. The package is not on npm, and npm cannot install
+   one directory of a git repository, so copying is the install. Then point
+   the starter's `import { BlogClient } from "@altorank/next-blog"` lines at
+   your copy.
 
 5. Copy `starter/app/blog` into your `app/` directory. Both pages use ISR with
 `revalidate = 86400` (daily). Lower it, or call `revalidatePath("/blog")` from a
@@ -45,7 +45,7 @@ The starter uses a plain `<img>` so it works before you do that.
 ## API
 
 ```ts
-import { BlogClient } from "@altorank/next-blog";
+import { BlogClient } from "@/lib/altorank";     // your copy of src/client.ts
 
 const client = new BlogClient();               // reads the env vars above
 const { articles, total } = await client.list({ page: 1, perPage: 20 });
@@ -69,6 +69,6 @@ into a `"use client"` file.
 - `GET /api/blog/v1/articles?workspace_id=&page=&per_page=`
 - `GET /api/blog/v1/articles/<slug>?workspace_id=`
 
-Both take `Authorization: Bearer <api key>`. The key is the account's API key
-from Settings; a read-only, per-purpose key is planned (see the TODO in
-`apps/web/lib/blog-api/auth.ts`).
+Both take `Authorization: Bearer <api key>`, a key from Settings → API keys.
+Every key can read; a key without the `read` scope is refused with 403
+(`apps/web/lib/blog-api/auth.ts`).

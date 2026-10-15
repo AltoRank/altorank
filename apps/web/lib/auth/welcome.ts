@@ -1,6 +1,7 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { notifyWelcome } from "@/lib/email/lifecycle";
 import { accountTrialGate } from "@/lib/billing/body-lock";
+import { billingEnabled } from "@/lib/stripe";
 
 // Shared by the two ways a signup is confirmed: the link in the email
 // (app/(auth)/callback) and the code typed on /signup/verify.
@@ -45,11 +46,15 @@ export async function sendWelcome(userId: string): Promise<void> {
     // address gets the mail that matches what they will see. With no account
     // to ask about yet, the account that will be made for them is a fresh
     // one, which is exactly the one the gate holds: the before-trial mail.
-    const beforeTrial = member?.account_id
-      ? (await accountTrialGate(admin, member.account_id as string, user?.user?.email ?? null)) === "gated"
-      : true;
+    // With no billing there is no gate, whatever the membership says.
+    const beforeTrial = !billingEnabled
+      ? false
+      : member?.account_id
+        ? (await accountTrialGate(admin, member.account_id as string, user?.user?.email ?? null)) === "gated"
+        : true;
 
-    await notifyWelcome(admin, userId, { name, domain, beforeTrial });
+    // A self-hosted install has no plan, card or trial to describe.
+    await notifyWelcome(admin, userId, { name, domain, beforeTrial, selfHost: !billingEnabled });
   } catch (err) {
     console.error(`[callback] welcome email for ${userId}: ${err instanceof Error ? err.message : err}`);
   }

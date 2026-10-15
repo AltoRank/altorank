@@ -159,6 +159,20 @@ function isRetryableTaskStatus(code: number): boolean {
 const MAX_ATTEMPTS = 3;
 
 /**
+ * How long one request may wait for DataForSEO's answer. A fetch had no
+ * limit but the runtime's own five minutes, and a first look waits on every
+ * call it made: a live endpoint answers in seconds, a slow Google Ads task
+ * in well under a minute. Exported for tests.
+ */
+export const REQUEST_TIMEOUT_MS = 90_000;
+
+/** A request that ran out of time: it may still have been billed. */
+export function isRequestTimeout(err: unknown): boolean {
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === "TimeoutError" || name === "AbortError";
+}
+
+/**
  * Where a script reports what a call cost.
  *
  * Scripts only. It is one callback for the whole process, so two pieces of
@@ -237,7 +251,9 @@ export async function post<T = unknown>(
     await claim.settle(parsed.cost ?? null);
     return parsed;
   } catch (err) {
-    await claim.settle(0);
+    // A request that timed out may have been run and billed: its claim stays
+    // at the estimate. Anything else answered with an error and cost nothing.
+    await claim.settle(isRequestTimeout(err) ? null : 0);
     throw err;
   }
 }
@@ -254,6 +270,7 @@ async function postAttempts<T>(endpoint: string, body: unknown[], maxAttempts: n
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
 
       const parsed = await handleResponse<T>(res);
@@ -297,6 +314,7 @@ export async function get<T = unknown>(
       Authorization: getAuthHeader(),
       "Content-Type": "application/json",
     },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
 
   const parsed = await handleResponse<T>(res);

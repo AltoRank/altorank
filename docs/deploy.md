@@ -14,7 +14,7 @@ The Cloudflare question ("can all of it run there?") has its own page:
 |---|---|---|---|
 | `apps/web` | Next.js 16 dashboard and engine | Vercel (`fra1`) | automatically, on every push to `main` |
 | Database, auth, storage | Supabase (Postgres 17 + GoTrue + Storage) | a hosted Supabase project, or `supabase start` locally | migrations applied **by hand** |
-| Scheduled jobs | nine `/api/cron/*` routes | Vercel Cron, plus GitHub Actions for the extra generate runs | `apps/web/vercel.json` on deploy; the workflow needs a repository secret |
+| Scheduled jobs | twelve `/api/cron/*` routes | Vercel Cron, plus GitHub Actions for the extra generate and publish runs | `apps/web/vercel.json` on deploy; the workflows need a repository secret |
 
 There is also a `docker/` setup that runs `apps/web` and a cron sidecar as two
 containers against a Supabase you provide. It is the self-host path if you do
@@ -89,11 +89,12 @@ pre-<nnn>.sql` or `pg_dump`). There are no down migrations.
 
 ### 3. Things the migrations do not do
 
-- **The `reports` storage bucket.** `lib/reports/generate.ts` uploads PDF
-  reports to a bucket called `reports` and reads them back with
-  `getPublicUrl`. No migration creates it (045 creates `article-images`, the
-  only bucket that is scripted). Create `reports` in *Storage* as a public
-  bucket, or monthly reports fail with "Bucket not found".
+- **Do not create the `reports` bucket by hand.** Migration 066 creates it,
+  private and PDF only, and the app hands out signed links to each report
+  (`lib/reports/generate.ts`). A public `reports` bucket serves every client's
+  traffic and keyword figures to anyone holding a link. If you made one by
+  hand on an earlier version, applying 066 switches it back to private; check
+  *Storage → reports* says private afterwards.
 - **Auth URL configuration.** Set *Authentication → URL Configuration → Site
   URL* to your app's origin and add `<origin>/callback` to the redirect
   allow-list. The app sends its own auth emails (below), but OAuth codes
@@ -129,7 +130,10 @@ build args, not runtime env.
 | `SUPABASE_SERVICE_ROLE_KEY` | every cron route, billing spend recording, invites, operator "view as", auth emails and the onboarding pipeline build a service client with an undefined key and fail. Server-only; never give it a `NEXT_PUBLIC_` prefix |
 | `ANTHROPIC_API_KEY` | no generation, no fact-check, no briefs, no summaries |
 | `ENCRYPTION_KEY` | `lib/crypto.ts` throws; **no CMS can be connected** and existing connections cannot be decrypted. 64 hex chars (`openssl rand -hex 32`); any other string is SHA-256'd to a key. Rotating it makes stored credentials unreadable, by design |
-| `CRON_SECRET` | `isAuthorizedCron()` returns `false` for every request; **all nine scheduled jobs answer 401** and nothing runs unattended. See [How cron auth works](#how-cron-auth-works) |
+| `CRON_SECRET` | `isAuthorizedCron()` returns `false` for every request; **every scheduled job answers 401** and nothing runs unattended. `docker compose` refuses to start the cron container without it. See [How cron auth works](#how-cron-auth-works) |
+| `RESEND_API_KEY` | no email at all: no invites, no auth emails, no approval notifications, no feedback widget. Signup confirms by email and rolls the new user back when the email cannot be sent, so **nobody can create an account** and nobody can reset a password |
+| `RESEND_FROM_EMAIL` | defaults to `AltoRank <noreply@updates.altorank.co>`, which will not be a verified sender on your Resend account, so every send is refused (same effect as no key). Set it |
+| `RESEND_REPLY_TO` | optional. The Reply-To on every app email. Unset: the hosted sender replies go to `hello@altorank.co`; any other sender gets no Reply-To, so replies go to `RESEND_FROM_EMAIL` |
 | `NEXT_PUBLIC_APP_URL` | links in every email, Stripe return URLs and the audit worker's self-call fall back to `http://localhost:3000` (or `:3100` in two files). Set it to the public origin |
 
 ### Each one disables exactly one feature
@@ -139,17 +143,20 @@ build args, not runtime env.
 | `DATAFORSEO_LOGIN` + `DATAFORSEO_PASSWORD` (or a pre-encoded `DATAFORSEO_API_KEY`) | keyword volume, SERP analysis and rank tracking skip; research falls back to prompt-only |
 | `OPENAI_API_KEY` | no featured images (articles publish without them); a workspace that selects the OpenAI provider fails |
 | `PAGESPEED_API_KEY` | Core Web Vitals in audits report as unavailable (unkeyed requests hit Google's rate limit) |
-| `RESEND_API_KEY` | no email at all: no invites, no auth emails (so **no signup confirmation or password reset**), no approval notifications, no feedback widget |
-| `RESEND_FROM_EMAIL` | defaults to `AltoRank <noreply@updates.altorank.co>`, which will not be a verified sender on your Resend account. Set it |
-| `FEEDBACK_EMAIL` | the in-app feedback widget mails a default address that is not yours |
+| `FEEDBACK_EMAIL` | the in-app feedback widget and "Request integration" send nothing and say feedback is not configured |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | Search Console connect returns `google_oauth_not_configured`. The redirect URI is `<origin>/api/auth/google/callback` and must be registered in Google Cloud |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_STARTER_YEARLY`, `STRIPE_PRICE_GROWTH`, `STRIPE_PRICE_GROWTH_YEARLY` | billing is hidden (`billingEnabled` is false). The webhook endpoint is `<origin>/api/webhooks/stripe` and has to be registered in Stripe by hand |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_STARTER_YEARLY`, `STRIPE_PRICE_GROWTH`, `STRIPE_PRICE_GROWTH_YEARLY` | billing is off (`billingEnabled` is false) and every account is unmetered. `STRIPE_SECRET_KEY` alone turns billing on, so set all six or none. The webhook endpoint is `<origin>/api/webhooks/stripe` and has to be registered in Stripe by hand |
 | `STRIPE_TAX_ENABLED` | Checkout charges the listed price and adds no VAT: no `automatic_tax`, no `tax_id_collection`, so no reverse charge for EU businesses. Set it to `true` **only** once Stripe Tax is activated, registered and set to exclusive - see [VAT](#2-vat-off-by-default-behind-stripe_tax_enabled). Turning it on before that stops anyone paying |
 | `PRETRIAL_FULL_ARTICLE` | **On by default.** Unset, empty or `1`: before the card trial, the account's owner reads their first article in full on the setup screen, read-only, as it is written (editing, approving, publishing and the rest of the drafts stay behind the trial; members who are not the owner see its outline). Any other value, `0` included, turns that off and the screen shows only the article's title, outline and length until the trial starts. Only matters with billing on |
 | `YOUTUBE_API_KEY` | no video embeds in articles; silently skipped |
-| `ADMIN_EMAILS` | the operator gate (`/admin/*`) defaults to the AltoRank team's address, which is useless on your install. Comma-separated; set it to yourself. Set-but-empty means nobody is an operator. The daily operations digest has **no** default: unset means it sends nothing at all, so set this if you want it |
-| `ANTHROPIC_MODEL`, `ANTHROPIC_MODEL_STRUCTURED`, `OPENAI_MODEL`, `OPENAI_IMAGE_MODEL` | defaults from `lib/ai/models.ts` |
+| `ADMIN_EMAILS` | nobody is an operator: `/admin/*` and "View as" are closed to everyone, and the daily operations digest sends nothing. Comma-separated; set it to yourself if you want them |
+| `ANTHROPIC_MODEL`, `ANTHROPIC_MODEL_STRUCTURED`, `ANTHROPIC_MODEL_DECISION`, `OPENAI_MODEL`, `OPENAI_IMAGE_MODEL` | defaults from `lib/ai/models.ts`. `ANTHROPIC_MODEL` pins every Claude tier at once; the other two override one tier each |
+| `PUBLIC_TOOLS_DAILY_CAP_CENTS`, `PUBLIC_TOOLS_MODEL` | the paid public tools (`/api/public/tools/<slug>`, no sign-in) spend at most this many US cents a day of your Anthropic and DataForSEO keys. Unset means **0 with billing off** (the paid tools are off on a self-host until you set a budget) and 500 with billing on |
+| `EMAIL_UNSUBSCRIBE_SECRET` | the service role key signs unsubscribe and Hold links instead |
+| `ALTORANK_ALLOW_PRIVATE_FETCH` | audits refuse private and local addresses. Set `1` to audit sites on your own network |
+| `TRIAL_GATE_DISABLED`, `TRIAL_GATE_BYPASS_EMAILS`, `PRETRIAL_FULL_ARTICLE` | billing only: the card-trial step before the dashboard, addresses that skip it, and whether an owner can read their first draft in full before the trial |
 | `DOGFOOD_EMAIL` | only read by `scripts/dogfood.ts`; irrelevant to a deployment |
+| the two `NEXT_PUBLIC_POSTHOG_*` variables (project token, host) | no product analytics; `npm run dev` logs one console warning. Read at build time; `docker/compose.yml` does not pass them, so the Docker image never sends analytics |
 
 ## `apps/web` on Vercel
 
@@ -182,7 +189,7 @@ below 300 seconds will cut generation off mid-draft.
 
 ### Crons, and the Hobby limitation
 
-`apps/web/vercel.json` registers nine schedules. Vercel reads them from the
+`apps/web/vercel.json` registers twelve schedules. Vercel reads them from the
 deployed file, so a change to the file is live on the next deploy and
 nowhere else.
 
@@ -195,41 +202,55 @@ nowhere else.
 | `/api/cron/exchange` | `0 5 * * *` | backlink exchange |
 | `/api/cron/reports` | `0 6 1 * *` | monthly PDF reports |
 | `/api/cron/generate` | `0 7 * * *` | autonomous drafts (bounded, see above) |
+| `/api/cron/refresh` | `30 7 * * *` | content refresh for workspaces that turned it on in Settings |
 | `/api/cron/geo` | `0 8 * * 1` | AI-visibility measurement, weekly; measures only workspaces with `geo_tracking` on and prompts in `geo_prompts`, which nothing in the app sets yet |
 | `/api/cron/publish` | `0 9 * * *` | scheduled publishing |
+| `/api/cron/site-pages` | `0 10 * * *` | re-reads one site's sitemap pages per run, stalest first, and checks whether a draft already went live on the site |
+| `/api/cron/ops-digest` | `0 11 * * *` | daily operations digest to `ADMIN_EMAILS` |
 
 **The Vercel account is on Hobby.** Hobby's documented rule is one run per day
 per cron and hour-level precision (a `0 7 * * *` fires somewhere between 07:00
 and 07:59). A schedule that would fire more than once a day does not get
 silently throttled: **the deployment fails**, with *"Hobby accounts are limited
 to daily cron jobs"*, and no build is created. That is why `vercel.json` has
-nothing more frequent than daily, and why the self-host `docker/crontab` runs
-`publish` every 15 minutes and `analyze` every 10 while the hosted product
-gets them once a day: the container has no such rule.
+nothing more frequent than daily, and why the self-host `docker/crontab` (and
+the Cloudflare triggers) run `publish` every 15 minutes, `analyze` every 10 and
+`generate` four times a day while the hosted product gets them once a day from
+Vercel: the container has no such rule.
 
-`/api/cron/site-pages` exists and is authenticated like the others but is on
-**no schedule anywhere** (not in `vercel.json`, not in `docker/crontab`). It
-runs when someone calls it.
+`docker/crontab`, `apps/web/wrangler.jsonc` and `apps/web/cloudflare/worker.mjs`
+schedule the same twelve jobs; `apps/web/lib/__tests__/cron-schedules.test.ts`
+fails when any of them misses a route under `app/api/cron/`, and when a job
+other than those three runs on a different schedule from `vercel.json`.
 
 Cloudflare Cron Triggers have no once-a-day rule; if the Hobby limitation is
 the reason to move, [deploy-cloudflare.md](deploy-cloudflare.md#crons-the-hobby-problem-goes-away)
-maps the nine schedules onto them.
+maps the schedules onto them.
 
 ### The GitHub Actions cron fallback
 
-`.github/workflows/generate-cron.yml` calls `/api/cron/generate` three more
-times a day (01, 13, 19 UTC) so a site can reach its weekly pace. It hits the
-same URL with the same secret as Vercel, so there is one code path and two
-schedulers.
+Two workflows add the runs Hobby will not schedule. They hit the same URLs
+with the same secret as Vercel, so there is one code path and two schedulers.
 
-It is **dormant until `CRON_SECRET` is set as a repository secret** (*Settings
-→ Secrets and variables → Actions*). Unset, the job prints that and exits 0
-rather than failing four times a day. `APP_URL` can be overridden with a
-repository *variable* to point at another deployment.
+- `.github/workflows/generate-cron.yml` calls `/api/cron/generate` three more
+  times a day (01, 13, 19 UTC). Each run writes at most two drafts, so the
+  extra runs are what let a site reach its weekly pace.
+- `.github/workflows/publish-cron.yml` calls `/api/cron/publish` every hour
+  except 09 UTC (Vercel's run). Without it a site whose local publish time is
+  later than 09:00 UTC is never reached: the cadence gate is "at or after the
+  publish time", and there is no later run to satisfy it.
+
+Both are **dormant until `CRON_SECRET` is set as a repository secret**
+(*Settings → Secrets and variables → Actions*). Unset, the job prints that and
+exits 0 rather than failing every run. Set the `APP_URL` repository
+*variable* to your deployment's origin. Only `AltoRank/altorank` itself falls
+back to the hosted URL; in any other repository the workflows refuse to run
+without `APP_URL`, so a fork never sends its secret to someone else's server.
 
 GitHub runs scheduled workflows best-effort and can be minutes late under
 load. The generator is bounded by each workspace's weekly limit, not by
-landing on the hour, so that is fine.
+landing on the hour, and the publisher publishes at most once per local day,
+so that is fine.
 
 ### How cron auth works
 
@@ -262,12 +283,13 @@ repository can set them:
 
 Endpoint URL: `https://<your-app>/api/webhooks/stripe`. Its signing secret is
 `STRIPE_WEBHOOK_SECRET`. Subscribe it to exactly these events - the list is
-`REQUIRED_STRIPE_EVENTS` in `apps/web/lib/stripe.ts`, and a test fails if the
-route stops handling any of them:
+`REQUIRED_STRIPE_EVENTS` in `apps/web/lib/stripe.ts`, and tests fail if the
+route stops handling any of them or this table drifts from that list:
 
 | Event | Without it |
 |---|---|
 | `checkout.session.completed` | `plan_status` never becomes active after checkout |
+| `customer.subscription.trial_will_end` | no reminder email three days before a card trial's first charge, though the trial-started email promises one |
 | `customer.subscription.created` | a subscription started outside our checkout is never mapped to an account |
 | `customer.subscription.updated` | plan changes, cancel-at-period-end and the period end are never recorded |
 | `customer.subscription.deleted` | cancellations never land; access never ends |
@@ -350,8 +372,7 @@ the wrong engine.
 ```bash
 npm ci
 cd apps/web
-supabase start                       # Docker; prints API URL (…:54331), anon key, service_role key
-supabase db push                     # applies the migrations to the local DB
+supabase start                       # Docker; applies every migration, prints API URL (…:54331), anon key, service_role key
 cd ../..
 cp docker/.env.example apps/web/.env.local
 # fill NEXT_PUBLIC_SUPABASE_URL=http://127.0.0.1:54331 and the two keys from `supabase start`,
@@ -383,8 +404,6 @@ env at all, which is exactly what CI does.
 rebuild. Then revert the commit on `main`, or the next push re-deploys the
 bad one.
 
-re-deploy the old `dist/` from the matching commit with the command above.
-
 **Database.** There are no down migrations. Rolling back a schema change means
 restoring the backup you took before applying it, or writing a new forward
 migration that undoes it. Application rollbacks that cross a migration are the
@@ -400,36 +419,34 @@ least once.
 1. **Database migrations.** Not run by CI, not run by the deploy. A merged
    PR with a migration is not live until someone runs `supabase db push`
    against production.
-2. **The `reports` storage bucket.** Not created by any migration.
-3. **Environment variables on Vercel.** A new variable added to the code is a
+2. **Environment variables on Vercel.** A new variable added to the code is a
    new variable to set in the dashboard; `NEXT_PUBLIC_*` additions also need
    a redeploy.
-4. **Arming the GitHub Actions cron.** `CRON_SECRET` as a repository secret.
-   Without it the hosted product generates once a day, not four times.
-5. **The marketing deploy.** By hand, unless one of the two automatic paths
-   above is switched on.
-6. **Stripe webhook registration** (`/api/webhooks/stripe`) and the price ids. See **Stripe** below for the six events and the price setting nothing here can set.
-7. **Google OAuth client** and its redirect URI.
-8. **Supabase Auth URL configuration** (Site URL, redirect allow-list) and a
+3. **Arming the GitHub Actions crons.** `CRON_SECRET` as a repository secret,
+   and `APP_URL` as a repository variable outside `AltoRank/altorank`.
+   Without them a Vercel deployment generates and publishes once a day.
+4. **Stripe webhook registration** (`/api/webhooks/stripe`) and the price ids. See [Stripe](#stripe) above for the events and the price setting nothing here can set.
+5. **Google OAuth client** and its redirect URI.
+6. **Supabase Auth URL configuration** (Site URL, redirect allow-list) and a
    verified Resend sender domain.
-9. **The `site-pages` cron** has no schedule at all.
-10. **Keeping `docker/crontab`, `vercel.json` and `apps/web/wrangler.jsonc`
-    in step.** They are meant to be the same nine jobs. The two intervals that
-    Hobby forbids (`publish`, `analyze`) differ on purpose between the crontab
-    and `vercel.json`. Change one, look at the others.
+7. **Keeping `docker/crontab`, `vercel.json`, `apps/web/wrangler.jsonc` and
+   `apps/web/cloudflare/worker.mjs` in step.** They schedule the same twelve
+   jobs, and `cron-schedules.test.ts` fails when one misses a route. The three
+   schedules Hobby forbids (`publish`, `analyze`, `generate`) differ on
+   purpose between the crontab and `vercel.json`.
 
 ## Checklist for a fresh production deployment
 
 ```
 [ ] Supabase project created; URL, anon key, service_role key, DB connection string noted
 [ ] supabase link && supabase db push  (all migrations show as applied in `supabase migration list`)
-[ ] `reports` bucket created (public)
+[ ] Storage → `reports` exists and is private (migration 066 creates it)
 [ ] Auth: Site URL + /callback in the redirect allow-list
 [ ] Resend: sender domain verified; RESEND_API_KEY + RESEND_FROM_EMAIL
 [ ] Vercel project: root apps/web, Node 22, region fra1, every env var set for Production
 [ ] ENCRYPTION_KEY and CRON_SECRET generated with `openssl rand -hex 32` and stored somewhere you can recover them
 [ ] ADMIN_EMAILS set to your own address
-[ ] First push to main → deployment READY → /login renders
+[ ] First push to main → deployment READY → /signin renders
 [ ] curl -H "x-cron-secret: …" https://<app>/api/cron/analyze returns 200, not 401
-[ ] CRON_SECRET added as a GitHub repository secret (optional, for the extra generate runs)
+[ ] CRON_SECRET as a GitHub repository secret and APP_URL as a repository variable (optional, for the extra generate and publish runs)
 ```

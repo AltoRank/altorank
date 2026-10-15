@@ -329,7 +329,7 @@ export function ArticleEditor({
     try {
       const json = editor.getJSON();
       const wordCount = editor.getText().split(/\s+/).filter(Boolean).length;
-      await updateArticle(article.id, {
+      const saved = await updateArticle(article.id, {
         content: json,
         title: title.trim() || article.title,
         meta_description: meta.trim() || null,
@@ -339,7 +339,8 @@ export function ArticleEditor({
       snapshot.current = JSON.stringify(json);
       setPending(NO_CHANGES);
       setDirty(false);
-      toast.success("Saved");
+      // An approval is of the text as it was; an edit sends it back.
+      toast.success(saved.sentBackToReview ? "Saved. It is back in Review: approve it again to publish this version." : "Saved");
       router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save");
@@ -492,7 +493,9 @@ export function ArticleEditor({
     try {
       const result = await publishArticle(article.id, destination?.id);
       toast.success(
-        result.publishMode === "draft"
+        // The WordPress plugin can hold a post as a draft on its own side
+        // (result.status), and the core then leaves the article Approved.
+        result.publishMode === "draft" || result.status === "draft"
           ? `Saved as a draft on ${destination?.label ?? "the CMS"}`
           : destination ? `Published to ${destination.label}` : "Article published",
         result?.url ? { description: result.url } : undefined,
@@ -512,7 +515,7 @@ export function ArticleEditor({
     try {
       const result = await retryPublish(article.id);
       toast.success(
-        result.publishMode === "draft" ? "Saved as a draft this time" : "Published this time",
+        result.publishMode === "draft" || result.status === "draft" ? "Saved as a draft this time" : "Published this time",
         result?.url ? { description: result.url } : undefined,
       );
       router.refresh();
@@ -944,19 +947,18 @@ export function ArticleEditor({
           {article.research ? (
             <ResearchPanel research={article.research} />
           ) : (
+            // Said "Regenerate to pull the live search results", but the
+            // editor's Generate draft button is disabled ("Coming soon"), so
+            // there was nothing to press.
             <div className="text-[12.5px] text-ink-3 italic">
-              This draft was written before research was wired in. Regenerate to
-              pull the live search results, questions and intent for this keyword.
+              No research is stored for this draft. It was written by hand, or before drafts kept the search
+              results, questions and intent they were written from.
             </div>
           )}
         </SidebarSection>
 
-        {/* Voice check */}
-        <SidebarSection title="Voice check">
-          <div className="text-[12.5px] text-ink-3 italic">
-            Voice analysis available after content generation
-          </div>
-        </SidebarSection>
+        {/* The "Voice check" section is gone: it always read "available after
+            content generation", and nothing ever filled it, generated or not. */}
 
         {/* Publish to */}
         <SidebarSection title="Publish to" last>

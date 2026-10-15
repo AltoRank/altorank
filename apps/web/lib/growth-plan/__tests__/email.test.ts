@@ -20,7 +20,7 @@ const plan: GrowthPlan = {
       { name: "sitemap", body: "", placement: "Add a Sitemap: line" },
     ],
   },
-  cadence: { articlesPerMonth: 4, firstTargets: ["seo <audit>", "broken link building"], firstPublishDays: 5 },
+  cadence: { firstTargets: ["seo <audit>", "broken link building"] },
   layers: [],
 };
 
@@ -32,9 +32,16 @@ describe("renderGrowthPlanEmail", () => {
     expect(html).toContain("# Example &lt;site&gt;");
   });
   it("carries every block and the generated fix", () => {
-    for (const s of ["Closest wins", "/blog/audit", "1,900", "Gaps", "rival.com at #2", "70/100", "llms.txt", "Serve at /llms.txt", "sitemap", "4 articles a month", "signup?domain=example.com"]) {
+    for (const s of ["Closest wins", "/blog/audit", "1,900", "Gaps", "rival.com at #2", "70/100", "llms.txt", "Serve at /llms.txt", "sitemap", "signup?domain=example.com"]) {
       expect(html).toContain(s);
     }
+  });
+  /** Signup drops the terms, the pace is the plan's, and nothing publishes before an approval. */
+  it("promises no cadence, no first-publish date and no starting terms", () => {
+    expect(html).not.toContain("articles a month");
+    expect(html).not.toContain("working days");
+    expect(html).not.toContain("starting with");
+    expect(html).toContain("generates the schema and llms.txt for you to review");
   });
   it("has a subject naming the domain", () => {
     expect(growthPlanSubject(plan)).toBe("Growth plan for example.com");

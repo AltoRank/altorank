@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/server";
 import { authErrorMessage } from "@/lib/auth/errors";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { announcePasswordChanged } from "@/lib/email/account-events";
-import { randomBytes } from "crypto";
 
 export async function updateAccountProfile(formData: FormData) {
   // Account-level settings (incl. white-label branding / custom domain) are
@@ -30,22 +29,6 @@ export async function updateAccountProfile(formData: FormData) {
 
   if (error) throw new Error(error.message);
   revalidatePath("/settings");
-}
-
-export async function rotateApiKey() {
-  const { accountId } = await requireAuth(["owner", "admin"]);
-  const supabase = await createClient();
-
-  const newKey = `fr_live_sk_${randomBytes(16).toString("hex")}`;
-
-  const { error } = await supabase
-    .from("accounts")
-    .update({ api_key: newKey })
-    .eq("id", accountId);
-
-  if (error) throw new Error(error.message);
-  revalidatePath("/settings");
-  return newKey;
 }
 
 /** Change the signed-in account's password. See components/dashboard/password-form.tsx. */

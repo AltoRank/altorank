@@ -30,6 +30,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { readSiteText } from "./site-text";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { trainVoiceProfile } from "@/lib/voice/train";
+import { composeVoiceSample, readExampleArticles, readExampleUrls } from "@/lib/voice/examples";
 import { analyseDomain, isTransientCrawlFailure } from "@/lib/audit/domain-analysis";
 import { refusing } from "@/lib/audit/host-circuit";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
@@ -41,7 +42,7 @@ import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { spendClient } from "@/lib/billing/default-spend";
 import { currentSpendScope, isBudgetRefusal, watchRefusals, withSpendScope, withStage } from "@/lib/billing/spend-scope";
-import { draftBudgetShort, draftCanBuyLookup, openFirstLookBudget, type RunBudgetState } from "@/lib/billing/run-budget";
+import { draftBudgetShort, draftCanBuyLookup, firstLookCeiling, firstLookResearchLeave, leavingRoom, openFirstLookBudget, type RunBudgetState } from "@/lib/billing/run-budget";
 import { poolMostlyUnanswered, type EmptyPool, type OnboardingArticle, type OnboardingEvent, type PhaseStatus } from "./events";
 import { readEmptyPool } from "./empty-pool";
 import { modelAvailable } from "@/lib/keyword-research/buyer-model";
@@ -214,14 +215,22 @@ async function runPhases(
       // Same reader as the wizard: homepage, then the blog when the homepage
       // is a JavaScript shell, then a rendered fetch. A voice learned from the
       // site's own articles is better than one learned from its landing page.
-      const read = await timed("site_read", () => withStage("voice", () => readSiteText(domain)));
-      const text = read.text;
+      // The articles the person chose as their best writing go first in the
+      // sample (lib/voice/examples.ts). Read alongside the site, never in
+      // the way of it: a failure here only means the site text stands alone.
+      const [read, chosen] = await Promise.all([
+        timed("site_read", () => withStage("voice", () => readSiteText(domain))),
+        readExampleUrls(supabase, workspace.id).then((urls) => readExampleArticles(urls)).catch(() => ""),
+      ]);
+      const text = composeVoiceSample(chosen, read.text);
       if (text && text.split(/\s+/).length > 50) {
         await timed("voice", () => withStage("voice", () => trainVoiceProfile(supabase, workspace.id, text)));
         emit({
           phase: "scanning",
           status: "done",
-          detail: read.source === "sitemap" ? "Learned how your site writes, from its articles." : "Learned how your site writes.",
+          detail: chosen
+            ? "Learned how your site writes, starting from the articles you chose."
+            : read.source === "sitemap" ? "Learned how your site writes, from its articles." : "Learned how your site writes.",
         });
       } else {
         // Phrased so it still reads correctly when `onboardingOutcome` quotes
@@ -273,7 +282,15 @@ async function runPhases(
     try {
       // Watched for the budget's refusals: a buyer test the budget stopped
       // stores nothing, and "nothing rankable" would blame the site for it.
-      const { value: analysis, refused: discoveryRefused } = await watchRefusals(() => timed("analysis", () => withStage("discovery", () => analyseDomain({
+      //
+      // And held back from the plan's money: discovery and its buyer test
+      // leave qualification its room (lib/billing/run-budget.ts
+      // `leavingRoom`). Without it they took everything they could, and a
+      // first look whose research judged 360 phrases had $0.08 left to judge
+      // results pages with - less than one term - and planned nothing.
+      const runBudgetNow = currentSpendScope()?.budget ?? null;
+      const researchBudget = runBudgetNow ? leavingRoom(runBudgetNow, firstLookResearchLeave(firstLookCeiling())) : undefined;
+      const { value: analysis, refused: discoveryRefused } = await watchRefusals(() => timed("analysis", () => withSpendScope({ stage: "discovery", budget: researchBudget }, () => analyseDomain({
         domain,
         supabase,
         workspaceId: workspace.id,

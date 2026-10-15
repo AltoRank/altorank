@@ -58,17 +58,23 @@ export async function getWorkspaceAllowance(
   };
 }
 
+/**
+ * Deleting a workspace frees its slot (lib/workspaces/delete.ts); pausing one
+ * does not, because the count above is every row whatever its status.
+ */
+export const FREE_A_SLOT = "Deleting a workspace from its Settings tab frees a slot; pausing one does not.";
+
 export function workspaceLimitMessage(a: WorkspaceAllowance): string {
   if (a.reason === "no-plan") {
     return a.used > 1
-      ? `${a.used} workspaces exist and one is included before choosing a plan. None has been removed; choose a plan on the Billing page to add more sites.`
-      : "One workspace is included before choosing a plan. Choose a plan on the Billing page to add more sites.";
+      ? `${a.used} workspaces exist and one is included before choosing a plan. None has been removed; choose a plan on the Billing page to add more sites. ${FREE_A_SLOT}`
+      : `One workspace is included before choosing a plan. Choose a plan on the Billing page to add more sites. ${FREE_A_SLOT}`;
   }
   // A downgrade leaves more sites than the new tier allows and deletes none of
   // them, so `used` can be past `limit`. Saying "all 3 are in use" beside a
   // list of five is the one thing this sentence must not do.
   if (a.limit !== null && a.used > a.limit) {
-    return `This plan includes ${a.limit} workspaces and ${a.used} are in use. None has been removed — upgrade on the Billing page to add more.`;
+    return `This plan includes ${a.limit} workspaces and ${a.used} are in use. None has been removed; upgrade on the Billing page to add more. ${FREE_A_SLOT}`;
   }
-  return `This plan includes ${a.limit} workspaces and all ${a.limit} are in use. Upgrade on the Billing page to add more.`;
+  return `This plan includes ${a.limit} workspaces and all ${a.limit} are in use. Upgrade on the Billing page to add more. ${FREE_A_SLOT}`;
 }

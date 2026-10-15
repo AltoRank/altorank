@@ -29,6 +29,40 @@ interface ArticleRowMenuProps {
   autoApprove?: boolean;
 }
 
+/**
+ * What a publish from this row did, for the toast.
+ *
+ * A connection in draft mode, or a CMS that holds the post itself (the
+ * WordPress plugin's own draft setting, reported as `status: "draft"`), only
+ * saves a draft there. publishArticleCore (lib/publishing/core.ts) then
+ * leaves the article Approved, not Live, so "Published" was false, and the
+ * row still offering "Publish now" read as a failure. The retry toast already
+ * made this distinction.
+ */
+export function publishOutcome(
+  result: { publishMode?: string; status?: string } | null | undefined,
+  again = false,
+): string {
+  const draft = result?.publishMode === "draft" || result?.status === "draft";
+  if (draft) {
+    return again
+      ? "Saved as a draft this time"
+      : "Saved as a draft on the CMS. It stays Approved here until it is published there.";
+  }
+  return again ? "Published this time" : "Published";
+}
+
+/**
+ * The statuses "Change status" offers. Archived is one of the editorial
+ * statuses a plain edit may set (lib/articles/editorial-status.ts), and the
+ * Articles filter and the hold page both name it, but nothing offered it, so
+ * no person could archive anything. Not offered on a live article: archiving
+ * here would not take the post off the site.
+ */
+export function statusChoices(currentStatus: string): string[] {
+  return currentStatus === "live" ? ["draft", "review"] : ["draft", "review", "archived"];
+}
+
 /** Tallest the menu gets, with the status submenu open. */
 const MENU_MAX_HEIGHT = 280;
 
@@ -110,7 +144,7 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
     setPublishing(true);
     try {
       const result = await publishArticle(articleId);
-      toast.success("Published", result?.url ? { description: result.url } : undefined);
+      toast.success(publishOutcome(result), result?.url ? { description: result.url } : undefined);
       setOpen(false);
       router.refresh();
     } catch (err) {
@@ -124,10 +158,7 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
     setPublishing(true);
     try {
       const result = await retryPublish(articleId);
-      toast.success(
-        result.publishMode === "draft" ? "Saved as a draft this time" : "Published this time",
-        result?.url ? { description: result.url } : undefined,
-      );
+      toast.success(publishOutcome(result, true), result?.url ? { description: result.url } : undefined);
       setOpen(false);
       router.refresh();
     } catch (err) {
@@ -275,7 +306,7 @@ export function ArticleRowMenu({ articleId, currentStatus, canPublish = false, c
               {/* Publishing, scheduling, and approval go through their actions
                   (approveArticle records the sign-off) — not a raw status flip —
                   so 'approved'/'live'/'scheduled' aren't settable here. */}
-              {["draft", "review"].map((s) => (
+              {statusChoices(currentStatus).map((s) => (
                 <button
                   key={s}
                   className={`${menuItemClass} ${s === currentStatus ? "font-medium text-accent-ink" : ""}`}

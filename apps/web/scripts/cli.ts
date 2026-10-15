@@ -12,7 +12,7 @@
  *   npm run cli -- articles list --workspace <id> [--status review]
  *   npm run cli -- articles get <id>
  *   npm run cli -- articles content <id> [--format markdown|html|tiptap]
- *   npm run cli -- articles generate --workspace <id> --keyword "…" [--title "…"] [--article <id>] [--allow-overage] [--idempotency-key <key>]
+ *   npm run cli -- articles generate --workspace <id> --keyword "…" [--keyword-id <id>] [--title "…"] [--article <id>] [--allow-overage] [--idempotency-key <key>]
  *   npm run cli -- articles replace <id> --find "…" --replace "…" [--match-case] [--whole-word] [--apply]
  *   npm run cli -- articles bulk-replace --workspace <id> --find "…" --replace "…" [--ids a,b] [--apply]
  *   npm run cli -- articles retry-publish <id>
@@ -232,6 +232,9 @@ async function run(argv: string[]): Promise<Envelope> {
         body: {
           workspace_id: workspace,
           keyword,
+          // The keyword row from `keywords list`, so the draft is briefed
+          // from it and linked to it rather than found by term.
+          keyword_id: str(flags["keyword-id"]),
           title: str(flags.title),
           article_id: str(flags.article),
           allow_overage: flags["allow-overage"] === true,

@@ -111,8 +111,8 @@ export function observedFrom(domain: string, pages: ScrapedPage[], probed: Scrap
 export const MIN_CHARS = 400;
 const PAGE_TIMEOUT_MS = 8_000;
 
-/** One page's text, and the page itself when it answered 2xx. */
-async function pageText(url: string): Promise<{ text: string; page: ScrapedPage | null }> {
+/** One page's text, and the page itself when it answered 2xx. Exported for lib/voice/examples.ts. */
+export async function pageText(url: string): Promise<{ text: string; page: ScrapedPage | null }> {
   try {
     const controller = new AbortController();
     const t = setTimeout(() => controller.abort(), PAGE_TIMEOUT_MS);

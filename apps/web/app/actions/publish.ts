@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { factCheckArticle, approvalBlocker } from "@/lib/ai/fact-check";
 import { tiptapToHtml } from "@/lib/cms/html";
 import type { ArticleResearch } from "@/lib/seo/research";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { needsPlanToShip, CHOOSE_PLAN_MESSAGE } from "@/lib/billing/quota";
 import { articleBodyForSession } from "@/lib/billing/body-lock";
@@ -19,6 +19,7 @@ import { submitForIndexing } from "@/lib/seo/indexing";
 import { announceDraftApproved } from "@/lib/email/approval-events";
 import type { CMSConfig } from "@/lib/types";
 import { readWorkspaceLanguage } from "@/lib/i18n/workspace-language";
+import { sentBackToReview } from "@/lib/articles/approval";
 
 /**
  * Whether shipping these articles needs a plan, asked of the account that owns
@@ -129,9 +130,15 @@ export async function approveArticle(articleId: string) {
   // the value is, not at signup.
   if (await shipNeedsPlan(supabase, [articleId], user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
+  // Through the person's own client: RLS decides whether they may act on it.
+  if (!(await inReviewFor(supabase, [articleId])).length) throw new Error("Article must be in review to approve");
+
   await refuseUnsourcedFigures(supabase, articleId);
 
-  const { data, error } = await supabase
+  // The approval itself is the server's write (migration 109): a signed-in
+  // user's client may not set `approved` or `approved_by`, so the only way to
+  // an approval is this action, after its checks, naming who pressed it.
+  const { data, error } = await createServiceClient()
     .from("articles")
     .update({
       status: "approved",
@@ -149,13 +156,27 @@ export async function approveArticle(articleId: string) {
   if (error || !data) throw new Error("Article must be in review to approve");
 
   // The sign-off is the one editorial moment somebody else needs to hear
-  // about: after it the article ships on its own, and a colleague who was
-  // still editing the draft would otherwise find out from the live site.
+  // about: after it the article can be scheduled or published, and a
+  // colleague who was still editing the draft would otherwise find out from
+  // the live site.
   // Never allowed to fail the approval, which is already recorded.
   await announceDraftApproved(articleId, user);
 
   revalidatePath("/articles");
   revalidatePath(`/content/${articleId}`);
+}
+
+/**
+ * Of `ids`, the articles this person's client can see that are in review.
+ * The read is the permission check for the server-side write that follows.
+ */
+async function inReviewFor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  ids: string[],
+): Promise<string[]> {
+  const { data, error } = await supabase.from("articles").select("id").in("id", ids).eq("status", "review");
+  if (error) throw new Error(`Could not read the articles: ${error.message}`);
+  return (data ?? []).map((r) => r.id as string);
 }
 
 /**
@@ -206,9 +227,13 @@ async function refuseUnsourcedFigures(
 export async function approveArticles(articleIds: string[]): Promise<string[]> {
   const { user } = await requireAuth();
   const supabase = await createClient();
-  const requested = [...new Set(articleIds)].filter(Boolean);
+  const asked = [...new Set(articleIds)].filter(Boolean);
+  if (!asked.length) return [];
+  if (await shipNeedsPlan(supabase, asked, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
+  // Only the ones this person can see, in review: the write below is the
+  // server's and does not ask RLS again.
+  const requested = await inReviewFor(supabase, asked);
   if (!requested.length) return [];
-  if (await shipNeedsPlan(supabase, requested, user.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
 
   // Same gate as the single approve, per article. A refused draft simply does
   // not move, and the caller's "3 of 4 approved" already covers that outcome.
@@ -223,7 +248,7 @@ export async function approveArticles(articleIds: string[]): Promise<string[]> {
   }
   if (!ids.length) return [];
 
-  const { data, error } = await supabase
+  const { data, error } = await createServiceClient()
     .from("articles")
     .update({
       status: "approved",
@@ -296,13 +321,8 @@ export async function requestChanges(articleId: string) {
   const { error } = await supabase
     .from("articles")
     .update({
-      status: "review",
-      approved_by: null,
-      approved_at: null,
-      approval_kind: null,
       // Sent back by a person: the rule must not re-approve it unread.
-      held_by: user.id,
-      held_at: new Date().toISOString(),
+      ...sentBackToReview(user.id, new Date().toISOString()),
       updated_at: new Date().toISOString(),
     })
     .eq("id", articleId)
@@ -315,7 +335,7 @@ export async function requestChanges(articleId: string) {
 }
 
 export async function unpublishArticle(articleId: string) {
-  await requireAuth();
+  const { user } = await requireAuth();
   const supabase = await createClient();
 
   // The columns this needs and no more: `*` names the body, which a client
@@ -344,10 +364,12 @@ export async function unpublishArticle(articleId: string) {
 
   await adapter.unpublish(article.external_id);
 
+  // Back to Review the way requestChanges sends it: no approval, and held,
+  // so the auto-approve rule does not publish it again on the next run.
   await supabase
     .from("articles")
     .update({
-      status: "review",
+      ...sentBackToReview(user.id, new Date().toISOString()),
       external_id: null,
       published_url: null,
       published_at: null,
@@ -405,18 +427,20 @@ export async function markPublishedManually(articleId: string, publishedUrl: str
 
   const { data: article } = await supabase
     .from("articles")
-    .select("workspace_id, status")
+    .select("workspace_id, status, approved_by")
     .eq("id", articleId)
     .single();
 
   if (!article) throw new Error("Article not found");
-  if (article.status !== "approved") {
+  if (article.status !== "approved" || !article.approved_by) {
     throw new Error(
       `Only an approved article can be marked published (current status: ${article.status}).`,
     );
   }
 
-  const { error } = await supabase
+  // `live` is the server's to write (migration 109); the read above, through
+  // the person's client, is what says they may.
+  const { error } = await createServiceClient()
     .from("articles")
     .update({
       status: "live",

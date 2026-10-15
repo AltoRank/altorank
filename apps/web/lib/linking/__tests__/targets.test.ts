@@ -35,6 +35,19 @@ describe("rankTargets", () => {
     expect(out.map((t) => t.url)).toEqual(published.map((t) => t.url));
   });
 
+  it("keeps a page switched off on /linking out, even when the crawl or a live article has it", () => {
+    // "Stop linking to this page" leaves the pool row disabled, so the pool
+    // query drops it, and the same URL used to come straight back from the
+    // published/crawled list as a fresh entry.
+    const out = rankTargets({
+      pool: [],
+      published,
+      keyword: "crm",
+      excluded: ["https://X.co/blog/crm-guide", "https://x.co/blog/email-deliverability/"],
+    });
+    expect(out).toEqual([]);
+  });
+
   it("is one entry per URL, trailing slash or not, and the pool row wins", () => {
     const out = rankTargets({ pool, published });
     const crm = out.filter((t) => /crm-guide/.test(t.url));
@@ -72,5 +85,38 @@ describe("relevance", () => {
 
   it("is zero with no keyword", () => {
     expect(relevance(null, { keyword: "crm", title: "x" })).toBe(0);
+  });
+});
+
+describe("getLinkTargetsForPrompt", () => {
+  it("drops a disabled pool page that the crawl also found", async () => {
+    const { getLinkTargetsForPrompt } = await import("../targets");
+    const tables: Record<string, Record<string, unknown>[]> = {
+      link_targets: [
+        { url: "https://x.co/blog/keep", title: "Keep", keyword: "keep", priority: 0, anchors: [], enabled: true, workspace_id: "ws" },
+        { url: "https://x.co/blog/off", title: "Off", keyword: "off", priority: 0, anchors: [], enabled: false, workspace_id: "ws" },
+      ],
+      articles: [],
+      site_pages: [{ url: "https://x.co/blog/off", title: "Off", keyword: "off", workspace_id: "ws" }],
+    };
+    const client = {
+      from(table: string) {
+        const eqs: [string, unknown][] = [];
+        const b: Record<string, unknown> = {};
+        for (const m of ["select", "not", "gte", "lt", "order", "limit", "neq"]) b[m] = () => b;
+        b.eq = (k: string, v: unknown) => {
+          eqs.push([k, v]);
+          return b;
+        };
+        b.then = (resolve: (v: unknown) => unknown) =>
+          resolve({
+            data: (tables[table] ?? []).filter((r) => eqs.every(([k, v]) => k === "status" || k === "page_type" || r[k] === v)),
+            error: null,
+          });
+        return b;
+      },
+    };
+    const out = await getLinkTargetsForPrompt(client as never, "ws", { keyword: "off" });
+    expect(out.map((t) => t.url)).toEqual(["https://x.co/blog/keep"]);
   });
 });

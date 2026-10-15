@@ -13,6 +13,9 @@
 // Continue, which made three of five screens theatre.
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { hasTrainedVoice, readExampleUrls, retrainFromExamples } from "@/lib/voice/examples";
+import { trainVoiceProfile } from "@/lib/voice/train";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { canSpend } from "@/lib/billing/spend-gate";
@@ -240,14 +243,41 @@ function siteColumns(details: SiteDetails) {
   };
 }
 
-export async function saveSiteDetails(workspaceId: string, details: SiteDetails): Promise<void> {
+/**
+ * Save the sitemap, blog address and "Your best writing". When the chosen
+ * articles change on a site whose voice is already trained, the voice is
+ * retrained from them after the response (lib/voice/examples.ts), so the
+ * field does what its hint says. Returns whether a retrain was started.
+ */
+export async function saveSiteDetails(workspaceId: string, details: SiteDetails): Promise<{ retraining: boolean }> {
   const { supabase } = await assertWorkspace(workspaceId);
+  const columns = siteColumns(details);
+  const examples = columns.example_article_urls;
+  const previous = await readExampleUrls(supabase, workspaceId);
   const { error } = await supabase
     .from("workspaces")
-    .update(siteColumns(details))
+    .update(columns)
     .eq("id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/settings", "layout");
+
+  const changed = examples.join("\n") !== previous.join("\n");
+  if (!changed || examples.length === 0) return { retraining: false };
+  // Only a trained voice is retrained (retrainFromExamples), so only then is
+  // a retrain promised. An untrained site learns from the list at onboarding.
+  if (!(await hasTrainedVoice(supabase, workspaceId))) return { retraining: false };
+  // A model call, so asked like the Voice page's Train button is.
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
+  const gate = await canSpend(supabase, accountId, { userEmail: user.email ?? undefined, workspaceId, action: "voice-training" });
+  if (!gate.allowed) return { retraining: false };
+  after(async () => {
+    try {
+      await retrainFromExamples(supabase, workspaceId, examples, previous, { train: trainVoiceProfile });
+    } catch (err) {
+      console.error(`[voice] retraining ${workspaceId} from chosen articles: ${err instanceof Error ? err.message : err}`);
+    }
+  });
+  return { retraining: true };
 }
 
 export async function saveOutputSettings(workspaceId: string, s: OutputSettings): Promise<void> {

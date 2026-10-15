@@ -70,7 +70,13 @@ export function renderHeldDigest(domain: string | null, held: readonly HeldDraft
       `<p style="margin:0 0 4px;font-size:12px;color:${EMAIL_INK_3};">${esc(site)}</p>` +
       `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.3;color:${EMAIL_INK};">Not published automatically</h1>` +
       emailParagraph(
-        `The publishing rule checked ${n === 1 ? "a draft" : `${n} drafts`} today and would not approve ${n === 1 ? "it" : "them"}. ${n === 1 ? "It waits" : "They wait"} in review with the reason; fix the reason or approve by hand and ${n === 1 ? "it ships" : "they ship"} on the next run.`,
+        // Two ways out, and they do not end the same way. A fixed reason
+        // lets the rule approve on its next run, and the rule writes
+        // `scheduled` (lib/publishing/auto-approve.ts), which the publish
+        // cron picks up. A hand approval writes `approved`
+        // (app/actions/publish.ts), which the cron does not read until
+        // somebody schedules it. This said both "ship on the next run".
+        `The publishing rule checked ${n === 1 ? "a draft" : `${n} drafts`} today and would not approve ${n === 1 ? "it" : "them"}. ${n === 1 ? "It waits" : "They wait"} in review with the reason. Fix the reason and the rule approves ${n === 1 ? "it" : "them"} on its next run. If you approve by hand instead, schedule or publish ${n === 1 ? "it" : "each one"} from ${n === 1 ? "its" : "its own"} page.`,
       ) +
       `<ul style="margin:0 0 16px;padding-left:18px;font-size:14px;line-height:1.5;">${items}</ul>` +
       emailButton(articleUrl(held[0]!.articleId).replace(/\/content\/.*$/, "/articles?status=review"), "Open the review queue"),

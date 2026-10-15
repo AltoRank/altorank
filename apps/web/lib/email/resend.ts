@@ -21,6 +21,23 @@ function fromAddress(): string {
 }
 
 /**
+ * Where a reply goes. The sending address, noreply@updates.altorank.co, has
+ * no mail server behind it, and nothing set a Reply-To, so a reply bounced -
+ * while the unsubscribe page tells anyone whose link failed to "reply to any
+ * email from us". On our own sender, replies now go to hello@altorank.co, the
+ * address the billing errors already give. Decided by the sender's domain,
+ * not by whether RESEND_FROM_EMAIL is set, so a deployment that names our own
+ * sender explicitly still gets it. An install that sends from its own domain
+ * gets no Reply-To unless it sets RESEND_REPLY_TO: its replies are not ours
+ * to receive.
+ */
+export function replyToAddress(): string | undefined {
+  const configured = process.env.RESEND_REPLY_TO?.trim();
+  if (configured) return configured;
+  return /@(?:[a-z0-9-]+\.)*altorank\.co>?\s*$/i.test(fromAddress()) ? "AltoRank <hello@altorank.co>" : undefined;
+}
+
+/**
  * Every email leaves through here.
  *
  * Resend's SDK does not throw when the API refuses a send. It resolves to
@@ -32,6 +49,10 @@ function fromAddress(): string {
  * carrying Resend's own code and status, for the caller to log or show.
  */
 async function deliver(payload: CreateEmailOptions): Promise<string> {
+  // A caller's own Reply-To (the feedback and integration-request mails reply
+  // to the person who wrote them) wins; everything else replies to us.
+  const replyTo = replyToAddress();
+  if (!payload.replyTo && replyTo) payload = { ...payload, replyTo };
   let sent: Awaited<ReturnType<ReturnType<typeof getResend>["emails"]["send"]>>;
   try {
     sent = await getResend().emails.send(payload);
@@ -86,6 +107,12 @@ async function refused(payload: CreateEmailOptions, message: string, status: num
   });
 }
 
+const escapeHtml = (s: unknown) =>
+  String(s ?? "").replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+  );
+
 export async function sendInviteEmail(
   to: string,
   inviterName: string,
@@ -93,6 +120,11 @@ export async function sendInviteEmail(
   role: string,
   acceptUrl: string,
 ): Promise<void> {
+  // Both names are user-set (an account name any owner can type, a profile
+  // name from signup), so they go into the body escaped. The layout escapes
+  // the title, preheader and footer itself; the body is HTML we build here.
+  const account = escapeHtml(accountName);
+  const inviter = escapeHtml(inviterName);
   await deliver({
     from: fromAddress(),
     to,
@@ -101,8 +133,8 @@ export async function sendInviteEmail(
       title: `Join ${accountName} on AltoRank`,
       preheader: `${inviterName} invited you to ${accountName}`,
       bodyHtml:
-        `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Join ${accountName} on AltoRank</h1>` +
-        emailParagraph(`${inviterName} invited you to work on ${accountName}'s SEO content. Accept to get access to the workspaces, drafts and reports.`) +
+        `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Join ${account} on AltoRank</h1>` +
+        emailParagraph(`${inviter} invited you to work on ${account}'s SEO content. Accept to get access to the workspaces, drafts and reports.`) +
         emailButton(acceptUrl, "Accept invitation") +
         emailParagraph(`The link works once and expires in seven days. If you were not expecting this, ignore it and nothing happens.`),
       footerNote: `Sent because ${inviterName} added ${to} to a team on AltoRank.`,

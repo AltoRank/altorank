@@ -1,7 +1,13 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+// The operator list is read once, at import, and has no default: name one
+// before anything imports it.
+vi.hoisted(() => {
+  process.env.ADMIN_EMAILS = "operator@example.com";
+});
 import { accountHasOperator, clearOperatorAccountCache } from "../operator-account";
 
-const OPERATOR = "helloaltorank@gmail.com";
+const OPERATOR = "operator@example.com";
 
 /**
  * A service client stand-in: the account's recorded creator (migration 101)

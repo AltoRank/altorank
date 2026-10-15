@@ -10,9 +10,10 @@
 # Two supported shapes:
 #
 #   Local, fully self-hosted and free:
-#     cd apps/web && supabase start        # postgres, auth, storage, studio
-#     supabase db push                     # apply the migrations, in order
-#     # take the API URL and anon key it prints, put them in docker/.env
+#     cd apps/web && supabase start        # postgres, auth, storage, studio;
+#                                          # applies every migration on first start
+#     # put the anon and service_role keys it prints in docker/.env, with
+#     # NEXT_PUBLIC_SUPABASE_URL=http://host.docker.internal:54331
 #     docker compose -f docker/compose.yml up --build
 #
 #   Against a hosted Supabase project:
@@ -33,11 +34,21 @@ services:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?set it in docker/.env}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?set it in docker/.env}
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+        # Stripe's publishable key, public by design: with it the trial card
+        # is taken on the page (Embedded Checkout), without it on Stripe's.
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
     ports:
       - "${PORT:-3000}:3000"
+    # Docker Desktop provides host.docker.internal; Linux needs it mapped, so a
+    # Supabase running on the host (`supabase start`) is reachable from here.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
-      # Server-side only. Everything except the Anthropic key is optional and
-      # degrades rather than crashing.
+      # Server-side only. docker/.env.example lists which ones are required
+      # (the service role key, Anthropic, ENCRYPTION_KEY, CRON_SECRET and
+      # Resend, without which nobody can sign up) and what each optional one
+      # turns on. lib/__tests__/self-host-env.test.ts fails when a variable in
+      # .env.example, or one the app reads, is not forwarded here.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       DATAFORSEO_LOGIN: ${DATAFORSEO_LOGIN:-}
@@ -52,6 +63,7 @@ services:
       PAGESPEED_API_KEY: ${PAGESPEED_API_KEY:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-}
+      RESEND_REPLY_TO: ${RESEND_REPLY_TO:-}
       FEEDBACK_EMAIL: ${FEEDBACK_EMAIL:-}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
@@ -64,19 +76,33 @@ services:
       STRIPE_PRICE_GROWTH_YEARLY: ${STRIPE_PRICE_GROWTH_YEARLY:-}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      STRIPE_TAX_ENABLED: ${STRIPE_TAX_ENABLED:-}
+      TRIAL_GATE_DISABLED: ${TRIAL_GATE_DISABLED:-}
+      TRIAL_GATE_BYPASS_EMAILS: ${TRIAL_GATE_BYPASS_EMAILS:-}
+      PRETRIAL_FULL_ARTICLE: ${PRETRIAL_FULL_ARTICLE:-}
+      ONBOARDING_AUTOSTART: ${ONBOARDING_AUTOSTART:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       ANTHROPIC_MODEL_STRUCTURED: ${ANTHROPIC_MODEL_STRUCTURED:-}
+      ANTHROPIC_MODEL_DECISION: ${ANTHROPIC_MODEL_DECISION:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
       OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-}
+      # Unset means 0 (paid public tools off) while billing is off.
+      PUBLIC_TOOLS_DAILY_CAP_CENTS: ${PUBLIC_TOOLS_DAILY_CAP_CENTS:-}
+      PUBLIC_TOOLS_MODEL: ${PUBLIC_TOOLS_MODEL:-}
+      EMAIL_UNSUBSCRIBE_SECRET: ${EMAIL_UNSUBSCRIBE_SECRET:-}
+      ALTORANK_ALLOW_PRIVATE_FETCH: ${ALTORANK_ALLOW_PRIVATE_FETCH:-}
     restart: unless-stopped
+    # /signin renders for anyone and touches no third party. redirect:'manual'
+    # so the check never follows a redirect off this container.
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/signin',{redirect:'manual'}).then(r=>process.exit(r.status<400?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
 
-  # Runs the nine scheduled jobs that the hosted deployment gets from Vercel.
+  # Runs the scheduled jobs that the hosted deployment gets from Vercel
+  # (docker/crontab lists them).
   #
   # Without this, self-hosting shipped the dashboard but not the automation,
   # which is the part the product is actually about: analysis, drafting, rank

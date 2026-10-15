@@ -31,7 +31,10 @@ export type ArticleMutationContext = {
   lastPublish?: "success" | "error" | null;
 };
 
-export function articleMutations(article: { status: ArticleStatus }, context: ArticleMutationContext = {}): AllowedMutations {
+export function articleMutations(
+  article: { status: ArticleStatus; approved_by?: string | null },
+  context: ArticleMutationContext = {},
+): AllowedMutations {
   let regenerate: Mutation;
   switch (article.status) {
     case "live":
@@ -60,8 +63,16 @@ export function articleMutations(article: { status: ArticleStatus }, context: Ar
   switch (article.status) {
     case "draft":
     case "review":
-    case "error":
       replace = yes;
+      break;
+    case "error":
+      // A failed generation is the agent's to fix. A failed PUBLISH is not:
+      // the article keeps its approval so the person can retry, and an edit
+      // here followed by retry-publish would ship text nobody approved under
+      // the earlier approver's name.
+      replace = article.approved_by
+        ? no("This article was approved by a human and its publish failed. Editing it would void that approval; ask them to retry the publish, or to send it back to review in the dashboard first.")
+        : yes;
       break;
     case "drafting":
       replace = no("Generation is running; the text is not settled yet. Poll GET /articles/{id} until status is review.");

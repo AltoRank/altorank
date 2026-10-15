@@ -131,8 +131,9 @@ export default async function AuthorizePage(props: { searchParams: Promise<Param
               </span>
             </label>
             <p className="text-ink-3 pt-1">
-              It can never publish, approve or delete anything: the API has no such call. Drafts it generates wait in
-              your review queue.
+              It cannot approve, schedule, publish a new post or delete anything: the API has no such call. Drafts
+              it generates wait in your review queue. With edits allowed, one call reaches your CMS: it can re-run a
+              publish that a person already approved and that failed, through the same connection.
             </p>
             {unknown.length > 0 && (
               <p className="text-ink-3">Ignored unknown scopes: {unknown.join(", ")}.</p>

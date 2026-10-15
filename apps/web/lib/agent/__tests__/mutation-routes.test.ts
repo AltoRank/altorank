@@ -137,7 +137,21 @@ describe("POST /articles/{id}/replace", () => {
     const [write] = dataWrites();
     expect(write.op).toBe("update");
     expect(Object.keys(write.patch!).sort()).toEqual(["content", "title", "updated_at", "word_count"]);
-    expect(write.filters.map((f) => f.col)).toEqual(["id", "workspace_id"]);
+    expect(write.filters.map((f) => f.col)).toEqual(["id", "workspace_id", "status"]);
+  });
+
+  it("writes nothing when a person approved the draft between the agent's read and its write", async () => {
+    // The route read the article in review; by the time the write runs it is
+    // approved. The service-role write must not edit approved text.
+    const { applyReplace } = await import("@/lib/agent/replace");
+    const stale = { ...db.tables.articles.find((a) => a.id === ART_REVIEW)! } as unknown as Parameters<typeof applyReplace>[1];
+    const row = db.tables.articles.find((a) => a.id === ART_REVIEW)!;
+    Object.assign(row, { status: "approved", approved_by: "u1" });
+    await expect(
+      applyReplace(db as unknown as Parameters<typeof applyReplace>[0], stale, { find: "acme", replace: "Zenith", match_case: false, whole_word: false, preview_only: false }, "https://app.example"),
+    ).rejects.toThrow(/changed while it was being edited/);
+    expect(row.title).toBe("Acme guide");
+    expect(JSON.stringify(row.content)).toMatch(/Acme/);
   });
 
   it("refuses to edit an approved article, and cannot see another account's article", async () => {
@@ -149,6 +163,37 @@ describe("POST /articles/{id}/replace", () => {
     const other = await POST(request(`/articles/${ART_OTHER}/replace`, { json: { find: "x", replace: "y" } }), params({ id: ART_OTHER }));
     expect(other.status).toBe(404);
     expect(dataWrites()).toHaveLength(0);
+  });
+  it("after a failed publish, refuses to edit the approved text, so retry-publish can only ship what was approved", async () => {
+    // The cron failed the publish: status `error`, the approval kept for the
+    // retry. An edit now, then retry-publish, would ship text nobody approved
+    // under the earlier approver's name.
+    const failedLog = { id: "log-1", workspace_id: WS, article_id: ART_APPROVED, status: "error", source: "push", error: "502 from CMS", destination_id: "wi-1", publish_mode: "draft", created_at: "2026-09-01T00:00:00Z" };
+    const s = seed({ publish_log: [failedLog] });
+    s.articles = s.articles.map((a) => (a.id === ART_APPROVED ? { ...a, status: "error" } : a));
+    db = fakeSupabase(s);
+
+    const { POST } = await import("@/app/api/agent/v1/articles/[id]/replace/route");
+    const res = await POST(request(`/articles/${ART_APPROVED}/replace`, { json: { find: "Acme", replace: "Z", preview_only: false } }), params({ id: ART_APPROVED }));
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.message).toMatch(/approved by a human and its publish failed/);
+    expect(dataWrites()).toHaveLength(0);
+
+    // The record says so up front, and still offers the retry of the approved text.
+    const { GET } = await import("@/app/api/agent/v1/articles/[id]/route");
+    const env = await (await GET(request(`/articles/${ART_APPROVED}`), params({ id: ART_APPROVED }))).json();
+    expect(env.data.article.allowed_mutations.replace.allowed).toBe(false);
+    expect(env.data.article.allowed_mutations.retry_publish).toEqual({ allowed: true });
+  });
+
+  it("still edits a draft whose generation failed (status error, never approved)", async () => {
+    const s = seed();
+    s.articles = s.articles.map((a) => (a.id === ART_REVIEW ? { ...a, status: "error" } : a));
+    db = fakeSupabase(s);
+    const { POST } = await import("@/app/api/agent/v1/articles/[id]/replace/route");
+    const res = await POST(request(`/articles/${ART_REVIEW}/replace`, { json: { find: "Acme", replace: "Zenith", preview_only: false } }), params({ id: ART_REVIEW }));
+    expect(res.status).toBe(200);
+    expect(dataWrites()).toHaveLength(1);
   });
 });
 

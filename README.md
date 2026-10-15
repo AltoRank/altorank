@@ -54,24 +54,37 @@ everything is here.
 ## The publishing decision
 
 One gate, two ways through it. `lib/publishing/core.ts` refuses any article
-that is not `approved` (or `scheduled` with `approved_by` set), and nothing else
-in the code path writes `live`. What can write an approval:
+that is not `approved` or `scheduled` with `approved_by` set. Only the server
+writes those columns: a signed-in user's own database client cannot make an
+article approved, scheduled or live (migration 109), and an edit to approved
+text sends it back to review. What can write an approval:
 
 - **A person**, from the editor (`approveArticle`), recorded as `approved_by`.
+  The button checks for an active plan and refuses a bare, unsourced figure.
 - **A rule a named member of the account set** (`auto_approve`, migration 079): the
-  publish cron runs the same checks the Approve button runs - active plan, no
-  unsourced figure, no failing audit item, SEO score at or above the floor -
-  after a hold window (default 24h) during which the drafted email carries a
-  one-click Hold. `approved_by` is whoever turned the rule on; `approval_kind`
-  says `auto`. Held drafts carry the reason on their own row. See
+  publish cron runs stricter checks than the Approve button - active plan,
+  somewhere to publish, no unsourced figure, no named reviewer still to sign
+  off, no failing audit item, SEO score at or above the floor - after a hold
+  window (default 24h) during which the drafted email carries a Hold link.
+  `approved_by` is whoever turned the rule on; `approval_kind` says `auto`.
+  Held drafts carry the reason on their own row. See
   `lib/publishing/auto-approve.ts`.
 
+`live` is written after an approved publish, by **Mark as published** on an
+approved article, and by one thing that is not a publish: the nightly
+found-on-site check (`lib/found-on-site/detect.ts`) marks a draft live when
+its text is already on the customer's own site. That records something done
+outside AltoRank, sends nothing to a CMS, carries no approval, and can be
+undone from the editor.
+
 What cannot write an approval: an agent. The **MCP server and the agent API
-expose no publish or approve tool** - not disabled, absent. See the comment at
-the top of `apps/web/scripts/mcp.ts`.
+expose no publish or approve tool** - not disabled, absent. The MCP tools are
+all registered in `apps/web/lib/mcp/server.ts`, and its server instructions
+say so to the agent.
 
 Competing tools ship the words "you stay in control" as copy. The difference
-is checkable here: every `live` row points at a person, by click or by rule.
+is checkable here: every `live` row is an approved article (by click or by
+rule) or one found already published on the customer's own site.
 
 ## What works today
 
@@ -104,6 +117,23 @@ page's "New connection" button, a draft's publish panel and
 `/connect?connect=<id>` all open it. Without a connection, the editor copies
 any draft as Markdown (front matter included) or HTML, or downloads it as a
 `.md` file.
+
+## Install the plugin
+
+Claude Code. From a terminal:
+
+```bash
+claude plugin marketplace add AltoRank/altorank
+claude plugin install altorank@altorank
+```
+
+Or inside a Claude Code session: `/plugin marketplace add AltoRank/altorank`,
+then `/plugin install altorank@altorank`.
+
+`plugins/altorank/` bundles the hosted MCP server (`https://app.altorank.co/api/mcp`,
+OAuth, no API key to copy) with a skill written for those tools. The same folder
+carries the portable `plugin.json` + `mcp.json` that ChatGPT and Codex read, and
+`.agents/plugins/marketplace.json` lists it for them.
 
 ## Install the skill
 
@@ -139,17 +169,27 @@ cp docker/.env.example apps/web/.env.local   # every variable, with what each on
 npm run dev
 ```
 
-Four things are genuinely required before it will run: your Supabase URL and
-its two keys, an `ANTHROPIC_API_KEY`, and an `ENCRYPTION_KEY`
-(`openssl rand -hex 32`). Add `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` for
-keyword volume and rank tracking; without them those steps skip rather than
-fail. Everything else in the example file is optional and each one disables
-exactly one feature. The file says which.
+Required before a self-hosted install works end to end:
+
+- your Supabase URL, its anon key and its `SUPABASE_SERVICE_ROLE_KEY`
+- `ANTHROPIC_API_KEY`
+- `ENCRYPTION_KEY` and `CRON_SECRET` (`openssl rand -hex 32` for each).
+  `docker compose` refuses to start without `CRON_SECRET`, and without it no
+  scheduled job runs.
+- `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (a sender on a domain verified in
+  your Resend account). Signup confirms by email, so without them nobody can
+  create an account and nobody can reset a password.
+
+Add `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` for keyword volume and rank
+tracking; without them those steps skip rather than fail. Everything else in
+the example file is optional and each one disables exactly one feature. The
+file says which. Product analytics (the two `NEXT_PUBLIC_POSTHOG_*` variables,
+project token and host) are optional too: without them the browser console
+says analytics are off and nothing else changes.
 
 Other entry points:
 
 ```bash
-npm run mcp      # MCP server, for driving the engine from an AI assistant
 npm run test     # vitest, unit tier: mocks only, needs no services
 npm run test:db  # vitest, db tier: *.db.test.ts against the local Supabase only
 npm run smoke    # research → prompt → model → fact check, against real APIs
@@ -158,6 +198,7 @@ npm run smoke    # research → prompt → model → fact check, against real AP
 and from `apps/web`:
 
 ```bash
+npm run mcp                  # MCP server over stdio, for driving the engine from an AI assistant
 npm run cli -- --help        # the agent API from a shell; auth with ALTORANK_API_KEY
 npm run readiness -- <domain>  # the agent-readiness checks on their own
 ```
@@ -198,10 +239,12 @@ apply in order. With the [Supabase CLI](https://supabase.com/docs/guides/cli):
 
 ```bash
 cd apps/web
-supabase start      # local Postgres + auth, prints the URL and keys for .env.local
-supabase db push    # applies the migrations
+supabase start      # local Postgres + auth; applies the migrations, prints the URL and keys for .env.local
 ```
 
+`supabase start` applies every migration to the local database on first
+start (`supabase db reset` re-applies them from scratch). Do not run
+`supabase db push` for a local stack: it targets the linked remote project.
 Against a hosted project, `supabase link --project-ref <ref>` first, then
 `supabase db push`. The app will not get far without the migrations: every
 query targets tables they create.
@@ -221,6 +264,7 @@ apps/web/               the engine and dashboard (Next.js)
   lib/geo/              AI-answer visibility
   scripts/mcp.ts        MCP server
   scripts/cli.ts        CLI over /api/agent/v1
+plugins/altorank/       Claude / ChatGPT / Codex plugin: hosted MCP server + skill
 skills/altorank/        the skill file a coding agent reads (`npx skills add AltoRank/altorank`)
 packages/altorank-cli/  npm package `altorank`: bundles scripts/cli.ts into a bin
 docker/                 container setup for self-hosting

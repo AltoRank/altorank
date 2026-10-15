@@ -9,7 +9,7 @@ import {
 import { periodTotals } from "@/lib/gsc/analysis";
 import { readGsc } from "@/lib/gsc/read";
 import { readAllPages } from "@/lib/supabase/read-all";
-import { assertReportPeriod } from "./period";
+import { assertReportPeriod, dayAfter } from "./period";
 
 export interface ReportData {
   period: string;
@@ -109,7 +109,8 @@ export async function aggregateReportData(
     .eq("workspace_id", workspaceId)
     .eq("status", "live")
     .gte("published_at", startDate)
-    .lte("published_at", endDate);
+    // A timestamp, so the whole last day: see dayAfter.
+    .lt("published_at", dayAfter(endDate));
 
   // Keywords
   const { data: keywords } = await supabase

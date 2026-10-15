@@ -35,6 +35,15 @@ describe("articleMutations", () => {
     }
   });
 
+  it("refuses replace on an approved article whose publish failed, but not on a failed generation", () => {
+    const failedPublish = articleMutations({ status: "error", approved_by: "u1" }, { lastPublish: "error" });
+    expect(failedPublish.replace.allowed).toBe(false);
+    expect(failedPublish.replace.reason).toMatch(/approved by a human/);
+    expect(failedPublish.retry_publish).toEqual({ allowed: true });
+
+    expect(articleMutations({ status: "error", approved_by: null }).replace).toEqual({ allowed: true });
+  });
+
   it("explains refresh: only live articles qualify, and not through this surface yet", () => {
     expect(articleMutations({ status: "live" }).refresh.reason).toMatch(/not available/i);
     expect(articleMutations({ status: "draft" }).refresh.reason).toMatch(/published/i);

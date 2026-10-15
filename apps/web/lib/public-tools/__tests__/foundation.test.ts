@@ -53,10 +53,29 @@ describe("reserveSpend", () => {
     expect(c.rpc).toHaveBeenCalledWith("reserve_public_tool_spend", { p_tool: "x", p_estimate_cents: 3, p_cap_cents: 250 });
   });
 
-  it("defaults the cap to 500 and ignores junk", () => {
+  it("defaults the cap to 500 when billing is on, and ignores junk", () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_x");
+    vi.stubEnv("PUBLIC_TOOLS_DAILY_CAP_CENTS", "");
     expect(dailyCapCents()).toBe(500);
     vi.stubEnv("PUBLIC_TOOLS_DAILY_CAP_CENTS", "lots");
     expect(dailyCapCents()).toBe(500);
+  });
+
+  it("defaults the cap to 0 when billing is off, so a self-host spends nothing on anonymous visitors", () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "");
+    vi.stubEnv("PUBLIC_TOOLS_DAILY_CAP_CENTS", "");
+    expect(dailyCapCents()).toBe(0);
+    vi.stubEnv("PUBLIC_TOOLS_DAILY_CAP_CENTS", "lots");
+    expect(dailyCapCents()).toBe(0);
+  });
+
+  it("takes an explicit cap with billing on or off, 0 included", () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "");
+    vi.stubEnv("PUBLIC_TOOLS_DAILY_CAP_CENTS", "120");
+    expect(dailyCapCents()).toBe(120);
+    vi.stubEnv("STRIPE_SECRET_KEY", "sk_test_x");
+    vi.stubEnv("PUBLIC_TOOLS_DAILY_CAP_CENTS", "0");
+    expect(dailyCapCents()).toBe(0);
   });
 
   it("is false when the cap is reached", async () => {

@@ -34,9 +34,11 @@ COPY . .
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_APP_URL
+ARG NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
     NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
+    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=$NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY \
     NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build --workspace=altorank-web
@@ -44,7 +46,10 @@ RUN npm run build --workspace=altorank-web
 # ── runtime ───────────────────────────────────────────────────────────────────
 FROM node:22-alpine AS runtime
 WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
+# HOSTNAME: the standalone server listens on $HOSTNAME, and Docker sets that to
+# the container id, so without this it bound to the bridge address only and
+# the healthcheck's localhost request was refused on every install.
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
 
 # Never run the server as root.
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001

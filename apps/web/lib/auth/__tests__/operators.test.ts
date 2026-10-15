@@ -13,11 +13,12 @@ afterEach(() => {
 });
 
 describe("operators", () => {
-  it("defaults to the AltoRank address when ADMIN_EMAILS is unset", async () => {
+  it("is nobody when ADMIN_EMAILS is unset", async () => {
+    // An install that forgot the variable must not hand operator access
+    // ("View as" any account) to an address outside the install.
     const { ADMIN_EMAILS, isAdminEmail } = await load(undefined);
-    expect(ADMIN_EMAILS).toEqual(["helloaltorank@gmail.com"]);
-    expect(isAdminEmail("helloaltorank@gmail.com")).toBe(true);
-    expect(isAdminEmail("HelloAltoRank@Gmail.com ")).toBe(true);
+    expect(ADMIN_EMAILS).toEqual([]);
+    expect(isAdminEmail("helloaltorank@gmail.com")).toBe(false);
     expect(isAdminEmail("someone@example.com")).toBe(false);
   });
 
@@ -33,15 +34,13 @@ describe("operators", () => {
     const { ADMIN_EMAILS, isAdminEmail } = await load(" Ops@Example.com, second@example.com ,, ");
     expect(ADMIN_EMAILS).toEqual(["ops@example.com", "second@example.com"]);
     expect(isAdminEmail("ops@example.com")).toBe(true);
+    expect(isAdminEmail(" OPS@example.com ")).toBe(true);
     expect(isAdminEmail("helloaltorank@gmail.com")).toBe(false);
   });
 
-  it("has no default recipient, only a default gate", async () => {
-    // The gate falls back so a deployment that forgot the variable does not
-    // lock its operator out. Mail must not: a default recipient in a public
-    // repo means every install of it mails one personal address.
+  it("has no default recipient and no default gate", async () => {
     const unset = await load(undefined);
-    expect(unset.ADMIN_EMAILS).toEqual(["helloaltorank@gmail.com"]);
+    expect(unset.ADMIN_EMAILS).toEqual([]);
     expect(unset.operatorRecipients()).toEqual([]);
 
     const set = await load(" Ops@Example.com ,, second@example.com ");

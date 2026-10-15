@@ -108,6 +108,17 @@ export function nothingWrittenReason(detail: string): NothingWrittenReason | nul
 }
 
 /**
+ * The verdict tally after "no keyword qualifies: ", for the email to quote.
+ * Only a tally (summarizeQualification: "N qualified, ..."). The cron's
+ * fallback when nothing was judged is the old "covered, already ranking, or
+ * provider noise" sentence, which the email no longer gives as a reason.
+ */
+export function nothingWrittenVerdict(detail: string): string | null {
+  const m = /^no keyword qualifies:\s*(\d+ qualified\b.*)$/.exec(detail);
+  return m ? m[1].trim() : null;
+}
+
+/**
  * Tell a site's team that nothing is being written for it, and why.
  *
  * At most one a week per site (`sendOnce`, keyed by the ISO week), which is
@@ -116,7 +127,8 @@ export function nothingWrittenReason(detail: string): NothingWrittenReason | nul
  */
 export async function announceNothingWritten(
   supabase: SupabaseClient,
-  scope: { accountId: string; workspaceId: string; domain: string | null },
+  /** `verdict` is quoted by the queue-exhausted email; see NothingWrittenEmail. */
+  scope: { accountId: string; workspaceId: string; domain: string | null; verdict?: string | null },
   reason: NothingWrittenReason,
   pausedUntil?: string | null,
   now: Date = new Date(),
@@ -135,7 +147,7 @@ export async function announceNothingWritten(
     const out = await notifyNothingWritten(
       supabase,
       { accountId: scope.accountId, workspaceId: scope.workspaceId },
-      { domain: scope.domain, reason, pausedUntil },
+      { domain: scope.domain, reason, pausedUntil, verdict: scope.verdict ?? null },
       now,
     );
     return describeSendOutcome(out);

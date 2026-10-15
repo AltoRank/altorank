@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { createServiceClient } from "@/lib/supabase/server";
 import { readHoldParams } from "@/lib/publishing/hold-link";
+import { resolveEmailHold } from "@/lib/publishing/hold-from-email";
 import { appLink } from "@/lib/app-url";
+import { holdFromEmail } from "./actions";
 
 /**
  * The page the "Hold this one" link in a drafted email opens.
@@ -15,6 +17,12 @@ import { appLink } from "@/lib/app-url";
  * on - and the address is then checked against the article's account before
  * anything is written.
  *
+ * The GET only asks. It used to write the hold while rendering, and mail
+ * security scanners fetch every link in an inbound message before anyone reads
+ * it, so on a corporate tenant every auto-approve draft was held by a robot
+ * (lib/publishing/hold-from-email.ts). The write is the "Hold it" button's
+ * POST (./actions.ts), which checks the signature and the draft again.
+ *
  * The hold is recorded against the person: `held_by` is the member whose
  * address was in the link. A draft held here stays in review until someone
  * approves or archives it in the dashboard; the automatic rule skips it.
@@ -23,7 +31,7 @@ import { appLink } from "@/lib/app-url";
 export const metadata: Metadata = { title: "Hold this draft", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
-type Props = { searchParams: Promise<{ a?: string; e?: string; s?: string }> };
+type Props = { searchParams: Promise<{ a?: string; e?: string; s?: string; failed?: string }> };
 
 export default async function HoldPage(props: Props) {
   const sp = await props.searchParams;
@@ -40,14 +48,11 @@ export default async function HoldPage(props: Props) {
     );
   }
 
-  const supabase = createServiceClient();
-  const { data: article } = await supabase
-    .from("articles")
-    .select("id, title, status, held_by, workspace_id, workspaces(account_id, domain)")
-    .eq("id", parsed.articleId)
-    .maybeSingle();
+  // Nothing is written here: a GET is a read, and link scanners make them.
+  const hold = await resolveEmailHold(createServiceClient(), parsed.articleId, parsed.email);
+  const draftHref = appLink(`/content/${parsed.articleId}`);
 
-  if (!article) {
+  if (hold.kind === "missing") {
     return (
       <Shell title="That draft no longer exists">
         <p className="text-[14px] leading-relaxed text-ink-2">Nothing was changed.</p>
@@ -55,26 +60,7 @@ export default async function HoldPage(props: Props) {
     );
   }
 
-  const ws = (Array.isArray(article.workspaces) ? article.workspaces[0] : article.workspaces) as
-    | { account_id: string; domain: string | null }
-    | null;
-
-  // The link's address must belong to a member of the article's account. The
-  // addresses live in auth.users, which PostgREST does not expose, so this is
-  // the same walk accountRecipients makes, in reverse: one lookup per member
-  // until the address matches.
-  let holder: string | null = null;
-  if (ws) {
-    const { data: members } = await supabase.from("account_members").select("user_id").eq("account_id", ws.account_id);
-    for (const m of members ?? []) {
-      const { data } = await supabase.auth.admin.getUserById(m.user_id as string);
-      if (data?.user?.email?.trim().toLowerCase() === parsed.email) {
-        holder = m.user_id as string;
-        break;
-      }
-    }
-  }
-  if (!holder) {
+  if (hold.kind === "not-member") {
     return (
       <Shell title="This link is not yours to use">
         <p className="text-[14px] leading-relaxed text-ink-2">
@@ -84,14 +70,11 @@ export default async function HoldPage(props: Props) {
     );
   }
 
-  const draftHref = appLink(`/content/${article.id}`);
-  const title = (article.title as string) || "this draft";
-
-  if (article.status !== "review") {
+  if (hold.kind === "not-review") {
     return (
       <Shell title="Too late to hold it">
         <p className="text-[14px] leading-relaxed text-ink-2">
-          &ldquo;{title}&rdquo; is no longer in review (it is {String(article.status)}), so a hold would change nothing.
+          &ldquo;{hold.title}&rdquo; is no longer in review (it is {hold.status}), so a hold would change nothing.
         </p>
         <Link href={draftHref} className="text-[13px] text-accent-ink underline decoration-line underline-offset-[3px]">
           Open the article
@@ -100,35 +83,44 @@ export default async function HoldPage(props: Props) {
     );
   }
 
-  if (!article.held_by) {
-    const { error } = await supabase
-      .from("articles")
-      .update({
-        held_by: holder,
-        held_at: new Date().toISOString(),
-        auto_approve_hold_reason: "held by a person",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", article.id)
-      .eq("status", "review")
-      .is("held_by", null);
-    if (error) {
-      return (
-        <Shell title="Could not record the hold">
-          <p className="text-[14px] leading-relaxed text-ink-2">{error.message}</p>
-        </Shell>
-      );
-    }
+  if (hold.kind === "held") {
+    return (
+      <Shell title="Held">
+        <p className="text-[14px] leading-relaxed text-ink-2">
+          &ldquo;{hold.title}&rdquo;{hold.domain ? ` for ${hold.domain}` : ""} will not publish on its own. It stays in
+          review until someone approves it or archives it.
+        </p>
+        <Link href={draftHref} className="text-[13px] text-accent-ink underline decoration-line underline-offset-[3px]">
+          Read the draft
+        </Link>
+      </Shell>
+    );
   }
 
   return (
-    <Shell title="Held">
+    <Shell title="Hold this draft?">
       <p className="text-[14px] leading-relaxed text-ink-2">
-        &ldquo;{title}&rdquo;{ws?.domain ? ` for ${ws.domain}` : ""} will not publish on its own. It stays in review
-        until someone approves it or archives it.
+        Press the button and &ldquo;{hold.title}&rdquo;{hold.domain ? ` for ${hold.domain}` : ""} will not publish on
+        its own. It stays in review until someone approves it or archives it. Nothing has changed yet.
       </p>
+      {sp.failed && (
+        <p className="text-[13px] leading-relaxed text-[var(--err)]">
+          The hold could not be recorded. Try again, or hold it from the dashboard.
+        </p>
+      )}
+      <form action={holdFromEmail}>
+        <input type="hidden" name="a" value={parsed.articleId} />
+        <input type="hidden" name="e" value={parsed.email} />
+        <input type="hidden" name="s" value={sp.s ?? ""} />
+        <button
+          type="submit"
+          className="w-full rounded-[8px] bg-ink px-4 py-2.5 text-[13px] font-medium text-bg hover:opacity-90 cursor-pointer"
+        >
+          Hold it
+        </button>
+      </form>
       <Link href={draftHref} className="text-[13px] text-accent-ink underline decoration-line underline-offset-[3px]">
-        Read the draft
+        Read the draft first
       </Link>
     </Shell>
   );

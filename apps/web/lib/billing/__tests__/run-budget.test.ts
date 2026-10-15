@@ -9,6 +9,10 @@ import {
   FIRST_LOOK_SWAP_RESERVE_USD,
   firstLookCeiling,
   firstLookReserves,
+  firstLookResearchLeave,
+  FIRST_LOOK_BUYER_TEST_ROOM_USD,
+  FIRST_LOOK_QUALIFY_ROOM_USD,
+  leavingRoom,
   loadDraftBudget,
   memoryRunBudget,
   openFirstLookBudget,
@@ -143,3 +147,59 @@ describe("DataForSEO estimates against what was billed", () => {
     expect(estimateDataForSEOUsd("/backlinks/backlinks/live", [{ target: "acme-site.example", limit: 200 }])).toBeGreaterThanOrEqual(0.031056);
   });
 });
+
+describe("the keyword research leaves qualification its room", () => {
+  // A production first look (2026-10-15): discovery $0.35 and the buyer test
+  // $0.22 of the ~$0.67 research may use, leaving $0.08 to judge results
+  // pages with - under one term - and nothing was planned.
+  const RESEARCH = 1 - FIRST_LOOK_DRAFT_RESERVE_USD - FIRST_LOOK_SWAP_RESERVE_USD;
+  const leave = firstLookResearchLeave();
+
+  it("holds qualification's room from the buyer test, and the buyer test's as well from discovery", () => {
+    expect(leave("buyer_fit")).toBeCloseTo(FIRST_LOOK_QUALIFY_ROOM_USD, 6);
+    expect(leave("discovery")).toBeCloseTo(FIRST_LOOK_QUALIFY_ROOM_USD + FIRST_LOOK_BUYER_TEST_ROOM_USD, 6);
+    // Discovery still has more than the $0.35 the run above spent.
+    expect(RESEARCH - leave("discovery")).toBeGreaterThan(0.35);
+    // A lowered proof ceiling keeps the proportion.
+    expect(firstLookResearchLeave(0.5)("buyer_fit")).toBeCloseTo(FIRST_LOOK_QUALIFY_ROOM_USD / 2, 6);
+  });
+
+  it("grants research up to the room less what it leaves, refuses under the floor, and qualification then has its room", async () => {
+    const row = memoryRunBudget("run-1", 1, firstLookReserves(1));
+    const research = leavingRoom(row, leave);
+    expect(await research.claim("discovery", 0.351, 0.351)).toBeCloseTo(0.351, 6);
+    // The buyer test may use what is left above qualification's room.
+    const usable = RESEARCH - 0.351 - FIRST_LOOK_QUALIFY_ROOM_USD;
+    expect(await research.room("buyer_fit")).toBeCloseTo(usable, 6);
+    expect(await research.claim("buyer_fit", 1, 0.05)).toBeCloseTo(usable, 6);
+    expect(await research.claim("buyer_fit", 0.05, 0.05)).toBeNull();
+    // Nothing was taken from qualification: the row itself still has it.
+    expect(await row.room("judge")).toBeCloseTo(FIRST_LOOK_QUALIFY_ROOM_USD, 6);
+    expect(await row.claim("judge", 0.1, 0.1)).toBeCloseTo(0.1, 6);
+  });
+
+  it("takes turns, so claims made side by side cannot both use the same margin", async () => {
+    const row = memoryRunBudget("run-2", 0.3, {});
+    // A row whose reads and claims each take a moment, as the database's do.
+    const slow: RunBudget = {
+      ...row,
+      claim: async (...a) => { await new Promise((r) => setTimeout(r, 3)); return row.claim(...a); },
+      room: async (st) => { await new Promise((r) => setTimeout(r, 3)); return row.room(st); },
+    };
+    const research = leavingRoom(slow, () => 0.1);
+    const grants = await Promise.all(Array.from({ length: 5 }, () => research.claim("buyer_fit", 0.08, 0.08)));
+    expect(grants.filter((g) => g !== null)).toHaveLength(2);
+    expect(row.state().committedUsd).toBeCloseTo(0.16, 6);
+    expect(await row.room("judge")).toBeGreaterThanOrEqual(0.1 - 1e-9);
+  });
+
+  it("leaves the claim to decide when the room cannot be read, and passes settles through", async () => {
+    const row = memoryRunBudget("run-3", 0.2, {});
+    const research = leavingRoom({ ...row, room: async () => null }, () => 0.15);
+    expect(await research.claim("discovery", 0.1, 0.1)).toBeCloseTo(0.1, 6);
+    await research.settle("discovery", 0.1, 0.02);
+    expect(row.state().committedUsd).toBeCloseTo(0.02, 6);
+    expect(research.runId).toBe("run-3");
+  });
+});
+
