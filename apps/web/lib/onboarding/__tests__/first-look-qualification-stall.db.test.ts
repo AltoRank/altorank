@@ -80,7 +80,8 @@ vi.mock("@/lib/onboarding/time-limits", () => ({
   BUDGET_RPC_TIMEOUT_MS: 1_000,
   STRUCTURED_CALL_DEADLINE_MS: 2_000,
   METERED_CALL_DEADLINE_MS: 2_000,
-  FIRST_LOOK_QUALIFY_MS: 15_000,
+  // STALL_QUALIFY_MS: production's 150000, for a run at STALL_LATENCY=1.
+  FIRST_LOOK_QUALIFY_MS: Number(process.env.STALL_QUALIFY_MS ?? 15_000),
 }));
 vi.mock("@/lib/domain/reachable", () => ({ checkDomainReachable: async () => ({ ok: true, verdict: "live", url: "https://acme.example" }) }));
 vi.mock("../site-text", () => ({ readSiteText: async () => ({ text: "word ".repeat(200), source: "static", chars: 1000 }) }));
@@ -212,6 +213,10 @@ describe.skipIf(!STACK)("the 2026-10-15 first-look stall, replayed", () => {
     const done = runOnboarding(db, { id: workspaceId, domain, account_id: accountId, language: "en", location_code: 2840, business_profile: BUSINESS }, (e) => events.push({ ...e, at: Date.now() - started }), { firstDraft: "dispatch", runId: run.id as string });
     const outcome = await Promise.race([done, new Promise<"hung">((r) => setTimeout(() => r("hung"), BOUND_MS))]);
     const ms = Date.now() - started;
+    if (process.env.STALL_TRACE) {
+      const at = (phase: string, status: string) => events.find((e) => e.phase === phase && "status" in e && e.status === status)?.at;
+      (await import("node:fs")).appendFileSync(process.env.STALL_TRACE, `run ${ms}ms; planning ${at("planning", "active")}ms -> ${[...events].reverse().find((e) => e.phase === "planning")?.at}ms; ${JSON.stringify(await readRunBudget(db, run.id as string))}\n`);
+    }
     await db.from("onboarding_runs").update({ status: "done" }).eq("id", run.id);
     return { outcome, events, ms, budget: (await readRunBudget(db, run.id as string))! };
   }
