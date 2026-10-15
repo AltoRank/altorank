@@ -20,8 +20,25 @@ const requireAuth = vi.fn();
 vi.mock("@/lib/auth/require-auth", () => ({ requireAuth: (...args: unknown[]) => requireAuth(...args) }));
 
 let db: FakeSupabase;
+
+/**
+ * The person's own client may not write a site's Google token or property
+ * (migration 111): the server writes it after its checks. Refused the way
+ * PostgREST refuses, as an error in the result.
+ */
+function asMember(table: string) {
+  const q = db.from(table);
+  if (table !== "workspace_integrations" && table !== "account_integrations") return q;
+  const result = { data: null, error: { message: "A Google connection is written by the server" } };
+  const chain: Record<string, unknown> = {};
+  for (const m of ["eq", "select", "single", "maybeSingle"]) chain[m] = () => chain;
+  chain.then = (resolve: (v: unknown) => unknown) => Promise.resolve(result).then(resolve);
+  const deny = () => chain;
+  return { ...q, insert: deny, upsert: deny, update: deny };
+}
+
 vi.mock("@/lib/supabase/server", () => ({
-  createClient: async () => ({ from: (table: string) => db.from(table) }),
+  createClient: async () => ({ from: (table: string) => asMember(table) }),
   createServiceClient: () => ({ from: (table: string) => db.from(table) }),
 }));
 
@@ -51,6 +68,7 @@ const CONSENT = encryptTokens({ access_token: "a", refresh_token: "r", expires_a
 function seed(workspaces: Record<string, unknown>[], extra: Record<string, Record<string, unknown>[]> = {}) {
   db = fakeSupabase({
     workspaces,
+    account_members: [{ id: "m1", account_id: "acc-1", user_id: "u1", role: "owner", workspace_ids: null }],
     workspace_integrations: [],
     account_integrations: [{ account_id: "acc-1", provider: "google", tokens: { encrypted: CONSENT } }],
     ...extra,
@@ -179,5 +197,60 @@ describe("a site whose Search Console token Google refused", () => {
       }),
     ]);
     expect(backfillAnalytics).toHaveBeenCalledWith(expect.anything(), WS, "gsc", 7);
+  });
+});
+
+describe("a member limited to some sites", () => {
+  const OWN_WS = WS;
+  const OTHER_WS = "44444444-4444-4444-8444-444444444444";
+  const OTHER_SITE = "sc-domain:client-b.example";
+
+  function limitedWorld() {
+    seed(
+      [
+        { id: OWN_WS, account_id: "acc-1", domain: "acme.co" },
+        // RLS hides the other client's site from this member, so the fake
+        // does not hold it either.
+      ],
+      {
+        account_members: [{ id: "m1", account_id: "acc-1", user_id: "u1", role: "editor", workspace_ids: [OWN_WS] }],
+      },
+    );
+    listGSCSites.mockResolvedValue([
+      { siteUrl: SITE, permissionLevel: "siteOwner" },
+      { siteUrl: OTHER_SITE, permissionLevel: "siteOwner" },
+    ]);
+    void OTHER_WS;
+  }
+
+  it("sees only the properties of their own sites", async () => {
+    limitedWorld();
+    const { properties } = await listDetectedProperties();
+    expect(properties.map((p) => p.siteUrl)).toEqual([SITE]);
+  });
+
+  it("cannot connect a property that is not one of their sites", async () => {
+    limitedWorld();
+    const result = await connectPropertyToWorkspace(OTHER_SITE);
+    expect(result.ok).toBe(false);
+    expect(db.writes).toHaveLength(0);
+  });
+
+  it("still connects their own site, written by the server", async () => {
+    limitedWorld();
+    const result = await connectPropertyToWorkspace(SITE);
+    expect(result).toMatchObject({ ok: true, workspaceId: OWN_WS });
+    expect(db.tables.workspace_integrations).toEqual([
+      expect.objectContaining({ workspace_id: OWN_WS, config: { type: "gsc", gscSiteUrl: SITE } }),
+    ]);
+  });
+
+  it("creates no site from the account's Google properties", async () => {
+    limitedWorld();
+    requireAuth.mockResolvedValue({ user: { id: "u1", email: "admin@acme.co" }, accountId: "acc-1", role: "admin" });
+    const { createWorkspacesFromProperties } = await import("../google-properties");
+    const result = await createWorkspacesFromProperties([OTHER_SITE]);
+    expect(result).toMatchObject({ ok: true, created: 0 });
+    expect(db.writes.filter((w) => w.table === "workspaces" || w.table === "workspace_integrations")).toHaveLength(0);
   });
 });

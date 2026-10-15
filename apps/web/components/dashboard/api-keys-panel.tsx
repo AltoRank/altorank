@@ -32,7 +32,20 @@ function when(iso: string | null): string {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-export function ApiKeysPanel({ keys, canManage }: { keys: ApiKeyRow[]; canManage: boolean }) {
+export function ApiKeysPanel({
+  keys,
+  canManage,
+  canCreate = canManage,
+  createNote,
+}: {
+  keys: ApiKeyRow[];
+  /** Revoke, and create unless `canCreate` says otherwise. */
+  canManage: boolean;
+  /** False for a member limited to some sites: a key reaches every site. */
+  canCreate?: boolean;
+  /** Why the create button is missing, when it is. */
+  createNote?: string;
+}) {
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<CreatedApiKey | null>(null);
   const [revoking, setRevoking] = useState<ApiKeyRow | null>(null);
@@ -51,13 +64,15 @@ export function ApiKeysPanel({ keys, canManage }: { keys: ApiKeyRow[]; canManage
           retry a publish a person already approved. They can never approve, schedule or
           publish a new post; that stays with a person in the editor.
         </p>
-        {canManage ? (
+        {canCreate ? (
           <Button variant="accent" onClick={() => { setError(null); setCreateOpen(true); }}>
             <Icons.plus size={14} />
             Create API key
           </Button>
         ) : (
-          <span className="text-[12.5px] text-ink-3">Owners and admins manage keys.</span>
+          <span className="text-[12.5px] text-ink-3 max-w-[300px] text-right">
+            {createNote ?? "Owners and admins manage keys."}
+          </span>
         )}
       </div>
 

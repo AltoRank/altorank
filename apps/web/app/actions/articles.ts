@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { removePendingOverage } from "@/lib/billing/overage";
 import { createClient } from "@/lib/supabase/server";
+import { LIVE_COLUMNS, purgeArticleImages, wasEverLive, type LiveFacts } from "@/lib/storage/purge";
+import { storageAdmin } from "@/lib/storage/admin";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { z } from "zod";
 import { assertEditorialStatus } from "@/lib/articles/editorial-status";
@@ -117,6 +119,14 @@ export async function updateArticle(
 export async function deleteArticle(id: string) {
   const { accountId } = await requireAuth();
   const supabase = await createClient();
+  // Whether it ever reached a reader decides whether its images go with it
+  // (lib/storage/purge.ts). Read before the row goes, by the server; nothing
+  // is removed unless the person's own delete below succeeds, and an
+  // unreadable row keeps its images.
+  const admin = storageAdmin();
+  const { data: facts } = admin
+    ? await admin.from("articles").select(`workspace_id, ${LIVE_COLUMNS}`).eq("id", id).maybeSingle()
+    : { data: null };
   // `.select` so the charge below is taken back only for a row this delete
   // really removed (RLS may hide it, which deletes nothing).
   const { data: removed, error } = await supabase.from("articles").delete().eq("id", id).select("id");
@@ -124,6 +134,16 @@ export async function deleteArticle(id: string) {
   // The slot comes back with the delete; so does a pending overage charge
   // for this draft, or the next draft would be a second charge for one
   // surviving article.
-  if ((removed ?? []).length > 0) await removePendingOverage(supabase, accountId, id);
+  if ((removed ?? []).length > 0) {
+    await removePendingOverage(supabase, accountId, id);
+    const row = facts as (LiveFacts & { workspace_id?: string }) | null;
+    if (admin && row?.workspace_id && !wasEverLive(row)) {
+      try {
+        await purgeArticleImages(admin, row.workspace_id, [id]);
+      } catch (err) {
+        console.warn(`[article delete] ${id}: draft images not removed:`, err instanceof Error ? err.message : err);
+      }
+    }
+  }
   revalidatePath("/articles");
 }

@@ -6,6 +6,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decrypt } from "@/lib/crypto";
+import { gscPropertyCovers } from "@/lib/google/gsc";
 import { fetchBingDailyTraffic, listBingSites, matchBingSite, type BingDaily } from "./webmaster";
 
 export type BingIntegration = {
@@ -65,7 +66,12 @@ export async function syncBingWorkspace(
     // Resolved once and stored, like the Search Console property: the account
     // may have verified https://www.example.com/ or http://example.com, and
     // Bing wants the exact string it has on file.
+    //
+    // A stored site is used only while it belongs to the site's domain, as
+    // with Search Console (lib/google/sync.ts): one Bing key often sees many
+    // sites, and the row says which one this site's dashboard shows.
     let siteUrl = integration.config?.bingSiteUrl;
+    if (siteUrl && !(ws.domain && gscPropertyCovers(siteUrl, ws.domain))) siteUrl = undefined;
     if (!siteUrl) {
       if (!ws.domain) throw new Error("the workspace has no domain to match a Bing site against");
       const sites = await listBingSites(apiKey);

@@ -8,7 +8,16 @@ import { CopyInviteLink } from "@/components/dashboard/copy-invite-link";
 import { MemberActions, RevokeInviteButton } from "@/components/settings/member-actions";
 import { SettingsShell } from "../settings-shell";
 import { plural } from "@/lib/utils";
-import { accessLabel, canEditMember, canManageMembers, EDITOR_LIMITS_COPY, ROLE_LABEL, type Role } from "@/lib/team/access";
+import {
+  accessLabel,
+  canEditMember,
+  canManageMembers,
+  EDITOR_LIMITS_COPY,
+  isSiteLimited,
+  ROLE_LABEL,
+  withinScope,
+  type Role,
+} from "@/lib/team/access";
 import { memberDisplayName, memberInitials } from "@/lib/team/display";
 
 export const metadata: Metadata = { title: "Team" };
@@ -28,6 +37,10 @@ export default async function TeamPage() {
   const manager = canManageMembers(role);
   const namesById = new Map(workspaces.map((w) => [w.id, w.name]));
   const pickerWorkspaces = workspaces.map((w) => ({ id: w.id, name: w.name, domain: w.domain }));
+  // A member limited to some sites manages access within them only
+  // (lib/team/access.ts); the actions and migration 111 enforce it.
+  const actorSites = members.find((m) => m.user_id === user.id)?.workspace_ids ?? null;
+  const limited = isSiteLimited(actorSites);
 
   return (
     <SettingsShell
@@ -40,7 +53,7 @@ export default async function TeamPage() {
           {EDITOR_LIMITS_COPY}
         </span>
       }
-      actions={manager ? <InviteMemberForm /> : undefined}
+      actions={manager ? <InviteMemberForm limited={limited} /> : undefined}
     >
       {!manager && (
         <p className="m-0 text-[12.5px] text-ink-3">
@@ -86,6 +99,9 @@ export default async function TeamPage() {
                         workspaceIds={m.workspace_ids}
                         workspaces={pickerWorkspaces}
                         actorIsOwner={role === "owner"}
+                        limited={limited}
+                        canChangeRole={withinScope(actorSites, m.workspace_ids ?? null)}
+                        canChangeSites={!limited || m.workspace_ids != null}
                       />
                     )}
                   </td>
@@ -134,7 +150,13 @@ export default async function TeamPage() {
                       <td className={`${td} text-right`}>
                         <span className="inline-flex items-center gap-2">
                           {!isExpired && <CopyInviteLink token={inv.token} />}
-                          {manager && <RevokeInviteButton inviteId={inv.id} email={inv.email} />}
+                          {manager && (
+                            <RevokeInviteButton
+                              inviteId={inv.id}
+                              email={inv.email}
+                              canRevoke={withinScope(actorSites, inv.workspace_ids ?? null)}
+                            />
+                          )}
                         </span>
                       </td>
                     </tr>

@@ -47,3 +47,28 @@ describe("config encryption versions", () => {
     expect(decryptConfig(plain)).toBe(plain);
   });
 });
+
+describe("a connection's config holds plain secrets only", () => {
+  it("refuses a config field that decrypts to a stored credential record", () => {
+    const records = [
+      JSON.stringify({ access_token: "a", refresh_token: "r", expiry_date: 1, scope: "s" }),
+      JSON.stringify({ apiKey: "bing" }),
+      ` ${JSON.stringify({ refresh_token: "r" })}`,
+    ];
+    for (const plain of records) {
+      for (const field of ["applicationPassword", "username", "token", "secret", "apiKey"]) {
+        const row = { __encrypted: 3, type: "wordpress", siteUrl: "https://x", [field]: encrypt(plain) };
+        expect(() => decryptConfig(row)).toThrow(/Reconnect it/);
+      }
+    }
+    const v1 = { __encrypted: true, type: "webhook", url: "https://x", secret: encrypt(records[0]) };
+    expect(() => decryptConfig(v1)).toThrow(/Reconnect it/);
+  });
+
+  it("still reads secrets that merely look structured", () => {
+    for (const plain of ['{"not":"a credential"}', "{not json", "[1,2]", "plain-secret"]) {
+      const row = { __encrypted: 3, type: "webhook", url: "https://x", secret: encrypt(plain) };
+      expect(decryptConfig(row).secret).toBe(plain);
+    }
+  });
+});

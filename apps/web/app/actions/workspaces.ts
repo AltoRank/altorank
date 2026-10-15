@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { workingAccountId } from "@/lib/queries/account";
 import { requireAuth } from "@/lib/auth/require-auth";
-import { canAddWorkspace } from "@/lib/team/access";
+import { canAddWorkspace, isSiteLimited, LIMITED_DOMAIN } from "@/lib/team/access";
 import { ADD_SITE_ROLE_MESSAGE, insertWorkspaceAsServer } from "@/lib/workspaces/insert";
 import { z } from "zod";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
@@ -17,6 +17,8 @@ import { PLAN_LABELS } from "@/lib/stripe";
 import { pauseWorkspace as pauseWorkspaceCore, resumeWorkspace as resumeWorkspaceCore } from "@/lib/workspaces/pause";
 import type { PausedMeta } from "@/lib/types";
 import { deleteWorkspaceForAccount, type DeleteWorkspaceResult } from "@/lib/workspaces/delete";
+import { storageAdmin } from "@/lib/storage/admin";
+import { readMemberSites } from "@/lib/team/member-sites";
 
 const createWorkspaceSchema = z.object({
   name: z.string().min(1),
@@ -148,7 +150,7 @@ const updateWorkspaceSchema = z.object({
 });
 
 export async function updateWorkspace(id: string, formData: FormData) {
-  const { accountId } = await requireAuth();
+  const { accountId, user } = await requireAuth();
   const supabase = await createClient();
 
   const raw: Record<string, unknown> = {};
@@ -159,6 +161,20 @@ export async function updateWorkspace(id: string, formData: FormData) {
   const parsed = updateWorkspaceSchema.safeParse(raw);
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Invalid value");
   if (!Object.keys(parsed.data).length) return;
+
+  // A site's Search Console, Analytics and Bing connections are matched to
+  // its domain with credentials that can see the account's other sites, so a
+  // member limited to some sites does not move a domain (migration 111 holds
+  // the database to it). Sending the domain it already has is not a change.
+  if (parsed.data.domain !== undefined && isSiteLimited(await readMemberSites(supabase, accountId, user.id))) {
+    const { data: current } = await supabase
+      .from("workspaces")
+      .select("domain")
+      .eq("id", id)
+      .eq("account_id", accountId)
+      .maybeSingle();
+    if (((current?.domain as string | null) ?? "").toLowerCase() !== parsed.data.domain) throw new Error(LIMITED_DOMAIN);
+  }
 
   const { error } = await supabase
     .from("workspaces")
@@ -338,7 +354,9 @@ export async function deleteWorkspace(id: string, typedConfirmation: string): Pr
     return { ok: false, message: "Only owners and admins can delete a workspace." };
   }
   const supabase = await createClient();
-  const result = await deleteWorkspaceForAccount(supabase, accountId, id, typedConfirmation);
+  // The service role removes the files a cascade does not reach, after the
+  // person's own delete has succeeded (lib/workspaces/delete.ts).
+  const result = await deleteWorkspaceForAccount(supabase, accountId, id, typedConfirmation, storageAdmin());
   if (result.ok) {
     revalidatePath("/workspaces");
     revalidatePath("/dashboard");

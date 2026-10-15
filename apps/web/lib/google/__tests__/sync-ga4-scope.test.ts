@@ -23,6 +23,7 @@ vi.mock("@/lib/google/gsc", () => ({
   fetchGSCQueryPageMetrics: vi.fn(async () => []),
   listGSCSites: vi.fn(async () => []),
   matchGSCSite: vi.fn(() => null),
+  gscPropertyCovers: () => true,
 }));
 
 const fetchGA4Metrics = vi.fn();

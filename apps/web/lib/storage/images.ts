@@ -16,8 +16,10 @@ import { createServiceClient } from "@/lib/supabase/server";
 /**
  * The client an image is written with.
  *
- * Migration 045 gave `article-images` one policy - anyone may read - on the
- * stated assumption that "the service role writes these during generation".
+ * `article-images` is public by path: a file is served from its public URL
+ * (getPublicUrl below) with no policy at all, and since migration 112 no
+ * policy lets anyone list or read it through the API either. Migration 045
+ * stated that "the service role writes these during generation".
  * The editor does (app/actions/editor-ai.ts); generation did not. It uploaded
  * with whatever client the caller passed in, which for Write now, the New
  * article modal and the agent API is the person's own session, and RLS

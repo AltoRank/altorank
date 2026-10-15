@@ -5,7 +5,14 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button, Dialog } from "@/components/ui";
 import { updateMemberAccess, removeMember, revokeInvite } from "@/app/actions/team";
-import { ROLE_LABEL, type Role } from "@/lib/team/access";
+import {
+  LIMITED_EVERY_SITE_TARGET,
+  LIMITED_REMOVE_REACH,
+  LIMITED_REVOKE_REACH,
+  LIMITED_ROLE_REACH,
+  ROLE_LABEL,
+  type Role,
+} from "@/lib/team/access";
 import type { Workspace } from "@/lib/types";
 import { WorkspaceAccessPicker } from "./workspace-access-picker";
 import { inputClass } from "./fields";
@@ -22,6 +29,9 @@ export function MemberActions({
   workspaceIds,
   workspaces,
   actorIsOwner,
+  limited = false,
+  canChangeRole = true,
+  canChangeSites = true,
 }: {
   memberId: string;
   name: string;
@@ -29,11 +39,21 @@ export function MemberActions({
   workspaceIds: string[] | null;
   workspaces: Pick<Workspace, "id" | "name" | "domain">[];
   actorIsOwner: boolean;
+  /** The signed-in member holds only some sites (lib/team/access.ts). */
+  limited?: boolean;
+  /** False when this member reaches sites the signed-in member does not (role and Remove). */
+  canChangeRole?: boolean;
+  /** False when this member has every site and the signed-in member does not. */
+  canChangeSites?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [nextRole, setNextRole] = useState<Role>(role);
-  const [access, setAccess] = useState<string[]>(workspaceIds ?? []);
+  // A limited member's picker lists their own sites only; the target's other
+  // sites are kept by the server, so they are not part of the selection.
+  const [access, setAccess] = useState<string[]>(
+    (workspaceIds ?? []).filter((id) => !limited || workspaces.some((w) => w.id === id)),
+  );
   const [pending, start] = useTransition();
 
   function save() {
@@ -69,7 +89,13 @@ export function MemberActions({
       <Button size="sm" onClick={() => setOpen(true)} disabled={pending}>
         Edit access
       </Button>
-      <Button size="sm" variant="ghost" onClick={remove} disabled={pending}>
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={remove}
+        disabled={pending || !canChangeRole}
+        title={canChangeRole ? undefined : LIMITED_REMOVE_REACH}
+      >
         Remove
       </Button>
 
@@ -77,15 +103,27 @@ export function MemberActions({
         <div className="flex flex-col gap-4">
           <label className="flex flex-col gap-1.5">
             <span className="text-[12.5px] font-medium text-ink-2">Role</span>
-            <select className={inputClass} value={nextRole} onChange={(e) => setNextRole(e.target.value as Role)}>
+            <select
+              className={inputClass}
+              value={nextRole}
+              disabled={!canChangeRole}
+              onChange={(e) => setNextRole(e.target.value as Role)}
+            >
               {roles.map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABEL[r]}
                 </option>
               ))}
             </select>
+            {!canChangeRole && (
+              <span className="text-[11.5px] text-ink-3">{LIMITED_ROLE_REACH}</span>
+            )}
           </label>
-          <WorkspaceAccessPicker workspaces={workspaces} value={access} onChange={setAccess} />
+          {canChangeSites ? (
+            <WorkspaceAccessPicker workspaces={workspaces} value={access} onChange={setAccess} limited={limited} />
+          ) : (
+            <p className="m-0 text-[12.5px] text-ink-3">{LIMITED_EVERY_SITE_TARGET}</p>
+          )}
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" onClick={() => setOpen(false)} disabled={pending}>
               Cancel
@@ -100,14 +138,24 @@ export function MemberActions({
   );
 }
 
-export function RevokeInviteButton({ inviteId, email }: { inviteId: string; email: string }) {
+export function RevokeInviteButton({
+  inviteId,
+  email,
+  canRevoke = true,
+}: {
+  inviteId: string;
+  email: string;
+  /** False when the invite gives sites the signed-in member does not have. */
+  canRevoke?: boolean;
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   return (
     <Button
       size="sm"
       variant="ghost"
-      disabled={pending}
+      disabled={pending || !canRevoke}
+      title={canRevoke ? undefined : LIMITED_REVOKE_REACH}
       onClick={() =>
         start(async () => {
           try {

@@ -8,8 +8,13 @@ import { challengeFor, opaqueToken } from "../pkce";
 const ACCOUNT = "11111111-1111-4111-8111-111111111111";
 const USER = "22222222-2222-4222-8222-222222222222";
 
-function world() {
-  const fake = fakeSupabase({ oauth_clients: [{ id: "client-1", client_name: "ChatGPT", redirect_uris: ["https://chatgpt.com/cb"] }], oauth_codes: [], api_keys: [] });
+function world(sites: string[] | null = null) {
+  const fake = fakeSupabase({
+    oauth_clients: [{ id: "client-1", client_name: "ChatGPT", redirect_uris: ["https://chatgpt.com/cb"] }],
+    oauth_codes: [],
+    api_keys: [],
+    account_members: [{ id: "member-1", account_id: ACCOUNT, user_id: USER, role: "owner", workspace_ids: sites }],
+  });
   return { fake, supabase: fake as unknown as SupabaseClient };
 }
 
@@ -63,5 +68,16 @@ describe("authorization code exchange", () => {
     const late = new Date(issuedAt.getTime() + CODE_TTL_MS + 1);
     expect(await exchangeCode(supabase, { ...base, code, codeVerifier: verifier }, late)).toMatchObject({ ok: false, error: "invalid_grant" });
     expect(await exchangeCode(supabase, { ...base, code: "nope", codeVerifier: verifier })).toMatchObject({ ok: false, error: "invalid_grant" });
+  });
+
+  it("refuses the exchange when the approver is limited to some sites or no longer a member", async () => {
+    const verifier = opaqueToken(48);
+    for (const setup of ["limited", "removed"] as const) {
+      const { fake, supabase } = world(setup === "limited" ? ["33333333-3333-4333-8333-333333333333"] : null);
+      if (setup === "removed") fake.tables.account_members.length = 0;
+      const code = await issueCode(supabase, { ...base, codeChallenge: challengeFor(verifier), scopes: ["read"], accountId: ACCOUNT, userId: USER });
+      expect(await exchangeCode(supabase, { ...base, code, codeVerifier: verifier })).toMatchObject({ ok: false, error: "invalid_grant" });
+      expect(fake.tables.api_keys).toHaveLength(0);
+    }
   });
 });

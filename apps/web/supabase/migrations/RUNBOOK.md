@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress) and **109** (approval written by server), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100 and 109 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch) and **112** (article images served by path, not listed), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109 and 111 go in AFTER**; **112 goes in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -159,7 +159,9 @@ m(file, applied) as (values
   ('106_run_budgets',                        to_regclass('public.run_budgets') is not null and exists (select 1 from col where t='provider_spend' and c='stage') and to_regprocedure('public.run_budget_claim(uuid,text,numeric,numeric)') is not null),
   ('107_fast_first_look',                    exists (select 1 from col where t='onboarding_runs' and c='timings') and exists (select 1 from col where t='articles' and c='body_stream') and not has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT') and to_regclass('public.owed_bodies') is not null and exists (select 1 from pg_trigger where tgname = 'articles_body_stream_server_only')),
   ('108_first_body_progress',                exists (select 1 from col where t='articles' and c='body_progress') and not has_column_privilege('authenticated', 'public.articles', 'body_progress', 'SELECT') and pg_get_functiondef('public.articles_body_stream_server_only'::regproc) like '%body_progress%'),
-  ('109_approval_written_by_server',         exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'articles_guard_approval' and c.relname = 'articles') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'workspaces_guard_auto_approve' and c.relname = 'workspaces'))
+  ('109_approval_written_by_server',         exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'articles_guard_approval' and c.relname = 'articles') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'workspaces_guard_auto_approve' and c.relname = 'workspaces')),
+  ('111_member_scope_guards',                exists (select 1 from pg_trigger where tgname = 'api_keys_creator_sees_every_site') and exists (select 1 from pg_trigger where tgname = 'workspaces_domain_needs_every_site') and exists (select 1 from pg_trigger where tgname = 'workspace_integrations_google_server_written') and not has_column_privilege('authenticated', 'public.account_integrations', 'tokens', 'SELECT') and pg_get_functiondef('public.account_members_guard_roles'::regproc) like '%actor_sites%'),
+  ('112_article_images_private',             not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Article images are readable by anyone'))
 )
 select file, applied from m order by file;
 ```
@@ -299,6 +301,8 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 097_article_body_server_only.sql  
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 099_trial_gate_server_writes.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 100_pre_trial_spend_bounds.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 109_approval_written_by_server.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 111_member_scope_guards.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 112_article_images_private.sql   # any time; see its section
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -377,6 +381,8 @@ no code in the repo references either).
 | 107_fast_first_look.sql | `feat/fast-first-look` | 076, 097, 106; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section (loses the timing tables, any body mid-stream and the record of bodies owed) |
 | 108_first_body_progress.sql | `feat/first-look-ui` | 097, **107**; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section (loses only the progress of a body mid-write) |
 | 109_approval_written_by_server.sql | `fix/approval-integrity` | 002, 003, 005, 013, 079, 094; **its code deployed first** | yes | yes, see its section (a member can again forge an approval over PostgREST) |
+| 111_member_scope_guards.sql | `fix/tighten-site-scope` | 033, 051, 053, 085, 099, 102; **its code deployed first** | yes | yes, see its section (re-apply 102 for the two member guards) |
+| 112_article_images_private.sql | `fix/tighten-site-scope` | 045; any time | yes | yes, see its section (the bucket can be listed again) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1576,4 +1582,164 @@ drop trigger if exists articles_guard_approval on public.articles;
 drop function if exists public.articles_guard_approval();
 drop trigger if exists workspaces_guard_auto_approve on public.workspaces;
 drop function if exists public.workspaces_guard_auto_approve();
+```
+
+## 111 — a member limited to some sites acts within them
+
+`111_member_scope_guards.sql`. `account_members.workspace_ids` limits a member
+to some sites (NULL is every site); five writes let such a member reach past
+that, and the database now refuses them as the app does
+(`apps/web/lib/team/access.ts`):
+
+- `account_members_guard_roles` (102's, replaced): for a signed-in member
+  whose own `workspace_ids` is a list, whatever their role, an UPDATE that
+  sets another member's sites to NULL or to an empty list, adds a site the
+  actor does not hold, removes a site the actor does not hold, or touches the
+  sites of a member who has every site is 42501; so is a role change for, or
+  the removal of, a member whose sites reach past the actor's. 102's rules
+  (nobody edits themselves; owners are touched only by owners) are unchanged.
+- `invites_guard_scope` (102's, replaced, now also `before delete`): the
+  "within your own sites" rule now applies to an owner limited to some sites
+  as well, an invite names at least one site, and changing or revoking an
+  invite is held to the same reach as making it (the invite as it was, on its
+  own account, and as it becomes).
+- `api_keys_creator_sees_every_site`, `before insert` on `api_keys`: a key
+  whose `created_by` is limited to some sites on that account is refused. It
+  binds every writer, the service role included: a key acts for the whole
+  account (the agent API and hosted MCP resolve it to an account, not to
+  sites), and createApiKey and the OAuth exchange both write with the
+  service role.
+- `account_integrations`: SELECT on the table is revoked from `anon` and
+  `authenticated` and granted back on every column except `tokens`. Members
+  still see that a Google connection exists; the consent's ciphertext is read
+  by the server only.
+- `workspace_integrations_google_server_written`, `before insert or update`
+  on `workspace_integrations`: a signed-in user inserting a `gsc` or `ga4`
+  row, changing such a row's `tokens`, `config` or `integration_id`, or
+  turning another row into one, is 42501. Marking a row for reconnect
+  (`needs_reconnect`, `last_sync_error`) and deleting it still work; other
+  integrations (CMS, Bing) are untouched.
+- `workspaces_domain_needs_every_site`, `before update of domain` on
+  `workspaces`: a signed-in member limited to some sites changing a site's
+  domain (other than its case) is 42501. A site's Search Console, Analytics
+  and Bing connections are matched to its domain with credentials that see
+  the account's other sites. `updateWorkspace` refuses it as well.
+
+The member guards, the domain guard and the Google guard pass the service role and the
+database's own cascades (`pg_trigger_depth() > 1`), like 099-109.
+
+**Apply AFTER its code is live.** Code from before it reads
+`account_integrations.tokens` through the person's own client (the
+/connect/google picker) and writes a site's Search Console and Analytics rows
+through it (the OAuth callback, Connect on the picker, URL inspection's token
+refresh); with 111 applied those reads and writes are refused. The new code
+does them with the service role after its checks
+(`app/actions/google-properties.ts`, `app/api/auth/google/callback/route.ts`,
+`app/actions/indexing.ts`) and works with or without 111; the membership
+and key rules are enforced in the app as well (`app/actions/team.ts`,
+`app/actions/api-keys.ts`, `app/oauth/authorize/actions.ts`,
+`lib/oauth/codes.ts`, and `app/actions/workspaces.ts` for the domain). Re-running is a no-op (`create or replace`,
+drop-then-create of each trigger, grants re-stated). Depends on 033, 051,
+053, 085, 099 and 102.
+
+Keys created before this by members limited to some sites keep working;
+the guard refuses new ones only. List them for review (nothing here revokes
+them):
+
+```sql
+select k.id, k.account_id, k.name, k.prefix, k.created_at,
+       k.oauth_client_id is not null as connector, m.role, m.workspace_ids
+  from api_keys k
+  join account_members m on m.account_id = k.account_id and m.user_id = k.created_by
+ where k.revoked_at is null
+   and (k.expires_at is null or k.expires_at > now())
+   and m.workspace_ids is not null;
+```
+
+Test: `supabase/tests/111_member_scope_guards.rls.sql` (self-contained,
+rolls back; run it on an isolated copy). Green 2026-10-15 on a throwaway
+Postgres 15 holding a stub of the tables it touches (`auth.users`,
+`accounts`, `workspaces`, `account_members`, `invites`, `api_keys`,
+`account_integrations`, `workspace_integrations`) with 102 applied and
+then 111 applied twice: the twenty-three writes a limited admin should not
+make (every site, a site they lack, removing a site they lack, narrowing a
+member with every site, two role changes, their own sites, two invites,
+reading the consent, four Google-row writes, removing a member with more
+sites or with every site, an empty site list on a member or an invite, a
+list with an unknown entry, revoking, narrowing or moving to another account
+an invite to every site, moving a site's domain), a limited owner's invite
+to every site and an owner's client-side Google-row write are 42501, as is a
+key created by a limited member; promoting a member inside the actor's
+sites, changing the actor's part of a member's sites, inviting to the
+actor's own site and revoking that invite, removing a member inside the
+actor's sites, re-sending a domain in another case, seeing that a
+connection exists, marking a row for reconnect, editing a non-Google row,
+the owner's wide grants, domain change and revoke, a key created by a member
+with every site, and the server's Search Console writes all work. With 102
+alone, the first case fails; with the first draft of 111 (no removal,
+revoke or domain rule), "remove a member with more sites" fails. Not yet run
+on a copy built from 001-111.
+
+Post-flight (expect `t`, `t`, `t`, `f`, `t`):
+
+```sql
+select exists (select 1 from pg_trigger where tgname = 'api_keys_creator_sees_every_site'),
+       exists (select 1 from pg_trigger where tgname = 'workspace_integrations_google_server_written'),
+       exists (select 1 from pg_trigger where tgname = 'workspaces_domain_needs_every_site'),
+       has_column_privilege('authenticated', 'public.account_integrations', 'tokens', 'SELECT'),
+       pg_get_functiondef('public.account_members_guard_roles'::regproc) like '%actor_sites%';
+```
+
+Rollback (then re-apply `102_rows_stay_put.sql` to restore 102's two member
+guards):
+
+```sql
+drop trigger if exists api_keys_creator_sees_every_site on public.api_keys;
+drop function if exists public.api_keys_creator_sees_every_site();
+drop trigger if exists workspace_integrations_google_server_written on public.workspace_integrations;
+drop function if exists public.workspace_integrations_google_server_written();
+drop trigger if exists workspaces_domain_needs_every_site on public.workspaces;
+drop function if exists public.workspaces_domain_needs_every_site();
+grant select on table public.account_integrations to authenticated;
+```
+
+## 112 — article images are served by path, not listed
+
+`112_article_images_private.sql` drops 045's `"Article images are readable by
+anyone"` SELECT policy on `storage.objects`. The bucket stays public, so every
+image keeps loading from its public URL (published posts, CMS drafts, the
+editor): a public bucket serves `/object/public/...` with no policy. The
+policy, with no role named, also answered the storage API's list and
+authenticated read, which nothing needs through an API role. Every write and
+listing the app makes uses the service role
+(`lib/storage/images.ts`, `app/actions/editor-ai.ts`,
+`lib/storage/purge.ts`), which bypasses RLS.
+
+**Apply any time, before or after its code is deployed.** No code, old or
+new, lists or reads this bucket through a person's client. The code in the
+same change removes report PDFs and draft-only images when a site or a
+never-published article is deleted; it uses the service role and does not
+depend on 112. Re-running is a no-op (`drop policy if exists`). Depends on
+045.
+
+Test: `supabase/tests/112_article_images_private.rls.sql` (self-contained,
+rolls back). Green 2026-10-15 on the same throwaway Postgres 15 as 111, with
+a stub `storage` schema carrying 045's policy: before 112, `anon` sees the
+seeded objects (the first case fails); after 112 applied twice, `anon` and
+`authenticated` see none, the service role sees both, and the bucket is
+still public. Not yet run against the real storage schema.
+
+Post-flight (expect `f`, `t`):
+
+```sql
+select exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects'
+                and policyname = 'Article images are readable by anyone'),
+       (select public from storage.buckets where id = 'article-images');
+```
+
+Rollback:
+
+```sql
+create policy "Article images are readable by anyone" on storage.objects
+  for select using (bucket_id = 'article-images');
 ```

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { neverLiveArticleIds, purgeArticleImages, purgeWorkspaceReports } from "@/lib/storage/purge";
 
 // ---------------------------------------------------------------------------
 // Deleting a workspace
@@ -10,7 +11,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 // typed the wrong domain, or an agency whose client left, stayed at its cap.
 //
 // Deleting takes the site's articles, keywords, calendar, reports and
-// connections with it by cascade. It cannot be undone, so the person types the
+// connections with it by cascade, and - when `storage` is given (the service
+// role) - the files a cascade does not reach: the report PDFs, and the images
+// of articles that never reached a reader (lib/storage/purge.ts). Images of a
+// published article stay, because the live post hotlinks them. It cannot be
+// undone, so the person types the
 // site's domain to confirm, and the check is made here as well as in the
 // dialog. Owners and admins only: migration 072's delete policy says the same.
 // The account's free-draft counter is not touched (lib/billing/free-drafts.ts),
@@ -32,6 +37,7 @@ export async function deleteWorkspaceForAccount(
   accountId: string,
   workspaceId: string,
   typed: string,
+  storage: SupabaseClient | null = null,
 ): Promise<DeleteWorkspaceResult> {
   const { data: site, error: readError } = await supabase
     .from("workspaces")
@@ -45,6 +51,17 @@ export async function deleteWorkspaceForAccount(
   const expected = deleteConfirmationText(site as { domain: string | null; name: string });
   if (normalise(typed) !== normalise(expected)) {
     return { ok: false, message: `Type ${expected} to confirm.` };
+  }
+
+  // Which images go has to be read before the rows do. A failure here keeps
+  // every image rather than guessing.
+  let draftOnly: string[] = [];
+  if (storage) {
+    try {
+      draftOnly = await neverLiveArticleIds(storage, workspaceId);
+    } catch (err) {
+      console.warn(`[workspace delete] ${workspaceId}: images kept, articles unreadable:`, err instanceof Error ? err.message : err);
+    }
   }
 
   const { data: deleted, error } = await supabase
@@ -62,5 +79,20 @@ export async function deleteWorkspaceForAccount(
   }
   // RLS turns a refused delete into zero rows, not an error.
   if (!deleted?.length) return { ok: false, message: "Only owners and admins can delete a workspace." };
+
+  // After the delete succeeded, so a refused delete removes nothing. Best
+  // effort: the site is gone either way, and a failure is logged.
+  if (storage) {
+    try {
+      await purgeWorkspaceReports(storage, workspaceId);
+    } catch (err) {
+      console.warn(`[workspace delete] ${workspaceId}: report files not removed:`, err instanceof Error ? err.message : err);
+    }
+    try {
+      await purgeArticleImages(storage, workspaceId, draftOnly);
+    } catch (err) {
+      console.warn(`[workspace delete] ${workspaceId}: draft images not removed:`, err instanceof Error ? err.message : err);
+    }
+  }
   return { ok: true };
 }
