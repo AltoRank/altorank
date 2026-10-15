@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BASE_CPS, MAX_BACKLOG, nextShown, revealPrefix, splitBlocks, visibleLength, withCaret } from "../stream-reveal";
+import { ACCEL, FINISH_S, MAX_BACKLOG, READ_CPS, WRITING_MAX_CPS, revealPrefix, revealStep, splitBlocks, startAt, visibleLength, withCaret, type RevealState } from "../stream-reveal";
 
 // The gate's reader, revealing the first article as it arrives: the pace,
 // and the cuts. Pure; the component only feeds it frames.
@@ -9,51 +9,75 @@ const ARTICLE =
   "<h2>Key takeaways</h2><ul><li>One</li><li>Two</li></ul>" +
   "<table><tbody><tr><td>a</td><td>b</td></tr></tbody></table><p>End.</p>";
 
-/** Frames of `dtMs` until `shown` reaches `available`, or `cap` frames. */
-function framesToCatchUp(shown: number, available: number, dtMs: number, arrivalCps = 0, cap = 10_000): number {
-  let n = 0;
-  while (shown < available && n < cap) {
-    const next = nextShown(shown, available, dtMs, arrivalCps);
-    expect(next).toBeGreaterThan(shown);
-    shown = next;
-    n++;
+const FRAME = 16;
+
+/** Runs frames until everything is shown or `cap` frames; returns the frames and the fastest speed. */
+function run(start: RevealState, available: (frame: number) => number, done: (frame: number) => boolean, cap = 100_000) {
+  let r = start;
+  let frames = 0;
+  let fastest = 0;
+  let biggestStep = 0;
+  let biggestChange = 0;
+  while (frames < cap) {
+    const avail = available(frames);
+    if (r.shown >= avail && done(frames)) break;
+    const next = revealStep(r, avail, FRAME, done(frames));
+    expect(next.shown).toBeGreaterThanOrEqual(Math.min(r.shown, avail));
+    expect(next.shown).toBeLessThanOrEqual(avail);
+    biggestStep = Math.max(biggestStep, next.shown - r.shown);
+    biggestChange = Math.max(biggestChange, Math.abs(next.cps - r.cps));
+    fastest = Math.max(fastest, next.cps);
+    r = next;
+    frames++;
   }
-  return n;
+  return { frames, fastest, biggestStep, biggestChange, end: r };
 }
 
 describe("the pace", () => {
   it("never goes past what has arrived, and never backwards", () => {
-    expect(nextShown(100, 100, 50)).toBe(100);
-    expect(nextShown(120, 100, 50)).toBe(100);
-    expect(nextShown(0, 3, 1_000)).toBe(3);
+    expect(revealStep({ shown: 100, cps: READ_CPS }, 100, 50, false).shown).toBe(100);
+    expect(revealStep({ shown: 120, cps: READ_CPS }, 100, 50, false).shown).toBe(100);
+    expect(revealStep({ shown: 0, cps: READ_CPS }, 3, 1_000, false).shown).toBe(3);
   });
 
-  it("types a small backlog at a calm pace rather than dropping it at once", () => {
-    // 20 characters arrive: a reader's pace, not one frame.
-    const first = nextShown(0, 20, 16);
-    expect(first).toBeLessThan(20);
-    expect(first).toBeGreaterThanOrEqual((BASE_CPS * 16) / 1000);
+  it("types at a reader's pace while the writer races ahead, and never faster than a quick reader", () => {
+    // The writer streamed about 250 characters a second for 40 seconds (2026-10-12).
+    const writerCps = 250;
+    const writingFrames = (40 * 1000) / FRAME;
+    const out = run(startAt(0, false), (f) => Math.min(10_000, Math.floor((f * FRAME * writerCps) / 1000)), () => false, writingFrames);
+    expect(out.fastest).toBeLessThanOrEqual(WRITING_MAX_CPS);
+    // About 40 seconds at 30-48 characters a second: readable, not a wall.
+    expect(out.end.shown).toBeGreaterThan(40 * READ_CPS * 0.9);
+    expect(out.end.shown).toBeLessThan(40 * WRITING_MAX_CPS);
   });
 
-  it("keeps pace with the writer: a second's text is typed in about a second, not dropped in one frame", () => {
-    // The writer streamed about 250 characters a second (2026-10-12).
-    const atPace = framesToCatchUp(0, 250, 16, 250);
-    expect(atPace * 16).toBeLessThan(1_100);
-    expect(atPace * 16).toBeGreaterThan(500);
-    // Before the pace is known, the backlog alone drains it within three seconds.
-    expect(framesToCatchUp(0, 250, 16) * 16).toBeLessThan(3_000);
+  it("has no bursts: no frame shows more than a few characters, and the speed changes gently", () => {
+    const out = run({ shown: 0, cps: READ_CPS }, () => 9_000, (f) => f > 600);
+    // The fastest finish is a few hundred characters a second: under ten a frame.
+    expect(out.biggestStep).toBeLessThan(12);
+    expect(out.biggestChange).toBeLessThanOrEqual((ACCEL * FRAME) / 1000 + 1e-9);
+  });
+
+  it("once the body is saved, finishes what is left in about FINISH_S, typing all the way", () => {
+    const out = run({ shown: 2_000, cps: WRITING_MAX_CPS }, () => 10_000, () => true);
+    const seconds = (out.frames * FRAME) / 1000;
+    expect(out.end.shown).toBe(10_000);
+    expect(seconds).toBeLessThan(FINISH_S + 6);
+    expect(seconds).toBeGreaterThan(FINISH_S / 2);
   });
 
   it("never stalls while there is text to show", () => {
-    let shown = 0;
-    for (let i = 0; i < 400; i++) shown = nextShown(shown, 1_000, 16);
-    expect(shown).toBe(1_000);
+    let r: RevealState = { shown: 0, cps: READ_CPS };
+    for (let i = 0; i < 4_000; i++) r = revealStep(r, 1_000, FRAME, false);
+    expect(r.shown).toBe(1_000);
   });
 
-  it("shows a backlog too big to type at once, all but its tail", () => {
-    const next = nextShown(0, 9_000, 16);
-    expect(next).toBeGreaterThan(9_000 - MAX_BACKLOG);
-    expect(next).toBeLessThan(9_000);
+  it("starts a page opened half-way through where the text is, but for its tail, and a written one whole", () => {
+    const mid = startAt(9_000, false);
+    expect(mid.shown).toBeGreaterThan(9_000 - MAX_BACKLOG);
+    expect(mid.shown).toBeLessThan(9_000);
+    expect(startAt(300, false).shown).toBe(0);
+    expect(startAt(9_000, true).shown).toBe(9_000);
   });
 });
 

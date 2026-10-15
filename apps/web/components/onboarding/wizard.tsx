@@ -37,6 +37,7 @@ import {
   resolveCompetitor,
   suggestCompetitors,
   saveProfile,
+  saveProfileDraft,
   discoverSiteDetails,
   saveSiteDetails,
   completeWizard,
@@ -48,13 +49,13 @@ import type { InferenceReason } from "@/lib/onboarding/business-profile";
 import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
 // The forms themselves live in components/settings: every wizard screen is
 // also a permanent Settings tab, and one copy of each form keeps them in step.
-import { BusinessFields } from "@/components/settings/business-fields";
+import { BusinessFields, LANGUAGE_SELECT_ID } from "@/components/settings/business-fields";
 import { AudienceList, OfferingList } from "@/components/settings/audience-fields";
 import { CompetitorStep } from "@/components/onboarding/competitor-step";
 import { trackStep } from "@/lib/onboarding/track-step";
 import type { CompetitorSuggestion, RivalSize } from "@/lib/onboarding/competitor-suggestions";
 import { SiteFields } from "@/components/settings/site-fields";
-import { OnboardingProgress } from "@/components/onboarding/onboarding-progress";
+import { OnboardingProgress, reportLine } from "@/components/onboarding/onboarding-progress";
 import {
   onboardingOutcome,
   shouldResumeRun,
@@ -63,16 +64,20 @@ import {
   type OnboardingRunSnapshot,
   type OnboardingState,
 } from "@/lib/onboarding/events";
-import { freeAllowanceClause } from "@/lib/onboarding/copy";
+import { freeAllowanceClause, wizardNextLine } from "@/lib/onboarding/copy";
+import { businessLine, finishBlocker, localeLine, preTickRival, siteSummary, withPendingCompetitor } from "@/lib/onboarding/wizard-rules";
+import { createDraftSaver } from "@/lib/onboarding/draft-saver";
 import { FirstLookReportView } from "@/components/onboarding/first-look-report";
 import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
 import type { FirstArticleCard } from "@/lib/onboarding/first-article";
 import { OPEN_SETUP, runStateOf, setupEnding, type PreTrialSetup, type SetupEnding } from "@/lib/onboarding/setup-retry";
 import { NOTHING_PLANNED_HEADING, nothingPlannedLede } from "@/components/onboarding/setup-ask";
+import { providerRetryWindowOpen } from "@/lib/onboarding/provider-retry-window";
 import { AttributionAsk, GateTop } from "@/components/onboarding/first-look-gate";
 import { Fold } from "@/components/onboarding/fold";
 import { signOut } from "@/app/actions/auth";
 import { TRIAL_DAYS } from "@/lib/stripe";
+import type { TrialOfferFacts } from "@/lib/billing/trial-offer";
 import posthog from "posthog-js";
 
 export type Destination = { id: string; name: string; description: string | null };
@@ -100,7 +105,10 @@ export function OnboardingWizard({
   preTrialSetup = OPEN_SETUP,
   initialRun = null,
   otherSites = [],
+  offer,
 }: {
+  /** The trial offer's facts, read on the server (lib/billing/trial-offer.ts). */
+  offer: TrialOfferFacts;
   workspaceId: string;
   userId: string;
   userEmail?: string;
@@ -189,19 +197,92 @@ export function OnboardingWizard({
   const [reading, setReading] = useState(initialProfile === null);
   const [readFailure, setReadFailure] = useState<InferenceReason | null>(null);
   const [readFailureMessage, setReadFailureMessage] = useState<string | null>(null);
+  // Language and market were guessed from the page's `lang` and its country
+  // domain because the read failed: said beside them.
+  const [localeGuessed, setLocaleGuessed] = useState(false);
   const [discovery, setDiscovery] = useState<SiteDiscovery | null | "pending">(initialSite.sitemapUrl || initialSite.blogRootUrl ? null : "pending");
   // A run found on load is resumed; otherwise Finish starts one.
   const [resumed] = useState(() => (initialRun && shouldResumeRun(initialRun, Date.now()) ? initialRun : null));
   const [running, setRunning] = useState(resumed !== null);
+  // "Change what we found and try again": the wizard reopened over a setup
+  // that planned nothing or fell short, with the saved profile, for the one
+  // more run the spend gate allows before the trial (PRE_TRIAL_SETUP_RUNS).
+  const [editing, setEditing] = useState(false);
+  // Where "Change what we found" was opened from, for its way back: the gate
+  // a returning account landed on, or the run screen of a run that just
+  // ended (which is remounted only to start a run, so it is reloaded).
+  const [editFrom, setEditFrom] = useState<"gate" | "run">("gate");
+  // Each confirmed finish is a fresh run on screen: the run screen is
+  // remounted with no run to resume, so it starts one (the spend gate decides).
+  const [runKey, setRunKey] = useState(0);
+  // What the profile was when "Change what we found" opened, restored on Back.
+  const beforeEdit = useRef<{ profile: BusinessProfile | null; site: SiteDetails } | null>(null);
+  const reopen = () => {
+    beforeEdit.current = { profile, site };
+    setEditFrom(running ? "run" : "gate");
+    setRunning(false);
+    setEditing(true);
+    setBlocker(null);
+    window.scrollTo({ top: 0 });
+  };
   const [pending, start] = useTransition();
-  const [error, setError] = useState<string | null>(null);
+  // What stops the main button, shown in the bar beside it.
+  const [blocker, setBlocker] = useState<string | null>(null);
+  // The blocker on screen is the finish rule's, which an edit can satisfy.
+  const ruleBlocked = useRef(false);
+  /**
+   * Back out of "Change what we found" without spending the free try: the
+   * only control there used to be "Try again with these changes" (review,
+   * 2026-10-12). Nothing typed here is kept: the profile is put back as it
+   * was, and a confirmed profile is never overwritten by a draft.
+   */
+  const leaveEditing = () => {
+    if (editFrom === "run") {
+      window.location.assign("/onboarding");
+      return;
+    }
+    if (beforeEdit.current) {
+      setProfile(beforeEdit.current.profile);
+      setSite(beforeEdit.current.site);
+    }
+    ruleBlocked.current = false;
+    setBlocker(null);
+    setEditing(false);
+    window.scrollTo({ top: 0 });
+  };
   // Rivals proposed for the competitor step, looked up once the profile is
   // read (the lookup starts from the profile's offerings), and the size of
   // every host the person has chosen, from suggestions or typed.
   const [rivalSuggestions, setRivalSuggestions] = useState<CompetitorSuggestion[]>([]);
   const [rivalsLoading, setRivalsLoading] = useState(false);
+  const [rivalLookupFailed, setRivalLookupFailed] = useState(false);
   const [ownAuthority, setOwnAuthority] = useState<number | null>(null);
   const [rivalSizes, setRivalSizes] = useState<Record<string, RivalSize | null>>({});
+  // Typed into the competitor box and not added: kept by the final click.
+  const competitorDraft = useRef("");
+
+  // Saved as the owner edits (lib/onboarding/draft-saver.ts), so a person
+  // who leaves comes back to what they had checked. Only the owner's own
+  // edits start it: a profile nobody has touched is the site read again,
+  // and saving that would only stop the next visit from reading it.
+  const edited = useRef(false);
+  const [draftSaved, setDraftSaved] = useState(false);
+  const [drafts] = useState(() =>
+    createDraftSaver(({ p, s }: { p: BusinessProfile; s: SiteDetails }) =>
+      saveProfileDraft(workspaceId, p, s).then((r) => setDraftSaved(r.ok)),
+    ),
+  );
+  useEffect(() => {
+    if (edited.current && profile && !running && !alreadyOnboarded) drafts.push({ p: profile, s: site });
+  }, [profile, site, running, alreadyOnboarded, drafts]);
+  // A tab sent to the background may never come back: save what is pending.
+  useEffect(() => {
+    const hide = () => {
+      if (document.visibilityState === "hidden") void drafts.flush();
+    };
+    document.addEventListener("visibilitychange", hide);
+    return () => document.removeEventListener("visibilitychange", hide);
+  }, [drafts]);
 
   // Where the signup got to (lib/onboarding/step-events.ts). Fired and
   // forgotten; nothing on this screen waits for it.
@@ -211,6 +292,39 @@ export function OnboardingWizard({
   useEffect(() => {
     if (!reading && profile && !running && !alreadyOnboarded) trackStep("profile_shown", { workspaceId });
   }, [reading, profile, running, alreadyOnboarded, workspaceId]);
+
+  function lookUpRivals(read: BusinessProfile) {
+    setRivalsLoading(true);
+    setRivalLookupFailed(false);
+    suggestCompetitors(workspaceId, read)
+      .then((found) => {
+        setOwnAuthority(found.own);
+        setRivalSuggestions(found.suggestions);
+        // The sources answer empty on a provider outage rather than throw,
+        // so the lookup says whether it could look at all.
+        setRivalLookupFailed(found.lookupFailed === true);
+        // The homepage's rivals are already chosen; their size is now known.
+        // The vetted results-page rivals ride along on the profile so the
+        // keyword pool reads the same market the person saw here. With none
+        // chosen, the best suggestion is ticked for them: competitors are
+        // optional, and one the owner can untick beats an empty box.
+        setRivalSizes((sizes) => ({ ...sizes, ...Object.fromEntries(found.suggestions.map((s) => [s.domain, s.size])) }));
+        setProfile((p) => {
+          if (!p) return p;
+          const pick = preTickRival(p.competitors, found.suggestions);
+          return {
+            ...p,
+            ...(found.searchRivals.length ? { searchRivals: found.searchRivals } : {}),
+            ...(pick ? { competitors: [pick.domain] } : {}),
+          };
+        });
+      })
+      .catch(() => {
+        setRivalSuggestions([]);
+        setRivalLookupFailed(true);
+      })
+      .finally(() => setRivalsLoading(false));
+  }
 
   // Read the site. A failure is a normal outcome and is shown as one. Not
   // while a run is on screen: that page has already been through this.
@@ -223,7 +337,10 @@ export function OnboardingWizard({
       .then((r) => {
         trackStep(r.profile ? "site_read_finished" : "site_read_failed", { workspaceId, ms: Date.now() - readStarted });
         if (cancelled) return;
-        setProfile(r.profile ?? EMPTY_PROFILE);
+        // A failed read starts from what the site gives away - its page
+        // language and country domain - not from English / Global.
+        setProfile(r.profile ?? { ...EMPTY_PROFILE, ...(r.localeGuess ?? {}) });
+        setLocaleGuessed(!r.profile && Boolean(r.localeGuess));
         if (r.profile) lookUpRivals(r.profile);
         setReadFailure(r.profile ? null : r.reason);
         // A billing refusal names this account's own state, so it travels as
@@ -234,6 +351,7 @@ export function OnboardingWizard({
         trackStep("site_read_failed", { workspaceId, ms: Date.now() - readStarted });
         if (cancelled) return;
         setProfile(EMPTY_PROFILE);
+        setLocaleGuessed(false);
         setReadFailure("model_failed");
         setReadFailureMessage(null);
       })
@@ -241,6 +359,7 @@ export function OnboardingWizard({
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- lookUpRivals is a plain function; the read runs once per press
   }, [reading, running, workspaceId, alreadyOnboarded]);
 
   // Look for the sitemap and blog in the background while step 1 is on screen,
@@ -264,52 +383,91 @@ export function OnboardingWizard({
     };
   }, [discovery, running, workspaceId, alreadyOnboarded]);
 
-  function lookUpRivals(read: BusinessProfile) {
-    setRivalsLoading(true);
-    suggestCompetitors(workspaceId, read)
-      .then((found) => {
-        setOwnAuthority(found.own);
-        setRivalSuggestions(found.suggestions);
-        // The homepage's rivals are already chosen; their size is now known.
-        // The vetted results-page rivals ride along on the profile so the
-        // keyword pool reads the same market the person saw here.
-        setRivalSizes((sizes) => ({ ...sizes, ...Object.fromEntries(found.suggestions.map((s) => [s.domain, s.size])) }));
-        if (found.searchRivals.length) patch({ searchRivals: found.searchRivals });
-      })
-      .catch(() => setRivalSuggestions([]))
-      .finally(() => setRivalsLoading(false));
+  // The fixed bar's real height, so the last section is never under it and
+  // a field reached by Tab is scrolled clear of it (WCAG 2.4.11).
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [barHeight, setBarHeight] = useState<number | null>(null);
+  const wizardShown = !running && !(alreadyOnboarded && trialEligible && !editing) && !reading && profile !== null;
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!wizardShown || !bar || typeof ResizeObserver === "undefined") return;
+    const root = document.documentElement;
+    const observer = new ResizeObserver(() => {
+      const h = Math.ceil(bar.getBoundingClientRect().height);
+      setBarHeight(h);
+      root.style.scrollPaddingBottom = `${h + 16}px`;
+    });
+    observer.observe(bar);
+    return () => {
+      observer.disconnect();
+      root.style.scrollPaddingBottom = "";
+    };
+  }, [wizardShown]);
+
+  // The rule's blocker clears as soon as the edit satisfies it: the alert
+  // stayed beside the button after the offering was added, and kept the
+  // bar's promise line hidden until another click (review, 2026-10-12). A
+  // save that failed keeps its message until the next click.
+  useEffect(() => {
+    if (!ruleBlocked.current || !profile) return;
+    if (finishBlocker(withPendingCompetitor(profile, competitorDraft.current))) return;
+    ruleBlocked.current = false;
+    setBlocker(null);
+  }, [profile]);
+
+  /** An edit the owner made, which is what starts the draft save. */
+  function patch(next: Partial<BusinessProfile>) {
+    edited.current = true;
+    setProfile((p) => (p ? { ...p, ...next } : p));
+  }
+  function editSite(next: SiteDetails) {
+    edited.current = true;
+    setSite(next);
   }
 
-  function patch(next: Partial<BusinessProfile>) {
-    setProfile((p) => (p ? { ...p, ...next } : p));
+  /** Say what stops the button beside it, and take the person to the field. */
+  function block(message: string, fieldId?: string) {
+    setBlocker(message);
+    if (!fieldId) return;
+    const field = document.getElementById(fieldId);
+    if (!field) return;
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    field.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" });
+    field.focus({ preventScroll: true });
   }
 
   /**
-   * The one button. Saves everything on the screen, marks the wizard done and
-   * starts the run. Nothing is saved before this: the five-step version wrote
-   * each screen on Continue, so a person who closed the tab on screen three had
-   * two screens of half-checked answers on disk and a wizard that reopened on
-   * screen one anyway.
+   * The one button. Saves everything on the screen as confirmed, marks the
+   * wizard done and starts the run. The drafts saved while editing carry no
+   * confirmation; this click is it.
    */
   function finish() {
-    setError(null);
-    // Required, not because the form says so: the competitors decide the
-    // first plan (see lib/onboarding/competitor-suggestions.ts).
-    if (profile && profile.competitors.length === 0) {
-      setError("Name at least one competitor. It is where your first article comes from.");
+    if (!profile) return;
+    const confirmed = withPendingCompetitor(profile, competitorDraft.current);
+    const stop = finishBlocker(confirmed);
+    if (stop) {
+      block(stop.message, OFFERINGS_INPUT_ID);
+      ruleBlocked.current = true;
       return;
     }
-    if (profile) trackStep("competitor_step_done", { workspaceId, count: profile.competitors.length });
+    ruleBlocked.current = false;
+    setBlocker(null);
+    trackStep("competitor_step_done", { workspaceId, count: confirmed.competitors.length + (confirmed.competitorNames?.length ?? 0) });
     trackStep("plan_clicked", { workspaceId });
     start(async () => {
       try {
-        if (profile) await saveProfile(workspaceId, profile);
+        // No draft may land after the confirmed save.
+        await drafts.stop();
+        await saveProfile(workspaceId, confirmed);
         await saveSiteDetails(workspaceId, site);
         await completeWizard(workspaceId);
         posthog.capture("onboarding_completed", { workspace_id: workspaceId });
+        setEditing(false);
+        setRunKey((k) => k + 1);
         setRunning(true);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not save this.");
+        drafts.resume();
+        block(e instanceof Error ? e.message : "Could not save this. Try again.");
       }
     });
   }
@@ -317,11 +475,15 @@ export function OnboardingWizard({
   // Sent here by the dashboard gate, with no run recent enough to resume.
   // There is nothing to show the progress of and nothing to set up again -
   // only the card stands between this account and the product.
-  if (!running && alreadyOnboarded && trialEligible) {
+  if (!running && alreadyOnboarded && trialEligible && !editing) {
     return (
       <TrialGateScreen
+        onEdit={preTrialSetup.setupAllowed ? reopen : undefined}
         canBuy={canBuy}
-        onRetry={() => setRunning(true)}
+        onRetry={() => {
+          setRunKey((k) => k + 1);
+          setRunning(true);
+        }}
         domain={domain}
         planned={gatePlan}
         held={gateHeld}
@@ -336,6 +498,7 @@ export function OnboardingWizard({
         askAttribution={askAttribution}
         userEmail={userEmail}
         otherSites={otherSites}
+        offer={offer}
       />
     );
   }
@@ -343,13 +506,15 @@ export function OnboardingWizard({
   if (running) {
     return (
       <RunScreen
+        key={runKey}
+        onEdit={preTrialSetup.setupAllowed ? reopen : undefined}
         canBuy={canBuy}
         workspaceId={workspaceId}
         domain={domain}
         freeDrafts={freeDrafts}
         trialEligible={trialEligible}
         askAttribution={askAttribution}
-        initialRun={resumed}
+        initialRun={runKey === 0 ? resumed : null}
         firstArticle={firstArticle}
         firstArticleWriting={firstArticleWriting}
         fullArticle={fullArticle}
@@ -357,57 +522,79 @@ export function OnboardingWizard({
         preTrialSetup={preTrialSetup}
         userEmail={userEmail}
         otherSites={otherSites}
+        offer={offer}
       />
     );
   }
 
   if (reading || !profile) return <ReadingSite domain={domain} />;
 
-  // Which sections open. Fixed by field, not by a confidence the model reports
+  // Which sections open, decided once, when the screen first shows: a
+  // section never opens or closes itself from what is being typed (the first
+  // character of a sitemap URL used to snap its section shut and drop focus
+  // to the page). Fixed by field, not by a confidence the model reports
   // about itself: on the two live runs that decided this, it was confident
   // about Semrush as a rival of an open-source SEO tool and about a
   // description of AltoRank with no "open source" in it. Offerings and
   // competitors are always open, because both seed keyword research and both
   // are what it gets wrong most; the rest collapse to one line of their actual
   // content, so a wrong answer is still glanceable rather than hidden behind
-  // a tick. The blog section opens itself when nothing was found.
-  const looking = discovery === "pending";
-  const siteFound = Boolean(site.sitemapUrl || site.blogRootUrl || site.exampleArticleUrls.length);
-  const businessLine = [profile.name, firstSentence(profile.description)].filter(Boolean).join(" · ");
+  // a tick. "Where your content lives" is optional and stays closed.
+  // Reopened over a finished setup, the site is not looked at again.
+  const looking = discovery === "pending" && !alreadyOnboarded;
+  const siteLine = siteSummary(site, looking, domain);
   const audienceLine = profile.audiences.length ? profile.audiences.join(", ") : "None yet";
-  const siteLine = looking
-    ? `Looking for a sitemap and a blog on ${domain}…`
-    : siteFound
-      ? [
-          site.sitemapUrl ? "Found the sitemap" : null,
-          site.blogRootUrl ? "found the blog" : null,
-          site.exampleArticleUrls.length ? `${site.exampleArticleUrls.length} example ${site.exampleArticleUrls.length === 1 ? "post" : "posts"}` : null,
-        ].filter(Boolean).join(", ")
-      : `Nothing found on ${domain}. Both are optional.`;
+  const next = editing
+    ? { full: "We read your site again with what you changed and look for a first article, in about 3 minutes. Nothing is charged.", short: "One more free try, about 3 minutes." }
+    : wizardNextLine({ preTrial: trialEligible, canRead: fullArticle, freeDrafts });
 
   return (
     <div className="min-h-screen bg-bg">
-      <div className="mx-auto max-w-[720px] px-6 pb-28 pt-10">
+      <div className="mx-auto max-w-[720px] px-4 pt-10 sm:px-6" style={{ paddingBottom: (barHeight ?? 112) + 24 }}>
         <div className="mb-6 text-center">
-          <h1 className="mb-1.5 text-[21px] font-semibold">Check what we found</h1>
-          <p className="text-[13px] text-ink-2">
-            {readFailure
+          <h1 className="mb-1.5 text-[21px] font-semibold">{editing ? "Change what we found" : "Check what we found"}</h1>
+          <p className="text-[13px] text-ink-2 [text-wrap:balance]">
+            {editing
+              ? `Correct what we got wrong about ${domain || "your site"} - what you sell, who buys it, who you compete with - then try again. You get one more free try before the trial.`
+              : readFailure
               ? readFailure === "needs_plan"
                 ? "This needs a plan."
                 : `We could not fill this in from ${domain}.`
-              : "Based on your website, we've filled this in. Two lists need your eye; the rest is a glance."}
+              : initialProfile
+                ? `Here is what we have for ${domain}. Check the two lists below; the rest only needs a glance.`
+                : "Based on your website, we've filled this in. Check the two lists below; the rest only needs a glance."}
+          </p>
+          <p aria-live="polite" className="m-0 mt-1 min-h-[1.25rem] text-[11.5px] text-ink-3">
+            {draftSaved ? "Your answers are saved as you go." : ""}
           </p>
         </div>
 
         <div className="flex flex-col gap-3">
           <Section
             title="About your business"
-            line={businessLine || "Nothing read yet"}
-            open={readFailure !== null || !profile.name}
+            line={businessLine(profile) || "Nothing read yet"}
+            initialOpen={readFailure !== null || !profile.name}
             state={readFailure || !profile.name ? "attention" : "found"}
+            footer={(open) => (
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12px] text-ink-2">
+                <span className="text-ink-3">Language and market:</span>
+                <span className="font-medium text-ink">{localeLine(profile)}</span>
+                {localeGuessed && <span className="text-ink-3">(guessed from your site)</span>}
+                <button
+                  type="button"
+                  className="rounded-md px-1 text-accent-ink underline decoration-line underline-offset-[3px] hover:decoration-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                  onClick={() => {
+                    open();
+                    requestAnimationFrame(() => document.getElementById(LANGUAGE_SELECT_ID)?.focus());
+                  }}
+                >
+                  Change
+                </button>
+              </div>
+            )}
           >
             {readFailure && (
-              <div className="mb-4 flex items-start justify-between gap-4 rounded-[8px] border border-line bg-bg p-4">
+              <div className="mb-4 flex flex-col items-start gap-3 rounded-[8px] border border-line bg-bg p-4 sm:flex-row sm:justify-between sm:gap-4">
                 <p className="m-0 text-[12.5px] leading-[1.6] text-ink-2">{readFailureMessage ?? FAILURE_COPY[readFailure]}</p>
                 {readFailure !== "no_model" && readFailure !== "needs_plan" && (
                   <Button
@@ -427,19 +614,24 @@ export function OnboardingWizard({
           </Section>
 
           {/* The two that cost money when wrong. Always open, no tick. */}
-          <div className="rounded-[10px] border border-accent/40 bg-panel p-5">
-            <OfferingList profile={profile} patch={patch} />
+          <div className="rounded-[10px] border border-accent/40 bg-panel p-4 sm:p-5">
+            <OfferingList profile={profile} patch={patch} inputId={OFFERINGS_INPUT_ID} />
           </div>
-          <div className="rounded-[10px] border border-accent/40 bg-panel p-5">
+          <div className="rounded-[10px] border border-accent/40 bg-panel p-4 sm:p-5">
             <CompetitorStep
               chosen={profile.competitors}
+              names={profile.competitorNames ?? []}
               sizes={rivalSizes}
               suggestions={rivalSuggestions}
               loading={rivalsLoading}
-              onChange={(competitors, sizes) => {
+              lookupFailed={rivalLookupFailed}
+              onChange={({ competitors, names, sizes }) => {
                 setRivalSizes(sizes);
-                patch({ competitors });
-                if (competitors.length) trackStep("competitor_step_done", { workspaceId, count: competitors.length });
+                patch({ competitors, competitorNames: names });
+                if (competitors.length + names.length) trackStep("competitor_step_done", { workspaceId, count: competitors.length + names.length });
+              }}
+              onDraft={(text) => {
+                competitorDraft.current = text;
               }}
               resolve={(entry) => resolveCompetitor(workspaceId, entry, ownAuthority)}
             />
@@ -450,63 +642,86 @@ export function OnboardingWizard({
           <Section
             title="Target audiences"
             line={audienceLine}
-            open={profile.audiences.length === 0}
+            initialOpen={profile.audiences.length === 0}
             state={profile.audiences.length ? "found" : "attention"}
           >
             <AudienceList profile={profile} patch={patch} heading={false} />
           </Section>
 
-          <Section
-            title="Where your content lives"
-            line={siteLine}
-            open={!looking && !siteFound}
-            state={looking ? "looking" : siteFound ? "found" : "attention"}
-          >
-            <div className="flex flex-col gap-4">
-              <SiteFields site={site} setSite={setSite} domain={domain} />
-              <div className="flex items-center justify-between rounded-[8px] border border-line bg-bg px-4 py-3">
+          <Section title="Where your content lives" line={siteLine.line} initialOpen={false} state={siteLine.badge}>
+            <SiteFields site={site} setSite={editSite} domain={domain} advanced>
+              <div className="flex flex-col items-start gap-3 rounded-[8px] border border-line bg-bg px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <div className="text-[13px] font-medium">Connect Search Console</div>
+                  <div className="text-[13px] font-medium">Connect Google Search Console</div>
                   <div className="text-[12px] text-ink-3">So research starts from searches Google already shows you for, and can show real clicks later.</div>
                 </div>
-                {/* New tab: this screen's answers are not saved until the button below. */}
-                <a href="/connect/google" target="_blank" rel="noreferrer">
-                  <Button size="sm">Connect</Button>
+                {/* New tab: this screen saves as you go, but the click below is what confirms it. */}
+                <a
+                  href="/connect/google"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex shrink-0 items-center rounded-[7px] border border-line bg-bg px-[9px] py-[5px] text-[12.5px] font-medium text-ink transition-colors hover:bg-panel-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+                >
+                  Connect
                 </a>
               </div>
-            </div>
+            </SiteFields>
           </Section>
         </div>
-
-        {error && <p className="mt-4 rounded-lg bg-err-soft px-3 py-2 text-[12.5px] text-err-ink">{error}</p>}
       </div>
 
       {/* Fixed, so the button is never a scroll away. One button: there is no
           Back because there is nowhere to go back to, and no Skip because
           nothing left on this screen is worth skipping - the settings that
-          were live in Settings with the defaults we would have picked. */}
-      <div className="fixed inset-x-0 bottom-0 border-t border-line bg-panel/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[720px] items-center justify-between gap-4 px-6 py-3">
-          <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2">
-            Next: keywords, a 30-day plan, and the first article written while you watch.
-            {freeAllowanceClause(freeDrafts, { preTrial: trialEligible }) ? ` ${freeAllowanceClause(freeDrafts, { preTrial: trialEligible })}` : ""}
-          </p>
-          <Button variant="accent" onClick={finish} disabled={pending || reading}>
-            {pending ? "Saving…" : "Plan my first articles"}
-          </Button>
+          were live in Settings with the defaults we would have picked. Under
+          640px it stacks: one short line over a full-width button. Anything
+          that stops the button is said here, beside it. */}
+      <div ref={barRef} className="fixed inset-x-0 bottom-0 border-t border-line bg-panel/95 backdrop-blur">
+        <div className="mx-auto flex max-w-[720px] flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:px-6">
+          <div className="min-w-0">
+            {blocker ? (
+              <p id={BLOCKER_ID} role="alert" className="m-0 rounded-lg bg-err-soft px-3 py-2 text-[12.5px] leading-[1.5] text-err-ink">
+                {blocker}
+              </p>
+            ) : (
+              <>
+                <p className="m-0 hidden text-[12.5px] leading-[1.5] text-ink-2 sm:block">{next.full}</p>
+                <p className="m-0 text-[12.5px] leading-[1.5] text-ink-2 sm:hidden">{next.short}</p>
+              </>
+            )}
+          </div>
+          <div className="flex flex-col-reverse items-stretch gap-2 sm:flex-row sm:items-center sm:gap-3">
+            {editing && (
+              <button
+                type="button"
+                onClick={leaveEditing}
+                disabled={pending}
+                className="text-center text-[12.5px] text-ink-2 underline decoration-line underline-offset-[3px] hover:text-ink"
+              >
+                Back without changing anything
+              </button>
+            )}
+            <Button
+              variant="accent"
+              className="w-full justify-center py-2.5 sm:w-auto sm:py-[7px]"
+              onClick={finish}
+              disabled={pending || reading}
+              aria-describedby={blocker ? BLOCKER_ID : undefined}
+            >
+              {pending ? "Saving…" : editing ? "Try again with these changes" : trialEligible ? "Write my first article" : "Plan my first articles"}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-/** The first sentence of a description, for the collapsed line. */
-function firstSentence(text: string | null | undefined): string {
-  const t = (text ?? "").trim();
-  if (!t) return "";
-  const m = t.match(/^.*?[.!?](?=\s|$)/);
-  return (m ? m[0] : t).slice(0, 140);
-}
+/** Where the wizard sends a person whose blocker is in the offerings list. */
+export const OFFERINGS_INPUT_ID = "wizard-offerings-input";
+const BLOCKER_ID = "wizard-blocker";
+
+type SectionState = "found" | "looking" | "attention" | "optional";
 
 /**
  * A collapsible section whose closed state still shows what is inside it.
@@ -516,49 +731,79 @@ function firstSentence(text: string | null | undefined): string {
  * checkbox: "ready" is a claim, and the collapsed sections are the ones the
  * model is trusted on - which is exactly where a confident wrong answer would
  * hide behind a tick.
+ *
+ * Open is the initial state only, then the person's: nothing typed opens or
+ * closes it. The Found / Needs a look badge holds still while focus is inside
+ * the section and catches up when focus leaves it, so it never flips under a
+ * half-typed value. `footer` stays in view while the section is closed (the
+ * business section's language and market, with their Change link).
  */
-function Section({
+export function Section({
   title,
   line,
-  open,
+  initialOpen,
   state,
+  footer,
   children,
 }: {
   title: string;
   line: string;
-  open: boolean;
-  state: "found" | "looking" | "attention";
+  initialOpen: boolean;
+  state: SectionState;
+  footer?: (open: () => void) => React.ReactNode;
   children: React.ReactNode;
 }) {
+  const [open, setOpen] = useState(initialOpen);
+  // The badge as it was when focus came in; null while focus is elsewhere.
+  const [held, setHeld] = useState<SectionState | null>(null);
+  const shown = held ?? state;
   return (
-    <details open={open} className="group rounded-[10px] border border-line bg-panel">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 [&::-webkit-details-marker]:hidden">
-        <div className="min-w-0">
-          <h2 className="m-0 text-[13.5px] font-medium text-ink">{title}</h2>
-          <p className="m-0 mt-0.5 truncate text-[12.5px] text-ink-2 group-open:hidden">{line}</p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 text-[11px]">
-          {state === "found" && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-ok-soft px-2 py-0.5 text-ok-ink">
-              <Icons.check size={10} /> Found
+    <div
+      className="rounded-[10px] border border-line bg-panel"
+      onFocus={() => {
+        if (held === null) setHeld(state);
+      }}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHeld(null);
+      }}
+    >
+      <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)} className="group">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-4 rounded-[10px] px-4 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 sm:px-5 [&::-webkit-details-marker]:hidden">
+          <div className="min-w-0">
+            <h2 className="m-0 text-[13.5px] font-medium text-ink">{title}</h2>
+            <p className="m-0 mt-0.5 truncate text-[12.5px] text-ink-2 group-open:hidden">{line}</p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2 text-[11px]">
+            <SectionBadge state={shown} />
+            <span className="text-ink-3 transition-transform group-open:rotate-180">
+              <Icons.caretDown size={12} />
             </span>
-          )}
-          {state === "looking" && (
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5 text-ink-3">
-              <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-accent border-t-transparent" /> Looking
-            </span>
-          )}
-          {state === "attention" && (
-            <span className="rounded-full bg-warn-soft px-2 py-0.5 text-warn-ink">Needs a look</span>
-          )}
-          <span className="text-ink-3 transition-transform group-open:rotate-180">
-            <Icons.caretDown size={12} />
-          </span>
-        </div>
-      </summary>
-      <div className="border-t border-line px-5 py-5">{children}</div>
-    </details>
+          </div>
+        </summary>
+        <div className="border-t border-line px-4 py-5 sm:px-5">{children}</div>
+      </details>
+      {footer && !open && <div className="-mt-2 px-4 pb-3.5 sm:px-5">{footer(() => setOpen(true))}</div>}
+    </div>
   );
+}
+
+export function SectionBadge({ state }: { state: SectionState }) {
+  if (state === "found") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-ok-soft px-2 py-0.5 text-ok-ink">
+        <Icons.check size={10} /> Found
+      </span>
+    );
+  }
+  if (state === "looking") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-line px-2 py-0.5 text-ink-3">
+        <span className="h-2.5 w-2.5 animate-spin rounded-full border-2 border-accent border-t-transparent motion-reduce:animate-none" /> Looking
+      </span>
+    );
+  }
+  if (state === "optional") return <span className="rounded-full border border-line px-2 py-0.5 text-ink-3">Optional</span>;
+  return <span className="rounded-full bg-warn-soft px-2 py-0.5 text-warn-ink">Needs a look</span>;
 }
 
 /** The wait, with the work named. */
@@ -659,8 +904,22 @@ function SignOutLine({ email, otherSites = [] }: { email?: string; otherSites?: 
  * says the failure was ours and what the trial does about it.
  */
 const FIRST_ARTICLE_FAILED_HEADING = "Your first article did not finish";
+
+/**
+ * A setup cut short by a provider that did not answer (UX audit 2026-10-12,
+ * #16): said as ours, with no retry button - running it again now buys the
+ * same outage - and no card. "We try again" only when the overnight sweep
+ * may start the run (lib/onboarding/provider-retry.ts asks the same spend
+ * gate); the email when the article is written is the one every first
+ * article sends (lib/email/draft-batch.ts).
+ */
+export const PROVIDER_DOWN_HEADING = "We could not reach our search data just now";
+export function providerDownLede(domain: string, retryAllowed: boolean): string {
+  const lead = `We could not check what your buyers search for, because the service we get search data from did not answer. That is a problem on our side, not with ${domain || "your site"}, and nothing was charged.`;
+  return retryAllowed ? `${lead} We try again automatically, usually overnight, and email you when your first article is written.` : lead;
+}
 const FIRST_ARTICLE_FAILED_LEDE =
-  `Setup started writing it and it failed on our side. It is written again once your ${TRIAL_DAYS}-day trial starts, along with the rest of this week's plan.`;
+  `Setup started writing it and it failed on our side. It is written again once your ${TRIAL_DAYS}-day trial starts.`;
 
 /**
  * The heading and lede for an ending, before the trial. An article's own
@@ -669,16 +928,18 @@ const FIRST_ARTICLE_FAILED_LEDE =
  */
 function endingWords(
   ending: SetupEnding,
-  ctx: { domain: string; runState: Pick<OnboardingState, "steps" | "emptyPool"> | null; followUp: boolean },
+  ctx: { domain: string; runState: Pick<OnboardingState, "steps" | "emptyPool"> | null; followUp: boolean; setupAllowed?: boolean },
 ): { heading: string; lede: string } {
   const draftingDetail = ctx.runState?.steps.find((s) => s.phase === "drafting")?.detail ?? null;
   switch (ending) {
     case "article":
       return { heading: "Your first article", lede: `Start your ${TRIAL_DAYS}-day trial to read it in full, approve it and publish it.` };
     case "writing":
-      return { heading: "Your first article is being written", lede: "It appears here when it is done, usually within a few minutes. The trial opens it, and the rest of the week." };
+      return { heading: "Your first article is being written", lede: "It appears here when it is done, usually within a few minutes." };
+    case "provider-down":
+      return { heading: PROVIDER_DOWN_HEADING, lede: providerDownLede(ctx.domain, ctx.setupAllowed ?? false) };
     case "retry":
-      return { heading: "Setup did not finish", lede: `Nothing was written for ${ctx.domain || "your site"}. Running setup again reads the site, plans the month and writes the first article.` };
+      return { heading: "Setup did not finish", lede: `Nothing was written for ${ctx.domain || "your site"}. Running setup again reads the site, picks your first topic and writes your first article.` };
     case "first-failed":
       return { heading: FIRST_ARTICLE_FAILED_HEADING, lede: FIRST_ARTICLE_FAILED_LEDE };
     case "nothing-planned":
@@ -700,12 +961,40 @@ function GateShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function RetryBox({ line, label, onRetry }: { line: string; label: string; onRetry: () => void }) {
+function RetryBox({ line, label, onRetry, onEdit }: { line: string; label: string; onRetry: () => void; onEdit?: () => void }) {
   return (
     <div className="rounded-[10px] border border-line bg-panel p-4">
       <p className="m-0 mb-3 text-sm">{line}</p>
-      <Button variant="accent" onClick={onRetry}>
-        {label}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <Button variant="accent" onClick={onRetry}>
+          {label}
+        </Button>
+        {onEdit && (
+          <button type="button" onClick={onEdit} className="text-[12.5px] text-ink-2 underline decoration-line underline-offset-[3px] hover:text-ink">
+            Change what we found first
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The way forward from a setup that planned nothing: change what we found
+ * about the site and run it once more, free. Before this, the only control
+ * on that screen was Sign out (UX audit 2026-10-12, #3). Offered only when
+ * the spend gate would start the run (`setupAllowed`), so it is never a
+ * button the server refuses; the gate's own count of pre-trial runs is what
+ * stops a loop.
+ */
+function ChangeBox({ onEdit }: { onEdit: () => void }) {
+  return (
+    <div className="rounded-[10px] border border-line bg-panel p-4">
+      <p className="m-0 mb-3 text-[13px] leading-[1.6] text-ink-2">
+        If we got what you sell, who buys it or who you compete with wrong, change it and we will look again. One more try is free.
+      </p>
+      <Button variant="accent" onClick={onEdit}>
+        Change what we found and try again
       </Button>
     </div>
   );
@@ -754,6 +1043,7 @@ function PlanRows({ planned, firstArticle, written }: { planned: OnboardingPlann
  * setup to replace an article that existed (lib/onboarding/setup-retry.ts).
  */
 function TrialGateScreen({
+  onEdit,
   domain,
   canBuy,
   onRetry,
@@ -770,7 +1060,11 @@ function TrialGateScreen({
   askAttribution = false,
   userEmail,
   otherSites = [],
+  offer,
 }: {
+  /** Reopen the wizard for the one more run the spend gate allows; absent when it would refuse. */
+  onEdit?: () => void;
+  offer: TrialOfferFacts;
   domain: string;
   canBuy: boolean;
   fullArticle?: boolean;
@@ -796,10 +1090,10 @@ function TrialGateScreen({
     writing,
     setupAllowed: setup.setupAllowed,
     firstAttempted: setup.firstAttempted,
+    // A run read back days later may be past the overnight retry's window.
+    providerRetryOpen: providerRetryWindowOpen(run?.run?.finished_at),
   });
-  const words = endingWords(ending, { domain, runState, followUp: setup.followUp });
-  const fixable = report?.readiness?.findings.filter((f) => !f.passed && !f.inconclusive).length ?? 0;
-  const pagesToFix = report?.existingPages?.withIssues ?? 0;
+  const words = endingWords(ending, { domain, runState, followUp: setup.followUp, setupAllowed: setup.setupAllowed });
   const written = firstArticle?.state === "written";
 
   return (
@@ -817,13 +1111,19 @@ function TrialGateScreen({
               line={runState ? "The last setup run stopped before it wrote an article." : "Setup was skipped, so no article has been written yet."}
               label={runState ? "Run setup again" : "Write my first article"}
               onRetry={onRetry}
+              onEdit={canBuy ? onEdit : undefined}
             />
+          ) : ending === "nothing-planned" && canBuy && onEdit ? (
+            <ChangeBox onEdit={onEdit} />
           ) : null
         }
         firstArticle={firstArticle}
         planned={planned}
         fullArticle={fullArticle}
         initialHtml={initialHtml}
+        offer={offer}
+        held={held?.count ?? 0}
+        startedAt={run?.run && Number.isFinite(Date.parse(run.run.started_at)) ? Date.parse(run.run.started_at) : null}
       />
 
       <div className="mt-6 flex flex-col gap-2">
@@ -833,18 +1133,17 @@ function TrialGateScreen({
             line={`${planned.length} ${planned.length === 1 ? "article" : "articles"} scheduled${held && held.count > 0 ? `, ${held.count} more ready for your trial` : ""}`}
           >
             <PlanRows planned={planned} firstArticle={firstArticle} written={written} />
-            <p className="m-0 text-[12px] text-ink-2">
-              {firstArticle ? "The rest are scheduled. They start writing when your trial does." : "These start writing when your trial does."}
-            </p>
+            {planned.length > (firstArticle ? 1 : 0) && (
+              <p className="m-0 text-[12px] text-ink-2">
+                {firstArticle ? `The other ${planned.length - 1} start writing when your trial does.` : "These start writing when your trial does."}
+              </p>
+            )}
           </Fold>
         )}
         {report && (
           <Fold
             title="Your site report"
-            line={[
-              fixable > 0 ? `${fixable} ${fixable === 1 ? "thing" : "things"} stopping AI assistants reading ${domain || "your site"}` : null,
-              pagesToFix > 0 ? `${pagesToFix} existing ${pagesToFix === 1 ? "page" : "pages"} with something to fix` : null,
-            ].filter(Boolean).join(" · ") || `${domain || "Your site"}, as we read it`}
+            line={reportLine(report, domain)}
           >
             <FirstLookReportView report={report} domain={domain} live={false} />
           </Fold>
@@ -875,6 +1174,7 @@ function TrialGateScreen({
  * log and a calendar, and a button to the plan at the end.
  */
 function RunScreen({
+  onEdit,
   workspaceId,
   canBuy,
   domain,
@@ -889,7 +1189,11 @@ function RunScreen({
   preTrialSetup,
   userEmail,
   otherSites = [],
+  offer,
 }: {
+  /** Reopen the wizard for the one more run the spend gate allows; absent when it would refuse. */
+  onEdit?: () => void;
+  offer: TrialOfferFacts;
   fullArticle?: boolean;
   initialHtml?: string | null;
   workspaceId: string;
@@ -920,6 +1224,12 @@ function RunScreen({
   // Bumped when the first article's body lands after the gate, so the run's
   // log is read again and says what was written.
   const [bodyLanded, setBodyLanded] = useState(0);
+  // When the run started, on this browser's clock: the one clock from the
+  // click to the written article runs on into the gate's article card.
+  const [runStartedAt, setRunStartedAt] = useState<number | null>(() => {
+    const at = initialRun?.run ? Date.parse(initialRun.run.started_at) : NaN;
+    return Number.isFinite(at) ? at : null;
+  });
   const finished = Boolean(state && (state.ready || state.error));
   const planned = state?.planned ?? [];
   // Where "Finish" actually leads, decided by what the run produced. It used
@@ -967,7 +1277,7 @@ function RunScreen({
   };
 
   if (trialEligible) {
-    const words = ending ? endingWords(ending, { domain, runState: state, followUp: preTrialSetup.followUp }) : null;
+    const words = ending ? endingWords(ending, { domain, runState: state, followUp: preTrialSetup.followUp, setupAllowed: preTrialSetup.setupAllowed }) : null;
     const held = state?.held ?? null;
     const scheduled = planned.length > 0 ? (
       <div>
@@ -999,13 +1309,22 @@ function RunScreen({
             followUp={preTrialSetup.followUp}
             heading={words.heading}
             lede={words.lede}
-            retry={ending === "retry" ? <RetryBox line="Setup stopped before it wrote your first article." label="Run setup again" onRetry={retryRun} /> : null}
+            retry={
+              ending === "retry" ? (
+                <RetryBox line="Setup stopped before it wrote your first article." label="Run setup again" onRetry={retryRun} onEdit={canBuy ? onEdit : undefined} />
+              ) : ending === "nothing-planned" && canBuy && onEdit ? (
+                <ChangeBox onEdit={onEdit} />
+              ) : null
+            }
             firstArticle={firstArticle}
             pending={runDraft ? { title: runDraft.title, keyword: runDraft.keyword, wordCount: runDraft.wordCount, outlined: runDraft.outlined === true } : null}
             planned={planned}
             fullArticle={fullArticle}
             initialHtml={initialHtml}
             onBodyDone={() => setBodyLanded((n) => n + 1)}
+            offer={offer}
+            held={held?.count ?? 0}
+            startedAt={runStartedAt}
           />
         ) : null}
         <div className={trialStep ? "mt-6" : undefined}>
@@ -1021,6 +1340,7 @@ function RunScreen({
             variant="first-look"
             refreshKey={bodyLanded}
             scheduled={scheduled}
+            onStartedAt={setRunStartedAt}
           />
         </div>
         {trialStep && askAttribution ? (

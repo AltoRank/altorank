@@ -1369,7 +1369,10 @@ Three things, all new, none read by old code:
   its own and never selected by the polling screen, so a database without it
   loses only the table (`[timings] ... could not write timings` in the log).
 - `articles.body_stream` (text): the first article's body as the writer
-  streams it, for the gate's reader when `PRETRIAL_FULL_ARTICLE=1`. A body
+  streams it, for the gate's reader while `PRETRIAL_FULL_ARTICLE` is on -
+  which since 2026-10-12 is the default (unset or `1`; `0` turns it off, see
+  `docs/deploy.md`), so with this code deployed the column is written on
+  every first article unless the switch is set to `0`. A body
   column: no client grant (097 granted the columns that existed then; a new
   column has none), revoked again here to say so. Written by the server only:
   097 left UPDATE on the whole table to clients, so the trigger

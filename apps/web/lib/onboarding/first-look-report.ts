@@ -26,6 +26,22 @@ export interface ReportFinding {
   inconclusive: boolean;
 }
 
+/**
+ * The readiness checks whose failure really stops an AI assistant reading the
+ * site: robots.txt turning its crawlers away. The other eight are advice - a
+ * missing llms.txt, two h1s, no content-signal directive ("optional,
+ * emerging") - and a site that fails only those is read fine. Counting every
+ * failed check told a site scoring 96/100, with every AI crawler allowed,
+ * that "1 thing" was stopping AI assistants reading it, on the paywall
+ * (review, 2026-10-12).
+ */
+export const READING_BLOCKER_CHECKS: ReadonlySet<ReadinessFinding["check"]> = new Set(["ai_crawlers_allowed"]);
+
+/** How many findings actually stop AI assistants reading the site: failed, decided, and a reading blocker. */
+export function readingBlockers(report: Pick<FirstLookReport, "readiness"> | null | undefined): number {
+  return report?.readiness?.findings.filter((f) => !f.passed && !f.inconclusive && READING_BLOCKER_CHECKS.has(f.check)).length ?? 0;
+}
+
 export type ReportSpeed =
   | {
       ok: true;

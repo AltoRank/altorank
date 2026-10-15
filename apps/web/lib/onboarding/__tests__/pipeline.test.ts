@@ -329,6 +329,27 @@ describe("runOnboarding", () => {
     expect(emptyPool).not.toHaveBeenCalled();
   });
 
+  it("blames the budget, not a provider, when the refused buyer test leaves the keyword layer failed", async () => {
+    // What analyseDomain really returns after a refused claim: the judge
+    // gave no verdicts, so the keywords layer is "failed" (review,
+    // 2026-10-12). That is the budget, not an outage: no cause, no
+    // overnight retry, no "our provider is down".
+    const base = richClient(0) as unknown as { from: (t: string) => unknown };
+    const budgetTable = { upsert: async () => ({ error: null }), select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
+    const db = { from: (t: string) => (t === "run_budgets" ? budgetTable : base.from(t)), rpc: async () => ({ data: null, error: null }) } as never;
+    analyse.mockImplementation(async () => {
+      await claimSpend("keyword-research/buyer-fit", 0.05).catch(() => null);
+      return { keywordsFound: 0, layers: [{ id: "keywords", status: "failed", detail: "the buyer test returned no verdicts" }] };
+    });
+    const events: OnboardingEvent[] = [];
+    await runOnboarding(db, WS, (e) => events.push(e), { firstDraft: "dispatch", runId: "run-6b" });
+    const keywords = events.find((e) => e.phase === "keywords" && "status" in e && e.status !== "active");
+    expect(keywords).toMatchObject({ status: "skipped" });
+    expect(keywords).not.toHaveProperty("cause");
+    expect((keywords as { detail: string }).detail).toMatch(/budget ran out before its keyword research finished/);
+    expect(JSON.stringify(events)).not.toContain("problem on our side");
+  });
+
   it("leaves qualification its room: discovery and its buyer test cannot spend the plan's money", async () => {
     // The run's budget held in memory (its row cannot be written here).
     const base = richClient(0) as unknown as { from: (t: string) => unknown };
@@ -468,6 +489,16 @@ describe("runOnboarding", () => {
       "ready",
     ]);
     expect(events.find((e) => e.phase === "keywords" && "detail" in e)).toMatchObject({ detail: "DataForSEO 40101" });
+  });
+
+  it("says a provider that did not answer is ours, not the site's: a failed phase with its cause, never 'nothing rankable'", async () => {
+    analyse.mockResolvedValue({ keywordsFound: 0, layers: [{ id: "keywords", status: "failed", detail: "DataForSEO 402: payment required" }] });
+    const events = await collect();
+    const keywords = events.find((e) => e.phase === "keywords" && "status" in e && e.status !== "active");
+    expect(keywords).toMatchObject({ status: "failed", cause: "provider" });
+    expect((keywords as { detail?: string }).detail).toContain("problem on our side, not your site");
+    expect((keywords as { detail?: string }).detail).not.toMatch(/DataForSEO|402/);
+    expect(JSON.stringify(events)).not.toContain("Nothing rankable found");
   });
 
   it("skips voice when the site has too little text, and keeps going", async () => {

@@ -163,14 +163,25 @@ export interface EmptyPool {
  * one - keywords its count, drafting its article.
  */
 export type OnboardingEvent =
-  | { phase: OnboardingPhase; status: Exclude<PhaseStatus, "pending">; detail?: string; keywordsFound?: number; planned?: OnboardingPlanned[]; article?: OnboardingArticle; emptyPool?: EmptyPool; checking?: PlanningCheck }
+  | { phase: OnboardingPhase; status: Exclude<PhaseStatus, "pending">; detail?: string; keywordsFound?: number; planned?: OnboardingPlanned[]; article?: OnboardingArticle; emptyPool?: EmptyPool; checking?: PlanningCheck; cause?: StepCause }
   | { phase: "ready" }
   | { phase: "error"; detail: string };
+
+/**
+ * Why a phase fell short, when it is something the person should be told
+ * apart: `provider`, the search-data or model provider did not answer - a
+ * problem on our side, which running setup again right away buys again
+ * (UX audit 2026-10-12, #16). Stored on the row's phases (jsonb), so no
+ * migration; absent on every older row.
+ */
+export type StepCause = "provider";
 
 export interface OnboardingStep {
   phase: OnboardingPhase;
   status: PhaseStatus;
   detail?: string;
+  /** Set only when the phase fell short for a reason worth its own ending (`StepCause`). */
+  cause?: StepCause;
   /** Planning only, and only while it is active: the topics being checked right now. */
   checking?: PlanningCheck;
 }
@@ -248,6 +259,10 @@ export function reduceOnboarding(state: OnboardingState, event: OnboardingEvent)
   const steps = state.steps.map((s) => {
     if (s.phase !== event.phase) return s;
     const next: OnboardingStep = { ...s, status: event.status, detail: event.detail ?? s.detail };
+    // A cause belongs to the status it was given with: a later event for the
+    // same phase that does not repeat it clears it.
+    if (event.cause) next.cause = event.cause;
+    else delete next.cause;
     // Only while the phase is live (see PlanningCheck): a settled step
     // carries no terms, whatever it carried before.
     const checking = event.status === "active" ? event.checking ?? s.checking : undefined;
@@ -410,6 +425,7 @@ export function stateFromRun(
     const p = known.get(phase);
     if (!p) return { phase, status: "pending" };
     const step: OnboardingStep = p.detail === undefined ? { phase, status: p.status } : { phase, status: p.status, detail: p.detail };
+    if (p.cause === "provider") step.cause = "provider";
     // The live check, only on a step that is still active in a run that is
     // still running (see PlanningCheck): a run cut off mid-planning keeps
     // its step "active" on the row, and a closed run names no searches.
@@ -529,6 +545,27 @@ export function poolWasJudged(pool: EmptyPool | null | undefined): boolean {
   if (pool.stage !== "qualification") return false;
   if (UNANSWERED_CAUSES.some((cause) => (pool.pending[cause] ?? 0) > 0)) return false;
   return judgedRows(pool) > 0;
+}
+
+/**
+ * A run that fell short because a provider did not answer: a phase says so
+ * (`cause: "provider"`), or the planner's pool was left pending on provider
+ * errors. Not the person's site, and not something to buy again right away.
+ */
+export function providerDown(state: Partial<Pick<OnboardingState, "steps" | "emptyPool">>): boolean {
+  if ((state.steps ?? []).some((s) => s.cause === "provider" && (s.status === "failed" || s.status === "skipped"))) return true;
+  return state.emptyPool ? poolMostlyUnanswered(state.emptyPool) : false;
+}
+
+/**
+ * More of the pool was left unanswered by the provider than was judged: an
+ * outage, not one results page among many that failed. A run where most rows
+ * were judged and one search errored used to be called "provider down" and
+ * lost its retry button to an overnight promise (review, 2026-10-12).
+ */
+export function poolMostlyUnanswered(pool: EmptyPool): boolean {
+  const unanswered = pool.pending.provider_error ?? 0;
+  return unanswered > 0 && unanswered > judgedRows(pool);
 }
 
 /**

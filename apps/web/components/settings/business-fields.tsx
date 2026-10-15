@@ -4,6 +4,9 @@ import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { LANGUAGE_OPTIONS, MARKET_OPTIONS, GLOBAL_MARKET } from "@/lib/onboarding/locale";
 import { Field, inputClass } from "./fields";
 
+/** The language select's id, for the wizard's "Change" link beside the language and market line. */
+export const LANGUAGE_SELECT_ID = "business-language";
+
 /**
  * Name, language, market, description. The wizard's first screen and the
  * General settings tab render exactly this; only the wrapper differs.
@@ -25,9 +28,9 @@ export function BusinessFields({
       <Field label="Business name">
         <input className={inputClass} value={profile.name} onChange={(e) => patch({ name: e.target.value })} placeholder="Acme" />
       </Field>
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Language">
-          <select className={inputClass} value={knownLanguage?.label ?? profile.language} onChange={(e) => patch({ language: e.target.value })}>
+          <select id={LANGUAGE_SELECT_ID} className={inputClass} value={knownLanguage?.label ?? profile.language} onChange={(e) => patch({ language: e.target.value })}>
             {!knownLanguage && <option value={profile.language}>{profile.language}</option>}
             {LANGUAGE_OPTIONS.map((o) => (
               <option key={o.code} value={o.label}>
@@ -36,7 +39,7 @@ export function BusinessFields({
             ))}
           </select>
         </Field>
-        <Field label="Market" hint={market?.hint ?? "Where your search demand is. Keyword data comes from this country."}>
+        <Field label="Market" hint={market?.hint ?? "Where your customers are. We look at what people search for in this country."}>
           <select className={inputClass} value={market ? market.label : GLOBAL_MARKET} onChange={(e) => patch({ country: e.target.value })}>
             {MARKET_OPTIONS.map((m) => (
               <option key={m.label} value={m.label}>
@@ -46,7 +49,7 @@ export function BusinessFields({
           </select>
         </Field>
       </div>
-      <Field label="Description" hint="Used to keep drafts about your actual business rather than the category.">
+      <Field label="Description" hint="So your articles are about your business, not the whole category.">
         <textarea
           rows={7}
           className={`${inputClass} resize-none leading-[1.6]`}

@@ -72,6 +72,24 @@ describe("suggestCompetitors", () => {
     vet.mockRejectedValue(new Error("no key"));
     bulk.mockRejectedValue(new Error("503"));
     const out = await suggestCompetitors({ domain: "fitsuite.co", business, languageCode: "it", locationCode: 2380 });
-    expect(out).toEqual({ own: null, searchRivals: [], suggestions: [{ domain: "trainerize.com", source: "site", authority: null, size: null }] });
+    expect(out).toEqual({ own: null, searchRivals: [], suggestions: [{ domain: "trainerize.com", source: "site", authority: null, size: null }], lookupFailed: true });
+  });
+
+  it("says the lookup failed when every results page failed, not just when it threw", async () => {
+    seeds.mockResolvedValue({ seeds: ["crm personal trainer"], basis: "model" });
+    rivals.mockResolvedValue({ rivals: [], searched: ["crm personal trainer"], failed: ["crm personal trainer"], candidates: [], vetted: false });
+    organic.mockRejectedValue(new Error("503"));
+    bulk.mockResolvedValue(new Map());
+    const out = await suggestCompetitors({ domain: "fitsuite.co", business, languageCode: "it", locationCode: 2380 });
+    expect(out.lookupFailed).toBe(true);
+  });
+
+  it("does not call an answered search that found nobody a failure", async () => {
+    seeds.mockResolvedValue({ seeds: ["crm personal trainer"], basis: "model" });
+    rivals.mockResolvedValue({ rivals: [], searched: ["crm personal trainer"], failed: [], candidates: [], vetted: true });
+    organic.mockResolvedValue([]);
+    bulk.mockResolvedValue(new Map());
+    const out = await suggestCompetitors({ domain: "fitsuite.co", business, languageCode: "it", locationCode: 2380 });
+    expect(out.lookupFailed).toBeUndefined();
   });
 });

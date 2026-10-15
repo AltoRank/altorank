@@ -21,13 +21,16 @@
 // holds two lines at most, so nothing moves under the person while they read.
 
 import { useState } from "react";
+import Link from "next/link";
 import { Icons } from "@/components/ui";
-import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
+import { readingBlockers, type FirstLookReport } from "@/lib/onboarding/first-look-report";
 import { PHASE_ORDER, type OnboardingPhase, type OnboardingState, type OnboardingStep } from "@/lib/onboarding/events";
-import { clock, EXPECTED_GATE_S, leadingHeadline, leadingPhase, setupFraction } from "@/lib/onboarding/setup-progress";
+import type { PollRefusal } from "@/lib/onboarding/poll-backoff";
+import { clock, estimateLine, firstLookFraction, leadingHeadline, leadingPhase, runningLong } from "@/lib/onboarding/setup-progress";
 import { ProgressBar, useNow } from "./progress-bar";
 import { useReducedMotion } from "./use-first-article-live";
 import { FirstLookReportView } from "./first-look-report";
+import { EmailWhenReady } from "./first-look-exits";
 
 const PHASE_NAME: Record<OnboardingPhase, string> = {
   scanning: "Read your site",
@@ -120,6 +123,26 @@ export function phaseDetail(
   }
 }
 
+/**
+ * What the screen can already tell the person while the topic is chosen:
+ * two or three facts the first look has measured, in plain words. The centre
+ * of this screen was a grey skeleton for ninety seconds while the one real
+ * payoff - the site report - sat folded below the fold (UX audit
+ * 2026-10-12). No scores: a number out of 100 beside "pages to fix"
+ * contradicted itself with no explanation.
+ */
+export function waitingFacts(state: Pick<OnboardingState, "keywordsFound" | "steps">, report: FirstLookReport | null): string[] {
+  const out: string[] = [];
+  const pages = report?.existingPages ?? null;
+  const read = pages?.checked ?? report?.pagesCrawled ?? 0;
+  if (read > 0) out.push(`${n(read)} ${read === 1 ? "page" : "pages"} of your site read`);
+  if (state.keywordsFound) out.push(`${n(state.keywordsFound)} searches your customers make`);
+  if (pages && pages.withIssues > 0) out.push(`${n(pages.withIssues)} existing ${pages.withIssues === 1 ? "page" : "pages"} with something to fix`);
+  // The same predicate as the report's line: only what really stops an AI assistant reading the site.
+  if (out.length < 3 && readingBlockers(report) > 0) out.push("Some AI assistants are blocked from reading your site");
+  return out.slice(0, 3);
+}
+
 function StatusMark({ status }: { status: OnboardingStep["status"] }) {
   if (status === "done") {
     return (
@@ -153,13 +176,43 @@ const STATUS_WORD: Record<OnboardingStep["status"], string> = {
   failed: "did not finish",
 };
 
+/**
+ * What the screen says once the server has refused to show the run: it has
+ * stopped watching, the run has not stopped, and the one thing to do.
+ */
+export function PollRefusedLine({ refused }: { refused: PollRefusal }) {
+  return (
+    <p role="alert" className="m-0 mt-1 text-[12.5px] leading-[1.5] text-ink-2">
+      {refused === "signed-out" ? (
+        <>
+          You were signed out, so this screen stopped following setup. Setup carries on without it.{" "}
+          <Link href="/signin?next=%2Fonboarding" className="text-ink underline decoration-line underline-offset-[3px]">
+            Sign in again
+          </Link>{" "}
+          to see it.
+        </>
+      ) : (
+        "This account can no longer see this site's setup, so this screen stopped following it."
+      )}
+    </p>
+  );
+}
+
 export function SetupLoading({
+  workspaceId,
   domain,
   state,
   report,
   startedAt,
   log,
+  reconnecting = false,
+  refused = null,
 }: {
+  workspaceId: string;
+  /** The screen has lost the server for a few polls and is trying again; the run is not over. */
+  reconnecting?: boolean;
+  /** The server refused to show the run (signed out, no longer a member): the screen stopped watching. */
+  refused?: PollRefusal | null;
   domain: string;
   state: OnboardingState;
   report: FirstLookReport | null;
@@ -171,24 +224,29 @@ export function SetupLoading({
   const now = useNow(500, true);
   const elapsed = now && startedAt ? Math.max(0, (now - startedAt) / 1000) : 0;
   const leading = leadingPhase(state.steps);
-  const fraction = setupFraction(state.steps, elapsed);
-  // The planning ticker steps through the batch's terms every 1.4 seconds;
-  // with less motion asked for it holds on the counts (`phaseDetail`).
+  // One bar and one clock, from the click to the written article: this is
+  // the first part of it, and the gate's article card carries on from here.
+  const fraction = firstLookFraction(state.steps, elapsed);
+  const long = startedAt !== null && runningLong(elapsed, false);
+  const facts = waitingFacts(state, report);
+  // The planning ticker steps through the batch's terms every 3.5 seconds:
+  // at 1.4 it flipped faster than a term could be read. With less motion
+  // asked for it holds on the counts (`phaseDetail`).
   const reduced = useReducedMotion();
-  const tick = reduced ? null : now ? Math.floor(now / 1400) : 0;
+  const tick = reduced ? null : now ? Math.floor(now / 3500) : 0;
   const [openLog, setOpenLog] = useState(false);
   const firstTopic = state.planned[0]?.term ?? null;
   const planningSettled = state.steps.some((s) => s.phase === "planning" && s.status !== "pending" && s.status !== "active");
   const siteRead = state.steps.some((s) => s.phase === "scanning" && s.status !== "pending" && s.status !== "active");
 
   return (
-    <div className="mx-auto w-full max-w-[600px]">
+    <div className="mx-auto w-full">
       <div className="mb-6 text-center">
         <p className="m-0 mb-2 text-[12px] text-ink-3">Setting up {domain || "your site"}</p>
-        <h1 className="m-0 text-[22px] font-semibold leading-tight" aria-live="polite">
+        <h1 className="m-0 text-[22px] font-semibold leading-tight [text-wrap:balance]" aria-live="polite">
           {leadingHeadline(leading, domain)}
         </h1>
-        <p className="mx-auto m-0 mt-2 max-w-[440px] text-[13px] leading-[1.6] text-ink-2">
+        <p className="mx-auto m-0 mt-2 max-w-[440px] text-[13px] leading-[1.6] text-ink-2 [text-wrap:balance]">
           You can leave this page: the work carries on and this screen picks up where it is.
         </p>
       </div>
@@ -198,8 +256,21 @@ export function SetupLoading({
           <ProgressBar fraction={fraction} label="Setup progress" />
           <div className="flex items-baseline justify-between text-[11.5px] text-ink-3">
             <span className="font-mono tabular-nums">{clock(elapsed)}</span>
-            <span>usually about {clock(EXPECTED_GATE_S)}</span>
+            <span className={long ? "text-ink-2" : undefined}>{estimateLine(elapsed, false)}</span>
           </div>
+          {refused ? (
+            <PollRefusedLine refused={refused} />
+          ) : reconnecting ? (
+            <p role="status" className="m-0 text-[12px] text-ink-2">
+              Reconnecting… The work carries on while this screen catches up.
+            </p>
+          ) : null}
+          {long && (
+            <div className="flex flex-col gap-1 rounded-[8px] border border-line bg-bg px-3 py-2.5 text-[12.5px] text-ink-2">
+              <span>This one is taking longer than usual. You can leave: the work carries on without this page.</span>
+              <EmailWhenReady workspaceId={workspaceId} className="self-start" />
+            </div>
+          )}
         </div>
 
         <ol className="m-0 flex list-none flex-col gap-3 p-0" aria-label="What setup is doing">
@@ -226,20 +297,37 @@ export function SetupLoading({
         </ol>
       </div>
 
-      {/* Where the first article lands: drawn from the start, filled at the gate. */}
+      {/* Where the first article lands: the chosen topic once there is one,
+          and until then what the first look has already found. */}
       <section aria-label="Your first article" className="mt-4 rounded-[10px] border border-dashed border-line bg-bg p-5">
         <div className="mb-2 text-[11px] uppercase tracking-wide text-ink-3">Your first article</div>
-        <div className="mb-3 h-5 w-3/4 rounded-full bg-panel-2 motion-safe:animate-pulse" aria-hidden />
-        <div className="flex flex-col gap-2" aria-hidden>
-          {[88, 76, 82, 64].map((w) => (
-            <span key={w} className="h-2.5 rounded-full bg-panel-2" style={{ width: `${w}%` }} />
-          ))}
-        </div>
-        <p className="m-0 mt-3 text-[12.5px] text-ink-2">
-          {firstTopic && planningSettled
-            ? <>On “{firstTopic}”. Its title and sections land here in a few seconds.</>
-            : "Chosen once we know which topics you can win. Its title and sections land here."}
-        </p>
+        {firstTopic && planningSettled ? (
+          <>
+            <p key={firstTopic} className="rise-in m-0 text-[17px] font-semibold leading-snug text-ink">On “{firstTopic}”</p>
+            <p className="m-0 mt-2 text-[12.5px] text-ink-2">
+              The topic your buyers search for that you can win first. Its title and sections land here {long ? "next" : "in a few seconds"}.
+            </p>
+          </>
+        ) : facts.length > 0 ? (
+          <>
+            <p className="m-0 mb-2.5 text-[12.5px] text-ink-2">Chosen once we know which topics you can win. So far:</p>
+            <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
+              {facts.map((fact) => (
+                <li key={fact} className="rise-in flex items-start gap-2 text-[13.5px] leading-[1.5] text-ink">
+                  <span className="mt-[3px] shrink-0 text-ok-ink" aria-hidden>
+                    <Icons.check size={12} />
+                  </span>
+                  {fact}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : (
+          <>
+            <div className="mb-3 h-5 w-3/4 rounded-full bg-panel-2 motion-safe:animate-pulse" aria-hidden />
+            <p className="m-0 text-[12.5px] text-ink-2">Chosen once we know which topics you can win. Its title and sections land here.</p>
+          </>
+        )}
       </section>
 
       <details className="group mt-4 rounded-[10px] border border-line bg-panel" open={openLog} onToggle={(e) => setOpenLog((e.target as HTMLDetailsElement).open)}>
@@ -258,7 +346,7 @@ export function SetupLoading({
         >
           <span>
             {report
-              ? `Your site report is ready${report.readiness ? ` · AI readability ${report.readiness.score}/100` : ""}`
+              ? `Your site report is ready${report.existingPages?.withIssues ? ` · ${report.existingPages.withIssues} ${report.existingPages.withIssues === 1 ? "page" : "pages"} with something to fix` : ""}`
               : siteRead
                 ? "Your site report · being put together"
                 : "Your site report · ready once your site is read"}

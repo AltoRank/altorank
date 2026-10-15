@@ -34,7 +34,7 @@ const STACK = await connectLocalStack();
 const TAG = randomUUID().slice(0, 8);
 const PASSWORD = `Gate-${TAG}-local-1!`;
 const ON = { PRETRIAL_FULL_ARTICLE: "1" };
-const OFF = {};
+const OFF = { PRETRIAL_FULL_ARTICLE: "0" };
 
 const OUTLINE = {
   version: 1,

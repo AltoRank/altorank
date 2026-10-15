@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FirstLookReportView } from "./first-look-report";
-import { SetupLoading } from "./setup-loading";
+import { PollRefusedLine, SetupLoading } from "./setup-loading";
 import { Fold } from "./fold";
-import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
+import { readingBlockers, type FirstLookReport } from "@/lib/onboarding/first-look-report";
 import { calendarStripDays, dayFromIso, MAX_CHIPS_PER_DAY } from "@/lib/onboarding/calendar-strip";
+import { nextPollDelay, pollRefusal, REFUSALS_TO_STOP, reconnecting as isReconnecting, type PollRefusal } from "@/lib/onboarding/poll-backoff";
 import {
   initialOnboardingState,
   isTerminal,
@@ -43,36 +44,6 @@ import {
  */
 
 const HANDOFF_MS = 1_400;
-/** Every three seconds while the phases are moving. */
-export const POLL_MS = 3_000;
-/** After two minutes the run is in the draft, where nothing changes for a while. */
-export const POLL_SLOW_MS = 10_000;
-export const POLL_BACKOFF_AFTER_MS = 2 * 60_000;
-/**
- * Polls in a row that answered with anything but a run before the screen stops
- * asking and says so.
- *
- * Terminal detection needs a successful read: a 401 from an expired session, a
- * 500, or a row the route cannot see leaves `isTerminal` unreached, and the
- * loop simply reschedules. The only ceiling on this screen is `RUN_STALE_MS`,
- * which is computed server-side from `updated_at` and therefore requires the
- * very read that is failing - so a signed-out tab sat here spinning its five
- * step icons and printing "This takes about a minute" indefinitely.
- *
- * Ten is a minute of the fast cadence, which is longer than any deploy blip
- * and far short of the minutes a draft legitimately takes.
- */
-export const POLL_MAX_CONSECUTIVE_FAILURES = 10;
-
-/**
- * What the screen says when it gives up watching. Deliberately about *this
- * screen* and not about the run: the run is a row advanced by its own
- * invocations and carries on regardless, which is the same thing
- * `STALE_RUN_ERROR` is careful to say about a worker that died.
- */
-export const POLL_LOST_ERROR =
-  "This screen lost contact with the server and stopped following the run. The run itself carries on; reload to pick it up.";
-
 export function OnboardingProgress({
   workspaceId,
   domain,
@@ -86,6 +57,7 @@ export function OnboardingProgress({
   variant = "log",
   refreshKey = 0,
   scheduled,
+  onStartedAt,
 }: {
   workspaceId: string;
   domain: string;
@@ -125,6 +97,8 @@ export function OnboardingProgress({
   refreshKey?: number;
   /** The scheduled list the gate shows inside the folded calendar. */
   scheduled?: React.ReactNode;
+  /** Told when the run's start is known, on this browser's clock: the gate's clock carries on from it. */
+  onStartedAt?: (ms: number) => void;
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState>(() =>
@@ -143,6 +117,12 @@ export function OnboardingProgress({
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
   const settledOnMount = Boolean(initialRun?.run && (initialRun.run.status !== "running" || initialRun.stale));
+  // A connection that keeps failing is said, and never ends the run on this
+  // screen: only the server's answer can (lib/onboarding/poll-backoff.ts).
+  const [reconnecting, setReconnecting] = useState(false);
+  // The server refused the poll (signed out, or no longer a member): the
+  // screen stops watching and says so. The run itself carries on.
+  const [refused, setRefused] = useState<PollRefusal | null>(null);
 
   // Start (or find) the run, then poll its row until it stops. The effect is
   // re-runnable: StrictMode runs it twice in development, and the second
@@ -157,49 +137,72 @@ export function OnboardingProgress({
     const fail = (detail: string) => setState((s) => reduceOnboarding(s, { phase: "error", detail }));
 
     let failures = 0;
+    let refusals = 0;
+    let running = false;
+    let started = false;
+
+    const schedule = () => {
+      if (cancelled) return;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(started ? poll : start, nextPollDelay(failures, Date.now() - startedAt));
+    };
+    const missed = () => {
+      failures += 1;
+      setReconnecting(isReconnecting(failures));
+    };
 
     const poll = async () => {
-      if (cancelled) return;
+      if (cancelled || running) return;
+      running = true;
       try {
         const res = await fetch(`/api/onboard/state?workspaceId=${encodeURIComponent(workspaceId)}`, { cache: "no-store" });
+        const refusal = res.ok ? null : pollRefusal(res.status);
+        refusals = refusal ? refusals + 1 : 0;
+        if (refusal && refusals >= REFUSALS_TO_STOP) {
+          // An answer, not a blip: stop asking (the tab coming back must not
+          // start it again), and say why.
+          cancelled = true;
+          setReconnecting(false);
+          setRefused(refusal);
+          return;
+        }
         if (res.ok) {
           const snapshot = (await res.json()) as OnboardingRunSnapshot;
           if (cancelled) return;
           if (snapshot.run) {
             failures = 0;
+            setReconnecting(false);
             const next = stateFromRun(snapshot.run, snapshot.article, { stale: snapshot.stale, drafts: snapshot.drafts, held: snapshot.held });
             setState(next);
             const serverNow = (snapshot as { now?: number }).now;
             const skew = typeof serverNow === "number" ? serverNow - Date.now() : 0;
-            const started = Date.parse(snapshot.run.started_at);
-            if (Number.isFinite(started)) setStartedAt(started - skew);
+            const startedRun = Date.parse(snapshot.run.started_at);
+            if (Number.isFinite(startedRun)) setStartedAt(startedRun - skew);
             if (snapshot.report) setReport(snapshot.report);
             if (isTerminal(next)) return;
           } else {
-            failures += 1;
+            missed();
           }
         } else {
-          failures += 1;
+          missed();
         }
       } catch {
-        /* a missed poll is the next one's problem - until there are too many */
-        failures += 1;
+        // A missed poll - a phone between networks, a deploy - is never the
+        // end of the run (a signed-out tab is the server's answer, above). The run carries on regardless:
+        // it is a row advanced by its own invocations, and this only watches.
+        missed();
+      } finally {
+        running = false;
       }
-      if (cancelled) return;
-      // Without this the screen had no way to stop. Everything that decides a
-      // run is over is read out of a successful response, so a session that
-      // expired mid-run, or a route that started answering 500, left five
-      // spinners turning and "This takes about a minute" on screen for as long
-      // as the tab was open. The run itself is unaffected either way: it is a
-      // row advanced by its own invocations, and this only ever watched it.
-      if (failures >= POLL_MAX_CONSECUTIVE_FAILURES) {
-        fail(POLL_LOST_ERROR);
-        return;
-      }
-      timer = setTimeout(poll, Date.now() - startedAt > POLL_BACKOFF_AFTER_MS ? POLL_SLOW_MS : POLL_MS);
+      schedule();
     };
 
-    (async () => {
+    // Start (or find) the run. A refusal the server writes ends the screen
+    // with its sentence; a request that never arrived is tried again.
+    const start = async () => {
+      if (cancelled || running) return;
+      running = true;
+      let refusal: string | null = null;
       try {
         const res = await fetch("/api/onboard/start", {
           method: "POST",
@@ -207,25 +210,47 @@ export function OnboardingProgress({
           body: JSON.stringify({ workspaceId }),
         });
         if (cancelled) return;
-        if (!res.ok) {
+        if (res.ok) {
+          started = true;
+          failures = 0;
+          setReconnecting(false);
+        } else if (res.status < 500) {
           // The route's refusal is a sentence written for this screen - the
-          // spend gate's, when setup has already run before the trial - and a
-          // bare status code in its place told the person nothing about what
-          // to do next.
+          // spend gate's, when setup has already run before the trial - and
+          // a bare status code in its place told the person nothing.
           const body = (await res.json().catch(() => null)) as { error?: string } | null;
-          if (cancelled) return;
-          fail(body?.error ?? `Onboarding could not start (${res.status}).`);
-          return;
+          refusal = body?.error ?? `Onboarding could not start (${res.status}).`;
+        } else {
+          missed();
         }
-        await poll();
       } catch {
-        if (!cancelled) fail("Onboarding could not start. Check the connection and reload.");
+        missed();
+      } finally {
+        running = false;
       }
-    })();
+      if (cancelled) return;
+      if (refusal) {
+        fail(refusal);
+        return;
+      }
+      if (started) await poll();
+      else schedule();
+    };
+
+    // Back on the tab: ask now rather than at the end of a long backoff.
+    const onVisible = () => {
+      if (document.visibilityState !== "visible" || cancelled) return;
+      if (timer) clearTimeout(timer);
+      void (started ? poll() : start());
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    void start();
 
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
     };
   }, [workspaceId, settledOnMount]);
 
@@ -238,6 +263,10 @@ export function OnboardingProgress({
   useEffect(() => {
     onStateRef.current?.(state);
   }, [state]);
+  // The parent passes a state setter, which is stable.
+  useEffect(() => {
+    if (startedAt !== null) onStartedAt?.(startedAt);
+  }, [startedAt, onStartedAt]);
   useEffect(() => {
     if (!finished) return;
     const t = setTimeout(() => {
@@ -284,14 +313,14 @@ export function OnboardingProgress({
 
   if (variant === "first-look") {
     if (!finished) {
-      return <SetupLoading domain={domain} state={state} report={report} startedAt={startedAt} log={<RunLog steps={state.steps} />} />;
+      return <SetupLoading workspaceId={workspaceId} domain={domain} state={state} report={report} startedAt={startedAt} reconnecting={reconnecting} refused={refused} log={<RunLog steps={state.steps} preTrial={preTrial} />} />;
     }
     const scheduledCount = state.planned.length;
     const heldCount = lockHeld ? state.held?.count ?? 0 : 0;
     return (
       <div className="flex flex-col gap-2">
         <Fold title="How setup went" line={outcome.line} tone={outcome.tone === "error" ? "err" : undefined}>
-          <RunLog steps={state.steps} />
+          <RunLog steps={state.steps} preTrial={preTrial} />
         </Fold>
         {scheduledCount > 0 && (
           <Fold
@@ -303,7 +332,7 @@ export function OnboardingProgress({
           </Fold>
         )}
         {report && (
-          <Fold title="Your site report" line={report.readiness ? `AI readability ${report.readiness.score}/100${report.existingPages?.withIssues ? ` · ${report.existingPages.withIssues} existing ${report.existingPages.withIssues === 1 ? "page" : "pages"} with something to fix` : ""}` : `${domain}, as we read it`}>
+          <Fold title="Your site report" line={reportLine(report, domain)}>
             <FirstLookReportView report={report} domain={domain} live={false} />
           </Fold>
         )}
@@ -320,6 +349,13 @@ export function OnboardingProgress({
         >
           {outcome.line}
         </p>
+        {refused && !finished ? (
+          <PollRefusedLine refused={refused} />
+        ) : reconnecting && !finished ? (
+          <p role="status" className="m-0 mt-1 text-[12px] text-ink-3">
+            Reconnecting… The run carries on while this screen catches up.
+          </p>
+        ) : null}
       </div>
 
       <RunLog steps={state.steps} />
@@ -333,6 +369,37 @@ export function OnboardingProgress({
       <FirstLookReportView report={report} domain={domain} live={!finished} />
     </div>
   );
+}
+
+/**
+ * The site report's one line, leading with what there is to fix and with no
+ * score: "AI readability 96/100" beside "25 pages with something to fix"
+ * contradicted itself with no explanation (UX audit 2026-10-12, #8). The
+ * score is inside, with what it measures.
+ */
+export function reportLine(report: FirstLookReport, domain: string): string {
+  const pages = report.existingPages?.withIssues ?? 0;
+  // Only what really stops an AI assistant reading the site; advice is in the report.
+  const blocked = readingBlockers(report) > 0;
+  const parts = [
+    pages > 0 ? `${pages} existing ${pages === 1 ? "page" : "pages"} with something to fix` : null,
+    blocked ? "some AI assistants are blocked from reading it" : null,
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : `${domain || "Your site"}, as we read it`;
+}
+
+/**
+ * A phase's own sentence, for an account before its trial: without the
+ * pointers to dashboard pages the gate does not open yet ("Add a keyword by
+ * hand from Keywords", "see Keywords"), which redirected straight back here.
+ */
+export function preTrialDetail(detail: string | undefined): string | undefined {
+  if (!detail) return detail;
+  const out = detail
+    .replace(/\s*Add a keyword by hand from Keywords, or connect Search Console, and the plan can be built from there\./g, "")
+    .replace(/;\s*see Keywords(?=[.)]|$)/g, "")
+    .trim();
+  return out || undefined;
 }
 
 /**
@@ -350,16 +417,17 @@ export function OnboardingProgress({
  * what was found, what was decided. Nothing names a provider, an endpoint, a
  * model or a table - the log is a window on the outcome, not on the plumbing.
  */
-function RunLog({ steps }: { steps: OnboardingStep[] }) {
+function RunLog({ steps, preTrial = false }: { steps: OnboardingStep[]; preTrial?: boolean }) {
   const lines = useMemo(() => {
     const out: { text: string; kind: "cmd" | "out" }[] = [];
     for (const step of steps) {
       if (step.status === "pending") continue;
       out.push({ text: phaseLabel(step), kind: "cmd" });
-      if (step.detail) out.push({ text: step.detail, kind: "out" });
+      const detail = preTrial ? preTrialDetail(step.detail) : step.detail;
+      if (detail) out.push({ text: detail, kind: "out" });
     }
     return out;
-  }, [steps]);
+  }, [steps, preTrial]);
 
   // How many lines are fully written, and how much of the next one is. The
   // lines already there when the log first renders are shown whole: on a
@@ -417,8 +485,10 @@ function RunLog({ steps }: { steps: OnboardingStep[] }) {
           {l.text}
         </div>
       ))}
+      {/* The line being typed is not read out character by character: the
+          live region announces it once, when it is whole. */}
       {typing && (
-        <div className={lines[cursor].kind === "cmd" ? "text-ink" : "pl-3.5 text-ink-3"}>
+        <div aria-hidden className={lines[cursor].kind === "cmd" ? "text-ink" : "pl-3.5 text-ink-3"}>
           {lines[cursor].kind === "cmd" && <span className="mr-1.5 text-accent">&gt;</span>}
           {partial}
           <span className="ml-px inline-block h-[11px] w-[6px] translate-y-[1px] animate-pulse bg-ink-3" />
@@ -560,9 +630,12 @@ function CalendarStrip({
       {article && (
         <p className="m-0 mt-2 text-[12px] text-ink-2">
           {preTrial ? (
+            // True with PRETRIAL_FULL_ARTICLE either way: the owner may be
+            // reading it already, and approving and publishing wait for the
+            // trial whatever the switch says.
             article.outlined
-              ? "First article is outlined and being written. The full text opens with the trial."
-              : "First article is written. The full text opens with the trial."
+              ? "First article is outlined and being written. Approving and publishing it open with the trial."
+              : "First article is written. Approving and publishing it open with the trial."
           ) : (
             <>
               First draft is in your review queue

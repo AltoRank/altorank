@@ -385,7 +385,7 @@ describe("the setup email", () => {
     expect(mail.html).not.toContain("/content/");
     expect(mail.html).not.toMatch(/Read the draft|edit it, send it back, or approve it/);
     expect(mail.html).toContain("https://app.altorank.co/onboarding");
-    expect(mail.html).toContain("The full text opens when your 7-day trial starts");
+    expect(mail.html).toContain("Editing, approving and publishing open when your 7-day trial starts");
   });
 
   it("does not send when the site's account cannot be read, and says why", async () => {
