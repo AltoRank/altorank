@@ -144,11 +144,15 @@ build args, not runtime env.
 | `PAGESPEED_API_KEY` | Core Web Vitals in audits report as unavailable (unkeyed requests hit Google's rate limit) |
 | `FEEDBACK_EMAIL` | the in-app feedback widget and "Request integration" send nothing and say feedback is not configured |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | Search Console connect returns `google_oauth_not_configured`. The redirect URI is `<origin>/api/auth/google/callback` and must be registered in Google Cloud |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_STARTER_YEARLY`, `STRIPE_PRICE_GROWTH`, `STRIPE_PRICE_GROWTH_YEARLY` | billing is hidden (`billingEnabled` is false). The webhook endpoint is `<origin>/api/webhooks/stripe` and has to be registered in Stripe by hand |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_STARTER_YEARLY`, `STRIPE_PRICE_GROWTH`, `STRIPE_PRICE_GROWTH_YEARLY` | billing is off (`billingEnabled` is false) and every account is unmetered. `STRIPE_SECRET_KEY` alone turns billing on, so set all six or none. The webhook endpoint is `<origin>/api/webhooks/stripe` and has to be registered in Stripe by hand |
 | `STRIPE_TAX_ENABLED` | Checkout charges the listed price and adds no VAT: no `automatic_tax`, no `tax_id_collection`, so no reverse charge for EU businesses. Set it to `true` **only** once Stripe Tax is activated, registered and set to exclusive - see [VAT](#2-vat-off-by-default-behind-stripe_tax_enabled). Turning it on before that stops anyone paying |
 | `YOUTUBE_API_KEY` | no video embeds in articles; silently skipped |
 | `ADMIN_EMAILS` | nobody is an operator: `/admin/*` and "View as" are closed to everyone, and the daily operations digest sends nothing. Comma-separated; set it to yourself if you want them |
-| `ANTHROPIC_MODEL`, `ANTHROPIC_MODEL_STRUCTURED`, `OPENAI_MODEL`, `OPENAI_IMAGE_MODEL` | defaults from `lib/ai/models.ts` |
+| `ANTHROPIC_MODEL`, `ANTHROPIC_MODEL_STRUCTURED`, `ANTHROPIC_MODEL_DECISION`, `OPENAI_MODEL`, `OPENAI_IMAGE_MODEL` | defaults from `lib/ai/models.ts`. `ANTHROPIC_MODEL` pins every Claude tier at once; the other two override one tier each |
+| `PUBLIC_TOOLS_DAILY_CAP_CENTS`, `PUBLIC_TOOLS_MODEL` | the paid public tools (`/api/public/tools/<slug>`, no sign-in) spend at most this many US cents a day of your Anthropic and DataForSEO keys. Unset means **0 with billing off** (the paid tools are off on a self-host until you set a budget) and 500 with billing on |
+| `EMAIL_UNSUBSCRIBE_SECRET` | the service role key signs unsubscribe and Hold links instead |
+| `ALTORANK_ALLOW_PRIVATE_FETCH` | audits refuse private and local addresses. Set `1` to audit sites on your own network |
+| `TRIAL_GATE_DISABLED`, `TRIAL_GATE_BYPASS_EMAILS`, `PRETRIAL_FULL_ARTICLE` | billing only: the card-trial step before the dashboard, addresses that skip it, and whether an owner can read their first draft in full before the trial |
 | `DOGFOOD_EMAIL` | only read by `scripts/dogfood.ts`; irrelevant to a deployment |
 | the two `NEXT_PUBLIC_POSTHOG_*` variables (project token, host) | no product analytics; `npm run dev` logs one console warning. Read at build time; `docker/compose.yml` does not pass them, so the Docker image never sends analytics |
 

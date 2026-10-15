@@ -39,7 +39,8 @@ services:
       # Server-side only. docker/.env.example lists which ones are required
       # (the service role key, Anthropic, ENCRYPTION_KEY, CRON_SECRET and
       # Resend, without which nobody can sign up) and what each optional one
-      # turns on.
+      # turns on. lib/__tests__/self-host-env.test.ts fails when a variable in
+      # .env.example, or one the app reads, is not forwarded here.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       DATAFORSEO_LOGIN: ${DATAFORSEO_LOGIN:-}
@@ -66,10 +67,20 @@ services:
       STRIPE_PRICE_GROWTH_YEARLY: ${STRIPE_PRICE_GROWTH_YEARLY:-}
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      STRIPE_TAX_ENABLED: ${STRIPE_TAX_ENABLED:-}
+      TRIAL_GATE_DISABLED: ${TRIAL_GATE_DISABLED:-}
+      TRIAL_GATE_BYPASS_EMAILS: ${TRIAL_GATE_BYPASS_EMAILS:-}
+      PRETRIAL_FULL_ARTICLE: ${PRETRIAL_FULL_ARTICLE:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       ANTHROPIC_MODEL_STRUCTURED: ${ANTHROPIC_MODEL_STRUCTURED:-}
+      ANTHROPIC_MODEL_DECISION: ${ANTHROPIC_MODEL_DECISION:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-}
       OPENAI_IMAGE_MODEL: ${OPENAI_IMAGE_MODEL:-}
+      # Unset means 0 (paid public tools off) while billing is off.
+      PUBLIC_TOOLS_DAILY_CAP_CENTS: ${PUBLIC_TOOLS_DAILY_CAP_CENTS:-}
+      PUBLIC_TOOLS_MODEL: ${PUBLIC_TOOLS_MODEL:-}
+      EMAIL_UNSUBSCRIBE_SECRET: ${EMAIL_UNSUBSCRIBE_SECRET:-}
+      ALTORANK_ALLOW_PRIVATE_FETCH: ${ALTORANK_ALLOW_PRIVATE_FETCH:-}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
