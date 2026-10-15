@@ -82,8 +82,10 @@ services:
       EMAIL_UNSUBSCRIBE_SECRET: ${EMAIL_UNSUBSCRIBE_SECRET:-}
       ALTORANK_ALLOW_PRIVATE_FETCH: ${ALTORANK_ALLOW_PRIVATE_FETCH:-}
     restart: unless-stopped
+    # /signin renders for anyone and touches no third party. redirect:'manual'
+    # so the check never follows a redirect off this container.
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/signin',{redirect:'manual'}).then(r=>process.exit(r.status<400?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
