@@ -493,7 +493,9 @@ export function ArticleEditor({
     try {
       const result = await publishArticle(article.id, destination?.id);
       toast.success(
-        result.publishMode === "draft"
+        // The WordPress plugin can hold a post as a draft on its own side
+        // (result.status), and the core then leaves the article Approved.
+        result.publishMode === "draft" || result.status === "draft"
           ? `Saved as a draft on ${destination?.label ?? "the CMS"}`
           : destination ? `Published to ${destination.label}` : "Article published",
         result?.url ? { description: result.url } : undefined,
@@ -513,7 +515,7 @@ export function ArticleEditor({
     try {
       const result = await retryPublish(article.id);
       toast.success(
-        result.publishMode === "draft" ? "Saved as a draft this time" : "Published this time",
+        result.publishMode === "draft" || result.status === "draft" ? "Saved as a draft this time" : "Published this time",
         result?.url ? { description: result.url } : undefined,
       );
       router.refresh();
