@@ -54,6 +54,9 @@ function altorank_test_reset(): void {
 		'next_id'  => 100,
 		'time'     => null,
 		'kses'     => true,
+		'kses_allowed' => null,
+		'singular' => false,
+		'queried'  => 0,
 	);
 	$GLOBALS['wp']          = null;
 }
@@ -227,6 +230,41 @@ function wp_insert_post( $postarr, $wp_error = false, $fire_after_hooks = true )
 
 function wp_update_post( $postarr = array(), $wp_error = false, $fire_after_hooks = true ) {
 	return altorank_test_record_write( 'update', $postarr );
+}
+
+// ---------------------------------------------------------------------------
+// Sanitising and templates
+// ---------------------------------------------------------------------------
+
+/** A stand-in for WordPress's post allowlist: enough to tell it apart. */
+function wp_kses_allowed_html( $context = '' ) {
+	return array(
+		'p'      => array(),
+		'figure' => array( 'class' => true ),
+		'a'      => array( 'href' => true ),
+	);
+}
+
+/** Records the allowlist it was given; the HTML is returned as is (real kses is not reimplemented here). */
+function wp_kses( $html, $allowed, $protocols = array() ) {
+	$GLOBALS['altorank_wp']['kses_allowed'] = $allowed;
+	return $html;
+}
+
+function is_singular( $post_types = '' ) {
+	return $GLOBALS['altorank_wp']['singular'];
+}
+
+function get_queried_object_id() {
+	return $GLOBALS['altorank_wp']['queried'];
+}
+
+function get_post_meta( $post_id, $key = '', $single = false ) {
+	$value = $GLOBALS['altorank_wp']['meta'][ (int) $post_id ][ $key ] ?? null;
+	if ( null === $value ) {
+		return $single ? '' : array();
+	}
+	return $single ? $value : array( $value );
 }
 
 require dirname( __DIR__ ) . '/altorank/altorank.php';

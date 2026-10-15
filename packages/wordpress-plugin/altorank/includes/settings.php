@@ -146,7 +146,7 @@ function altorank_render_settings_page(): void {
 	<div class="wrap">
 		<h1><?php esc_html_e( 'AltoRank', 'altorank' ); ?></h1>
 		<p>
-			<?php esc_html_e( 'Articles approved in your AltoRank dashboard arrive here as posts. Nothing is added to your public pages: no scripts, no links, no credits.', 'altorank' ); ?>
+			<?php esc_html_e( 'Articles approved in your AltoRank dashboard arrive here as posts. The only thing added to your public pages is each article\'s own structured data (JSON-LD), on that article\'s page: no tracking, no links, no credits.', 'altorank' ); ?>
 		</p>
 
 		<?php settings_errors( 'altorank' ); ?>

@@ -8,8 +8,11 @@
  * response. /capabilities is the one unauthenticated route and says only
  * which plugin version this is and what it can do.
  *
- * Nothing in this file touches the public site: no scripts, no links, no
- * credits, no meta tags. It writes posts, media and post meta, and that is all.
+ * The public site is touched in one place only: the page of a post this plugin
+ * wrote carries that article's own structured data (JSON-LD) in its head,
+ * see altorank_print_structured_data(). No scripts, no links, no credits,
+ * nothing on any other page. Otherwise it writes posts, media and post meta,
+ * and that is all.
  *
  * @package AltoRank
  */
@@ -24,6 +27,10 @@ const ALTORANK_IFRAME_HOSTS = array(
 	'youtube-nocookie.com',
 	'youtu.be',
 );
+
+/** JSON-LD kept per article: at most this many blocks, and this many bytes encoded. */
+const ALTORANK_STRUCTURED_DATA_MAX_ITEMS = 10;
+const ALTORANK_STRUCTURED_DATA_MAX_BYTES = 65536;
 
 /** Post statuses the dashboard may ask for. */
 const ALTORANK_ALLOWED_STATUSES = array( 'publish', 'draft', 'pending', 'private' );
@@ -583,10 +590,12 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 		$postarr['post_title'] = $params['title'];
 	}
 
-	$content = null;
+	$content    = null;
+	$structured = null;
 	if ( $params['has_content'] ) {
-		$content                 = altorank_sanitize_content( $params['content'] );
-		$postarr['post_content'] = $content;
+		list( $body, $structured ) = altorank_extract_structured_data( $params['content'] );
+		$content                   = altorank_sanitize_content( $body );
+		$postarr['post_content']   = $content;
 	}
 
 	if ( '' !== $params['slug'] ) {
@@ -636,6 +645,10 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 	$meta_input = altorank_seo_meta_input( $params['title'], $params['meta_description'], $params['focus_keyword'] );
 	if ( '' !== $params['external_id'] ) {
 		$meta_input[ ALTORANK_META_EXTERNAL_ID ] = $params['external_id'];
+	}
+	if ( null !== $structured ) {
+		// A new body replaces the structured data too: none in it clears the old.
+		$meta_input[ ALTORANK_META_STRUCTURED_DATA ] = $structured ? (string) wp_json_encode( $structured, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) : '';
 	}
 	if ( $meta_input ) {
 		$postarr['meta_input'] = $meta_input;
@@ -767,12 +780,16 @@ function altorank_unique_slug( string $wanted, int $post_id ): string {
 }
 
 /**
- * wp_kses_post(), keeping YouTube embeds.
+ * wp_kses() with the post allowlist plus inline SVG charts, keeping YouTube
+ * embeds.
  *
- * wp_kses_post() removes every iframe. The one embed an article body
- * legitimately carries is a YouTube video, so those are lifted out first,
- * rebuilt from a fixed attribute list (never the original markup), and put
- * back after sanitising. Any other iframe is dropped.
+ * kses removes every iframe. The one embed an article body legitimately
+ * carries is a YouTube video, so those are lifted out first, rebuilt from a
+ * fixed attribute list (never the original markup), and put back after
+ * sanitising. Any other iframe is dropped.
+ *
+ * Script blocks never reach here: altorank_extract_structured_data() has
+ * already taken the JSON-LD out and dropped every other script whole.
  */
 function altorank_sanitize_content( string $html ): string {
 	$kept = array();
@@ -804,10 +821,160 @@ function altorank_sanitize_content( string $html ): string {
 		$html
 	);
 
-	$html = wp_kses_post( $html );
+	$html = wp_kses( $html, altorank_allowed_html() );
 
 	return $kept ? str_replace( array_keys( $kept ), array_values( $kept ), $html ) : $html;
 }
+
+/**
+ * What an article body may contain: WordPress's post allowlist, plus the
+ * inline SVG the dashboard draws charts with (shapes and text only).
+ *
+ * Without the SVG elements kses strips the tags and keeps their text, and a
+ * chart arrives as a run of loose labels and numbers. No element added here
+ * can load or run anything: no script, image, use, foreignObject or link, and
+ * no href or event-handler attribute. `style` is filtered by kses's own CSS
+ * allowlist.
+ */
+function altorank_allowed_html(): array {
+	$allowed = wp_kses_allowed_html( 'post' );
+
+	$paint = array(
+		'class'        => true,
+		'fill'         => true,
+		'fill-opacity' => true,
+		'opacity'      => true,
+		'stroke'       => true,
+		'stroke-width' => true,
+		'transform'    => true,
+		'aria-hidden'  => true,
+	);
+	$text  = $paint + array(
+		'x'                 => true,
+		'y'                 => true,
+		'dx'                => true,
+		'dy'                => true,
+		'text-anchor'       => true,
+		'dominant-baseline' => true,
+		'font-size'         => true,
+		'font-weight'       => true,
+		'font-family'       => true,
+	);
+
+	$allowed['svg']   = array(
+		'xmlns'               => true,
+		'viewbox'             => true,
+		'width'               => true,
+		'height'              => true,
+		'role'                => true,
+		'aria-label'          => true,
+		'aria-hidden'         => true,
+		'focusable'           => true,
+		'preserveaspectratio' => true,
+		'class'               => true,
+		'style'               => true,
+	);
+	$allowed['g']     = $paint;
+	$allowed['title'] = array();
+	$allowed['desc']  = array();
+	$allowed['text']  = $text;
+	$allowed['tspan'] = $text;
+	$allowed['rect']  = $paint + array(
+		'x'      => true,
+		'y'      => true,
+		'width'  => true,
+		'height' => true,
+		'rx'     => true,
+		'ry'     => true,
+	);
+	$allowed['line']  = $paint + array(
+		'x1' => true,
+		'y1' => true,
+		'x2' => true,
+		'y2' => true,
+	);
+
+	return $allowed;
+}
+
+/**
+ * Take the article's JSON-LD out of the body.
+ *
+ * The dashboard appends its structured data (a BlogPosting, a FAQPage) to the
+ * body as <script type="application/ld+json"> blocks. kses would strip the
+ * tags and leave the JSON as a visible paragraph at the end of the post, and
+ * a script in post content does not survive a later save by an editor
+ * without unfiltered_html either. So each block is decoded here and kept as
+ * data (ALTORANK_META_STRUCTURED_DATA), and altorank_print_structured_data()
+ * re-encodes it into the page head. A block that is not valid JSON is dropped;
+ * any other <script> is dropped whole, text included.
+ *
+ * @return array{0: string, 1: array} the body without scripts, and the decoded blocks
+ */
+function altorank_extract_structured_data( string $html ): array {
+	$items = array();
+	$bytes = 0;
+
+	$out = preg_replace_callback(
+		'#<script\b([^>]*)>(.*?)</script\s*>#is',
+		static function ( array $m ) use ( &$items, &$bytes ): string {
+			if ( ! preg_match( '#\btype\s*=\s*["\']?application/ld\+json\b#i', $m[1] ) ) {
+				return '';
+			}
+			$decoded = json_decode( trim( $m[2] ), true );
+			if ( ! is_array( $decoded ) || ! $decoded || count( $items ) >= ALTORANK_STRUCTURED_DATA_MAX_ITEMS ) {
+				return '';
+			}
+			$size = strlen( (string) wp_json_encode( $decoded ) );
+			if ( $bytes + $size > ALTORANK_STRUCTURED_DATA_MAX_BYTES ) {
+				return '';
+			}
+			$bytes  += $size;
+			$items[] = $decoded;
+			return '';
+		},
+		$html
+	);
+
+	// A body too large for the pattern is left to kses as it was.
+	if ( null === $out ) {
+		return array( $html, array() );
+	}
+	return array( rtrim( $out ), $items );
+}
+
+/**
+ * Print an AltoRank article's JSON-LD in its page head. Nothing on any other
+ * page, and nothing for a post without it.
+ *
+ * Re-encoded from the decoded data, never echoed as received: with
+ * JSON_HEX_TAG no `<` or `>` reaches the page, so the data cannot end the
+ * script element.
+ */
+function altorank_print_structured_data(): void {
+	if ( ! is_singular( 'post' ) ) {
+		return;
+	}
+	$raw = (string) get_post_meta( (int) get_queried_object_id(), ALTORANK_META_STRUCTURED_DATA, true );
+	if ( '' === $raw ) {
+		return;
+	}
+	$items = json_decode( $raw, true );
+	if ( ! is_array( $items ) ) {
+		return;
+	}
+	foreach ( array_slice( $items, 0, ALTORANK_STRUCTURED_DATA_MAX_ITEMS ) as $item ) {
+		if ( ! is_array( $item ) ) {
+			continue;
+		}
+		$json = wp_json_encode( $item, JSON_HEX_TAG | JSON_HEX_AMP | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+		if ( false === $json ) {
+			continue;
+		}
+		echo '<script type="application/ld+json">' . $json . "</script>\n"; // phpcs:ignore WordPress.Security.EscapeOutput -- JSON with every < and > hex-escaped.
+	}
+}
+add_action( 'wp_head', 'altorank_print_structured_data' );
 
 /**
  * Download every remote <img> into the media library and point the post at

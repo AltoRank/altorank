@@ -23,6 +23,8 @@ import { buildFaqSchema, type FaqSchema } from "@/lib/content/enrich/faq";
 /** Destinations whose body field keeps a <script> tag as written. */
 export const SCRIPT_CAPABLE: ReadonlySet<CMSConfig["type"]> = new Set<CMSConfig["type"]>([
   "wordpress",
+  // The plugin (1.1.1+) takes the tags out of the body and prints them in the
+  // post's page head, where an editor's later save cannot strip them to text.
   "wordpress-plugin",
   "woocommerce",
   "ghost",

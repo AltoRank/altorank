@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       AltoRank
  * Plugin URI:        https://altorank.co
- * Description:       Receives articles from your AltoRank dashboard as posts. Imports images into the media library, fills in Rank Math, Yoast, SEOPress and AIOSEO fields. Adds nothing to your public pages.
+ * Description:       Receives articles from your AltoRank dashboard as posts. Imports images into the media library, fills in Rank Math, Yoast, SEOPress and AIOSEO fields. Adds no links, credits or tracking to your public pages.
  * Version:           1.1.0
  * Requires at least: 6.4
  * Requires PHP:      8.0
@@ -33,6 +33,8 @@ define( 'ALTORANK_OPTION_INDEXNOW_KEY', 'altorank_indexnow_key' );
 /** Post meta keys this plugin owns. */
 define( 'ALTORANK_META_EXTERNAL_ID', '_altorank_external_id' );
 define( 'ALTORANK_META_SOURCE_URL', '_altorank_source_url' );
+/** The article's JSON-LD, lifted out of the body and printed in its page head. */
+define( 'ALTORANK_META_STRUCTURED_DATA', '_altorank_structured_data' );
 
 require_once ALTORANK_PLUGIN_DIR . 'includes/api.php';
 require_once ALTORANK_PLUGIN_DIR . 'includes/settings.php';

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { findPluginSourceDir } from "../wordpress-plugin-zip";
+import { renderBarChart } from "@/lib/content/enrich/infographic";
 
 // Static checks on the plugin source that hold with or without a PHP binary.
 // The behaviour itself is tested in PHP (packages/wordpress-plugin/tests, run
@@ -59,5 +60,34 @@ describe("post writes", () => {
     expect(helper).toContain("wp_slash( $postarr )");
     expect(helper).toContain("kses_remove_filters()");
     expect(helper).toMatch(/finally \{[\s\S]*kses_init_filters\(\)/);
+  });
+});
+
+describe("structured data and charts", () => {
+  it("JSON-LD is lifted out of the body before it is sanitised", async () => {
+    const upsert = code(phpFunction(await read("includes/api.php"), "altorank_upsert_post"));
+    const extract = upsert.indexOf("altorank_extract_structured_data(");
+    const sanitise = upsert.indexOf("altorank_sanitize_content(");
+    expect(extract).toBeGreaterThan(-1);
+    expect(sanitise).toBeGreaterThan(extract);
+  });
+
+  it("the body is sanitised with the chart allowlist, not bare wp_kses_post", async () => {
+    const sanitise = code(phpFunction(await read("includes/api.php"), "altorank_sanitize_content"));
+    expect(sanitise).toContain("wp_kses( $html, altorank_allowed_html() )");
+    expect(sanitise).not.toContain("wp_kses_post(");
+  });
+
+  it("every element and attribute the dashboard draws a chart with is on the plugin's allowlist", async () => {
+    const allowlist = code(phpFunction(await read("includes/api.php"), "altorank_allowed_html"));
+    const svg = renderBarChart(
+      { unit: "%", data: [{ label: "A", value: 40 }, { label: "B", value: 25 }], source: "A survey" },
+      "en",
+      "#123456",
+    ).match(/<svg[\s\S]*<\/svg>/)![0];
+    const elements = new Set([...svg.matchAll(/<([a-zA-Z][\w-]*)/g)].map((m) => m[1].toLowerCase()));
+    for (const el of elements) expect(allowlist, `<${el}>`).toContain(`$allowed['${el}']`);
+    const attributes = new Set([...svg.matchAll(/\s([a-zA-Z][\w:-]*)=/g)].map((m) => m[1].toLowerCase()));
+    for (const attr of attributes) expect(allowlist, attr).toContain(`'${attr}'`);
   });
 });
