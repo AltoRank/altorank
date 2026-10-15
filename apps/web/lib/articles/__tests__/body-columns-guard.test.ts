@@ -66,7 +66,7 @@ const SERVICE_READS: Record<string, { count: number; why: string }> = {
   },
   "lib/onboarding/first-article-body.ts": {
     count: 1,
-    why: "the gate's reader (PRETRIAL_FULL_ARTICLE): the owner's own first article, on the service client, only after the switch, the owner check through their own client and the run's first article have all answered",
+    why: "readArticleRow, the one read behind both of these: the gate's reader (PRETRIAL_FULL_ARTICLE) - the owner's own first article, on the service client, only after the switch, the owner check through their own client and the run's first article have all answered - and its progress (108, counts only, no text column selected), after the same owner and first-article checks",
   },
   "lib/publishing/auto-approve.ts": {
     count: 1,

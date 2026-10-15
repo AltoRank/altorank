@@ -123,7 +123,13 @@ export function setupEnding(
   return "no-article";
 }
 
-/** Whether the screen asks for a card. Never over a run that planned nothing. */
+/**
+ * Whether the screen asks for a card. Never over a run that planned nothing,
+ * and never beside "Run setup again": a retry is free, nothing was written,
+ * and on 2026-10-12 a first-time owner whose setup failed on our side (a
+ * provider's 402) was shown "Setup did not finish / Nothing was written" with
+ * the full card ask directly under the retry button.
+ */
 export function asksForCard(ending: SetupEnding): boolean {
-  return ending !== "nothing-planned";
+  return ending !== "nothing-planned" && ending !== "retry";
 }
