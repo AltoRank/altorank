@@ -141,6 +141,50 @@ function altorank_register_routes(): void {
 }
 add_action( 'rest_api_init', 'altorank_register_routes' );
 
+/** The routes register_rest_route() adds above, as WordPress dispatches them. */
+const ALTORANK_ROUTES = array( 'capabilities', 'test-integration', 'submit', 'edit', 'indexnow', 'posts' );
+
+/**
+ * Error codes WordPress itself raises from `rest_authentication_errors`: the
+ * cookie nonce check and the application-password check. These are never
+ * cleared, on any route.
+ */
+const ALTORANK_CORE_AUTH_ERRORS = array(
+	'rest_cookie_invalid_nonce',
+	'incorrect_password',
+	'invalid_username',
+	'invalid_email',
+	'empty_username',
+	'empty_password',
+	'application_passwords_disabled',
+	'application_passwords_disabled_for_user',
+);
+
+/**
+ * The route WordPress is about to dispatch, read from the same query var
+ * rest_api_loaded() hands to the REST server (so a `rest_route` in the query
+ * string or the body is what is read here, as it is there). Empty outside a
+ * REST request.
+ */
+function altorank_dispatched_route(): string {
+	global $wp;
+	if ( ! is_object( $wp ) || ! isset( $wp->query_vars['rest_route'] ) || ! is_string( $wp->query_vars['rest_route'] ) ) {
+		return '';
+	}
+	$route = untrailingslashit( $wp->query_vars['rest_route'] );
+	return '' === $route ? '/' : $route;
+}
+
+/** Whether `$route` is exactly one of this plugin's routes. */
+function altorank_is_own_route( string $route ): bool {
+	foreach ( ALTORANK_ROUTES as $own ) {
+		if ( '/' . ALTORANK_REST_NAMESPACE . '/' . $own === $route ) {
+			return true;
+		}
+	}
+	return false;
+}
+
 /**
  * Some hosts and security plugins (Wordfence, iThemes, "Disable REST API") answer
  * every unauthenticated REST request with a 401 from `rest_authentication_errors`,
@@ -149,10 +193,17 @@ add_action( 'rest_api_init', 'altorank_register_routes' );
  * run: the connection test fails with "rest_not_logged_in" and the person is
  * told to disable their security plugin, which is the wrong fix.
  *
- * This clears that block for requests to altorank/v1 only. Every route in the
- * namespace still runs altorank_permission_check() (or is /capabilities, which
- * discloses only the plugin version), so nothing becomes reachable that the
- * token did not already guard. Other namespaces keep whatever the site decided.
+ * This clears such a block only when all of these hold:
+ *
+ * - the route WordPress will dispatch is exactly one of this plugin's routes
+ *   (decided from the dispatched route, never from the request path);
+ * - the request carries no logged-in user, so nothing runs with a session;
+ * - none of the errors is one WordPress itself raised (ALTORANK_CORE_AUTH_ERRORS).
+ *
+ * Every route it can apply to runs altorank_permission_check() (or is
+ * /capabilities, which discloses only the plugin version), so nothing becomes
+ * reachable that the token did not already guard. Every other route keeps
+ * whatever the site decided.
  *
  * Priority 999: after the plugins that set the error, so there is something to
  * clear.
@@ -164,21 +215,17 @@ function altorank_allow_own_namespace( $result ) {
 	if ( ! is_wp_error( $result ) ) {
 		return $result;
 	}
-
-	$needle = '/' . ALTORANK_REST_NAMESPACE . '/';
-
-	// Pretty permalinks: /wp-json/altorank/v1/... ; plain: ?rest_route=/altorank/v1/...
-	$path = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_PATH ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
-	if ( '' !== $path && false !== strpos( $path, '/' . rest_get_url_prefix() . $needle ) ) {
-		return true;
+	if ( is_user_logged_in() ) {
+		return $result;
 	}
-
-	$route = isset( $_GET['rest_route'] ) ? (string) wp_unslash( $_GET['rest_route'] ) : ''; // phpcs:ignore WordPress.Security.NonceVerification,WordPress.Security.ValidatedSanitizedInput
-	if ( '' !== $route && 0 === strpos( $route, $needle ) ) {
-		return true;
+	if ( array_intersect( $result->get_error_codes(), ALTORANK_CORE_AUTH_ERRORS ) ) {
+		return $result;
 	}
-
-	return $result;
+	if ( ! altorank_is_own_route( altorank_dispatched_route() ) ) {
+		return $result;
+	}
+	// No authentication was performed; the route's own permission_callback decides.
+	return null;
 }
 add_filter( 'rest_authentication_errors', 'altorank_allow_own_namespace', 999 );
 

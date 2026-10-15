@@ -1,0 +1,177 @@
+<?php
+/**
+ * Just enough WordPress to load the plugin and call its functions.
+ *
+ * Each fake does the one thing the plugin relies on and records what it was
+ * given in $GLOBALS['altorank_wp'], so a test can say "the post written had
+ * this content" without a database. Anything the plugin calls that is not
+ * faked here is a fatal error, which is the point: a new WordPress call gets
+ * a fake on purpose, not by accident.
+ *
+ * @package AltoRank
+ */
+
+error_reporting( E_ALL );
+ini_set( 'display_errors', '1' );
+
+define( 'ABSPATH', __DIR__ . '/' );
+
+// ---------------------------------------------------------------------------
+// Assertions
+// ---------------------------------------------------------------------------
+
+$GLOBALS['altorank_test_failures'] = array();
+$GLOBALS['altorank_test_count']    = 0;
+
+function altorank_test_check( string $name, bool $ok ): void {
+	$GLOBALS['altorank_test_count']++;
+	if ( ! $ok ) {
+		$GLOBALS['altorank_test_failures'][] = $name;
+	}
+}
+
+function altorank_test_same( string $name, $expected, $actual ): void {
+	$ok = $expected === $actual;
+	if ( ! $ok ) {
+		$name .= ' (expected ' . var_export( $expected, true ) . ', got ' . var_export( $actual, true ) . ')';
+	}
+	altorank_test_check( $name, $ok );
+}
+
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+
+/** Fresh fake WordPress state: no user, no options, no posts. */
+function altorank_test_reset(): void {
+	$GLOBALS['altorank_wp'] = array(
+		'user'     => 0,
+		'options'  => array(),
+		'posts'    => array(),
+		'meta'     => array(),
+		'filters'  => array(),
+		'writes'   => array(),
+		'next_id'  => 100,
+		'time'     => null,
+	);
+	$GLOBALS['wp']          = null;
+}
+altorank_test_reset();
+
+// ---------------------------------------------------------------------------
+// Hooks (recorded, never run) and plugin loading
+// ---------------------------------------------------------------------------
+
+$GLOBALS['altorank_test_hooks'] = array();
+
+function add_action( $hook, $callback, $priority = 10, $args = 1 ) {
+	$GLOBALS['altorank_test_hooks'][] = array( $hook, $callback, $priority );
+	return true;
+}
+
+function add_filter( $hook, $callback, $priority = 10, $args = 1 ) {
+	$GLOBALS['altorank_test_hooks'][] = array( $hook, $callback, $priority );
+	return true;
+}
+
+function register_activation_hook( $file, $callback ) {}
+
+function plugin_dir_path( $file ) {
+	return rtrim( dirname( $file ), '/' ) . '/';
+}
+
+function plugin_basename( $file ) {
+	return 'altorank/altorank.php';
+}
+
+// ---------------------------------------------------------------------------
+// Errors, users, i18n
+// ---------------------------------------------------------------------------
+
+class WP_Error {
+	private $errors = array();
+
+	public function __construct( $code = '', $message = '', $data = '' ) {
+		if ( '' !== $code ) {
+			$this->errors[ $code ] = array( $message );
+		}
+	}
+
+	public function add( $code, $message ) {
+		$this->errors[ $code ][] = $message;
+	}
+
+	public function get_error_codes() {
+		return array_keys( $this->errors );
+	}
+
+	public function get_error_message() {
+		foreach ( $this->errors as $messages ) {
+			return (string) $messages[0];
+		}
+		return '';
+	}
+}
+
+function is_wp_error( $thing ) {
+	return $thing instanceof WP_Error;
+}
+
+function is_user_logged_in() {
+	return $GLOBALS['altorank_wp']['user'] > 0;
+}
+
+function __( $text, $domain = null ) {
+	return $text;
+}
+
+// ---------------------------------------------------------------------------
+// Formatting
+// ---------------------------------------------------------------------------
+
+function untrailingslashit( $value ) {
+	return rtrim( (string) $value, '/\\' );
+}
+
+/** WordPress's wp_slash(): addslashes on every string, recursively. */
+function wp_slash( $value ) {
+	if ( is_array( $value ) ) {
+		return array_map( 'wp_slash', $value );
+	}
+	return is_string( $value ) ? addslashes( $value ) : $value;
+}
+
+/** WordPress's wp_unslash(): stripslashes on every string, recursively. */
+function wp_unslash( $value ) {
+	if ( is_array( $value ) ) {
+		return array_map( 'wp_unslash', $value );
+	}
+	return is_string( $value ) ? stripslashes( $value ) : $value;
+}
+
+function wp_json_encode( $data, $flags = 0, $depth = 512 ) {
+	return json_encode( $data, $flags, $depth );
+}
+
+function wp_parse_url( $url, $component = -1 ) {
+	return parse_url( (string) $url, $component );
+}
+
+function esc_url( $url ) {
+	return (string) $url;
+}
+
+// ---------------------------------------------------------------------------
+// Options
+// ---------------------------------------------------------------------------
+
+function get_option( $name, $default = false ) {
+	return array_key_exists( $name, $GLOBALS['altorank_wp']['options'] ) ? $GLOBALS['altorank_wp']['options'][ $name ] : $default;
+}
+
+function update_option( $name, $value, $autoload = null ) {
+	$GLOBALS['altorank_wp']['options'][ $name ] = $value;
+	return true;
+}
+
+require dirname( __DIR__ ) . '/altorank/altorank.php';
