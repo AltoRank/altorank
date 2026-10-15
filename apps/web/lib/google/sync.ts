@@ -87,6 +87,9 @@ export async function resolveGscSiteUrl(
   return match.siteUrl;
 }
 
+/** Rows per insert request when storing a day of Search Console. */
+const INSERT_CHUNK = 1_000;
+
 /** Sync one day of GA4 and Search Console data for one integration. */
 export async function syncWorkspaceAnalytics(
   supabase: SupabaseClient,
@@ -165,7 +168,13 @@ export async function syncWorkspaceAnalytics(
       });
       if (rows.length) {
         await supabase.from("analytics_metrics").delete().eq("workspace_id", ws.id).eq("source", "gsc").eq("metric_date", dateStr);
-        await supabase.from("analytics_metrics").insert(rows);
+        // In chunks: a day is no longer capped at 500 rows per report, and one
+        // request carrying tens of thousands of rows is one a proxy refuses. A
+        // refused chunk fails the day, so it is not recorded as synced.
+        for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
+          const { error } = await supabase.from("analytics_metrics").insert(rows.slice(i, i + INSERT_CHUNK));
+          if (error) throw new Error(`Storing Search Console rows for ${dateStr} failed: ${error.message}`);
+        }
         gscCount = rows.length;
       }
     }
