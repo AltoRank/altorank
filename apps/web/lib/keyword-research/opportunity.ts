@@ -415,55 +415,66 @@ export async function qualifyOpportunities(
   // term behind it. `pledged` is what started terms will claim and have not
   // yet: two terms started together must not both count the same room.
   const width = firstLook ? FIRST_LOOK_JUDGE_ROUND : JUDGE_ROUND;
-  // The claims this stage holds that have not settled yet, counted on the way
-  // through the budget. Only a settle gives room back - a claim settles at or
-  // below its estimate, and nothing else in the row moves down - so a term
-  // refused while one of these is out waits for its settle and asks again,
-  // and a term refused with none out is at the budget's real end at once.
-  // It used to wait while any other term was still running, holding a claim
-  // or not, and a term that never came back held every waiter with it.
-  let claimsOut = 0;
+  // The claims each running term holds that have not settled yet, counted on
+  // the way through the budget. Only a settle gives room back - a claim
+  // settles at or below its estimate, and nothing else in the row moves down
+  // - so a term refused while another running term holds one of these waits
+  // for a settle and asks again, and a term refused with none held elsewhere
+  // is at the budget's real end at once. It used to wait while any other
+  // term was still running, holding a claim or not, so a term that never came
+  // back held every waiter with it. A term's claims stop counting when the
+  // term ends: one it left unsettled is not going to settle now.
+  const claimsHeld = new Map<string, number>();
   let settles = 0;
-  const tracked: RunBudget | null = budget && {
+  const trackedFor = (id: string): RunBudget | null => budget && {
     runId: budget.runId,
     async claim(stage, wantUsd, minUsd) {
       const granted = await budget.claim(stage, wantUsd, minUsd);
-      if (granted !== null) claimsOut += 1;
+      if (granted !== null) claimsHeld.set(id, (claimsHeld.get(id) ?? 0) + 1);
       return granted;
     },
     async settle(stage, grantedUsd, actualUsd) {
       try {
         await budget.settle(stage, grantedUsd, actualUsd);
       } finally {
-        claimsOut -= 1;
+        if (claimsHeld.has(id)) claimsHeld.set(id, Math.max(0, claimsHeld.get(id)! - 1));
         settles += 1;
         wake();
       }
     },
     room: (stage) => budget.room(stage),
   };
+  // A term waiting for room is not calling: a claim it holds is not about to
+  // settle (none should be held - every paid call settles before it returns -
+  // but two waiters each counting the other's would wait for good).
+  const waiting = new Set<string>();
+  const heldElsewhere = (id: string) => [...claimsHeld].some(([other, n]) => other !== id && n > 0 && !waiting.has(other));
   /** Stop starting and asking: refused at the budget's real end. Whoever waits stops now too. */
   const stop = () => { stopped = true; wake(); };
   /**
-   * Make a paid call; when its claim is refused while a claim of this stage
-   * is out, wait for the next settle (or the deadline) and ask again. Every
-   * attempt still claims before it calls; the call is the caller's to skip
-   * once the stage is closed.
+   * Make a paid call for term `id`; when its claim is refused while another
+   * running term holds a claim, wait for a settle (or the deadline) and ask
+   * again. Every attempt still claims before it calls; the call is the
+   * caller's to skip once the stage is closed.
    */
-  const patiently = async <T,>(call: () => Promise<{ value: T; refused: boolean }>): Promise<{ value: T; refused: boolean }> => {
+  const patiently = async <T,>(id: string, call: () => Promise<{ value: T; refused: boolean }>): Promise<{ value: T; refused: boolean }> => {
     for (;;) {
       const before = settles;
       const got = await call();
       if (!got.refused || !budget || closed) return got;
-      // A settle landed while this was asked: the room it was refused on
-      // has grown since. Ask again now.
-      if (settles !== before) continue;
-      // Nothing out can settle and give room back: no wake would come.
-      if (claimsOut <= 0) return got;
-      await new Promise<void>((r) => waiters.push(r));
-      // The stage met the budget's real end, or its deadline, while this
-      // one waited: it is left not judged without asking.
-      if (stopped || closed) return got;
+      // Until a settle lands after the refusal - then the room it was refused
+      // on has grown, and it is asked again at once.
+      while (settles === before) {
+        // Nothing held elsewhere can settle and give room back: no wake
+        // would come, and this is the budget's real end.
+        if (!heldElsewhere(id)) return got;
+        waiting.add(id);
+        await new Promise<void>((r) => waiters.push(r));
+        waiting.delete(id);
+        // The stage met the budget's real end, or its deadline, while this
+        // one waited: it is left not judged without asking.
+        if (stopped || closed) return got;
+      }
     }
   };
   let pledged = 0;
@@ -485,7 +496,7 @@ export async function qualifyOpportunities(
       // the page again when it is asked again.
       const fresh = { ...result };
       let failed = false;
-      const page = await patiently(() => watchRefusals(async () => {
+      const page = await patiently(c.id, () => watchRefusals(async () => {
         try {
           const serp = await timed("results_pages", () => withStage("results_pages", () => fetchAdvancedSerp(c.term, context)));
           firstLook?.serps?.set(c.term.trim().toLowerCase(), serp);
@@ -506,7 +517,7 @@ export async function qualifyOpportunities(
       if (closed) return;
       const input: ResultsJudgeInput | null = page.value ? { term: c.term, sourceUrl: c.source_url, context, verdict, organic: page.value.organic } : null;
       if (input && !failed) {
-        const read = await patiently(() => watchRefusals(async () => {
+        const read = await patiently(c.id, () => watchRefusals(async () => {
           // The read is about to claim its own estimate, which the room then
           // counts: its share of the pledge goes now, not after the read, or
           // the same read is counted twice for as long as it runs - which
@@ -540,7 +551,7 @@ export async function qualifyOpportunities(
         // read the budget refused leaves the term not judged, as a refused
         // first read does: one approval is not what a first look plans on.
         if (firstLook && input && (result.status as Opportunity["status"]) === "qualified") {
-          const again = await patiently(() => watchRefusals(() => timed("judge", () => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend })))));
+          const again = await patiently(c.id, () => watchRefusals(() => timed("judge", () => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend })))));
           if (again.refused) { stop(); return; }
           if (closed) return;
           const second = again.value;
@@ -594,8 +605,15 @@ export async function qualifyOpportunities(
     pledged += held;
     // Down to `keep`, never up: what the term may still claim.
     const release = (keep = 0) => { const next = Math.min(held, Math.max(0, keep)); pledged -= held - next; held = next; };
+    const tracked = trackedFor(c.id);
     const work = tracked ? () => withSpendScope({ budget: tracked }, () => judgeTerm(c, release)) : () => judgeTerm(c, release);
-    const term: Promise<void> = work().finally(() => { running.delete(term); });
+    claimsHeld.set(c.id, 0);
+    const term: Promise<void> = work().finally(() => {
+      running.delete(term);
+      // Its claims stop counting: whoever waited on them re-checks.
+      claimsHeld.delete(c.id);
+      wake();
+    });
     // A term still running when the deadline ends the stage is not waited
     // for, and whatever it ends with is nobody's to hear.
     term.catch(() => undefined);

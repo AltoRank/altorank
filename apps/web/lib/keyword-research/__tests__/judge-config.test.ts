@@ -52,7 +52,8 @@ describe("how a topic decision is asked", () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
     create.mockResolvedValue({ content: [{ type: "text", text: "{}" }], usage: { input_tokens: 1, output_tokens: 1 } });
     await askStructured("op", "prompt", { maxTokens: 10, tier: "decision", schema: { type: "object" } });
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({ model: "claude-sonnet-5", thinking: { type: "disabled" }, output_config: { format: { type: "json_schema", schema: { type: "object" } } } }));
+    // Sent with a signal that bounds the whole call, the reply's body included.
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ model: "claude-sonnet-5", thinking: { type: "disabled" }, output_config: { format: { type: "json_schema", schema: { type: "object" } } } }), { signal: expect.any(AbortSignal) });
     expect(create.mock.calls[0][0]).not.toHaveProperty("temperature");
   });
   it("gives the buyer test room for a full batch and holds its stage to the known stages", async () => {
