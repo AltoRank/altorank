@@ -15,6 +15,8 @@ import { PAID_DEFAULT_PACE } from "@/lib/content/pace";
 import { canSpend } from "@/lib/billing/spend-gate";
 import { startRun } from "@/lib/onboarding/run-store";
 import { dispatchWorker } from "@/lib/onboarding/run-dispatch";
+import { isSiteLimited } from "@/lib/team/access";
+import { readMemberSites } from "@/lib/team/member-sites";
 
 /** What a Search Console property looks like to the person choosing. */
 export type DetectedProperty = {
@@ -58,19 +60,42 @@ function domainOf(siteUrl: string): string {
 /** Search Console permissions that can actually read search analytics. */
 const READABLE = new Set(["siteOwner", "siteFullUser"]);
 
-export async function listDetectedProperties(): Promise<
-  { connected: boolean; properties: DetectedProperty[]; error?: string }
-> {
-  const { accountId } = await requireAuth();
-  const supabase = await createClient();
-
-  const { data: conn } = await supabase
+/**
+ * The account's stored Google consent, read with the service role.
+ *
+ * The ciphertext is a credential: placed on a site's row, the nightly sync
+ * reads whichever property that row names with it. So it is read by the
+ * server after the caller's membership is checked, never through the
+ * person's own client (migration 111 takes the column away from them), and
+ * only the server writes it onto a site (also 111).
+ */
+async function accountConsent(accountId: string): Promise<string | null> {
+  const { data } = await createServiceClient()
     .from("account_integrations")
     .select("tokens")
     .eq("account_id", accountId)
     .eq("provider", "google")
     .maybeSingle();
-  const encrypted = (conn?.tokens as { encrypted?: string } | null)?.encrypted;
+  return (data?.tokens as { encrypted?: string } | null)?.encrypted ?? null;
+}
+
+/**
+ * The properties the account's Google consent can see.
+ *
+ * A member limited to some sites sees only the properties of their own sites:
+ * the consent can see every client's Search Console, and listing it would
+ * show them sites they were kept out of. Connecting is then limited to their
+ * sites as well (connectPropertyToWorkspace), and they create no site from
+ * the list (createWorkspacesFromProperties).
+ */
+export async function listDetectedProperties(): Promise<
+  { connected: boolean; properties: DetectedProperty[]; error?: string }
+> {
+  const { accountId, user } = await requireAuth();
+  const supabase = await createClient();
+  const ownSites = await readMemberSites(supabase, accountId, user.id);
+
+  const encrypted = await accountConsent(accountId);
   if (!encrypted) return { connected: false, properties: [] };
 
   try {
@@ -106,6 +131,7 @@ export async function listDetectedProperties(): Promise<
       (r.needs_reconnect ? deadIds : connectedIds).add(r.workspace_id as string);
     }
 
+    const own = isSiteLimited(ownSites) ? new Set(ownSites) : null;
     return {
       connected: true,
       properties: sites
@@ -122,6 +148,7 @@ export async function listDetectedProperties(): Promise<
             existingNeedsReconnect: existingWorkspaceId !== null && deadIds.has(existingWorkspaceId),
           };
         })
+        .filter((p) => own === null || (p.existingWorkspaceId !== null && own.has(p.existingWorkspaceId)))
         .sort((a, b) => Number(b.canRead) - Number(a.canRead) || a.domain.localeCompare(b.domain)),
     };
   } catch (err) {
@@ -193,16 +220,13 @@ export async function connectPropertyToWorkspace(siteUrl: string): Promise<Conne
     .maybeSingle();
   if (already && !already.needs_reconnect) return { ok: true, workspaceId, synced: 0 };
 
-  const { data: conn } = await supabase
-    .from("account_integrations")
-    .select("tokens")
-    .eq("account_id", accountId)
-    .eq("provider", "google")
-    .maybeSingle();
-  const encrypted = (conn?.tokens as { encrypted?: string } | null)?.encrypted;
+  const encrypted = await accountConsent(accountId);
   if (!encrypted) return { ok: false, message: "No Google account is connected yet. Connect one first." };
 
-  const { error: writeError } = await supabase.from("workspace_integrations").upsert(
+  // By the server: the site was found above through the person's own client
+  // (their account, their sites) and the property matches its domain.
+  const admin = createServiceClient();
+  const { error: writeError } = await admin.from("workspace_integrations").upsert(
     {
       workspace_id: workspaceId,
       integration_id: "gsc",
@@ -220,7 +244,7 @@ export async function connectPropertyToWorkspace(siteUrl: string): Promise<Conne
   // covers the same days if this fails.
   let synced = 0;
   try {
-    const r = await backfillAnalytics(supabase, workspaceId, "gsc", 7);
+    const r = await backfillAnalytics(admin, workspaceId, "gsc", 7);
     synced = r.gsc;
   } catch {
     synced = 0;
@@ -263,13 +287,7 @@ export async function createWorkspacesFromProperties(siteUrls: string[]): Promis
     };
   }
 
-  const { data: conn } = await supabase
-    .from("account_integrations")
-    .select("tokens")
-    .eq("account_id", accountId)
-    .eq("provider", "google")
-    .maybeSingle();
-  const encrypted = (conn?.tokens as { encrypted?: string } | null)?.encrypted ?? null;
+  const encrypted = await accountConsent(accountId);
 
   // Only when the consent includes Analytics: Search Console is connected on
   // its own now, and asking GA4 with a token that lacks its scope is a 403.
@@ -304,7 +322,8 @@ export async function createWorkspacesFromProperties(siteUrls: string[]): Promis
     if (encrypted) {
       const ga4 = matchGA4Property(ga4Properties, p.domain);
       const connectedAt = new Date().toISOString();
-      await supabase.from("workspace_integrations").upsert(
+      // By the server, onto the site it has just created for this property.
+      await createServiceClient().from("workspace_integrations").upsert(
         [
           { workspace_id: ws.id, integration_id: "gsc", config: { type: "gsc", gscSiteUrl: p.siteUrl }, tokens: { encrypted }, connected_at: connectedAt },
           ...(ga4

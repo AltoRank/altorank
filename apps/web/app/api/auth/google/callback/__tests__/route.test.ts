@@ -48,9 +48,17 @@ function refused(message: string) {
  */
 function asMember(table: string) {
   const q = db.from(table);
-  if (table !== "account_integrations") return q;
-  const deny = () => refused('new row violates row-level security policy for table "account_integrations"');
-  return { ...q, insert: deny, upsert: deny, update: deny, delete: deny };
+  if (table === "account_integrations") {
+    const deny = () => refused('new row violates row-level security policy for table "account_integrations"');
+    return { ...q, insert: deny, upsert: deny, update: deny, delete: deny };
+  }
+  // A Google connection is written by the server (migration 111): the
+  // person's client may not write a site's token or property.
+  if (table === "workspace_integrations") {
+    const deny = () => refused("A Google connection is written by the server");
+    return { ...q, insert: deny, upsert: deny, update: deny };
+  }
+  return q;
 }
 
 vi.mock("@/lib/supabase/server", () => ({

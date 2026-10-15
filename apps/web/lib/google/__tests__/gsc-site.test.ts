@@ -15,3 +15,29 @@ describe("matchGSCSite", () => {
     expect(matchGSCSite([site("sc-domain:other.com")], "acme.com")).toBeNull();
   });
 });
+
+describe("gscPropertyCovers", () => {
+  it("accepts the site's own host, its www form, a subdomain and a covering domain property", async () => {
+    const { gscPropertyCovers } = await import("../gsc");
+    expect(gscPropertyCovers("sc-domain:acme.com", "acme.com")).toBe(true);
+    expect(gscPropertyCovers("sc-domain:acme.com", "www.acme.com")).toBe(true);
+    expect(gscPropertyCovers("sc-domain:acme.com", "blog.acme.com")).toBe(true);
+    expect(gscPropertyCovers("https://www.acme.com/", "acme.com")).toBe(true);
+    expect(gscPropertyCovers("http://acme.com/", "https://acme.com/blog")).toBe(true);
+    expect(gscPropertyCovers("https://blog.acme.com/", "acme.com")).toBe(true);
+  });
+  it("refuses another site's property, including look-alike hosts", async () => {
+    const { gscPropertyCovers } = await import("../gsc");
+    expect(gscPropertyCovers("sc-domain:client-b.example", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("https://client-b.example/", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("https://acme.com.evil.example/", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("https://notacme.com/", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("sc-domain:", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("acme.com", "acme.com")).toBe(false);
+    expect(gscPropertyCovers("sc-domain:acme.com", "")).toBe(false);
+  });
+  it("matchGSCSite's subdomain fallback no longer takes a host that merely contains the domain", () => {
+    expect(matchGSCSite([site("https://notacme.com/")], "acme.com")).toBeNull();
+    expect(matchGSCSite([site("https://blog.acme.com/")], "acme.com")!.siteUrl).toBe("https://blog.acme.com/");
+  });
+});

@@ -14,6 +14,7 @@ import {
   fetchGSCPageMetrics,
   fetchGSCQueryMetrics,
   fetchGSCQueryPageMetrics,
+  gscPropertyCovers,
   listGSCSites,
   matchGSCSite,
 } from "@/lib/google/gsc";
@@ -66,8 +67,11 @@ export async function resolveGscSiteUrl(
   domain: string,
   accessToken: string,
 ): Promise<string> {
+  // A stored property is used only while it belongs to the site's domain. One
+  // that does not (the domain changed, or the row names another site's
+  // property) is resolved again from what the token can see.
   const stored = integration.config?.gscSiteUrl;
-  if (stored) return stored;
+  if (stored && gscPropertyCovers(stored, domain)) return stored;
   const sites = await listGSCSites(accessToken);
   const match = matchGSCSite(sites, domain);
   if (!match) {

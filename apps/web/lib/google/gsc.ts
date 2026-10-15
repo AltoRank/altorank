@@ -220,5 +220,31 @@ export function matchGSCSite(sites: GSCSite[], domain: string): GSCSite | null {
     if (hit) return hit;
   }
   // A property for a subdomain of this domain is better than nothing.
-  return usable.find((s) => s.siteUrl.toLowerCase().includes(bare)) ?? null;
+  return usable.find((s) => gscPropertyCovers(s.siteUrl, domain)) ?? null;
+}
+
+function bareHost(value: string): string {
+  return value.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/[/:].*$/, "");
+}
+
+/**
+ * Whether a Search Console property belongs to this site's domain: the same
+ * host, a subdomain of it, or a domain property covering it.
+ *
+ * The nightly sync reads whatever property a site's row names, with the
+ * account's Google token, and shows the result on that site's dashboard. A
+ * stored property that does not belong to the site's domain is therefore
+ * never read (lib/google/sync.ts resolves it again instead).
+ */
+export function gscPropertyCovers(siteUrl: string, domain: string): boolean {
+  const site = bareHost(domain);
+  if (!site) return false;
+  const value = siteUrl.trim().toLowerCase();
+  if (value.startsWith("sc-domain:")) {
+    const covered = value.slice("sc-domain:".length).replace(/^www\./, "");
+    return covered.length > 0 && (site === covered || site.endsWith(`.${covered}`) || covered.endsWith(`.${site}`));
+  }
+  if (!/^https?:\/\//.test(value)) return false;
+  const host = bareHost(value);
+  return host.length > 0 && (host === site || host.endsWith(`.${site}`) || site.endsWith(`.${host}`));
 }
