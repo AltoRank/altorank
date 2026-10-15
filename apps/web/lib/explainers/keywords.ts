@@ -1,12 +1,16 @@
 import type { Explainer } from "./types";
 
 /**
- * Read from: lib/audit/domain-analysis.ts (the three sources and their
- * order), supabase/migrations/036_keyword_source_gap.sql (the `source`
- * values), lib/seo/recommendations.ts (assessKeywordQuality),
- * lib/seo/keywords.ts and lib/seo/client.ts (DataForSEO), lib/seo/intent.ts
- * (lexicon classifier), vercel.json (rank cron at 03:00 UTC),
- * app/actions/keywords.ts (hand-typed keywords).
+ * Read from: lib/audit/domain-analysis.ts (the three sources, the buyer test
+ * over every candidate, the order they are stored in), lib/keyword-research/
+ * discovery.ts (named rivals and buyer seeds; these replaced the competitor
+ * gap, the heading seeds and the Google Ads fallback on 2026-09-11),
+ * lib/seo/difficulty.ts (HOPELESS_DIFFICULTY), lib/seo/recommendations.ts
+ * (assessKeywordQuality), lib/seo/keywords.ts and lib/seo/client.ts
+ * (DataForSEO), lib/seo/intent.ts (lexicon classifier), vercel.json (rank
+ * cron at 03:00 UTC), app/actions/keywords.ts and
+ * components/dashboard/keyword-actions.tsx (hand-typed keywords: term and
+ * intent only).
  */
 export const keywordsExplainer: Explainer = {
   id: "keywords",
@@ -18,13 +22,13 @@ export const keywordsExplainer: Explainer = {
     {
       title: "Where keywords come from",
       lead:
-        "Four sources, used in the order of how much they know about this site, plus whatever you add by hand.",
+        "Three sources, each run through a buyer test before anything is stored, plus whatever you add by hand.",
       bullets: [
-        "What the site already ranks for, read from the live search results with its position, so 'one revision from page one' is a question with an answer. Stored as source 'ranked'.",
-        "What competitors rank for that this site does not, on a full analysis. Stored as 'gap'.",
-        "Ideas seeded from the headings of your own pages, which say what the business does in its own words. Stored as 'ideas'.",
-        "Google Ads keywords-for-site, stored as 'ads', only as a fallback when the first three leave the queue thin. It is the source of every junk set we have shipped, so its share of a list is capped.",
-        "Anything you type into Find new keywords is tracked for the site the sidebar is on. Volume and difficulty are whatever you entered.",
+        "What the site already ranks for, read from the live search results with its position, counting only pages the site lists as its own. A rival's brand name it happens to rank for is dropped. Stored as source 'ranked'.",
+        "What the competitors you named rank for, up to three of them and their top 20 positions, plus rivals read off the search results for your buyers' searches. Stored as 'gap'.",
+        "Searches a buyer of this business would type, proposed by a model from the business profile and expanded with measured suggestions. Stored as 'ideas'.",
+        "Every candidate, rankings included, then goes to the buyer test: a model is asked whether a buyer of this business types it. Only the ones it keeps are stored, after the quality filter below, and a term at difficulty 90 or more is dropped as unwinnable.",
+        "Anything you type into Add keyword is tracked for the site the sidebar is on, with the intent you pick. No volume or difficulty is looked up for it.",
       ],
     },
     {
@@ -42,7 +46,7 @@ export const keywordsExplainer: Explainer = {
       title: "Provenance of the numbers",
       lead: "Every figure on this page was measured by something specific.",
       bullets: [
-        "Volume and difficulty come from DataForSEO. Difficulty is stored as null when the provider had none, and renders as a dash, never as 0: the Google Ads endpoint carries no difficulty at all.",
+        "Volume and difficulty come from DataForSEO. Either is stored as null when the provider had none, or when the term was typed by hand, and renders as a dash, never as 0.",
         "Intent (info, commercial, transactional, navigational) is a lexicon classifier over the term, not a model's opinion.",
         "Positions come from the rank cron at 03:00 UTC, with results collected at 03:20. Impressions come from Search Console over the last 90 days when it is connected.",
         "Difficulty is judged against the site's own domain rating when one has been measured, because KD 40 means something different at DR 80 and at DR 2.",
@@ -54,6 +58,6 @@ export const keywordsExplainer: Explainer = {
     "Research without DataForSEO credentials. A self-hosted install without them tracks hand-typed keywords only, with no volume or difficulty lookups.",
     "Show the source per row in this table. The column exists on every keyword; the surface for it is the keyword research drawer (#72).",
     "Import keywords from a CSV or pull them directly from Search Console.",
-    "Attach a difficulty to Google Ads-sourced terms. That endpoint does not carry one, and we do not invent it.",
+    "Look up volume and difficulty for a keyword you type yourself.",
   ],
 };

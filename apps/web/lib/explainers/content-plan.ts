@@ -3,7 +3,9 @@ import { FREE_DRAFTS } from "@/lib/billing/quota";
 import { FREE_TIER_PACE, MAX_PACE, PLAN_DEFAULT_PACE } from "@/lib/content/pace";
 
 /**
- * Read from: lib/seo/recommendations.ts (scoring), lib/content/pace.ts and
+ * Read from: lib/seo/recommendations.ts (scoring), lib/audit/domain-analysis.ts
+ * (the buyer test), lib/keyword-research/opportunity.ts (qualification),
+ * lib/billing/quota.ts (FREE_DRAFTS is one-time), lib/content/pace.ts and
  * lib/content/generate-queue.ts (pace and the per-run cap),
  * app/api/cron/generate/route.ts and vercel.json plus
  * .github/workflows/generate-cron.yml (when it runs), and PR #67's
@@ -20,14 +22,19 @@ export const contentPlanExplainer: Explainer = {
   sections: [
     {
       title: "How keywords are chosen",
+      // Was "No model call, so the same inputs always give the same queue".
+      // A keyword reaches the queue only after a model's buyer test
+      // (lib/audit/domain-analysis.ts) and is written only once qualified
+      // against a live results page (lib/keyword-research/opportunity.ts).
+      // The ordering itself is arithmetic (recommendKeywords).
       lead:
-        "Every candidate is scored as opportunity × winnability × relevance, from data already in your workspace. No model call, so the same inputs always give the same queue.",
+        "Every stored keyword has passed a buyer test, and the queue orders them as opportunity × winnability × relevance, arithmetic over data already in your workspace.",
       bullets: [
         "Opportunity is search volume on a log scale, plus the impressions the site already earns for the term in Search Console over the last 90 days when it is connected. Proven demand on this site beats estimated demand anywhere.",
         "Winnability comes from keyword difficulty, judged against the site's own authority when we have a reading. Unknown difficulty scores conservatively rather than as easy; difficulty 0 on a term with real volume is treated as not measured.",
         "Relevance is how much of the term appears in the vocabulary of your own crawled pages. A term the site already ranks for skips this test: the search results already decided it fits.",
-        "A position between 11 and 20 is the largest multiplier, because one revision is cheaper than a new ranking. A position of 10 or better is left alone, and a term already covered by an article becomes a refresh rather than a duplicate.",
-        "Each pick carries its reasons in plain words, in the order they mattered, and the draft keeps them so the reviewer can see why the topic was chosen.",
+        "A position between 11 and 20 is the largest multiplier, because one revision is cheaper than a new ranking. A position of 10 or better is left alone, and a term already covered by an article becomes a refresh rather than a duplicate. Each pick carries these reasons in plain words, and the draft keeps them.",
+        "Before a term is written it is qualified against its live results page: the results must be articles, no page of yours may already target it, and it must not want a landing page instead. A term that fails is not written, and the Keywords page says why.",
       ],
     },
     {
@@ -36,7 +43,7 @@ export const contentPlanExplainer: Explainer = {
         "The plan is one site's queue, capped, paced, and topped up so it never runs dry and never runs away.",
       bullets: [
         "A plan holds up to 60 entries. The header reads N of 60 scheduled and how many slots are free.",
-        `Pace is set per site in articles a week. Signup sets ${FREE_TIER_PACE}; activating a plan raises it to that tier's default (${PLAN_DEFAULT_PACE.starter} on Managed, ${PLAN_DEFAULT_PACE.growth} on Agency) unless you have typed your own number, which is left alone; you can set anything up to ${MAX_PACE}. The monthly target is that pace scaled to 30 days; on the free tier the month's ${FREE_DRAFTS} drafts are the binding limit, not the pace.`,
+        `Pace is set per site in articles a week. Signup sets ${FREE_TIER_PACE}; activating a plan raises it to that tier's default (${PLAN_DEFAULT_PACE.starter} on Managed, ${PLAN_DEFAULT_PACE.growth} on Agency) unless you have typed your own number, which is left alone; you can set anything up to ${MAX_PACE}. The monthly target is that pace scaled to 30 days; on the free tier the ${FREE_DRAFTS} free drafts, once and not each month, are the binding limit, not the pace.`,
         "\"Schedule more articles\" keeps everything already placed and appends from the day after the last entry - it never touches billing, only the calendar. The nightly analysis run does the same for every auto-generating site whose unwritten queue has fallen below its monthly target.",
         "Phrasings of one query collapse into one entry, so the plan does not schedule 'agency seo' and 'seo for agencies' as two articles that compete with each other.",
         "Terms flagged as keyword-provider noise are scored down for you and refused by the unattended path, so an unattended run never writes 'S Eo: A Complete Guide'.",
