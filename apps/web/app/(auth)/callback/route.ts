@@ -43,7 +43,10 @@ export async function GET(request: Request) {
       // already in their inbox, and a second email before they have clicked it
       // is two emails each saying to click the other one. `sendOnce` is keyed
       // by the user id, so re-opening the link does not send a second.
-      if (type === "signup" && verified.user) await sendWelcome(verified.user.id);
+      // Not for a teammate confirming from an invitation (the link returns to
+      // /invite/<token>): the welcome is about their own site and trial, and
+      // they have neither.
+      if (type === "signup" && verified.user && !next.startsWith("/invite/")) await sendWelcome(verified.user.id);
       return NextResponse.redirect(`${origin}${next}`);
     }
     return NextResponse.redirect(
