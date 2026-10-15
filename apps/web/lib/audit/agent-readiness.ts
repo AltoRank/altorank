@@ -137,7 +137,7 @@ export const AI_CRAWLERS = [
  * factor that scores +2.08 is brand/entity prominence in LLM memory, which
  * Organization markup is a weak proxy for, not a cause of.
  */
-const CHECK_IMPACT: Record<ReadinessCheckId, number> = {
+export const CHECK_IMPACT: Readonly<Record<ReadinessCheckId, number>> = {
   ai_crawlers_allowed: 5, // +2.20 AI crawl access & snippet eligibility
   robots_reachable: 3, // the gate the above is read through
   sitemap: 3, // discovery; feeds crawl access
