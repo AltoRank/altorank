@@ -205,7 +205,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       // The run starts as soon as the site read lands, with what was read
       // shown beside it (components/onboarding/what-we-understood.tsx). On
       // unless ONBOARDING_AUTOSTART=0 puts the check screen back first.
-      autoStart={process.env.ONBOARDING_AUTOSTART !== "0"}
+      autoStart={simulation?.autostart ?? process.env.ONBOARDING_AUTOSTART !== "0"}
     />
     </>
   );
