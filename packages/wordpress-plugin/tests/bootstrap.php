@@ -53,6 +53,7 @@ function altorank_test_reset(): void {
 		'writes'   => array(),
 		'next_id'  => 100,
 		'time'     => null,
+		'kses'     => true,
 	);
 	$GLOBALS['wp']          = null;
 }
@@ -172,6 +173,60 @@ function get_option( $name, $default = false ) {
 function update_option( $name, $value, $autoload = null ) {
 	$GLOBALS['altorank_wp']['options'][ $name ] = $value;
 	return true;
+}
+
+// ---------------------------------------------------------------------------
+// kses and post writes
+// ---------------------------------------------------------------------------
+
+function has_filter( $hook, $callback = false ) {
+	if ( 'content_save_pre' === $hook && 'wp_filter_post_kses' === $callback ) {
+		return $GLOBALS['altorank_wp']['kses'] ? 10 : false;
+	}
+	return false;
+}
+
+function kses_remove_filters() {
+	$GLOBALS['altorank_wp']['kses'] = false;
+}
+
+function kses_init_filters() {
+	$GLOBALS['altorank_wp']['kses'] = true;
+}
+
+/**
+ * Records the write as WordPress would store it: one level of slashes
+ * removed from every field and meta value (wp_insert_post() and
+ * update_metadata() both unslash), and whether save-time kses was on.
+ */
+function altorank_test_record_write( string $fn, array $postarr ) {
+	if ( 'throw' === ( $postarr['post_title'] ?? '' ) ) {
+		throw new RuntimeException( 'write failed' );
+	}
+	$data = wp_unslash( $postarr );
+	$id   = isset( $data['ID'] ) ? (int) $data['ID'] : $GLOBALS['altorank_wp']['next_id']++;
+
+	$GLOBALS['altorank_wp']['writes'][] = array(
+		'fn'   => $fn,
+		'kses' => $GLOBALS['altorank_wp']['kses'],
+		'data' => $data,
+	);
+
+	$meta = $data['meta_input'] ?? array();
+	unset( $data['meta_input'], $data['ID'] );
+	$GLOBALS['altorank_wp']['posts'][ $id ] = array_merge( $GLOBALS['altorank_wp']['posts'][ $id ] ?? array( 'post_type' => 'post' ), $data );
+	foreach ( $meta as $key => $value ) {
+		$GLOBALS['altorank_wp']['meta'][ $id ][ $key ] = $value;
+	}
+	return $id;
+}
+
+function wp_insert_post( $postarr, $wp_error = false, $fire_after_hooks = true ) {
+	return altorank_test_record_write( 'insert', $postarr );
+}
+
+function wp_update_post( $postarr = array(), $wp_error = false, $fire_after_hooks = true ) {
+	return altorank_test_record_write( 'update', $postarr );
 }
 
 require dirname( __DIR__ ) . '/altorank/altorank.php';

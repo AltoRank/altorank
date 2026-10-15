@@ -641,20 +641,7 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 		$postarr['meta_input'] = $meta_input;
 	}
 
-	/**
-	 * Token requests have no WordPress user, and for a request with no user
-	 * WordPress runs its own kses pass on save (content_save_pre), which strips
-	 * every iframe - including the YouTube embed altorank_sanitize_content()
-	 * just allowed. The body has already been through wp_kses_post() plus that
-	 * one rebuilt iframe, and the title and excerpt through sanitize_*_field(),
-	 * so the second pass is lifted for exactly this call and put back after.
-	 */
-	kses_remove_filters();
-	try {
-		$result = $post_id ? wp_update_post( $postarr, true ) : wp_insert_post( $postarr, true );
-	} finally {
-		kses_init_filters();
-	}
+	$result = altorank_write_post( $postarr );
 	if ( is_wp_error( $result ) ) {
 		return new WP_Error( 'altorank_write_failed', $result->get_error_message(), array( 'status' => 500 ) );
 	}
@@ -683,7 +670,7 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 		if ( null !== $content ) {
 			$imported = altorank_import_images( $post_id, $content, $images );
 			if ( $imported !== $content ) {
-				wp_update_post(
+				altorank_write_post(
 					array(
 						'ID'           => $post_id,
 						'post_content' => $imported,
@@ -713,6 +700,39 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 	$data['images'] = $images;
 	$response->set_data( $data );
 	return $response;
+}
+
+/**
+ * The one way this plugin writes a post: wp_insert_post() for a new row,
+ * wp_update_post() when `ID` is set.
+ *
+ * Slashed first. Both functions expect slashed input, the way a form post
+ * arrives, and strip one level of backslashes from every field and every
+ * meta_input value; the body, title and SEO fields here come from JSON, so
+ * without wp_slash() every backslash the article carried was lost (and a
+ * JSON-encoded meta value such as AIOSEO's keyphrase lost its escapes).
+ *
+ * With WordPress's save-time kses lifted. Token requests have no WordPress
+ * user, and for a request with no user WordPress runs its own kses pass on
+ * save (content_save_pre), which strips every iframe - including the YouTube
+ * embed altorank_sanitize_content() just allowed. Every body handed to this
+ * function has already been through altorank_sanitize_content(), and the
+ * title and excerpt through sanitize_*_field(), so the second pass is lifted
+ * for exactly this call and put back after, if it was on before.
+ *
+ * @return int|WP_Error post id
+ */
+function altorank_write_post( array $postarr ) {
+	$had_kses = false !== has_filter( 'content_save_pre', 'wp_filter_post_kses' );
+	kses_remove_filters();
+	try {
+		$slashed = wp_slash( $postarr );
+		return isset( $postarr['ID'] ) ? wp_update_post( $slashed, true ) : wp_insert_post( $slashed, true );
+	} finally {
+		if ( $had_kses ) {
+			kses_init_filters();
+		}
+	}
 }
 
 function altorank_post_response( int $post_id, int $code ): WP_REST_Response {
