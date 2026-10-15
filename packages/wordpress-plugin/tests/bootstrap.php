@@ -11,8 +11,19 @@
  * @package AltoRank
  */
 
-error_reporting( E_ALL );
+// A warning or notice in the plugin is a failure, not noise. Deprecations
+// are left out: they differ between PHP versions and say nothing about
+// behaviour.
+error_reporting( E_ALL & ~E_DEPRECATED & ~E_USER_DEPRECATED );
 ini_set( 'display_errors', '1' );
+set_error_handler(
+	static function ( int $severity, string $message, string $file, int $line ): bool {
+		if ( ! ( error_reporting() & $severity ) ) {
+			return false;
+		}
+		throw new ErrorException( $message, 0, $severity, $file, $line );
+	}
+);
 
 define( 'ABSPATH', __DIR__ . '/' );
 
