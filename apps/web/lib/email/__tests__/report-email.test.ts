@@ -49,6 +49,13 @@ describe("renderMonthlyReport", () => {
     expect(r.html).toContain("&lt;script&gt;");
   });
 
+  /** The email says a number nobody measured is shown as a dash, not a zero. */
+  it("shows a dash for a count that could not be read, not 0", () => {
+    const r = renderMonthlyReport({ ...base, highlights: { articlesPublished: null, keywordsTracked: 37 } }, "a@x.co");
+    expect(r.html).toMatch(/Articles published<\/td><td[^>]*>—</);
+    expect(r.preheader).toBe("37 keywords tracked");
+  });
+
   it("links to the report and says how long the link lasts", () => {
     const r = renderMonthlyReport(base, "a@x.co");
     expect(r.html).toContain("https://storage.example/report.pdf?token=abc");
