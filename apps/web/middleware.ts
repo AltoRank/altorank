@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 import { PREVIEW_COOKIE, hasPreviewCookie } from "@/lib/auth/preview-cookie";
+import { NONCE_HEADER, buildCsp, makeNonce } from "@/lib/security/csp";
 
 /** Methods that cannot change anything. Everything else is a write. */
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -43,7 +44,24 @@ export async function middleware(request: NextRequest) {
     );
   }
 
-  return updateSession(request);
+  // The Content-Security-Policy (lib/security/csp.ts), with a nonce fresh for
+  // this request. Set on the request too, before the response is built: Next
+  // reads the nonce from the request's CSP header and stamps it on every
+  // script it renders, and the root layout reads it for its own inline one.
+  // Set, not appended, so a client-sent value never survives.
+  const nonce = makeNonce();
+  const csp = buildCsp({
+    nonce,
+    supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+    posthogHost: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+    dev: process.env.NODE_ENV === "development",
+  });
+  request.headers.set(NONCE_HEADER, nonce);
+  request.headers.set("content-security-policy", csp);
+
+  const response = await updateSession(request);
+  response.headers.set("Content-Security-Policy", csp);
+  return response;
 }
 
 export const config = {

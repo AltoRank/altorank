@@ -157,6 +157,15 @@ build args, not runtime env.
 | `DOGFOOD_EMAIL` | only read by `scripts/dogfood.ts`; irrelevant to a deployment |
 | the two `NEXT_PUBLIC_POSTHOG_*` variables (project token, host) | no product analytics; `npm run dev` logs one console warning. Read at build time; `docker/compose.yml` does not pass them, so the Docker image never sends analytics |
 
+**Content-Security-Policy.** Every page is served with a nonce-based CSP
+(`apps/web/lib/security/csp.ts`, sent by `middleware.ts`): scripts run only
+when they carry the request's nonce, and the browser may connect only to this
+origin, `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_POSTHOG_HOST`. Both are
+read when the app is built, like the rest of the `NEXT_PUBLIC_*` variables. A
+fork that adds a third-party script, an analytics host or an embed has to add
+its origin there too, or the browser refuses it (the console names the
+directive).
+
 ## `apps/web` on Vercel
 
 ### Deploy
