@@ -57,10 +57,12 @@ test("one clock to the gate, a price box that sells, a bar on the same plan, and
   // Yearly, quietly, with its real saving; the bar then quotes the same plan.
   await box.getByRole("button", { name: /Or pay yearly: €690\/year, two months free \(save €138\)/ }).click();
   await expect(box.getByTestId("trial-charge-line")).toHaveText(/^€0 today, then €690\/year from /);
-  // Past the button, it off screen above: the bar, on the same plan.
+  // Past the button, it off screen above: the bar, on the same plan. From lg
+  // the rail beside the article holds the button and the bar is phone-only.
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
   const bar = page.getByTestId("trial-bar");
-  if (!(await start.isVisible()) || (await start.boundingBox())!.y + 20 < 0) {
+  const narrow = page.viewportSize()!.width < 1024;
+  if (narrow && (!(await start.isVisible()) || (await start.boundingBox())!.y + 20 < 0)) {
     await expect(bar).toBeVisible();
     await expect(bar).toContainText("7 days free, then €690/year");
   }
@@ -78,6 +80,21 @@ test("one clock to the gate, a price box that sells, a bar on the same plan, and
   // The ledger holds one claim for this article and owner, no more.
   const { data: sent } = await admin().from("sent_emails").select("email_type, recipient").eq("email_type", "first_article_link").eq("recipient", signedIn.email.toLowerCase());
   expect((sent ?? []).length).toBeLessThanOrEqual(1);
+});
+
+test("with auto-start on, the run starts by itself and shows what it read beside it", async ({ page, signedIn }) => {
+  void signedIn;
+  await page.context().addCookies([
+    { name: "dev_simulation", value: encodeURIComponent(JSON.stringify({ gate: true, autostart: true })), domain: "localhost", path: "/" },
+  ]);
+  await page.goto("/onboarding");
+  // No check screen and no click: the loading screen, with the read beside it.
+  await expect(page.getByText("about 3 minutes in all")).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByRole("heading", { name: "Check what we found" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "What we understood" })).toBeVisible();
+  await shot(page, "v2-build-1280");
+  await expect(page.getByRole("heading", { name: /Your first article is (written|being written)/ })).toBeVisible({ timeout: 60_000 });
+  await expect(page.locator("aside[aria-label='Your trial']")).toBeVisible();
 });
 
 test("a lost connection says it is reconnecting and never ends the run", async ({ page, signedIn }) => {
@@ -262,8 +279,9 @@ test.describe("the article being written", () => {
     expect(shown).toBeLessThan(5 * 48 + 120);
     // The page did not move under the reader.
     expect(await page.evaluate(() => window.scrollY)).toBe(0);
-    // The trial is a click away the whole time it is written.
-    await expect(page.getByTestId("trial-bar")).toBeVisible();
+    // The trial is a click away the whole time it is written: from lg it is
+    // the rail's button, held beside the article (the slim bar is phone-only).
+    await expect(page.locator("#start-trial").getByRole("button", { name: "Start 7-day trial" })).toBeInViewport();
     await shot(page, "b17-reader-writing-1280");
 
     // The caret runs below the screen: the pill offers the way down, and only on a click.

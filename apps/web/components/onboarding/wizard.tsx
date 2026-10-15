@@ -74,6 +74,7 @@ import { OPEN_SETUP, runStateOf, setupEnding, type PreTrialSetup, type SetupEndi
 import { NOTHING_PLANNED_HEADING, nothingPlannedLede } from "@/components/onboarding/setup-ask";
 import { providerRetryWindowOpen } from "@/lib/onboarding/provider-retry-window";
 import { AttributionAsk, GateTop } from "@/components/onboarding/first-look-gate";
+import { WhatWeUnderstood } from "@/components/onboarding/what-we-understood";
 import { Fold } from "@/components/onboarding/fold";
 import { signOut } from "@/app/actions/auth";
 import { TRIAL_DAYS } from "@/lib/stripe";
@@ -106,9 +107,18 @@ export function OnboardingWizard({
   initialRun = null,
   otherSites = [],
   offer,
+  autoStart = false,
 }: {
   /** The trial offer's facts, read on the server (lib/billing/trial-offer.ts). */
   offer: TrialOfferFacts;
+  /**
+   * Start the run as soon as the site read lands, with no check screen in
+   * between: what the read found is shown beside the run instead
+   * (./what-we-understood.tsx). The check form still opens when the read
+   * failed or found nothing to write about, and from "Not right? Change it".
+   * Decided on the server (ONBOARDING_AUTOSTART).
+   */
+  autoStart?: boolean;
   workspaceId: string;
   userId: string;
   userEmail?: string;
@@ -441,7 +451,7 @@ export function OnboardingWizard({
    * wizard done and starts the run. The drafts saved while editing carry no
    * confirmation; this click is it.
    */
-  function finish() {
+  function finish({ auto = false }: { auto?: boolean } = {}) {
     if (!profile) return;
     const confirmed = withPendingCompetitor(profile, competitorDraft.current);
     const stop = finishBlocker(confirmed);
@@ -453,7 +463,7 @@ export function OnboardingWizard({
     ruleBlocked.current = false;
     setBlocker(null);
     trackStep("competitor_step_done", { workspaceId, count: confirmed.competitors.length + (confirmed.competitorNames?.length ?? 0) });
-    trackStep("plan_clicked", { workspaceId });
+    trackStep(auto ? "plan_auto" : "plan_clicked", { workspaceId });
     start(async () => {
       try {
         // No draft may land after the confirmed save.
@@ -471,6 +481,34 @@ export function OnboardingWizard({
       }
     });
   }
+
+  // The run starts by itself once everything the check screen would have
+  // shown has landed: the profile, the rivals proposed from it, and the
+  // sitemap and blog. Once per visit; a refusal (nothing to write about, a
+  // save that failed) leaves the form on screen with its reason.
+  const [autoTried, setAutoTried] = useState(false);
+  const autoEligible = autoStart && !alreadyOnboarded && !editing && !running;
+  const autoReady = autoEligible && !autoTried && !reading && profile !== null && readFailure === null && !rivalsLoading && discovery !== "pending";
+  useEffect(() => {
+    if (!autoReady || !profile) return;
+    const blocked = finishBlocker(withPendingCompetitor(profile, competitorDraft.current)) !== null;
+    // After this render, and only for the effect that is still current: in
+    // development React mounts effects twice, and two finishes would be two
+    // saves racing to start the run.
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      setAutoTried(true);
+      if (!blocked) finish({ auto: true });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- finish and profile are read once, when the read has landed
+  }, [autoReady]);
+  // Until then the reading screen stays up, so the form never flashes on
+  // the way to the run.
+  const autoWaiting = autoEligible && readFailure === null && (!autoTried || pending);
 
   // Sent here by the dashboard gate, with no run recent enough to resume.
   // There is nothing to show the progress of and nothing to set up again -
@@ -523,11 +561,12 @@ export function OnboardingWizard({
         userEmail={userEmail}
         otherSites={otherSites}
         offer={offer}
+        profile={profile}
       />
     );
   }
 
-  if (reading || !profile) return <ReadingSite domain={domain} />;
+  if (reading || !profile || autoWaiting) return <ReadingSite domain={domain} autoStart={autoEligible} />;
 
   // Which sections open, decided once, when the screen first shows: a
   // section never opens or closes itself from what is being typed (the first
@@ -704,7 +743,7 @@ export function OnboardingWizard({
             <Button
               variant="accent"
               className="w-full justify-center py-2.5 sm:w-auto sm:py-[7px]"
-              onClick={finish}
+              onClick={() => finish()}
               disabled={pending || reading}
               aria-describedby={blocker ? BLOCKER_ID : undefined}
             >
@@ -807,7 +846,7 @@ export function SectionBadge({ state }: { state: SectionState }) {
 }
 
 /** The wait, with the work named. */
-function ReadingSite({ domain }: { domain: string }) {
+function ReadingSite({ domain, autoStart = false }: { domain: string; autoStart?: boolean }) {
   return (
     <div className="grid min-h-screen place-items-center bg-bg px-6">
       <div className="w-full max-w-[560px] text-center">
@@ -815,10 +854,11 @@ function ReadingSite({ domain }: { domain: string }) {
           <span className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
           Reading {domain}…
         </div>
-        <h1 className="mb-2 text-[22px] font-semibold">Setting up your site</h1>
+        <h1 className="mb-2 text-[22px] font-semibold">{autoStart ? "Reading your site" : "Setting up your site"}</h1>
         <p className="mx-auto max-w-[420px] text-[13.5px] leading-[1.6] text-ink-2">
-          We read your homepage, and your blog if the homepage is thin, to fill in what we can. The next
-          screen is a check rather than a form. About a minute.
+          {autoStart
+            ? "What you sell, who buys it and who you compete with, from your homepage and your blog. Your first article starts as soon as we know, with nothing to fill in."
+            : "We read your homepage, and your blog if the homepage is thin, to fill in what we can. The next screen is a check rather than a form. About a minute."}
         </p>
       </div>
     </div>
@@ -952,14 +992,22 @@ function endingWords(
   }
 }
 
-/** The page the gate sits on: one column, with room at the bottom for the slim ask bar. */
-function GateShell({ children }: { children: React.ReactNode }) {
+/**
+ * The page the gate sits on, with room at the bottom for the slim ask bar.
+ * `wide` once there is something to read: the article and, from lg, the
+ * trial rail beside it (`--gate-rail`). What follows the gate's top (the
+ * folds, the run log) stays in the article's column (`gateColumn`).
+ */
+function GateShell({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
   return (
-    <div className="min-h-screen bg-bg">
-      <div className="mx-auto max-w-[680px] px-4 pb-28 pt-8 sm:px-6 sm:pt-10">{children}</div>
+    <div className="min-h-screen bg-bg [--gate-rail:340px]">
+      <div className={`mx-auto px-4 pb-28 pt-8 sm:px-6 sm:pt-10 lg:pb-16 ${wide ? "max-w-[1140px]" : "max-w-[680px]"}`}>{children}</div>
     </div>
   );
 }
+
+/** Under the gate's top, the article's column: clear of the rail from lg. */
+const gateColumn = "lg:pr-[calc(var(--gate-rail)+1.5rem)]";
 
 function RetryBox({ line, label, onRetry, onEdit }: { line: string; label: string; onRetry: () => void; onEdit?: () => void }) {
   return (
@@ -1097,7 +1145,7 @@ function TrialGateScreen({
   const written = firstArticle?.state === "written";
 
   return (
-    <GateShell>
+    <GateShell wide>
       <GateTop
         workspaceId={workspaceId}
         canBuy={canBuy}
@@ -1126,7 +1174,7 @@ function TrialGateScreen({
         startedAt={run?.run && Number.isFinite(Date.parse(run.run.started_at)) ? Date.parse(run.run.started_at) : null}
       />
 
-      <div className="mt-6 flex flex-col gap-2">
+      <div className={`mt-6 flex flex-col gap-2 ${gateColumn}`}>
         {planned.length > 0 && (
           <Fold
             title="Your plan"
@@ -1150,11 +1198,13 @@ function TrialGateScreen({
         )}
       </div>
       {askAttribution && (
-        <div className="mt-6">
+        <div className={`mt-6 ${gateColumn}`}>
           <AttributionAsk />
         </div>
       )}
-      <SignOutLine email={userEmail} otherSites={otherSites} />
+      <div className={gateColumn}>
+        <SignOutLine email={userEmail} otherSites={otherSites} />
+      </div>
     </GateShell>
   );
 }
@@ -1190,10 +1240,13 @@ function RunScreen({
   userEmail,
   otherSites = [],
   offer,
+  profile = null,
 }: {
   /** Reopen the wizard for the one more run the spend gate allows; absent when it would refuse. */
   onEdit?: () => void;
   offer: TrialOfferFacts;
+  /** What the site read found, shown beside the run while it is live. */
+  profile?: BusinessProfile | null;
   fullArticle?: boolean;
   initialHtml?: string | null;
   workspaceId: string;
@@ -1299,8 +1352,13 @@ function RunScreen({
         {planned.length > 10 && <p className="m-0 mt-1.5 text-[12px] text-ink-3">and {planned.length - 10} more on the calendar.</p>}
       </div>
     ) : null;
+    // Beside the live run, what it is building on; the gate replaces it. No
+    // edit control here: /api/onboard/start hands back the run already going,
+    // so "change it and start again" would quietly resume this run. The
+    // free re-run is offered where it can be kept, once the run has ended.
+    const understood = !trialStep && profile ? <WhatWeUnderstood profile={profile} domain={domain} /> : undefined;
     return (
-      <GateShell>
+      <GateShell wide={trialStep || understood !== undefined}>
         {trialStep && ending && words ? (
           <GateTop
             workspaceId={workspaceId}
@@ -1327,7 +1385,7 @@ function RunScreen({
             startedAt={runStartedAt}
           />
         ) : null}
-        <div className={trialStep ? "mt-6" : undefined}>
+        <div className={trialStep ? `mt-6 ${gateColumn}` : undefined}>
           <OnboardingProgress
             key={attempt}
             workspaceId={workspaceId}
@@ -1341,14 +1399,19 @@ function RunScreen({
             refreshKey={bodyLanded}
             scheduled={scheduled}
             onStartedAt={setRunStartedAt}
+            understood={understood}
           />
         </div>
         {trialStep && askAttribution ? (
-          <div className="mt-6">
+          <div className={`mt-6 ${gateColumn}`}>
             <AttributionAsk />
           </div>
         ) : null}
-        {trialStep ? <SignOutLine email={userEmail} otherSites={otherSites} /> : null}
+        {trialStep ? (
+          <div className={gateColumn}>
+            <SignOutLine email={userEmail} otherSites={otherSites} />
+          </div>
+        ) : null}
       </GateShell>
     );
   }

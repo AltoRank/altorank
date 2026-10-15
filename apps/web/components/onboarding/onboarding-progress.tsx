@@ -58,6 +58,7 @@ export function OnboardingProgress({
   refreshKey = 0,
   scheduled,
   onStartedAt,
+  understood,
 }: {
   workspaceId: string;
   domain: string;
@@ -99,6 +100,8 @@ export function OnboardingProgress({
   scheduled?: React.ReactNode;
   /** Told when the run's start is known, on this browser's clock: the gate's clock carries on from it. */
   onStartedAt?: (ms: number) => void;
+  /** What the site read found, shown beside the loading screen while the run is live. */
+  understood?: React.ReactNode;
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState>(() =>
@@ -313,7 +316,7 @@ export function OnboardingProgress({
 
   if (variant === "first-look") {
     if (!finished) {
-      return <SetupLoading workspaceId={workspaceId} domain={domain} state={state} report={report} startedAt={startedAt} reconnecting={reconnecting} refused={refused} log={<RunLog steps={state.steps} preTrial={preTrial} />} />;
+      return <SetupLoading workspaceId={workspaceId} domain={domain} state={state} report={report} startedAt={startedAt} reconnecting={reconnecting} refused={refused} understood={understood} log={<RunLog steps={state.steps} preTrial={preTrial} />} />;
     }
     const scheduledCount = state.planned.length;
     const heldCount = lockHeld ? state.held?.count ?? 0 : 0;

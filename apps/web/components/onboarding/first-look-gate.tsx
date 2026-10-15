@@ -203,48 +203,57 @@ export function GateTop({
       <p role="status" className="sr-only">
         {announced}
       </p>
-      <div className="mb-6 text-center">
+      <div className="mb-6 max-w-[640px]">
         <h1 className="m-0 mb-1.5 text-[22px] font-semibold leading-tight [text-wrap:balance]">{words.heading}</h1>
-        <p className="mx-auto m-0 max-w-[520px] text-[13.5px] leading-[1.6] text-ink-2 [text-wrap:balance]">{words.lede}</p>
+        <p className="m-0 text-[13.5px] leading-[1.6] text-ink-2 [text-wrap:balance]">{words.lede}</p>
       </div>
-      <div className="flex flex-col gap-4">
-        {retry}
-        {hasArticle && (
-          <div ref={cardRef}>
-            <FirstArticleCardView
-              article={firstArticle}
-              pending={firstArticle ? null : pending}
-              brief={brief}
-              live={live}
-              readable={fullArticle}
-              startedAt={startedAt}
-              workspaceId={canBuy ? workspaceId : undefined}
-              settling={settling}
-              onRevealing={setRevealing}
+      {/* Two columns from lg: the article, and beside it the ask and why this
+          article, held in view while the article scrolls. The card form opens
+          in that rail (Embedded Checkout, inline), beside the article and never
+          over it. Below lg the rail follows the article, and the slim bar
+          opens the same checkout in a sheet. */}
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
+        <div className="flex min-w-0 flex-col gap-4 lg:flex-1">
+          {retry}
+          {hasArticle && (
+            <div ref={cardRef}>
+              <FirstArticleCardView
+                article={firstArticle}
+                pending={firstArticle ? null : pending}
+                brief={brief}
+                live={live}
+                readable={fullArticle}
+                startedAt={startedAt}
+                workspaceId={canBuy ? workspaceId : undefined}
+                settling={settling}
+                onRevealing={setRevealing}
+              />
+            </div>
+          )}
+        </div>
+        <aside aria-label="Your trial" className="flex flex-col gap-4 lg:sticky lg:top-6 lg:w-[var(--gate-rail)] lg:shrink-0">
+          <div className="scroll-mt-6" id="start-trial">
+            <SetupAsk
+              ending={ending}
+              canBuy={canBuy}
+              followUp={followUp}
+              returnTo="/dashboard"
+              offer={{ interval, onInterval: setInterval, plan, onPlan: setPlan, facts: offer, fullArticle, buttonRef }}
+              // The soft exit, under the button and quieter than it: a link
+              // back by email, never the text (UX audit 2026-10-12, #3). Only
+              // once there is an article to come back to: offered from the
+              // gate's first frame it mailed "yours to read" for an outline,
+              // and the one send per article was spent before the text existed
+              // (review, 2026-10-12). While it is written, the long-run "Email
+              // me when it's ready" covers that need.
+              below={canBuy && hasArticle && written ? <EmailMeArticle workspaceId={workspaceId} className="mt-3 block w-full text-center" /> : null}
             />
           </div>
-        )}
-        <div className="scroll-mt-6" id="start-trial">
-          <SetupAsk
-            ending={ending}
-            canBuy={canBuy}
-            followUp={followUp}
-            returnTo="/dashboard"
-            offer={{ interval, onInterval: setInterval, plan, onPlan: setPlan, facts: offer, fullArticle, buttonRef }}
-            // The soft exit, under the button and quieter than it: a link
-            // back by email, never the text (UX audit 2026-10-12, #3). Only
-            // once there is an article to come back to: offered from the
-            // gate's first frame it mailed "yours to read" for an outline,
-            // and the one send per article was spent before the text existed
-            // (review, 2026-10-12). While it is written, the long-run "Email
-            // me when it's ready" covers that need.
-            below={canBuy && hasArticle && written ? <EmailMeArticle workspaceId={workspaceId} className="mt-3 block w-full text-center" /> : null}
-          />
-        </div>
-        <TopicBriefs planned={planned} only={keyword || undefined} />
+          <TopicBriefs planned={planned} only={keyword || undefined} />
+        </aside>
       </div>
       {asks && showBar && (
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-panel/95 backdrop-blur" data-testid="trial-bar">
+        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-panel/95 backdrop-blur lg:hidden" data-testid="trial-bar">
           <div className="mx-auto flex max-w-[680px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
             <p className="m-0 min-w-0 text-[12.5px] leading-[1.4] text-ink-2">
               <span className="hidden sm:inline">{stickyLine(written, fullArticle)} </span>

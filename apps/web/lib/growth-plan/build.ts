@@ -88,16 +88,9 @@ const COMPETITOR_RANKED_LIMIT = 300;
 const COMPETITORS_TO_COMPARE = 2;
 const MIN_SHARED_KEYWORDS = 20;
 
-export function normalizeDomain(raw: string): string {
-  return raw
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, "")
-    .replace(/^www\./, "")
-    .replace(/[/?#].*$/, "");
-}
-
-export const DOMAIN_PATTERN = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.[a-z]{2,}$/;
+// Client-safe, so the signup form can check a domain before it is sent.
+import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/domain/shape";
+export { normalizeDomain, DOMAIN_PATTERN };
 
 function pathOf(url: string | null): string {
   if (!url) return "/";

@@ -9,8 +9,10 @@ async function render(params: Record<string, string>): Promise<string> {
   return renderToStaticMarkup(element);
 }
 
+// The source fields only: a domain carried from the homepage rides in a hidden
+// input too, once the form has moved on to the email.
 const hidden = (html: string) =>
-  [...html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)"\/>/g)].map((m) => [m[1], m[2]]);
+  [...html.matchAll(/<input type="hidden" name="([^"]+)" value="([^"]*)"\/>/g)].map((m) => [m[1], m[2]]).filter(([name]) => name !== "domain");
 
 describe("/signup carries the signup source into its form", () => {
   it("renders one hidden input per source value from the URL", async () => {
@@ -36,6 +38,16 @@ describe("/signup carries the signup source into its form", () => {
       ["src", "/check/"],
       ["utm_medium", "email"],
     ]);
+  });
+
+  it("starts on the email when the homepage already gave the domain, and on the domain otherwise", async () => {
+    const carried = await render({ domain: "acme.com" });
+    expect(carried).toContain('name="domain" value="acme.com"');
+    expect(carried).toContain('name="email"');
+    expect(carried).not.toContain('name="password"');
+    const fresh = await render({});
+    expect(fresh).toContain('id="signup-domain"');
+    expect(fresh).not.toContain('name="email"');
   });
 
   it("echoes nothing that fails the shape checks, and nothing at all without a source", async () => {

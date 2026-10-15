@@ -34,6 +34,9 @@ services:
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?set it in docker/.env}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?set it in docker/.env}
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+        # Stripe's publishable key, public by design: with it the trial card
+        # is taken on the page (Embedded Checkout), without it on Stripe's.
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
     ports:
       - "${PORT:-3000}:3000"
     # Docker Desktop provides host.docker.internal; Linux needs it mapped, so a
@@ -77,6 +80,7 @@ services:
       TRIAL_GATE_DISABLED: ${TRIAL_GATE_DISABLED:-}
       TRIAL_GATE_BYPASS_EMAILS: ${TRIAL_GATE_BYPASS_EMAILS:-}
       PRETRIAL_FULL_ARTICLE: ${PRETRIAL_FULL_ARTICLE:-}
+      ONBOARDING_AUTOSTART: ${ONBOARDING_AUTOSTART:-}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-}
       ANTHROPIC_MODEL_STRUCTURED: ${ANTHROPIC_MODEL_STRUCTURED:-}
       ANTHROPIC_MODEL_DECISION: ${ANTHROPIC_MODEL_DECISION:-}

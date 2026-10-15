@@ -207,7 +207,13 @@ export function SetupLoading({
   log,
   reconnecting = false,
   refused = null,
+  understood,
 }: {
+  /**
+   * What the site read found (./what-we-understood.tsx). With it the screen
+   * is two columns from lg: the facts the run is building on, and the run.
+   */
+  understood?: React.ReactNode;
   workspaceId: string;
   /** The screen has lost the server for a few polls and is trying again; the run is not over. */
   reconnecting?: boolean;
@@ -241,16 +247,19 @@ export function SetupLoading({
 
   return (
     <div className="mx-auto w-full">
-      <div className="mb-6 text-center">
+      <div className={`mb-6 ${understood ? "max-w-[640px]" : "text-center"}`}>
         <p className="m-0 mb-2 text-[12px] text-ink-3">Setting up {domain || "your site"}</p>
         <h1 className="m-0 text-[22px] font-semibold leading-tight [text-wrap:balance]" aria-live="polite">
           {leadingHeadline(leading, domain)}
         </h1>
-        <p className="mx-auto m-0 mt-2 max-w-[440px] text-[13px] leading-[1.6] text-ink-2 [text-wrap:balance]">
+        <p className={`m-0 mt-2 text-[13px] leading-[1.6] text-ink-2 [text-wrap:balance] ${understood ? "" : "mx-auto max-w-[440px]"}`}>
           You can leave this page: the work carries on and this screen picks up where it is.
         </p>
       </div>
 
+      <div className={understood ? "flex flex-col-reverse gap-4 lg:flex-row lg:items-start lg:gap-6" : undefined}>
+      {understood && <div className="lg:sticky lg:top-6 lg:w-[var(--gate-rail)] lg:shrink-0">{understood}</div>}
+      <div className={understood ? "min-w-0 lg:order-first lg:flex-1" : undefined}>
       <div className="rounded-[10px] border border-line bg-panel p-5">
         <div className="mb-4 flex flex-col gap-2">
           <ProgressBar fraction={fraction} label="Setup progress" />
@@ -359,6 +368,8 @@ export function SetupLoading({
           </div>
         )}
       </details>
+      </div>
+      </div>
     </div>
   );
 }

@@ -38,6 +38,38 @@ export async function createCheckoutSession(
    */
   returnTo?: string,
 ): Promise<BillingRedirect> {
+  const result = await openCheckout(plan, interval, returnTo, "hosted");
+  return "clientSecret" in result ? { ok: false, error: "Checkout could not be opened. Nothing was charged; try again." } : result;
+}
+
+/**
+ * What an embedded checkout start hands back: the session's client secret to
+ * mount Stripe's form on our own page, or a URL when there is nothing to pay
+ * here (a plan switch, a session already completed).
+ */
+export type EmbeddedCheckoutStart = BillingRedirect | { ok: true; clientSecret: string };
+
+/**
+ * The same checkout as `createCheckoutSession`, opened as Stripe's Embedded
+ * Checkout so the trial screen keeps the first article beside the card form
+ * instead of sending the person to checkout.stripe.com. Same session
+ * parameters, same reservation and idempotency (lib/billing/checkout-attempt.ts),
+ * same webhook; only `ui_mode` and the way back differ.
+ */
+export async function createEmbeddedCheckout(
+  plan: SelfServePlan,
+  interval: BillingInterval = "month",
+  returnTo?: string,
+): Promise<EmbeddedCheckoutStart> {
+  return openCheckout(plan, interval, returnTo, "embedded");
+}
+
+async function openCheckout(
+  plan: SelfServePlan,
+  interval: BillingInterval,
+  returnTo: string | undefined,
+  surface: "hosted" | "embedded",
+): Promise<EmbeddedCheckoutStart> {
   const { accountId } = await requireAuth(["owner"]);
   const supabase = await createClient();
 
@@ -145,17 +177,31 @@ export async function createCheckoutSession(
               : {}),
           }
         : {}),
-      success_url: `${appUrl()}/checkout/complete?session_id={CHECKOUT_SESSION_ID}&next=${encodeURIComponent(checkoutDestination(returnTo))}`,
-      // The destination rides on the cancel link too, so leaving Stripe from
-      // a Billing purchase goes back to Billing (with it), not to the trial
-      // screen every cancel used to land on.
-      cancel_url: `${appUrl()}/checkout/cancelled?next=${encodeURIComponent(checkoutDestination(returnTo))}`,
+      // Embedded: Stripe's form sits inside our page, so there is no cancel
+      // link to leave by (closing the sheet is leaving) and one return URL,
+      // the same completion page the hosted flow lands on.
+      ...(surface === "embedded"
+        ? {
+            ui_mode: "embedded_page" as const,
+            return_url: `${appUrl()}/checkout/complete?session_id={CHECKOUT_SESSION_ID}&next=${encodeURIComponent(checkoutDestination(returnTo))}`,
+          }
+        : {
+            success_url: `${appUrl()}/checkout/complete?session_id={CHECKOUT_SESSION_ID}&next=${encodeURIComponent(checkoutDestination(returnTo))}`,
+            // The destination rides on the cancel link too, so leaving Stripe from
+            // a Billing purchase goes back to Billing (with it), not to the trial
+            // screen every cancel used to land on.
+            cancel_url: `${appUrl()}/checkout/cancelled?next=${encodeURIComponent(checkoutDestination(returnTo))}`,
+          }),
     });
   } catch (err) {
     return billingFailure(err, "Checkout could not be opened");
   }
 
   if (session.status === "complete") return { ok: true, url: `${appUrl()}/checkout/complete?session_id=${session.id}&next=${encodeURIComponent(checkoutDestination(returnTo))}` };
+  if (surface === "embedded") {
+    if (!session.client_secret) return { ok: false, error: "Stripe did not return a checkout form. Nothing was charged; try again." };
+    return { ok: true, clientSecret: session.client_secret };
+  }
   if (!session.url) {
     return { ok: false, error: "Stripe did not return a checkout link. Nothing was charged; try again." };
   }
