@@ -61,8 +61,12 @@ did, which may be `draft`; the dashboard reads it and does not submit a draft's
 URL to search engines.
 
 `PUT /wp-json/altorank/v1/edit`: same body plus one of `post_id`,
-`external_id`, `current_slug` to find the post. A body with only `status` is a
-status change (unpublish sends `draft`).
+`external_id`, `current_slug` to find the post. Only a post that carries
+`_altorank_external_id` (one `/submit` created) is found; anything else is a
+404 (1.1.1). A body with only `status` is a status change (unpublish sends
+`draft`); while "Post as draft" is on, `status=publish` on a post that is not
+already live is ignored. The external id recorded at submit is never
+rewritten by an edit.
 
 `GET /wp-json/altorank/v1/posts?page=1&per_page=20&status=publish`:
 `{ posts: [{ id, title, slug, url, status, date, modified, external_id, excerpt }], total, total_pages }`.

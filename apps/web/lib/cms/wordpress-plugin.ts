@@ -158,7 +158,11 @@ export class WordPressPluginAdapter implements CMSAdapter {
       path: "edit",
       method: "PUT",
       // An update edits content; the post keeps whatever state it has on the site.
-      body: JSON.stringify({ ...this.body(article), status: undefined, post_id: externalId, external_id: article.id ?? externalId }),
+      // The post is named by its WordPress id; the article id rides along
+      // only when known, so the plugin can fall back to it. A post id is never
+      // sent as an external id: the plugin matches that against the id it
+      // recorded at submit.
+      body: JSON.stringify({ ...this.body(article), status: undefined, post_id: externalId }),
     });
     return this.toResult((await res.json()) as PluginPostResponse);
   }

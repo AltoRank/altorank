@@ -63,6 +63,16 @@ describe("post writes", () => {
   });
 });
 
+describe("edit scope", () => {
+  it("/edit only finds posts the plugin created, and never rewrites their external id", async () => {
+    const api = await read("includes/api.php");
+    const locate = code(phpFunction(api, "altorank_locate_post"));
+    expect(locate.match(/altorank_is_own_post\(/g)?.length).toBe(2);
+    expect(code(phpFunction(api, "altorank_is_own_post"))).toContain("ALTORANK_META_EXTERNAL_ID");
+    expect(code(phpFunction(api, "altorank_upsert_post"))).toContain("if ( $is_new && '' !== $params['external_id'] )");
+  });
+});
+
 describe("structured data and charts", () => {
   it("JSON-LD is lifted out of the body before it is sanitised", async () => {
     const upsert = code(phpFunction(await read("includes/api.php"), "altorank_upsert_post"));

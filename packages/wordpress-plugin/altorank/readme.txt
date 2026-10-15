@@ -46,7 +46,7 @@ All under `/wp-json/altorank/v1/`:
 * `GET /capabilities`: plugin version and feature list. The one route without authentication; it discloses nothing else.
 * `POST /test-integration`: creates a draft named `altorank-test-post-<time>` and deletes it again. Used by the dashboard's "Test connection" and by the settings page button.
 * `POST /submit`: create a post.
-* `PUT /edit`: update a post the dashboard sent earlier, found by id, external id or current slug.
+* `PUT /edit`: update a post the dashboard sent earlier, found by id, external id or current slug. Only posts this plugin created can be found; posts written on your site are never changed. While "Post as draft" is on, an edit can take a post off the site but cannot publish one that is not already live.
 * `GET /posts`: paginated list of the site's posts (`page`, `per_page`, `status`), used for refreshes and internal linking.
 
 == Installation ==

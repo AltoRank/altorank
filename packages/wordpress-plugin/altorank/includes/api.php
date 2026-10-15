@@ -391,9 +391,11 @@ function altorank_handle_submit( WP_REST_Request $request ) {
 /**
  * PUT /edit: update a post the dashboard sent earlier.
  *
- * Found by post_id, then by external_id, then by current_slug. A body holding
- * only `status` is a status change (the dashboard's unpublish sends
- * status=draft); anything else replaces the fields it names.
+ * Found by post_id, then by external_id, then by current_slug, and only ever
+ * a post this plugin created (one carrying _altorank_external_id): posts
+ * written on the site itself are never touched. A body holding only `status`
+ * is a status change (the dashboard's unpublish sends status=draft); anything
+ * else replaces the fields it names.
  */
 function altorank_handle_edit( WP_REST_Request $request ) {
 	$params  = altorank_read_params( $request );
@@ -518,9 +520,16 @@ function altorank_read_params( WP_REST_Request $request ): array {
 	);
 }
 
-/** The post a /edit request means, or 0. */
+/** Whether a post exists, is a post, and was created by this plugin. */
+function altorank_is_own_post( int $post_id ): bool {
+	return $post_id > 0
+		&& 'post' === get_post_type( $post_id )
+		&& '' !== (string) get_post_meta( $post_id, ALTORANK_META_EXTERNAL_ID, true );
+}
+
+/** The post a /edit request means, or 0. Only posts this plugin created qualify. */
 function altorank_locate_post( array $params ): int {
-	if ( $params['post_id'] && 'post' === get_post_type( $params['post_id'] ) ) {
+	if ( $params['post_id'] && altorank_is_own_post( $params['post_id'] ) ) {
 		return $params['post_id'];
 	}
 	if ( '' !== $params['external_id'] ) {
@@ -531,8 +540,8 @@ function altorank_locate_post( array $params ): int {
 	}
 	if ( '' !== $params['current_slug'] ) {
 		$post = get_page_by_path( sanitize_title( $params['current_slug'] ), OBJECT, 'post' );
-		if ( $post instanceof WP_Post ) {
-			return $post->ID;
+		if ( $post instanceof WP_Post && altorank_is_own_post( (int) $post->ID ) ) {
+			return (int) $post->ID;
 		}
 	}
 	return 0;
@@ -559,16 +568,27 @@ function altorank_find_post_by_external_id( string $external_id ): int {
  * "Post as draft" applies to new posts: the dashboard has approved the
  * article, and this setting decides whether that approval publishes it here
  * or hands it to an editor. Edits honour the status they ask for, so a
- * refresh of a live post does not demote it and an unpublish does demote it.
+ * refresh of a live post does not demote it and an unpublish does demote it,
+ * with one exception: while "Post as draft" is on, an edit cannot put a post
+ * on the site that is not already there. Publishing it is the editor's call.
+ *
+ * @param string $current The post's status now, for an edit; '' for a new post.
  */
-function altorank_resolve_status( array $params, bool $is_new ): ?string {
-	if ( $is_new && '1' === (string) get_option( ALTORANK_OPTION_POST_AS_DRAFT, '1' ) ) {
+function altorank_resolve_status( array $params, bool $is_new, string $current = '' ): ?string {
+	$hold = '1' === (string) get_option( ALTORANK_OPTION_POST_AS_DRAFT, '1' );
+	if ( $is_new && $hold ) {
 		return 'draft';
 	}
 	if ( ! $params['has_status'] ) {
 		return $is_new ? 'publish' : null;
 	}
-	return in_array( $params['status'], ALTORANK_ALLOWED_STATUSES, true ) ? $params['status'] : ( $is_new ? 'publish' : null );
+	if ( ! in_array( $params['status'], ALTORANK_ALLOWED_STATUSES, true ) ) {
+		return $is_new ? 'publish' : null;
+	}
+	if ( ! $is_new && $hold && 'publish' === $params['status'] && 'publish' !== $current ) {
+		return null;
+	}
+	return $params['status'];
 }
 
 /**
@@ -604,7 +624,7 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 		$postarr['post_name'] = altorank_unique_slug( $params['title'], 0 );
 	}
 
-	$status = altorank_resolve_status( $params, $is_new );
+	$status = altorank_resolve_status( $params, $is_new, $post_id ? (string) get_post_status( $post_id ) : '' );
 	if ( null !== $status ) {
 		$postarr['post_status'] = $status;
 	}
@@ -643,7 +663,8 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 	 * in the editor. `meta_input` is applied before those hooks run.
 	 */
 	$meta_input = altorank_seo_meta_input( $params['title'], $params['meta_description'], $params['focus_keyword'] );
-	if ( '' !== $params['external_id'] ) {
+	// Recorded when the dashboard sends the article; an edit never rewrites it.
+	if ( $is_new && '' !== $params['external_id'] ) {
 		$meta_input[ ALTORANK_META_EXTERNAL_ID ] = $params['external_id'];
 	}
 	if ( null !== $structured ) {

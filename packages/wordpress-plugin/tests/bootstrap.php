@@ -267,4 +267,64 @@ function get_post_meta( $post_id, $key = '', $single = false ) {
 	return $single ? $value : array( $value );
 }
 
+// ---------------------------------------------------------------------------
+// Post lookups
+// ---------------------------------------------------------------------------
+
+define( 'OBJECT', 'OBJECT' );
+
+class WP_Post {
+	public $ID;
+	public $post_name;
+	public $post_type;
+
+	public function __construct( int $id, array $row ) {
+		$this->ID        = $id;
+		$this->post_name = $row['post_name'] ?? '';
+		$this->post_type = $row['post_type'] ?? 'post';
+	}
+}
+
+/** Put a post in the fake store; `meta` becomes its post meta. */
+function altorank_test_add_post( int $id, array $row, array $meta = array() ): void {
+	$GLOBALS['altorank_wp']['posts'][ $id ] = $row + array( 'post_type' => 'post' );
+	$GLOBALS['altorank_wp']['meta'][ $id ]  = $meta;
+}
+
+function get_post_type( $post = null ) {
+	return $GLOBALS['altorank_wp']['posts'][ (int) $post ]['post_type'] ?? false;
+}
+
+function get_post_status( $post = null ) {
+	return $GLOBALS['altorank_wp']['posts'][ (int) $post ]['post_status'] ?? false;
+}
+
+function sanitize_title( $title ) {
+	return trim( (string) preg_replace( '/[^a-z0-9]+/', '-', strtolower( (string) $title ) ), '-' );
+}
+
+/** Only the meta_key/meta_value lookup the plugin makes. */
+function get_posts( $args = array() ) {
+	$out = array();
+	foreach ( $GLOBALS['altorank_wp']['posts'] as $id => $row ) {
+		if ( ( $args['post_type'] ?? 'post' ) !== $row['post_type'] ) {
+			continue;
+		}
+		if ( isset( $args['meta_key'] ) && ( $GLOBALS['altorank_wp']['meta'][ $id ][ $args['meta_key'] ] ?? null ) !== $args['meta_value'] ) {
+			continue;
+		}
+		$out[] = $id;
+	}
+	return array_slice( $out, 0, (int) ( $args['posts_per_page'] ?? 5 ) );
+}
+
+function get_page_by_path( $path, $output = OBJECT, $post_type = 'page' ) {
+	foreach ( $GLOBALS['altorank_wp']['posts'] as $id => $row ) {
+		if ( $row['post_type'] === $post_type && ( $row['post_name'] ?? '' ) === $path ) {
+			return new WP_Post( $id, $row );
+		}
+	}
+	return null;
+}
+
 require dirname( __DIR__ ) . '/altorank/altorank.php';

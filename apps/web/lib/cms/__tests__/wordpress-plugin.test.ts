@@ -102,6 +102,15 @@ describe("WordPressPluginAdapter", () => {
     expect(JSON.parse(opts.body)).toMatchObject({ post_id: "12", external_id: "art-1", title: "Hello 2" });
   });
 
+  it("update() without an article id names the post by its WordPress id only", async () => {
+    mockFetch.mockResolvedValueOnce(Response.json({ id: 12, url: "https://example.com/hello", status: "publish" }));
+    await adapter.update("12", { title: "Hello 2", html: "<p>v2</p>", slug: "hello" });
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.post_id).toBe("12");
+    expect(body).not.toHaveProperty("external_id");
+    expect(body).not.toHaveProperty("status");
+  });
+
   it("unpublish() sets the post back to draft through /edit", async () => {
     mockFetch.mockResolvedValueOnce(Response.json({ id: 12, url: "", status: "draft" }));
     await adapter.unpublish("12");
