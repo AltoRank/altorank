@@ -70,6 +70,20 @@ export function withoutChosenArticles(sample: string, urls: string[]): string {
 }
 
 /**
+ * Whether the site already has a trained voice. Settings only promises a
+ * retrain for one that does: onboarding reads the list itself for a site that
+ * has not been trained yet.
+ */
+export async function hasTrainedVoice(supabase: SupabaseClient, workspaceId: string): Promise<boolean> {
+  try {
+    const { data } = await supabase.from("voice_profiles").select("trained").eq("workspace_id", workspaceId).maybeSingle();
+    return Boolean((data as { trained?: boolean } | null)?.trained);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Retrain a trained voice when the chosen articles change. The chosen
  * articles go first and the rest of the current sample (the site text
  * onboarding read) follows, so nothing is re-crawled. A site whose voice has

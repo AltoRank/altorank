@@ -103,7 +103,9 @@ export default async function BacklinksPage({ searchParams }: Props) {
             // One row per referring domain, and one check reads the top
             // BACKLINK_FETCH_LIMIT of them by authority, so this is not the
             // index's total for a site with more (lib/seo/backlinks.ts).
-            label: liveCount >= BACKLINK_FETCH_LIMIT ? `Top ${BACKLINK_FETCH_LIMIT} referring domains` : "Referring domains",
+            // Not "Top 200": a capped check marks nothing lost, so the stored
+            // rows can pass the limit over several checks.
+            label: liveCount >= BACKLINK_FETCH_LIMIT ? "Top referring domains" : "Referring domains",
             value: String(allBacklinks.length),
             delta: `${liveCount} live`,
             deltaType: "pos",

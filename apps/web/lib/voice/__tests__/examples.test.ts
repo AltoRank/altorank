@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   composeVoiceSample,
+  hasTrainedVoice,
   readExampleArticles,
   retrainFromExamples,
   withoutChosenArticles,
@@ -77,5 +78,13 @@ describe("retrainFromExamples", () => {
       }),
     ).toBe(false);
     expect(train).not.toHaveBeenCalled();
+  });
+});
+
+describe("hasTrainedVoice", () => {
+  it("is true only for a trained profile, so Settings promises a retrain only then", async () => {
+    expect(await hasTrainedVoice(voiceClient({ sample_text: "x", trained: true }), "ws-1")).toBe(true);
+    expect(await hasTrainedVoice(voiceClient({ sample_text: "x", trained: false }), "ws-1")).toBe(false);
+    expect(await hasTrainedVoice(voiceClient(null), "ws-1")).toBe(false);
   });
 });

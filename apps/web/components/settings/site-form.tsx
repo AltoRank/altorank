@@ -19,7 +19,7 @@ export function SiteForm({ workspaceId, domain, initial }: { workspaceId: string
     start(async () => {
       try {
         const { retraining } = await saveSiteDetails(workspaceId, site);
-        toast.success(retraining ? "Saved. Your brand voice is being retrained from the articles you chose." : "Saved.");
+        toast.success(retraining ? "Saved. The articles you chose are being read to retrain your brand voice." : "Saved.");
         router.refresh();
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Could not save.");

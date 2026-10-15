@@ -14,7 +14,7 @@
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { readExampleUrls, retrainFromExamples } from "@/lib/voice/examples";
+import { hasTrainedVoice, readExampleUrls, retrainFromExamples } from "@/lib/voice/examples";
 import { trainVoiceProfile } from "@/lib/voice/train";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
@@ -199,6 +199,9 @@ export async function saveSiteDetails(workspaceId: string, details: SiteDetails)
 
   const changed = examples.join("\n") !== previous.join("\n");
   if (!changed || examples.length === 0) return { retraining: false };
+  // Only a trained voice is retrained (retrainFromExamples), so only then is
+  // a retrain promised. An untrained site learns from the list at onboarding.
+  if (!(await hasTrainedVoice(supabase, workspaceId))) return { retraining: false };
   // A model call, so asked like the Voice page's Train button is.
   const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const gate = await canSpend(supabase, accountId, { userEmail: user.email ?? undefined, workspaceId, action: "voice-training" });
