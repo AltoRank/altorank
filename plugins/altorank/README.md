@@ -21,12 +21,15 @@ Nothing runs on your machine. There are no hooks, scripts or local commands.
 
 ## Install
 
-Claude Code:
+Claude Code. From a terminal:
 
 ```bash
-/plugin marketplace add AltoRank/altorank
-/plugin install altorank@altorank
+claude plugin marketplace add AltoRank/altorank
+claude plugin install altorank@altorank
 ```
+
+Or inside a Claude Code session: `/plugin marketplace add AltoRank/altorank`,
+then `/plugin install altorank@altorank`.
 
 Connecting opens AltoRank's OAuth consent page; a free AltoRank account is enough. Read-only
 access is the default; tick write access there if you want Claude to edit

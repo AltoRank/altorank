@@ -120,12 +120,15 @@ any draft as Markdown (front matter included) or HTML, or downloads it as a
 
 ## Install the plugin
 
-Claude Code:
+Claude Code. From a terminal:
 
 ```bash
-/plugin marketplace add AltoRank/altorank
-/plugin install altorank@altorank
+claude plugin marketplace add AltoRank/altorank
+claude plugin install altorank@altorank
 ```
+
+Or inside a Claude Code session: `/plugin marketplace add AltoRank/altorank`,
+then `/plugin install altorank@altorank`.
 
 `plugins/altorank/` bundles the hosted MCP server (`https://app.altorank.co/api/mcp`,
 OAuth, no API key to copy) with a skill written for those tools. The same folder
