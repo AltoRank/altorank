@@ -24,6 +24,13 @@ describe("tiptapToHtml: scheme allowlist", () => {
     }
   });
 
+  it("refuses a scheme spelled with zero-padded numeric references", () => {
+    for (const href of ["javascript&#000000058;alert(1)", "javascript&#x00000003a;alert(1)", "javascript&#0000000000058;alert(1)"]) {
+      expect(tiptapToHtml(para(href)), href).toBe("<p>go</p>");
+      expect(one({ type: "image", attrs: { src: href, alt: "A" } }), href).toBe("");
+    }
+  });
+
   it("escapes what is left of an href so it cannot leave its attribute", () => {
     expect(tiptapToHtml(para('https://ok.example/"><script>x</script>'))).toBe(
       '<p><a href="https://ok.example/&quot;&gt;&lt;script&gt;x&lt;/script&gt;">go</a></p>',

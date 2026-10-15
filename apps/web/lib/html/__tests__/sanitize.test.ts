@@ -153,6 +153,23 @@ describe("URL rules", () => {
     }
   });
 
+  it("reads numeric references with any number of digits, as a browser does", () => {
+    for (const bad of [
+      "javascript&#000000058;alert(1)",
+      "javascript&#0000000000058;alert(1)",
+      "javascript&#x00000003a;alert(1)",
+      "javascript&#x0000000003A;alert(1)",
+      "&#0000000000106;avascript:alert(1)",
+      "javascript&#58alert(1)",
+    ]) {
+      expect(isSafeUrl(bad, "link"), bad).toBe(false);
+      expect(isSafeUrl(bad, "image"), bad).toBe(false);
+    }
+    // A reference that names no character is not a separator either.
+    expect(isSafeUrl("javascript&#99999999999999999999;&colon;alert(1)", "link")).toBe(false);
+    expect(isSafeUrl("/a&#0000047;b", "link")).toBe(true);
+  });
+
   it("images: http(s) and relative only", () => {
     expect(isSafeUrl("https://cdn.example/x.png", "image")).toBe(true);
     expect(isSafeUrl("/a.webp", "image")).toBe(true);

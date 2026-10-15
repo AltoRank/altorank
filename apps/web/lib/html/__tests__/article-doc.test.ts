@@ -22,7 +22,7 @@ describe("sanitizeArticleDoc", () => {
   });
 
   it("drops a link mark whose target is not a page, and keeps its text", () => {
-    for (const href of ["javascript:alert(1)", "jav&#x61;script:alert(1)", "data:text/html,x", "", 42]) {
+    for (const href of ["javascript:alert(1)", "jav&#x61;script:alert(1)", "javascript&#000000058;alert(1)", "javascript&#x00000003a;alert(1)", "data:text/html,x", "", 42]) {
       const out = sanitizeArticleDoc(doc({ type: "paragraph", content: [text("x", [{ type: "bold" }, link(href)])] }));
       expect(out.content?.[0].content?.[0], String(href)).toEqual({ type: "text", text: "x", marks: [{ type: "bold" }] });
     }

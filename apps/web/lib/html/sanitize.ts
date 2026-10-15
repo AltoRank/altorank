@@ -32,12 +32,18 @@ const NAMED_REFS: Record<string, string> = {
   nbsp: "\u00a0", sol: "/", lpar: "(", rpar: ")", period: ".", comma: ",",
 };
 
-/** Character references a scheme could hide behind, decoded for the scheme check only. */
+/**
+ * Character references a scheme could hide behind, decoded for the scheme
+ * check only, the way a browser decodes them: a numeric reference takes every
+ * digit that follows (leading zeros included), and one that names no
+ * character becomes U+FFFD rather than disappearing.
+ */
 function decodeRefs(s: string): string {
-  return s.replace(/&(#\d{1,7}|#[xX][0-9a-fA-F]{1,6}|[a-zA-Z][a-zA-Z0-9]{1,31});?/g, (whole, ref: string) => {
+  return s.replace(/&(#\d+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31});?/g, (whole, ref: string) => {
     if (ref[0] === "#") {
       const code = ref[1] === "x" || ref[1] === "X" ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
-      return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
+      const valid = Number.isFinite(code) && code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff);
+      return valid ? String.fromCodePoint(code) : "\ufffd";
     }
     return NAMED_REFS[ref.toLowerCase()] ?? whole;
   });
