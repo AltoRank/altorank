@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAdvancedSerp, type SerpData } from "@/lib/seo/brief-data";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
-import { askStructured, describeBusiness, extractJson, modelAvailable, type AskModel, type SpendSink } from "./buyer-model";
+import { askStructured, describeBusiness, extractJson, firstCallAlone, modelAvailable, type AskModel, type SpendSink } from "./buyer-model";
 
 export type { AskModel };
 import { profileUsable } from "./business-context";
@@ -344,6 +344,10 @@ export async function qualifyOpportunities(
     if (!gate.allowed) throw new SpendRefusedError(gate);
   }
   const spend = { supabase, workspaceId };
+  // Every judge read of this batch shares its instructions, cached
+  // (`askResultsJudge`): the first read writes them alone, then the rest
+  // read them back.
+  const judgeAsk = firstCallAlone(askStructured);
   const firstLook = options.firstLook;
   // The deadline, as something to wait on: everything below that waits -
   // for the buyer test, for room, for the terms in flight - waits for it
@@ -528,7 +532,7 @@ export async function qualifyOpportunities(
           for (const key of Object.keys(result) as Array<keyof Opportunity>) delete result[key];
           Object.assign(result, fresh);
           try {
-            await timed("judge", () => withStage("judge", () => judgeOnResults(result, input, { spend })));
+            await timed("judge", () => withStage("judge", () => judgeOnResults(result, input, { spend, ask: judgeAsk })));
           } catch (err) {
             if (!isBudgetRefusal(err)) {
               result.cause = "provider_error";
@@ -551,7 +555,7 @@ export async function qualifyOpportunities(
         // read the budget refused leaves the term not judged, as a refused
         // first read does: one approval is not what a first look plans on.
         if (firstLook && input && (result.status as Opportunity["status"]) === "qualified") {
-          const again = await patiently(c.id, () => watchRefusals(() => timed("judge", () => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend })))));
+          const again = await patiently(c.id, () => watchRefusals(() => timed("judge", () => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend, ask: judgeAsk })))));
           if (again.refused) { stop(); return; }
           if (closed) return;
           const second = again.value;
@@ -789,6 +793,16 @@ export function existingPageIn(organic: ReadonlyArray<{ url: string }>, sourceUr
 }
 
 /**
+ * Where the judge's instructions end: everything before the last line, the
+ * one JSON line of business, query and results. The instructions differ only
+ * by the market's language and the date, so every read of a first look sends
+ * the same ~2,000 tokens ahead of its data, and they are cached.
+ */
+export function judgeCachePrefix(prompt: string): number {
+  return prompt.lastIndexOf("\n") + 1;
+}
+
+/**
  * The results judge's raw answer for a results page (`judgedResults`), asked
  * exactly as qualification asks it, so the decision evals replay the same
  * stored answer (lib/evals, the `page-type` decision).
@@ -797,7 +811,8 @@ export function askResultsJudge(
   input: { term: string; context: OpportunityContext; verdict: Extract<FitVerdict, { keep: true }>; organic: ReadonlyArray<ResultsPageEntry> },
   options: { spend?: SpendSink | null; ask?: AskModel; today?: string } = {},
 ): Promise<string | null> {
-  return (options.ask ?? askStructured)("keyword-research/opportunity", opportunityPrompt({ ...input, today: options.today }), { maxTokens: OPPORTUNITY_MAX_TOKENS, minTokens: OPPORTUNITY_MIN_TOKENS, spend: options.spend ?? null, tier: "decision", schema: opportunitySchema() });
+  const prompt = opportunityPrompt({ ...input, today: options.today });
+  return (options.ask ?? askStructured)("keyword-research/opportunity", prompt, { maxTokens: OPPORTUNITY_MAX_TOKENS, minTokens: OPPORTUNITY_MIN_TOKENS, spend: options.spend ?? null, tier: "decision", schema: opportunitySchema(), cachePrefix: judgeCachePrefix(prompt) });
 }
 
 /**
