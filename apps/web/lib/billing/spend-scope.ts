@@ -126,14 +126,22 @@ export async function watchRefusals<T>(fn: () => Promise<T>): Promise<{ value: T
   });
 }
 
-/** A paid call the budget would not cover. Nothing was bought. */
+/**
+ * A paid call the budget would not cover. Nothing was bought. A call that
+ * asked for a range says both ends: a buyer-test batch is claimed at its most
+ * ($0.0855 for forty phrases) and refused only when the room is under its
+ * floor, and a line naming the most alone read as the old full-batch claim
+ * still being asked (2026-10-15).
+ */
 export class BudgetRefusedError extends Error {
   constructor(
     public readonly operation: string,
     public readonly stage: SpendStage | null,
     public readonly wantUsd: number,
+    public readonly minUsd: number = wantUsd,
   ) {
-    super(`The first look's budget does not cover ${operation} (about $${wantUsd.toFixed(4)}${stage ? `, ${stage}` : ""}); not bought.`);
+    const amount = minUsd < wantUsd - 1e-9 ? `$${minUsd.toFixed(4)} to $${wantUsd.toFixed(4)}` : `about $${wantUsd.toFixed(4)}`;
+    super(`The first look's budget does not cover ${operation} (${amount}${stage ? `, ${stage}` : ""}); not bought.`);
     this.name = "BudgetRefusedError";
   }
 }
@@ -173,7 +181,7 @@ export async function claimSpend(operation: string, wantUsd: number, opts: { min
   }
   if (granted === null) {
     for (let s: SpendScope | null = scope; s; s = s.parent) s.refusals += 1;
-    throw new BudgetRefusedError(operation, scope.stage, want);
+    throw new BudgetRefusedError(operation, scope.stage, want, min);
   }
   let settled = false;
   const grantedUsd = granted;

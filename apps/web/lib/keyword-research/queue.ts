@@ -282,6 +282,8 @@ export async function refillQualifiedQueue(
   let batches = 0;
   const maxBatches = options.maxBatches ?? REFILL_MAX_BATCHES;
   while (ready.size < options.target && unjudged.length && batches < maxBatches) {
+    // A first look past its deadline judges nothing more (`FirstLook.deadline`).
+    if (options.firstLook?.deadline !== undefined && Date.now() >= options.firstLook.deadline) break;
     const needed = options.target - ready.size;
     const batch = unjudged.splice(0, Math.min(QUALIFICATION_LIMIT, needed * 3));
     batches++;

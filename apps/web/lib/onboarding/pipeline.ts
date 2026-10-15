@@ -43,6 +43,7 @@ import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { spendClient } from "@/lib/billing/default-spend";
 import { currentSpendScope, isBudgetRefusal, watchRefusals, withSpendScope, withStage } from "@/lib/billing/spend-scope";
 import { draftBudgetShort, draftCanBuyLookup, firstLookCeiling, firstLookResearchLeave, leavingRoom, openFirstLookBudget, type RunBudgetState } from "@/lib/billing/run-budget";
+import { FIRST_LOOK_QUALIFY_MS } from "./time-limits";
 import type { EmptyPool, OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
 import { readEmptyPool } from "./empty-pool";
 import { modelAvailable } from "@/lib/keyword-research/buyer-model";
@@ -393,6 +394,10 @@ async function runPhases(
 
   // --- Phase 4: schedule the month, then write the first draft ------------
   emit({ phase: "planning", status: "active" });
+  // Qualification - the plan's and the first topic's - ends by this time,
+  // with what it has judged (lib/onboarding/time-limits.ts): a production
+  // first look whose calls stopped answering waited 25 minutes on them.
+  firstLook.deadline = Date.now() + FIRST_LOOK_QUALIFY_MS;
   // Four batches of up to fifteen results pages: about $0.25 at most, once.
   const FIRST_LOOK_QUALIFY_BATCHES = 4;
   let plan: PlannedEntry[] = [];
@@ -500,7 +505,10 @@ async function runPhases(
             ? `Your first article is already on the calendar; the rest of the plan opens with the trial.${pageNote}`
             : providerFailed > 0
               ? `Could not check the search results for ${providerFailed} search${providerFailed === 1 ? "" : "es"}: a problem on our side, not your site. Nothing was planned yet.`
-              : `No keyword clear enough to plan yet.${pageNote}`;
+              : firstLook.timedOut
+                // The deadline, not the site: say so.
+                ? "Checking the search results took longer than a first look allows, so nothing was planned yet: a problem on our side, not your site."
+                : `No keyword clear enough to plan yet.${pageNote}`;
       // Nothing cleared the bar: which stage emptied the pool, for the row
       // and the operator (lib/onboarding/empty-pool.ts). Not for a held
       // account whose one article is already on the calendar - that site has

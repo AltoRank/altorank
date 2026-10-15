@@ -13,6 +13,7 @@ import { acceptsThinkingDisabled, anthropicModel, DECISION_CALL, refusesTemperat
 import { anthropicCost, anthropicEstimate, anthropicOutputRate, recordSpend } from "@/lib/billing/spend";
 import { claimSpend, currentSpendScope, isBudgetRefusal } from "@/lib/billing/spend-scope";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
+import { BUDGET_RPC_TIMEOUT_MS, STRUCTURED_CALL_DEADLINE_MS } from "@/lib/onboarding/time-limits";
 
 /** Where to write the spend row. Optional: scripts and tests have none. */
 export interface SpendSink {
@@ -140,22 +141,32 @@ export async function askStructured(
   let cost: number | null = 0;
   try {
     const client = new Anthropic({ apiKey, timeout: STRUCTURED_TIMEOUT_MS, maxRetries: STRUCTURED_MAX_RETRIES });
+    // The SDK's timeout ends when the reply's headers arrive (client.js
+    // `fetchWithTimeout` clears it), so a body that never came held the call,
+    // its claim and whatever waited on it for good (2026-10-15). The signal
+    // bounds all of it: both attempts, the backoff and the reply.
     const response = await client.messages.create({
       model,
       max_tokens: sized.maxTokensFor(claim.grantedUsd),
       messages: [{ role: "user", content: prompt }],
       ...samplingFor(model, options.tier, options.schema),
-    } as Anthropic.MessageCreateParamsNonStreaming);
+    } as Anthropic.MessageCreateParamsNonStreaming, { signal: AbortSignal.timeout(STRUCTURED_CALL_DEADLINE_MS) });
     const inputTokens = response.usage?.input_tokens ?? 0;
     const outputTokens = response.usage?.output_tokens ?? 0;
     cost = anthropicCost(model, inputTokens, outputTokens);
     const entry = { provider: "anthropic" as const, operation, costUsd: cost, inputTokens, outputTokens };
     // With no sink, a call inside a spend scope is still written (with the
-    // operator's client); outside one, scripts and tests write nothing.
-    if (options.spend) await recordSpend(options.spend.supabase, { ...entry, workspaceId: options.spend.workspaceId });
+    // operator's client); outside one, scripts and tests write nothing. The
+    // row is waited for at most BUDGET_RPC_TIMEOUT_MS: the claim settles
+    // after it, and a paid answer is not lost to a slow write.
+    if (options.spend) await atMost(recordSpend(options.spend.supabase, { ...entry, workspaceId: options.spend.workspaceId }), BUDGET_RPC_TIMEOUT_MS);
     else if (currentSpendScope()) recordSpendByDefault(entry);
     return replyText(response.content);
   } catch (err) {
+    // A call that ran out of time may still have been run and billed: its
+    // claim stays at the estimate, as a timed-out DataForSEO request's does
+    // (lib/seo/client.ts). Anything else answered with an error.
+    if (timedOut(err)) cost = null;
     // Still no decision, never an approval; but a model the account cannot
     // use, or a parameter it refuses, fails every call the same way, and a
     // silent null made that look like "the model had no answer" (review,
@@ -166,6 +177,21 @@ export async function askStructured(
   } finally {
     await claim.settle(cost);
   }
+}
+
+/** An aborted or timed-out request: the SDK's own timeout, or the deadline's signal. */
+function timedOut(err: unknown): boolean {
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === "APIConnectionTimeoutError" || name === "APIUserAbortError" || name === "AbortError" || name === "TimeoutError";
+}
+
+/** Wait for `work`, but no longer than `ms`; what it does after that is not waited for. */
+function atMost(work: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return Promise.race([
+    work.then(() => undefined, () => undefined),
+    new Promise<void>((resolve) => { timer = setTimeout(resolve, ms); }),
+  ]).finally(() => clearTimeout(timer));
 }
 
 /**
