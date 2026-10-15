@@ -25,6 +25,12 @@ vi.mock("@/lib/articles/body-read", () => ({
 const gate = vi.hoisted(() => ({ state: "open" as "open" | "gated" | "bypassed" }));
 vi.mock("@/lib/billing/body-lock", () => ({ workspaceTrialGate: async () => gate.state }));
 
+// The status the publish leaves behind is written with the service role
+// (migration 109: a signed-in user's client may not set `live`). Here that
+// client is the same fake the test built, so its update is still observable.
+const svc = vi.hoisted(() => ({ client: null as unknown }));
+vi.mock("@/lib/supabase/server", () => ({ createServiceClient: () => svc.client }));
+
 import { publishArticleCore, PublishError } from "../core";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { submitForIndexing } from "@/lib/seo/indexing";
@@ -59,7 +65,7 @@ function mockSupabase(overrides: {
     updateError = null,
   } = overrides;
 
-  return {
+  const client = {
     from: vi.fn((table: string) => {
       if (table === "articles") {
         return {
@@ -83,6 +89,8 @@ function mockSupabase(overrides: {
       return {};
     }),
   };
+  svc.client = client;
+  return client;
 }
 
 describe("publishArticleCore", () => {
@@ -170,6 +178,41 @@ describe("publishArticleCore", () => {
     } finally {
       gate.state = "open";
     }
+  });
+
+  it("refuses an approved article with no recorded approval", async () => {
+    // `approved` with approved_by null is what a status written straight to
+    // the table looks like: no approve action ran, so nobody signed it off.
+    const publish = vi.fn();
+    (resolveCMSAdapter as ReturnType<typeof vi.fn>).mockReturnValue({ publish });
+    const supabase = mockSupabase({
+      article: {
+        id: "a1", workspace_id: "w1", status: "approved", approved_by: null,
+        title: "Test", slug: "test", content: { type: "doc", content: [] }, meta_description: null,
+      },
+    });
+    await expect(publishArticleCore(supabase as never, "a1")).rejects.toThrow(
+      "nobody's approval is recorded",
+    );
+    expect(publish).not.toHaveBeenCalled();
+  });
+
+  it("writes the post-publish status with the server's client, not the caller's", async () => {
+    (resolveCMSAdapter as ReturnType<typeof vi.fn>).mockReturnValue({
+      publish: vi.fn().mockResolvedValue({ externalId: "ext-9", url: "https://example.com/blog/test" }),
+    });
+    const caller = mockSupabase({});
+    const server = mockSupabase({});
+    svc.client = server;
+    await publishArticleCore(caller as never, "a1");
+    const statusWrites = (c: typeof caller) =>
+      c.from.mock.results
+        .map((r) => r.value?.update)
+        .filter((u): u is ReturnType<typeof vi.fn> => Boolean(u?.mock?.calls?.length))
+        .flatMap((u) => u.mock.calls.map((call: unknown[]) => call[0] as Record<string, unknown>))
+        .filter((row) => "status" in row);
+    expect(statusWrites(server)).toEqual([expect.objectContaining({ status: "live", external_id: "ext-9" })]);
+    expect(statusWrites(caller)).toEqual([]);
   });
 
   it("publishes a scheduled article only when it carries a recorded approval", async () => {

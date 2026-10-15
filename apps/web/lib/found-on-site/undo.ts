@@ -37,7 +37,18 @@ export interface UndoResult {
   restoredKeywordStatus?: string;
 }
 
-export async function undoFoundOnSite(supabase: SupabaseClient, articleId: string): Promise<UndoResult> {
+/**
+ * `supabase` reads the row, so it decides whether the caller may undo this
+ * one at all (the action passes the person's client: RLS). `writer` puts the
+ * status back. The two differ in the action because the status before the
+ * find can be `approved` or `scheduled`, which only the server may write
+ * (migration 109); the approval it restores is the one already on the row.
+ */
+export async function undoFoundOnSite(
+  supabase: SupabaseClient,
+  articleId: string,
+  writer: SupabaseClient = supabase,
+): Promise<UndoResult> {
   const { data: a, error } = await supabase
     .from("articles")
     .select("id, status, published_url, found_on_site_at, found_on_site_prior, found_on_site_rejected")
@@ -65,7 +76,7 @@ export async function undoFoundOnSite(supabase: SupabaseClient, articleId: strin
   const rejectedUrl = a.published_url as string;
   const rejected = [...new Set([...((a.found_on_site_rejected as string[] | null) ?? []), rejectedUrl])];
 
-  const { data: updated, error: updateErr } = await supabase
+  const { data: updated, error: updateErr } = await writer
     .from("articles")
     .update({
       status: prior.status,

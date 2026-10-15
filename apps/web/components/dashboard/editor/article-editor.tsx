@@ -329,7 +329,7 @@ export function ArticleEditor({
     try {
       const json = editor.getJSON();
       const wordCount = editor.getText().split(/\s+/).filter(Boolean).length;
-      await updateArticle(article.id, {
+      const saved = await updateArticle(article.id, {
         content: json,
         title: title.trim() || article.title,
         meta_description: meta.trim() || null,
@@ -339,7 +339,8 @@ export function ArticleEditor({
       snapshot.current = JSON.stringify(json);
       setPending(NO_CHANGES);
       setDirty(false);
-      toast.success("Saved");
+      // An approval is of the text as it was; an edit sends it back.
+      toast.success(saved.sentBackToReview ? "Saved. It is back in Review: approve it again to publish this version." : "Saved");
       router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save");

@@ -70,12 +70,22 @@ export async function applyReplace(
       patch.word_count = plan.word_count;
     }
     if (plan.title !== article.title) patch.title = plan.title;
-    const { error } = await supabase
+    // Against the status the edit was allowed in (articleMutations read it).
+    // The agent writes with the service role, so nothing in the database
+    // stops an edit landing on an article a person approved between that
+    // read and this write; the filter does, and the write then matches
+    // nothing instead of changing approved text.
+    const { data: updated, error } = await supabase
       .from("articles")
       .update(patch)
       .eq("id", article.id)
-      .eq("workspace_id", article.workspace_id);
+      .eq("workspace_id", article.workspace_id)
+      .eq("status", article.status)
+      .select("id");
     if (error) throw new Error(error.message);
+    if (!updated?.length) {
+      throw new Error("The article changed while it was being edited, so nothing was written. Read it again before retrying.");
+    }
   }
 
   const data: ReplaceResultData = {

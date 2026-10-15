@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record) and **108** (the first body's counts-only progress), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099 and 100 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress) and **109** (approval written by server), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100 and 109 go in AFTER** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -158,7 +158,8 @@ m(file, applied) as (values
   ('105_publish_log_found_on_site',          exists (select 1 from col where t='publish_log' and c='source') and exists (select 1 from col where t='publish_log' and c='url') and to_regclass('public.publish_log_found_on_site_once') is not null),
   ('106_run_budgets',                        to_regclass('public.run_budgets') is not null and exists (select 1 from col where t='provider_spend' and c='stage') and to_regprocedure('public.run_budget_claim(uuid,text,numeric,numeric)') is not null),
   ('107_fast_first_look',                    exists (select 1 from col where t='onboarding_runs' and c='timings') and exists (select 1 from col where t='articles' and c='body_stream') and not has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT') and to_regclass('public.owed_bodies') is not null and exists (select 1 from pg_trigger where tgname = 'articles_body_stream_server_only')),
-  ('108_first_body_progress',                exists (select 1 from col where t='articles' and c='body_progress') and not has_column_privilege('authenticated', 'public.articles', 'body_progress', 'SELECT') and pg_get_functiondef('public.articles_body_stream_server_only'::regproc) like '%body_progress%')
+  ('108_first_body_progress',                exists (select 1 from col where t='articles' and c='body_progress') and not has_column_privilege('authenticated', 'public.articles', 'body_progress', 'SELECT') and pg_get_functiondef('public.articles_body_stream_server_only'::regproc) like '%body_progress%'),
+  ('109_approval_written_by_server',         exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'articles_guard_approval' and c.relname = 'articles') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'workspaces_guard_auto_approve' and c.relname = 'workspaces'))
 )
 select file, applied from m order by file;
 ```
@@ -297,6 +298,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 105_publish_log_found_on_site.sql 
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 097_article_body_server_only.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 099_trial_gate_server_writes.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 100_pre_trial_spend_bounds.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 109_approval_written_by_server.sql   # AFTER its code is live; see its section
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -374,6 +376,7 @@ no code in the repo references either).
 | 106_run_budgets.sql | `fix/first-look-spend-reserve` | 025, 076; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section |
 | 107_fast_first_look.sql | `feat/fast-first-look` | 076, 097, 106; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section (loses the timing tables, any body mid-stream and the record of bodies owed) |
 | 108_first_body_progress.sql | `feat/first-look-ui` | 097, **107**; **applied before its code is deployed** | yes | yes, after its code is reverted: see its section (loses only the progress of a body mid-write) |
+| 109_approval_written_by_server.sql | `fix/approval-integrity` | 002, 003, 005, 013, 079, 094; **its code deployed first** | yes | yes, see its section (a member can again forge an approval over PostgREST) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1493,3 +1496,81 @@ owner gets counts and none of the text, another account and a non-owner are
 refused, a client token can neither read nor write the column) and
 `app/api/onboard/__tests__/first-article-progress-route.test.ts`. Applied on
 the local stack 2026-10-12.
+
+## 109 — an approval is written by the server
+
+`109_approval_written_by_server.sql`, two triggers: `articles_guard_approval`,
+`before insert or update` on `articles`, and `workspaces_guard_auto_approve`,
+`before update` on `workspaces`. The publish gate
+(`lib/publishing/core.ts`) ships an article that is `approved` or `scheduled`
+with `approved_by` set, and every member could write those columns over
+PostgREST (053's policy is FOR ALL; 097 left INSERT and UPDATE granted), so
+a member could schedule a draft under a colleague's name and the cron would
+publish it without the approve action's checks. For a signed-in user
+(`auth.uid()` set) the trigger:
+
+- refuses making an article `approved`, `scheduled` or `live`, and setting
+  `approved_by`, `approved_at`, `approval_kind` or `scheduled_at` to a value,
+  on UPDATE and on INSERT (42501);
+- refuses setting `found_on_site_at` or `found_on_site_prior` (the nightly
+  check's record of the state before a find, which "Not my article" restores
+  with the service role: a client that could write it could restore any live
+  article to `approved` after editing its text);
+- lets the same client clear them, and clears all four itself whenever the
+  client changes the status (Request changes, Cancel schedule, Unpublish,
+  Change status), so no approval rides along on a draft;
+- sends an approved or scheduled article (or a failed publish still holding
+  its approval) back to `review`, approval cleared and held by the editor,
+  when the client changes its text (content, title, slug, meta description,
+  featured image) or moves it to another site (`workspace_id`). A live
+  article's text edits leave it live;
+- on `workspaces`, refuses setting `auto_approve_set_by` to anyone but the
+  caller, and records the caller as `auto_approve_set_by` whenever they turn
+  the rule on or change its hold or floors. The publish cron writes that
+  column as `approved_by` on every automatic approval, so before this a
+  member could turn the rule on in a colleague's name.
+
+It passes the service role and the database's own cascades
+(`pg_trigger_depth() > 1`), like 099-102.
+
+**Apply AFTER its code is live**, like 097 and 099. Code from before it
+approves, schedules, retries and marks published through the person's own
+client; with 109 applied those writes are refused, so Approve, Publish, Schedule,
+Add to queue, Retry and Mark as published fail until the new code is
+deployed. The new code makes those writes with the service role after its
+checks (`app/actions/publish.ts`, `app/actions/schedule.ts`,
+`lib/publishing/retry.ts`, `lib/publishing/core.ts`, the found-on-site undo)
+and works with or without 109. Re-running is a no-op (`create or replace`,
+drop-then-create of each trigger). Depends on 002, 003, 005, 013, 079 and 094.
+
+Test: `supabase/tests/109_approval_written_by_server.rls.sql` (self-contained,
+rolls back; run it on an isolated copy). Green 2026-10-14 on a throwaway
+Postgres 15 holding a stub of the tables it touches (`auth.users`,
+`accounts`, `workspaces`, `account_members`, `articles`, with membership
+policies), with 109 applied twice: the ten forging writes (approval
+columns, found-on-site record, auto-approve in a colleague's name) are
+42501; editing a draft, inserting a draft, cancelling a schedule,
+requesting changes and turning auto-approve on in one's own name still
+work; an edit to an approved article's text, or a move to another site,
+sends it back to review with the approval cleared; an edit to a live one
+leaves it live; a member who lowers a colleague's auto-approve floor
+becomes the one it is recorded under; and the service role still approves
+and schedules. With either trigger dropped, its first case fails. Not yet
+run on a copy built from 001-109.
+
+Post-flight (expect `2`):
+
+```sql
+select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid
+ where (t.tgname, c.relname) in (('articles_guard_approval', 'articles'),
+                                 ('workspaces_guard_auto_approve', 'workspaces'));
+```
+
+Rollback:
+
+```sql
+drop trigger if exists articles_guard_approval on public.articles;
+drop function if exists public.articles_guard_approval();
+drop trigger if exists workspaces_guard_auto_approve on public.workspaces;
+drop function if exists public.workspaces_guard_auto_approve();
+```

@@ -1,13 +1,14 @@
 // ---------------------------------------------------------------------------
-// Auto-approve: the publish decision without the click, with the same checks
+// Auto-approve: the publish decision without the click, with stricter checks
 // ---------------------------------------------------------------------------
 //
 // A workspace with `auto_approve` on has asked for its drafts to ship on their
 // own. This module is the second writer of an approval, next to
-// app/actions/publish.ts's approveArticle, and it runs the same checks in the
-// same order: an active plan, somewhere to publish, no unsourced figure, no
-// failing audit item, and a score floor the workspace chose. A draft that
-// fails any of them is not approved and says why on its own row
+// app/actions/publish.ts's approveArticle. It runs the button's checks (an
+// active plan, no unsourced figure) and more, because nobody has read the
+// draft: somewhere to publish, no named reviewer still to sign off, no failing
+// audit item, and a score floor the workspace chose. A draft that fails any of
+// them is not approved and says why on its own row
 // (`auto_approve_hold_reason`), so a held draft is never a silent one.
 //
 // What it writes is `status = scheduled, scheduled_at = null`, which is what
@@ -96,7 +97,8 @@ export function reviewerNamedIn(html: string, research: unknown): string | null 
  * The hold window is the one soft rule: it is what makes "you saw it first"
  * true, because the drafted email went out when the draft was written and the
  * window is the time a person has to hold it. Everything after it is a hard
- * check the human approve action also runs.
+ * check: the plan and the unsourced figure are the human approve action's
+ * own, the rest are stricter because nobody has read the draft.
  */
 export function decideAutoApproval(
   rule: AutoApproveRule,

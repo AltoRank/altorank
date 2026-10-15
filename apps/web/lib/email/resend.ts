@@ -86,6 +86,12 @@ async function refused(payload: CreateEmailOptions, message: string, status: num
   });
 }
 
+const escapeHtml = (s: unknown) =>
+  String(s ?? "").replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+  );
+
 export async function sendInviteEmail(
   to: string,
   inviterName: string,
@@ -93,6 +99,11 @@ export async function sendInviteEmail(
   role: string,
   acceptUrl: string,
 ): Promise<void> {
+  // Both names are user-set (an account name any owner can type, a profile
+  // name from signup), so they go into the body escaped. The layout escapes
+  // the title, preheader and footer itself; the body is HTML we build here.
+  const account = escapeHtml(accountName);
+  const inviter = escapeHtml(inviterName);
   await deliver({
     from: fromAddress(),
     to,
@@ -101,8 +112,8 @@ export async function sendInviteEmail(
       title: `Join ${accountName} on AltoRank`,
       preheader: `${inviterName} invited you to ${accountName}`,
       bodyHtml:
-        `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Join ${accountName} on AltoRank</h1>` +
-        emailParagraph(`${inviterName} invited you to work on ${accountName}'s SEO content. Accept to get access to the workspaces, drafts and reports.`) +
+        `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Join ${account} on AltoRank</h1>` +
+        emailParagraph(`${inviter} invited you to work on ${account}'s SEO content. Accept to get access to the workspaces, drafts and reports.`) +
         emailButton(acceptUrl, "Accept invitation") +
         emailParagraph(`The link works once and expires in seven days. If you were not expecting this, ignore it and nothing happens.`),
       footerNote: `Sent because ${inviterName} added ${to} to a team on AltoRank.`,

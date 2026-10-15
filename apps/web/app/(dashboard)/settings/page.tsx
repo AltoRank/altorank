@@ -9,6 +9,7 @@ import { AttributionCard } from "@/components/dashboard/attribution-card";
 import { createClient } from "@/lib/supabase/server";
 import { getQuota } from "@/lib/billing/quota";
 import { getWorkspaceSettings } from "@/lib/settings/workspace-settings";
+import { requireAuth } from "@/lib/auth/require-auth";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -23,7 +24,8 @@ export default async function SettingsPage() {
   // gated on any plan. It is now, for the hosted free tier only, so the panel
   // has to read the real answer (2026-09-02).
   const supabase = await createClient();
-  const [quota, ws] = await Promise.all([getQuota(supabase, account.id), getWorkspaceSettings()]);
+  const [quota, ws, auth] = await Promise.all([getQuota(supabase, account.id), getWorkspaceSettings(), requireAuth()]);
+  const canEditAccount = auth.accountId === account.id && (auth.role === "owner" || auth.role === "admin");
 
   return (
     <SettingsShell
@@ -35,7 +37,7 @@ export default async function SettingsPage() {
           switcher is on. */}
       {ws ? <BusinessForm workspaceId={ws.id} domain={ws.domain} initial={ws.profile} /> : <NoWorkspaceCard />}
 
-      <SettingsForm account={account} quotaReason={quota.reason} />
+      <SettingsForm account={account} quotaReason={quota.reason} canEdit={canEditAccount} />
 
       {/* Where the account heard of us (#79): answered once at the end of the
           wizard, changeable here. */}

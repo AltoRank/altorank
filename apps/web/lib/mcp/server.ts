@@ -523,7 +523,7 @@ server.registerTool(
     annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
     description:
       "Find-and-replace in one draft's title and body. Preview by default (hits with before → after excerpts); preview_only:false writes. " +
-      "Never changes status: refused on approved, scheduled or live articles. Needs write scope.",
+      "Never changes status: refused on approved, scheduled or live articles, and on an approved article whose publish failed. Needs write scope.",
     inputSchema: { article_id: z.string().uuid(), ...replaceArgs },
   },
   async ({ article_id, ...body }) => asEnvelope(await call(`/articles/${article_id}/replace`, { method: "POST", body })),
