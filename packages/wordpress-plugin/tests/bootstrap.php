@@ -327,4 +327,9 @@ function get_page_by_path( $path, $output = OBJECT, $post_type = 'page' ) {
 	return null;
 }
 
+/** The fake site runs on UTC. */
+function get_date_from_gmt( $date_string, $format = 'Y-m-d H:i:s' ) {
+	return $date_string;
+}
+
 require dirname( __DIR__ ) . '/altorank/altorank.php';

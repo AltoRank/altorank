@@ -49,7 +49,7 @@ otherwise. The token is never accepted in a query string.
   "category": "slug or name",      // created if missing; else the settings default
   "author": "id, login or email",  // else the settings default, else the first administrator
   "status": "publish",             // overridden to draft while "Post as draft" is on
-  "created_at": "2026-09-04T10:00:00Z",
+  "published_at": "2026-09-04T10:00:00Z", // when the article first went live; dates a new, published post only (1.1.1)
   "indexnow_key": "<8-128 [A-Za-z0-9-]>" // stored; served at /{key}.txt (1.1.0)
 }
 ```

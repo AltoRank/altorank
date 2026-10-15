@@ -515,7 +515,7 @@ function altorank_read_params( WP_REST_Request $request ): array {
 		'author'             => sanitize_text_field( $str( 'author' ) ),
 		'status'             => sanitize_key( $str( 'status' ) ),
 		'has_status'         => isset( $p['status'] ),
-		'created_at'         => $str( 'created_at' ),
+		'published_at'       => $str( 'published_at' ),
 		'indexnow_key'       => preg_match( '/^[A-Za-z0-9-]{8,128}$/', $str( 'indexnow_key' ) ) ? $str( 'indexnow_key' ) : '',
 	);
 }
@@ -592,6 +592,32 @@ function altorank_resolve_status( array $params, bool $is_new, string $current =
 }
 
 /**
+ * The post's date, or nothing to let WordPress decide.
+ *
+ * Set only on a post this request creates and publishes, from `published_at`:
+ * when the article first went live, which is also the "Published" line in the
+ * body and the BlogPosting's datePublished. An edit never sends or changes a
+ * date, so a date an editor corrected stays. A post that lands as a draft
+ * keeps a floating date and gets the real one when an editor publishes it. A
+ * time in the future is ignored: WordPress would schedule the post instead of
+ * publishing it.
+ */
+function altorank_post_date_fields( string $published_at, bool $creates_row, ?string $status ): array {
+	if ( ! $creates_row || 'publish' !== $status || '' === $published_at ) {
+		return array();
+	}
+	$ts = strtotime( $published_at );
+	if ( false === $ts || $ts > time() ) {
+		return array();
+	}
+	$gmt = gmdate( 'Y-m-d H:i:s', $ts );
+	return array(
+		'post_date_gmt' => $gmt,
+		'post_date'     => get_date_from_gmt( $gmt ),
+	);
+}
+
+/**
  * Create or update. `$is_new` is about the request, not the row: a /submit
  * that matched an existing external_id still counts as new for the
  * draft-by-default rule, because that is what the dashboard asked for.
@@ -646,13 +672,7 @@ function altorank_upsert_post( int $post_id, array $params, bool $is_new ) {
 		$postarr['post_category'] = array( $category );
 	}
 
-	if ( '' !== $params['created_at'] ) {
-		$ts = strtotime( $params['created_at'] );
-		if ( false !== $ts ) {
-			$postarr['post_date_gmt'] = gmdate( 'Y-m-d H:i:s', $ts );
-			$postarr['post_date']     = get_date_from_gmt( $postarr['post_date_gmt'] );
-		}
-	}
+	$postarr += altorank_post_date_fields( $params['published_at'], ! $post_id, $status );
 
 	/**
 	 * SEO fields ride inside the same write as the post. Rank Math and Yoast

@@ -73,6 +73,14 @@ describe("edit scope", () => {
   });
 });
 
+describe("post dates", () => {
+  it("dates a post from published_at through the one helper, and never from created_at", async () => {
+    const api = code(await read("includes/api.php"));
+    expect(api).not.toContain("created_at");
+    expect(phpFunction(api, "altorank_upsert_post")).toContain("altorank_post_date_fields( $params['published_at'], ! $post_id, $status )");
+  });
+});
+
 describe("structured data and charts", () => {
   it("JSON-LD is lifted out of the body before it is sanitised", async () => {
     const upsert = code(phpFunction(await read("includes/api.php"), "altorank_upsert_post"));

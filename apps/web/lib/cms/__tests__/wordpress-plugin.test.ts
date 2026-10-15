@@ -34,6 +34,7 @@ describe("WordPressPluginAdapter", () => {
       featuredImageUrl: "https://img.example/x.png",
       tags: ["a", "b"],
       createdAt: "2026-09-04T10:00:00.000Z",
+      publishedAt: "2026-09-20T08:00:00.000Z",
     });
 
     expect(result).toEqual({ externalId: "12", url: "https://example.com/hello", status: "publish" });
@@ -52,9 +53,11 @@ describe("WordPressPluginAdapter", () => {
       focus_keyword: "hello world",
       featured_image_url: "https://img.example/x.png",
       tags: ["a", "b"],
-      created_at: "2026-09-04T10:00:00.000Z",
+      published_at: "2026-09-20T08:00:00.000Z",
       status: "publish",
     });
+    // The draft's creation time is not a publication date.
+    expect(JSON.parse(opts.body)).not.toHaveProperty("created_at");
   });
 
   it("publish() hands the plugin the workspace's IndexNow key, and omits it when there is none", async () => {
@@ -109,6 +112,21 @@ describe("WordPressPluginAdapter", () => {
     expect(body.post_id).toBe("12");
     expect(body).not.toHaveProperty("external_id");
     expect(body).not.toHaveProperty("status");
+  });
+
+  it("update() sends no date, so the post keeps the one it has", async () => {
+    mockFetch.mockResolvedValueOnce(Response.json({ id: 12, url: "https://example.com/hello", status: "publish" }));
+    await adapter.update("12", {
+      id: "art-1",
+      title: "Hello 2",
+      html: "<p>v2</p>",
+      slug: "hello",
+      createdAt: "2026-09-04T10:00:00.000Z",
+      publishedAt: "2026-09-20T08:00:00.000Z",
+    });
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body).not.toHaveProperty("published_at");
+    expect(body).not.toHaveProperty("created_at");
   });
 
   it("unpublish() sets the post back to draft through /edit", async () => {

@@ -106,7 +106,11 @@ export class WordPressPluginAdapter implements CMSAdapter {
       focus_keyword: article.focusKeyword,
       featured_image_url: article.featuredImageUrl,
       tags: article.tags ?? [],
-      created_at: article.createdAt,
+      // When the article first went live (kept across republishes), which is
+      // also the body's "Published" line and the BlogPosting's
+      // datePublished. The plugin dates a post with it only when it creates
+      // and publishes one; never the draft's creation time.
+      published_at: article.publishedAt,
       // The plugin serves this at /{key}.txt (plugin >= 1.1.0), so the IndexNow
       // submission that follows the publish verifies without anyone placing a
       // file on the host. Older plugins ignore the field.
@@ -162,7 +166,9 @@ export class WordPressPluginAdapter implements CMSAdapter {
       // only when known, so the plugin can fall back to it. A post id is never
       // sent as an external id: the plugin matches that against the id it
       // recorded at submit.
-      body: JSON.stringify({ ...this.body(article), status: undefined, post_id: externalId }),
+      // No date either: an edit keeps the post's date, including one an editor
+      // corrected on the site.
+      body: JSON.stringify({ ...this.body(article), status: undefined, published_at: undefined, post_id: externalId }),
     });
     return this.toResult((await res.json()) as PluginPostResponse);
   }
