@@ -25,14 +25,16 @@ function fromAddress(): string {
  * no mail server behind it, and nothing set a Reply-To, so a reply bounced -
  * while the unsubscribe page tells anyone whose link failed to "reply to any
  * email from us". On our own sender, replies now go to hello@altorank.co, the
- * address the billing errors already give. An install that sends from its own
- * address (RESEND_FROM_EMAIL) gets no Reply-To unless it sets RESEND_REPLY_TO:
- * its replies are not ours to receive.
+ * address the billing errors already give. Decided by the sender's domain,
+ * not by whether RESEND_FROM_EMAIL is set, so a deployment that names our own
+ * sender explicitly still gets it. An install that sends from its own domain
+ * gets no Reply-To unless it sets RESEND_REPLY_TO: its replies are not ours
+ * to receive.
  */
 export function replyToAddress(): string | undefined {
   const configured = process.env.RESEND_REPLY_TO?.trim();
   if (configured) return configured;
-  return process.env.RESEND_FROM_EMAIL ? undefined : "AltoRank <hello@altorank.co>";
+  return /@(?:[a-z0-9-]+\.)*altorank\.co>?\s*$/i.test(fromAddress()) ? "AltoRank <hello@altorank.co>" : undefined;
 }
 
 /**

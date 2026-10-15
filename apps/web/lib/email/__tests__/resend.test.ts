@@ -96,6 +96,15 @@ describe("Resend delivery", () => {
     expect(send.mock.calls[0][0]).toMatchObject({ replyTo: "AltoRank <hello@altorank.co>" });
   });
 
+  /** A deployment may name our sender explicitly; that is still our sender. */
+  it("sets the Reply-To when RESEND_FROM_EMAIL names our own sending domain", async () => {
+    send.mockResolvedValue({ data: { id: "em_6" }, error: null, headers: null });
+    process.env.RESEND_FROM_EMAIL = "AltoRank <noreply@updates.altorank.co>";
+    const { sendToolResultEmail } = await freshModule();
+    await sendToolResultEmail("a@b.co", "Hello", "<p>hi</p>");
+    expect(send.mock.calls[0][0]).toMatchObject({ replyTo: "AltoRank <hello@altorank.co>" });
+  });
+
   it("keeps a caller's own Reply-To", async () => {
     send.mockResolvedValue({ data: { id: "em_4" }, error: null, headers: null });
     const { sendPlainEmail } = await freshModule();
