@@ -26,6 +26,7 @@
 // article and its job - so a run cut short leaves real, partial state rather
 // than nothing, and the dashboard shows whatever got done.
 
+import type { RankedKeyword } from "@/lib/seo/ranked-keywords";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readSiteText } from "./site-text";
 import { checkDomainReachable } from "@/lib/domain/reachable";
@@ -255,9 +256,9 @@ async function runPhases(
   // phase. The plan still waits for it: the recommender reads the pages the
   // site already has, so a topic one of them covers is not planned again.
   let pagesStarted: Promise<void> | null = null;
-  const startPages = () => {
+  const startPages = (ranked?: RankedKeyword[]) => {
     if (pagesStarted || !domain) return pagesStarted;
-    pagesStarted = readExistingPages(supabase, workspace.id, domain, emit);
+    pagesStarted = readExistingPages(supabase, workspace.id, domain, emit, ranked);
     return pagesStarted;
   };
 
@@ -304,7 +305,9 @@ async function runPhases(
         // rest. Every page here is one request against a host that may be
         // counting them (packhub.io bans after ten in forty seconds).
         maxPages: ONBOARDING_CRAWL_PAGES,
-        onRead: () => { void startPages(); },
+        // The rankings in hand go with it: the stored analysis is written
+        // only when the whole keyword phase ends.
+        onRead: ({ ranked }) => { void startPages(ranked); },
         // The speed test lands on the audit when it answers; nothing here
         // waits for it (it was a minute of a production first look).
         deferPageSpeed: true,
@@ -756,7 +759,7 @@ async function emptyPoolOrNull(supabase: SupabaseClient, workspaceId: string): P
  * offers the writer. Measured on 2026-09-06 before it ran here: 0 internal
  * links on a first draft with 28 sitemap posts.
  */
-async function readExistingPages(supabase: SupabaseClient, workspaceId: string, domain: string | null, emit: Emit): Promise<void> {
+async function readExistingPages(supabase: SupabaseClient, workspaceId: string, domain: string | null, emit: Emit, ranked?: RankedKeyword[]): Promise<void> {
   emit({ phase: "pages", status: "active" });
   if (domain && refusing(`https://${domain}/`)) {
     // More requests into a ban only extend it. The nightly pass reads the
@@ -766,7 +769,7 @@ async function readExistingPages(supabase: SupabaseClient, workspaceId: string, 
     emit({ phase: "pages", status: "skipped", detail: "No domain to read pages from." });
   } else {
     const startedAt = Date.now();
-    const pages = await timed("pages", () => assessExistingPages(supabase, workspaceId, domain));
+    const pages = await timed("pages", () => assessExistingPages(supabase, workspaceId, domain, { ranked }));
     console.log(`[onboarding] pages: ${pages.status} in ${((Date.now() - startedAt) / 1000).toFixed(1)}s - ${pages.detail}`);
     emit({ phase: "pages", status: pages.status, detail: pages.detail });
   }
