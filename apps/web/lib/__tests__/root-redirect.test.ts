@@ -7,8 +7,9 @@ import nextConfig from "../../next.config";
 
 afterEach(() => vi.unstubAllEnvs());
 
-async function redirects(appUrl: string) {
+async function redirects(appUrl: string, vercelProductionHost = "") {
   vi.stubEnv("NEXT_PUBLIC_APP_URL", appUrl);
+  vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", vercelProductionHost);
   return nextConfig.redirects!();
 }
 
@@ -26,5 +27,15 @@ describe("next.config redirects", () => {
     expect(root).toMatchObject({ destination: "/dashboard", permanent: false, missing: [{ type: "query", key: "code" }] });
     expect(list.filter((r) => /^https?:/.test(r.destination))).toEqual([]);
     expect(list.find((r) => r.source === "/clients")?.destination).toBe("/workspaces");
+  });
+
+  it("hosted on Vercel: the production domain alone is enough", async () => {
+    const list = await redirects("", "app.altorank.co");
+    expect(list.find((r) => r.source === "/")?.destination).toBe("https://altorank.co");
+  });
+
+  it("a fork on Vercel with its own domain keeps its root", async () => {
+    const list = await redirects("https://seo.example.org", "seo.example.org");
+    expect(list.find((r) => r.source === "/")?.destination).toBe("/dashboard");
   });
 });

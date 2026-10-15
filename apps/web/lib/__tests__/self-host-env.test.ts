@@ -28,6 +28,7 @@ const NOT_FORWARDED: Record<string, string> = {
   NEXT_DIST_DIR: "e2e runner only",
   ALLOW_INDEXING_SUBMISSIONS: "development only; production always submits",
   OPENAI_APPS_CHALLENGE_TOKEN: "the hosted app's OpenAI apps domain check",
+  VERCEL_PROJECT_PRODUCTION_URL: "set by Vercel itself; next.config.ts uses it to recognise the hosted build",
 };
 /** PostHog is read at build time and the Docker image is built without analytics. */
 const NOT_FORWARDED_PREFIX = "NEXT_PUBLIC_POSTHOG_";

@@ -10,10 +10,16 @@ const MARKETING_SITE = "https://altorank.co";
  * build time on every real deployment). A self-hosted install has no
  * marketing site: its root and /pricing used to answer a permanent redirect to
  * altorank.co, so its own users landed on the vendor's homepage.
+ *
+ * Vercel's own VERCEL_PROJECT_PRODUCTION_URL (the project's production
+ * domain, no scheme) is the second signal, so the hosted build keeps its
+ * redirects even if NEXT_PUBLIC_APP_URL is written differently there. A fork
+ * deployed to Vercel has its own production domain and does not match.
  */
-function isHostedApp(appUrl: string | undefined = process.env.NEXT_PUBLIC_APP_URL): boolean {
+function isHostedApp(): boolean {
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim().toLowerCase() === HOSTED_APP_HOST) return true;
   try {
-    return new URL(appUrl ?? "").hostname === HOSTED_APP_HOST;
+    return new URL(process.env.NEXT_PUBLIC_APP_URL ?? "").hostname === HOSTED_APP_HOST;
   } catch {
     return false;
   }
