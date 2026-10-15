@@ -103,6 +103,27 @@ export async function publishArticleCore(
     throw new Error(BODY_LOCKED_MESSAGE);
   }
 
+  return deliverArticle(supabase, article as DeliverableArticle, articleId, opts);
+}
+
+/**
+ * Choose the destination and send an article row that has already passed its
+ * gates: the renderer (title H1 strip, link resolution, attribution, structured
+ * data, dateline, webhook Markdown, the connection's publish mode) and the
+ * bookkeeping after it.
+ *
+ * `publishArticleCore` calls it after the approval and trial gates. The
+ * Improvements push (lib/refresh/push.ts) calls it with the reviewed body in
+ * `article.content`, after its own gates, so an updated post goes out exactly
+ * as a published one does. `inPlaceOnly` refuses a destination that cannot
+ * edit the existing post, where a publish would create a second copy.
+ */
+export async function deliverArticle(
+  supabase: SupabaseClient,
+  article: DeliverableArticle,
+  articleId: string,
+  opts: { destinationId?: string | null; inPlaceOnly?: boolean } = {},
+): Promise<PublishResult & PublishContext> {
   const { data: wsIntegrations } = await supabase
     .from("workspace_integrations")
     .select("*, integration:integrations(*)")
@@ -121,8 +142,17 @@ export async function publishArticleCore(
     publishMode: destination.publishMode,
   };
 
+  if (opts.inPlaceOnly) {
+    const config = decryptConfig(cmsIntegration.config as Record<string, unknown>) as CMSConfig;
+    if (!article.external_id || !canUpdate(resolveCMSAdapter(config))) {
+      throw new Error(
+        `The ${destination.label} connection can publish new posts but cannot yet edit an existing one, and publishing a second copy of this page would be worse than not pushing. Copy the HTML and update the post in ${destination.label}.`,
+      );
+    }
+  }
+
   try {
-    const result = await pushToDestination(supabase, article as ArticleRow, articleId, cmsIntegration, context);
+    const result = await pushToDestination(supabase, article, articleId, cmsIntegration, context);
     return { ...result, ...context };
   } catch (err) {
     throw PublishError.wrap(err, context);
@@ -148,8 +178,10 @@ export function publishGate(article: { status: string; approved_by?: string | nu
 }
 
 /** The columns of the articles row this module reads. Selected with `*`. */
-type ArticleRow = {
+export type DeliverableArticle = {
   workspace_id: string;
+  /** Where it went last, so a republish goes back through the same connection. */
+  cms?: string | null;
   title: string;
   slug: string;
   content: unknown;
@@ -169,7 +201,7 @@ type ArticleRow = {
 /** Everything after the destination is known; failures here are retryable. */
 async function pushToDestination(
   supabase: SupabaseClient,
-  article: ArticleRow,
+  article: DeliverableArticle,
   articleId: string,
   cmsIntegration: { config: unknown },
   context: PublishContext,

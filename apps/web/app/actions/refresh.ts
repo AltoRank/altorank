@@ -252,16 +252,19 @@ export async function rejectExecution(executionId: string): Promise<void> {
 
 /**
  * THE write to the site. Applies the saved decisions and updates the post in
- * place through the connected adapter. Refuses when nothing was kept, when
- * the page was not published through here, or when the adapter cannot edit.
+ * place through the connected adapter, with the gates and the renderer of a
+ * publish (lib/refresh/push.ts): a plan, the figure check on what goes out,
+ * a page unchanged since the rewrite read it, and the pusher recorded as the
+ * approval of the new text. Refuses when nothing was kept, when the page was
+ * not published through here, or when the adapter cannot edit.
  */
 export async function pushExecutionAction(executionId: string, decisions?: ExecutionDecisions): Promise<PushResult> {
-  await requireAuth();
+  const { user } = await requireAuth();
   const supabase = await createClient();
   // Save what is on screen first, so the push applies exactly what the
   // reviewer is looking at and not a debounce behind it.
   if (decisions) await saveExecutionDecisions(executionId, decisions);
-  const result = await pushExecution(supabase, executionId);
+  const result = await pushExecution(supabase, executionId, { pusher: { id: user.id, email: user.email ?? null } });
   revalidatePath(IMPROVEMENTS);
   revalidatePath(`${IMPROVEMENTS}/${executionId}`);
   revalidatePath("/articles");
