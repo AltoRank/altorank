@@ -151,12 +151,23 @@ cp docker/.env.example apps/web/.env.local   # every variable, with what each on
 npm run dev
 ```
 
-Four things are genuinely required before it will run: your Supabase URL and
-its two keys, an `ANTHROPIC_API_KEY`, and an `ENCRYPTION_KEY`
-(`openssl rand -hex 32`). Add `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` for
-keyword volume and rank tracking; without them those steps skip rather than
-fail. Everything else in the example file is optional and each one disables
-exactly one feature. The file says which.
+Required before a self-hosted install works end to end:
+
+- your Supabase URL, its anon key and its `SUPABASE_SERVICE_ROLE_KEY`
+- `ANTHROPIC_API_KEY`
+- `ENCRYPTION_KEY` and `CRON_SECRET` (`openssl rand -hex 32` for each).
+  `docker compose` refuses to start without `CRON_SECRET`, and without it no
+  scheduled job runs.
+- `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (a sender on a domain verified in
+  your Resend account). Signup confirms by email, so without them nobody can
+  create an account and nobody can reset a password.
+
+Add `DATAFORSEO_LOGIN` / `DATAFORSEO_PASSWORD` for keyword volume and rank
+tracking; without them those steps skip rather than fail. Everything else in
+the example file is optional and each one disables exactly one feature. The
+file says which. Product analytics (the two `NEXT_PUBLIC_POSTHOG_*` variables,
+project token and host) are optional too: without them the browser console
+says analytics are off and nothing else changes.
 
 Other entry points:
 

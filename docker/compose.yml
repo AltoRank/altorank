@@ -36,8 +36,10 @@ services:
     ports:
       - "${PORT:-3000}:3000"
     environment:
-      # Server-side only. Everything except the Anthropic key is optional and
-      # degrades rather than crashing.
+      # Server-side only. docker/.env.example lists which ones are required
+      # (the service role key, Anthropic, ENCRYPTION_KEY, CRON_SECRET and
+      # Resend, without which nobody can sign up) and what each optional one
+      # turns on.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:-}
       DATAFORSEO_LOGIN: ${DATAFORSEO_LOGIN:-}

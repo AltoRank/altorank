@@ -129,7 +129,9 @@ build args, not runtime env.
 | `SUPABASE_SERVICE_ROLE_KEY` | every cron route, billing spend recording, invites, operator "view as", auth emails and the onboarding pipeline build a service client with an undefined key and fail. Server-only; never give it a `NEXT_PUBLIC_` prefix |
 | `ANTHROPIC_API_KEY` | no generation, no fact-check, no briefs, no summaries |
 | `ENCRYPTION_KEY` | `lib/crypto.ts` throws; **no CMS can be connected** and existing connections cannot be decrypted. 64 hex chars (`openssl rand -hex 32`); any other string is SHA-256'd to a key. Rotating it makes stored credentials unreadable, by design |
-| `CRON_SECRET` | `isAuthorizedCron()` returns `false` for every request; **every scheduled job answers 401** and nothing runs unattended. See [How cron auth works](#how-cron-auth-works) |
+| `CRON_SECRET` | `isAuthorizedCron()` returns `false` for every request; **every scheduled job answers 401** and nothing runs unattended. `docker compose` refuses to start the cron container without it. See [How cron auth works](#how-cron-auth-works) |
+| `RESEND_API_KEY` | no email at all: no invites, no auth emails, no approval notifications, no feedback widget. Signup confirms by email and rolls the new user back when the email cannot be sent, so **nobody can create an account** and nobody can reset a password |
+| `RESEND_FROM_EMAIL` | defaults to `AltoRank <noreply@updates.altorank.co>`, which will not be a verified sender on your Resend account, so every send is refused (same effect as no key). Set it |
 | `NEXT_PUBLIC_APP_URL` | links in every email, Stripe return URLs and the audit worker's self-call fall back to `http://localhost:3000` (or `:3100` in two files). Set it to the public origin |
 
 ### Each one disables exactly one feature
@@ -139,8 +141,6 @@ build args, not runtime env.
 | `DATAFORSEO_LOGIN` + `DATAFORSEO_PASSWORD` (or a pre-encoded `DATAFORSEO_API_KEY`) | keyword volume, SERP analysis and rank tracking skip; research falls back to prompt-only |
 | `OPENAI_API_KEY` | no featured images (articles publish without them); a workspace that selects the OpenAI provider fails |
 | `PAGESPEED_API_KEY` | Core Web Vitals in audits report as unavailable (unkeyed requests hit Google's rate limit) |
-| `RESEND_API_KEY` | no email at all: no invites, no auth emails (so **no signup confirmation or password reset**), no approval notifications, no feedback widget |
-| `RESEND_FROM_EMAIL` | defaults to `AltoRank <noreply@updates.altorank.co>`, which will not be a verified sender on your Resend account. Set it |
 | `FEEDBACK_EMAIL` | the in-app feedback widget and "Request integration" send nothing and say feedback is not configured |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI` | Search Console connect returns `google_oauth_not_configured`. The redirect URI is `<origin>/api/auth/google/callback` and must be registered in Google Cloud |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_STARTER`, `STRIPE_PRICE_STARTER_YEARLY`, `STRIPE_PRICE_GROWTH`, `STRIPE_PRICE_GROWTH_YEARLY` | billing is hidden (`billingEnabled` is false). The webhook endpoint is `<origin>/api/webhooks/stripe` and has to be registered in Stripe by hand |
@@ -149,6 +149,7 @@ build args, not runtime env.
 | `ADMIN_EMAILS` | nobody is an operator: `/admin/*` and "View as" are closed to everyone, and the daily operations digest sends nothing. Comma-separated; set it to yourself if you want them |
 | `ANTHROPIC_MODEL`, `ANTHROPIC_MODEL_STRUCTURED`, `OPENAI_MODEL`, `OPENAI_IMAGE_MODEL` | defaults from `lib/ai/models.ts` |
 | `DOGFOOD_EMAIL` | only read by `scripts/dogfood.ts`; irrelevant to a deployment |
+| the two `NEXT_PUBLIC_POSTHOG_*` variables (project token, host) | no product analytics; `npm run dev` logs one console warning. Read at build time; `docker/compose.yml` does not pass them, so the Docker image never sends analytics |
 
 ## `apps/web` on Vercel
 
