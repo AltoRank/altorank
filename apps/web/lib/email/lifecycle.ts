@@ -300,7 +300,9 @@ export function renderPublishFailed(a: PublishFailedEmail): RenderedEmail {
   const where = a.destination ? ` to ${a.destination}` : "";
   return {
     subject: `Could not publish to ${site}: "${a.title}"`,
-    preheader: `Marked Failed. ${a.reason.slice(0, 90)}`,
+    // A committed-but-unconfirmed git publish is the one case that does go
+    // back to Review (the verify phase of app/api/cron/publish/route.ts).
+    preheader: `${a.committed ? "Back in review." : "Marked Failed."} ${a.reason.slice(0, 90)}`,
     footerNote: `Sent because you have access to ${site} on AltoRank.`,
     html:
       eyebrow(site) +

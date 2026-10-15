@@ -119,6 +119,13 @@ describe("publish failed", () => {
     expect(e.html).toContain("It is marked Failed in Articles, and Retry is on its page.");
     expect(e.preheader).toMatch(/^Marked Failed\./);
   });
+
+  /** The unconfirmed git publish is the one path the cron sends back to Review, not to Failed. */
+  it("does not call a committed-but-unconfirmed git publish Failed", () => {
+    const e = renderPublishFailed({ ...base, committed: true, destination: "git" });
+    expect(e.preheader).not.toContain("Failed");
+    expect(e.preheader).toMatch(/^Back in review\./);
+  });
 });
 
 describe("refresh proposal ready", () => {
