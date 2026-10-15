@@ -65,3 +65,54 @@ describe("canAddWorkspace", () => {
     expect(canManageBilling("admin")).toBe(false);
   });
 });
+
+describe("a member limited to some sites", () => {
+  const account = ["a", "b", "c"];
+
+  it("knows who is limited and whose access reaches further", async () => {
+    const { isSiteLimited, withinScope } = await import("../access");
+    expect(isSiteLimited(null)).toBe(false);
+    expect(isSiteLimited(["a"])).toBe(true);
+    expect(withinScope(null, null)).toBe(true);
+    expect(withinScope(["a", "b"], ["a"])).toBe(true);
+    expect(withinScope(["a"], ["a", "b"])).toBe(false);
+    expect(withinScope(["a"], null)).toBe(false);
+  });
+
+  describe("invites", () => {
+    it("an actor with every site keeps the old meaning of empty", async () => {
+      const { decideInviteSites } = await import("../access");
+      expect(decideInviteSites({ actorSites: null, picked: [], accountSites: account })).toEqual({ ok: true, workspaceIds: null });
+    });
+    it("a limited actor must pick, and only from their own sites", async () => {
+      const { decideInviteSites } = await import("../access");
+      expect(decideInviteSites({ actorSites: ["a"], picked: [], accountSites: account }).ok).toBe(false);
+      expect(decideInviteSites({ actorSites: ["a"], picked: ["b"], accountSites: account }).ok).toBe(false);
+      expect(decideInviteSites({ actorSites: ["a"], picked: ["a", "b"], accountSites: account })).toEqual({ ok: true, workspaceIds: ["a"] });
+    });
+  });
+
+  describe("editing a member", () => {
+    it("an actor with every site is unchanged", async () => {
+      const { decideMemberSites } = await import("../access");
+      expect(decideMemberSites({ actorSites: null, targetSites: ["a"], picked: [], accountSites: account })).toEqual({ ok: true, workspaceIds: null });
+      expect(decideMemberSites({ actorSites: null, targetSites: null, picked: ["b"], accountSites: account })).toEqual({ ok: true, workspaceIds: ["b"] });
+    });
+    it("never produces every site or an empty list", async () => {
+      const { decideMemberSites } = await import("../access");
+      expect(decideMemberSites({ actorSites: ["a"], targetSites: ["a"], picked: [], accountSites: account }).ok).toBe(false);
+      expect(decideMemberSites({ actorSites: ["a"], targetSites: ["a"], picked: ["zzz"], accountSites: account }).ok).toBe(false);
+    });
+    it("adds only the actor's own sites and keeps the target's others", async () => {
+      const { decideMemberSites } = await import("../access");
+      const out = decideMemberSites({ actorSites: ["a", "b"], targetSites: ["b", "c"], picked: ["a", "c"], accountSites: account });
+      expect(out.ok).toBe(true);
+      if (out.ok) expect([...(out.workspaceIds ?? [])].sort()).toEqual(["a", "c"]);
+    });
+    it("leaves a target with every site as it is, and refuses to narrow it", async () => {
+      const { decideMemberSites } = await import("../access");
+      expect(decideMemberSites({ actorSites: ["a"], targetSites: null, picked: [], accountSites: account })).toEqual({ ok: true, workspaceIds: null });
+      expect(decideMemberSites({ actorSites: ["a"], targetSites: null, picked: ["a"], accountSites: account }).ok).toBe(false);
+    });
+  });
+});
