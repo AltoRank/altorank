@@ -13,6 +13,9 @@
 // Continue, which made three of five screens theatre.
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
+import { readExampleUrls, retrainFromExamples } from "@/lib/voice/examples";
+import { trainVoiceProfile } from "@/lib/voice/train";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { canSpend } from "@/lib/billing/spend-gate";
@@ -172,19 +175,42 @@ export async function discoverSiteDetails(workspaceId: string): Promise<SiteDisc
 
 const HTTP = /^https?:\/\/\S+$/i;
 
-export async function saveSiteDetails(workspaceId: string, details: SiteDetails): Promise<void> {
+/**
+ * Save the sitemap, blog address and "Your best writing". When the chosen
+ * articles change on a site whose voice is already trained, the voice is
+ * retrained from them after the response (lib/voice/examples.ts), so the
+ * field does what its hint says. Returns whether a retrain was started.
+ */
+export async function saveSiteDetails(workspaceId: string, details: SiteDetails): Promise<{ retraining: boolean }> {
   const { supabase } = await assertWorkspace(workspaceId);
   const clean = (u: string) => (HTTP.test(u.trim()) ? u.trim() : null);
+  const examples = details.exampleArticleUrls.map((u) => u.trim()).filter((u) => HTTP.test(u)).slice(0, 3);
+  const previous = await readExampleUrls(supabase, workspaceId);
   const { error } = await supabase
     .from("workspaces")
     .update({
       sitemap_url: clean(details.sitemapUrl),
       blog_root_url: clean(details.blogRootUrl),
-      example_article_urls: details.exampleArticleUrls.map((u) => u.trim()).filter((u) => HTTP.test(u)).slice(0, 3),
+      example_article_urls: examples,
     })
     .eq("id", workspaceId);
   if (error) throw new Error(error.message);
   revalidatePath("/settings", "layout");
+
+  const changed = examples.join("\n") !== previous.join("\n");
+  if (!changed || examples.length === 0) return { retraining: false };
+  // A model call, so asked like the Voice page's Train button is.
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
+  const gate = await canSpend(supabase, accountId, { userEmail: user.email ?? undefined, workspaceId, action: "voice-training" });
+  if (!gate.allowed) return { retraining: false };
+  after(async () => {
+    try {
+      await retrainFromExamples(supabase, workspaceId, examples, previous, { train: trainVoiceProfile });
+    } catch (err) {
+      console.error(`[voice] retraining ${workspaceId} from chosen articles: ${err instanceof Error ? err.message : err}`);
+    }
+  });
+  return { retraining: true };
 }
 
 export async function saveOutputSettings(workspaceId: string, s: OutputSettings): Promise<void> {

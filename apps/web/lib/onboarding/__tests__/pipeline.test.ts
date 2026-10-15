@@ -16,6 +16,12 @@ vi.mock("@/lib/domain/reachable", () => ({
 
 vi.mock("../site-text", () => ({ readSiteText: async (...a: unknown[]) => { const text = (await scrape(...a)) as string; return { text, source: text ? "static" : "none", chars: text.length }; } }));
 vi.mock("@/lib/voice/train", () => ({ trainVoiceProfile: (...a: unknown[]) => voice(...a) }));
+// "Your best writing": none chosen unless a test says so.
+const chosenText = vi.fn(async (_urls: string[]) => "");
+vi.mock("@/lib/voice/examples", async () => {
+  const real = await vi.importActual<typeof import("@/lib/voice/examples")>("@/lib/voice/examples");
+  return { ...real, readExampleUrls: async () => ["https://example.com/blog/best"], readExampleArticles: (urls: string[]) => chosenText(urls) };
+});
 vi.mock("@/lib/audit/domain-analysis", () => ({ analyseDomain: (...a: unknown[]) => analyse(...a) }));
 vi.mock("@/lib/content/generate", () => ({ generateArticle: (...a: unknown[]) => generate(...a) }));
 // Only getQuota is faked. The refusal message is real: it is counted off
@@ -208,6 +214,17 @@ describe("runOnboarding", () => {
     const c = client(0);
     await runOnboarding(c, WS, () => undefined);
     expect(voice).toHaveBeenCalledWith(c, "ws1", expect.stringContaining("word"));
+  });
+
+  it("trains the voice from the articles the person chose first, then the site", async () => {
+    chosenText.mockResolvedValueOnce("SOURCE https://example.com/blog/best\nchosen article text");
+    const c = client(0);
+    const events: OnboardingEvent[] = [];
+    await runOnboarding(c, WS, (e) => events.push(e));
+    expect(chosenText).toHaveBeenCalledWith(["https://example.com/blog/best"]);
+    const sample = voice.mock.calls[0][2] as string;
+    expect(sample.startsWith("SOURCE https://example.com/blog/best\nchosen article text\n\nword")).toBe(true);
+    expect(events).toContainEqual(expect.objectContaining({ phase: "scanning", status: "done", detail: "Learned how your site writes, starting from the articles you chose." }));
   });
 
   it("emits every boundary of a full run, in order, ending in ready", async () => {
