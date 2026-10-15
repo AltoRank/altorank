@@ -133,6 +133,7 @@ build args, not runtime env.
 | `CRON_SECRET` | `isAuthorizedCron()` returns `false` for every request; **every scheduled job answers 401** and nothing runs unattended. `docker compose` refuses to start the cron container without it. See [How cron auth works](#how-cron-auth-works) |
 | `RESEND_API_KEY` | no email at all: no invites, no auth emails, no approval notifications, no feedback widget. Signup confirms by email and rolls the new user back when the email cannot be sent, so **nobody can create an account** and nobody can reset a password |
 | `RESEND_FROM_EMAIL` | defaults to `AltoRank <noreply@updates.altorank.co>`, which will not be a verified sender on your Resend account, so every send is refused (same effect as no key). Set it |
+| `RESEND_REPLY_TO` | optional. The Reply-To on every app email. Unset: the hosted sender replies go to `hello@altorank.co`; any other sender gets no Reply-To, so replies go to `RESEND_FROM_EMAIL` |
 | `NEXT_PUBLIC_APP_URL` | links in every email, Stripe return URLs and the audit worker's self-call fall back to `http://localhost:3000` (or `:3100` in two files). Set it to the public origin |
 
 ### Each one disables exactly one feature

@@ -9,6 +9,14 @@ import { KEYWORD_INSTRUCTIONS_MAX } from "@/lib/keyword-research/instructions";
 import type { PlanCapacity, ResearchResult, ResearchSource } from "@/lib/keyword-research/types";
 import { ProposalTable } from "./proposal-table";
 
+/**
+ * Empty states for the two pickers. They sent people to "onboarding"; both
+ * lists are edited in Settings > Audience & Competitors
+ * (app/(dashboard)/settings/audience).
+ */
+export const NO_COMPETITORS = "No competitors in the business profile yet. Add them in Settings > Audience & Competitors, or use Audiences only.";
+export const NO_AUDIENCES = "No audiences in the business profile yet. Add them in Settings > Audience & Competitors, or use Competitors only.";
+
 interface GenerateTabProps {
   workspaceId: string;
   ctx: ResearchContext;
@@ -129,10 +137,10 @@ export function GenerateTab({ workspaceId, ctx, handoff, onCapacity, onChanged, 
       </div>
 
       {needsCompetitors && (
-        <MultiSelect label="Competitors" options={ctx.profile.competitors} value={competitors} onChange={setCompetitors} empty="No competitors in the business profile yet. Add them in onboarding, or use Audiences only." />
+        <MultiSelect label="Competitors" options={ctx.profile.competitors} value={competitors} onChange={setCompetitors} empty={NO_COMPETITORS} />
       )}
       {needsAudiences && (
-        <MultiSelect label="Target audiences" options={ctx.profile.audiences} value={audiences} onChange={setAudiences} empty="No audiences in the business profile yet. Add them in onboarding, or use Competitors only." />
+        <MultiSelect label="Target audiences" options={ctx.profile.audiences} value={audiences} onChange={setAudiences} empty={NO_AUDIENCES} />
       )}
       {needsAudiences && !ctx.modelReady && audiences.size > 0 && (
         <div className="text-[12px] text-ink-3">Audience research isn&apos;t available yet; competitors still work.{ctx.hints.model ? ` ${ctx.hints.model}` : ""}</div>

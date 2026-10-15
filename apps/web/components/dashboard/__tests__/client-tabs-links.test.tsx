@@ -20,6 +20,7 @@ describe("the workspace page's article tables", () => {
         keywords={[]}
         calendar={[]}
         backlinks={[]}
+        hasDestination={false}
         voice={null}
         cadence={null}
         planIncluded={null}

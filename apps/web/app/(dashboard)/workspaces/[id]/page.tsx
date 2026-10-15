@@ -15,6 +15,7 @@ import { getWorkspaceMetrics } from "@/lib/queries/metrics";
 import { getQuota } from "@/lib/billing/quota";
 import { maxAllowedPace } from "@/lib/plan/pace-options";
 import { createClient } from "@/lib/supabase/server";
+import { getDestinations } from "@/lib/publishing/destinations";
 import { plural } from "@/lib/utils";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { canAddWorkspace } from "@/lib/team/access";
@@ -35,7 +36,7 @@ export default async function ClientDetailPage({ params }: Props) {
   if (!workspace) notFound();
 
   const supabase = await createClient();
-  const [articles, keywords, calendar, backlinks, voice, cadence, metrics, quota] =
+  const [articles, keywords, calendar, backlinks, voice, cadence, metrics, quota, destinations] =
     await Promise.all([
       getArticles(id),
       getKeywords(id),
@@ -47,6 +48,9 @@ export default async function ClientDetailPage({ params }: Props) {
       // Only for the writing-pace control, which says whether a setting
       // reaches the volume the plan includes. Null when unmetered.
       getQuota(supabase, workspace.account_id),
+      // Whether the publishing-decision card may offer automatic publishing:
+      // the rule holds every draft in a workspace with nowhere to publish.
+      getDestinations(supabase, id),
     ]);
 
   // Deleting a site is an owner's or an admin's (migration 072), the same
@@ -154,6 +158,7 @@ export default async function ClientDetailPage({ params }: Props) {
         cadence={cadence}
         planIncluded={quota.limit}
         maxPace={maxAllowedPace(quota)}
+        hasDestination={destinations.length > 0}
         canDelete={canDelete}
       />
     </>

@@ -28,6 +28,8 @@ type ClientTabsProps = {
   maxPace: number;
   /** Server clock at render; see FirstDraftLive. */
   now: number;
+  /** Whether the workspace has a CMS connection to publish through. */
+  hasDestination: boolean;
   /** Owners and admins may delete the workspace from its Settings tab. */
   canDelete?: boolean;
 };
@@ -42,7 +44,7 @@ const TABS = [
   { id: "settings", label: "Settings", icon: <Icons.settings size={14} /> },
 ];
 
-export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, planIncluded, maxPace, now, canDelete = false }: ClientTabsProps) {
+export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, planIncluded, maxPace, now, hasDestination, canDelete = false }: ClientTabsProps) {
   const [activeTab, setActiveTab] = useState("overview");
 
   const tabs = TABS.map((t) => {
@@ -64,7 +66,7 @@ export function ClientTabs({ workspace, articles, keywords, calendar, backlinks,
         {activeTab === "voice" && <VoiceTab voice={voice} />}
         {activeTab === "backlinks" && <BacklinksTab backlinks={backlinks} />}
         {activeTab === "settings" && (
-          <SettingsTab workspace={workspace} cadence={cadence} planIncluded={planIncluded} maxPace={maxPace} canDelete={canDelete} />
+          <SettingsTab workspace={workspace} cadence={cadence} planIncluded={planIncluded} maxPace={maxPace} hasDestination={hasDestination} canDelete={canDelete} />
         )}
       </div>
     </>
@@ -489,12 +491,14 @@ function SettingsTab({
   cadence,
   planIncluded,
   maxPace,
+  hasDestination,
   canDelete,
 }: {
   workspace: Workspace;
   cadence: PublishingCadence | null;
   planIncluded: number | null;
   maxPace: number;
+  hasDestination: boolean;
   canDelete: boolean;
 }) {
   return (
@@ -530,6 +534,7 @@ function SettingsTab({
         minSeo={workspace.auto_approve_min_seo ?? 70}
         setByName={null}
         hasCadence={Boolean(cadence?.enabled)}
+        hasDestination={hasDestination}
       />
       <PublishingCadenceForm workspaceId={workspace.id} cadence={cadence} />
       {canDelete && <DeleteWorkspaceCard workspaceId={workspace.id} confirmText={deleteConfirmationText(workspace)} />}

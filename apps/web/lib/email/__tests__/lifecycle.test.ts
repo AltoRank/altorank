@@ -36,7 +36,6 @@ describe("draft approved", () => {
     keyword: "best crm",
     articleId: "art-1",
     approvedBy: "Dana",
-    scheduledFor: null as string | null,
   };
 
   it("names the site, the title and who approved it, and links to the article", () => {
@@ -47,9 +46,12 @@ describe("draft approved", () => {
     expect(e.footerNote).toContain("acme.com");
   });
 
-  it("states the date when the cadence has one, and the honest version when it does not", () => {
-    expect(renderDraftApproved({ ...base, scheduledFor: "2026-10-04T09:00:00Z" }).html).toContain("October 4, 2026");
-    expect(renderDraftApproved(base).html).toContain("next scheduled slot");
+  /** Approve writes `approved`; the publish cron reads only `scheduled`. */
+  it("says the approved draft is not scheduled yet, not that it joined a queue", () => {
+    const e = renderDraftApproved(base);
+    expect(e.html).toContain("It is not scheduled yet");
+    expect(e.html).not.toContain("publishing queue");
+    expect(e.preheader).toBe("Dana approved it. Not scheduled yet.");
   });
 
   /** Titles and keywords are customer data and reach the inbox as HTML. */
@@ -107,6 +109,22 @@ describe("publish failed", () => {
 
   it("does not say the article is back in review when it is not", () => {
     expect(renderPublishFailed({ ...base, committed: true }).html).not.toContain("back in review");
+  });
+
+  /** The cron writes `status = error` (labelled Failed), outside the review queue. */
+  it("says the article is marked Failed with Retry on its page, not back in review", () => {
+    const e = renderPublishFailed(base);
+    expect(e.html).not.toContain("back in review");
+    expect(e.preheader).not.toContain("back in review");
+    expect(e.html).toContain("It is marked Failed in Articles, and Retry is on its page.");
+    expect(e.preheader).toMatch(/^Marked Failed\./);
+  });
+
+  /** The unconfirmed git publish is the one path the cron sends back to Review, not to Failed. */
+  it("does not call a committed-but-unconfirmed git publish Failed", () => {
+    const e = renderPublishFailed({ ...base, committed: true, destination: "git" });
+    expect(e.preheader).not.toContain("Failed");
+    expect(e.preheader).toMatch(/^Back in review\./);
   });
 });
 
@@ -282,6 +300,25 @@ describe("account emails", () => {
     expect(e.html).toContain("Add a workspace");
   });
 
+  /** Self-host has no billing: quota is "self-host", unmetered, with no trial or card. */
+  it("promises a self-hosted install no trial, card or free-draft count", () => {
+    const e = renderWelcome({ name: null, domain: "acme.com", beforeTrial: false, selfHost: true });
+    expect(e.html).toContain("This install has no plan, card or trial.");
+    expect(e.html).not.toMatch(/day trial|are free to read|card is on file/);
+  });
+
+  it("names this install's own host as the only place to type the password", () => {
+    const prev = process.env.NEXT_PUBLIC_APP_URL;
+    process.env.NEXT_PUBLIC_APP_URL = "https://seo.selfhost.example";
+    try {
+      const e = renderPasswordChanged({ email: "a@x.co", at: "2026-09-06T12:00:00Z" });
+      expect(e.html).toContain("anywhere but on seo.selfhost.example.");
+      expect(e.html).not.toContain("on altorank.co");
+    } finally {
+      process.env.NEXT_PUBLIC_APP_URL = prev;
+    }
+  });
+
   it("tells somebody their password changed and how to act if it was not them", () => {
     const e = renderPasswordChanged({ email: "a@x.co", at: "2026-09-06T12:00:00Z" });
     expect(e.subject).toBe("Your AltoRank password was changed");
@@ -315,9 +352,35 @@ describe("account emails", () => {
     expect(e.html).toContain("read only");
     expect(e.html).toContain("January 1, 2027");
   });
+
+  /** An OAuth key goes straight to the client: nobody was shown it once. */
+  it("names the member who granted a connector, and does not say its key was shown once", () => {
+    const e = renderApiKeyCreated({
+      keyName: "Some Agent (connector)",
+      prefix: "alto_ef56",
+      createdBy: "dana@acme.com",
+      canWrite: true,
+      expiresAt: null,
+      connector: "Some Agent",
+    });
+    expect(e.html).toContain("<strong>dana@acme.com</strong> gave <strong>Some Agent</strong> access to the account");
+    expect(e.html).not.toContain("shown once");
+    expect(e.html).toContain("handed to Some Agent when access was granted");
+    expect(e.preheader).toContain("approved by dana@acme.com");
+  });
 });
 
 describe("nothing is being written", () => {
+  /** The buyer test is now the usual reason; the email quotes its tally. */
+  it("gives the buyer-test reason for an exhausted queue and quotes the verdicts", () => {
+    const verdict = "0 qualified, 9 rejected (6 not a buyer search, 3 an existing page already targets it), 0 pending";
+    const e = renderNothingWritten({ domain: "acme.com", reason: "queue-exhausted", verdict });
+    expect(e.html).toContain("buyer test turned it down");
+    expect(e.html).toContain(`What the last check found: ${verdict}.`);
+    expect(e.html).not.toContain("provider noise");
+    expect(e.html).not.toContain("from what the site already ranks for");
+  });
+
   it("gives the reason and the one-minute fix, per reason", () => {
     expect(renderNothingWritten({ domain: "acme.com", reason: "no-keywords" }).subject).toBe(
       "Nothing is being written for acme.com",
@@ -366,6 +429,13 @@ describe("setup fell short", () => {
     expect(e.html).toContain("next look is already scheduled");
     expect(e.html).toContain("Try again now");
     expect(e.html).not.toContain("add a keyword by hand");
+  });
+
+  /** Before the trial, Keywords redirects back to /onboarding; only /connect opens. */
+  it("does not send an account before its trial to Keywords", () => {
+    const e = renderSetupFailed({ domain: "acme.com", line: "We could not read the site.", transient: false, beforeTrial: true });
+    expect(e.html).not.toContain("Keywords");
+    expect(e.html).toContain("connect Search Console from Integrations");
   });
 
   it("never claims anything was written", () => {

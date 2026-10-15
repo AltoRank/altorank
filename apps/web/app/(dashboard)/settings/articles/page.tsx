@@ -10,7 +10,7 @@ export default async function ArticleSettingsPage() {
   return (
     <SettingsShell
       title="Articles"
-      subtitle={<span>{ws ? `${ws.domain} · ` : ""}how drafts read, and the review gate that never turns off</span>}
+      subtitle={<span>{ws ? `${ws.domain} · ` : ""}how drafts read, and who decides a draft ships</span>}
     >
       {ws ? <OutputForm workspaceId={ws.id} initial={ws.output} /> : <NoWorkspaceCard />}
     </SettingsShell>

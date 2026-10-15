@@ -12,7 +12,7 @@ vi.mock("@/lib/billing/body-lock", () => ({ accountTrialGate: (...a: unknown[]) 
 
 import { sendTransactionalEmail } from "../resend";
 import { fakeDraftDb } from "./fake-draft-db";
-import { GATED_DIGEST_LINE, HOLD_REMINDER_AFTER_MS, HOLD_WINDOW_RESET_MS, holdDigestSlot, sendHeldDigests } from "../held-digest";
+import { GATED_DIGEST_LINE, HOLD_REMINDER_AFTER_MS, HOLD_WINDOW_RESET_MS, holdDigestSlot, renderHeldDigest, sendHeldDigests } from "../held-digest";
 import type { AutoApproveResult } from "@/lib/publishing/auto-approve";
 
 const send = vi.mocked(sendTransactionalEmail);
@@ -128,5 +128,24 @@ describe("sendHeldDigests and an account that has not started its trial", () => 
     const out = await sendHeldDigests(db().client, [held("a1")], NOW);
     expect(out).toEqual(["ws1: digest failed (quota: could not read this account's plan (timeout))"]);
     expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe("renderHeldDigest", () => {
+  /**
+   * A hand approval writes `approved`, which the publish cron does not read;
+   * only the rule's own approval writes `scheduled`. "Approve by hand and it
+   * ships on the next run" was false.
+   */
+  it("does not promise that a hand-approved draft ships on the next run", () => {
+    const one = renderHeldDigest("acme.com", [{ articleId: "a1", title: "T", reason: "r" }]);
+    expect(one.html).not.toContain("ships on the next run");
+    expect(one.html).toContain("Fix the reason and the rule approves it on its next run.");
+    expect(one.html).toContain("If you approve by hand instead, schedule or publish it from its page.");
+    const two = renderHeldDigest("acme.com", [
+      { articleId: "a1", title: "T", reason: "r" },
+      { articleId: "a2", title: "U", reason: "r" },
+    ]);
+    expect(two.html).toContain("schedule or publish each one from its own page.");
   });
 });

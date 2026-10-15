@@ -33,8 +33,9 @@ export interface MonthlyReportEmail {
   /** The signed storage URL, good for 30 days (lib/reports/storage.ts). */
   reportUrl: string;
   highlights: {
-    articlesPublished: number;
-    keywordsTracked: number;
+    /** Null when the count could not be read: shown as a dash, never 0. */
+    articlesPublished: number | null;
+    keywordsTracked: number | null;
     topMover?: string;
   };
 }
@@ -42,14 +43,20 @@ export interface MonthlyReportEmail {
 export function renderMonthlyReport(r: MonthlyReportEmail, recipient: string): RenderedEmail {
   const row = (label: string, value: string | number) =>
     `<tr><td style="padding:8px 0;color:#4A4A4A;border-bottom:1px solid #E6E5E2;">${label}</td><td style="padding:8px 0;font-weight:600;text-align:right;border-bottom:1px solid #E6E5E2;">${esc(value)}</td></tr>`;
+  const shown = (n: number | null) => (n === null ? "—" : n);
   const rows =
-    row("Articles published", r.highlights.articlesPublished) +
-    row("Keywords tracked", r.highlights.keywordsTracked) +
+    row("Articles published", shown(r.highlights.articlesPublished)) +
+    row("Keywords tracked", shown(r.highlights.keywordsTracked)) +
     (r.highlights.topMover ? row("Top mover", r.highlights.topMover) : "");
 
   return {
     subject: `${r.workspaceName} — SEO report for ${r.period}`,
-    preheader: `${r.highlights.articlesPublished} articles published, ${r.highlights.keywordsTracked} keywords tracked`,
+    preheader: [
+      r.highlights.articlesPublished === null ? null : `${r.highlights.articlesPublished} articles published`,
+      r.highlights.keywordsTracked === null ? null : `${r.highlights.keywordsTracked} keywords tracked`,
+    ]
+      .filter(Boolean)
+      .join(", ") || `The report for ${r.period}`,
     footerNote: `Sent to ${recipient} as a member of ${r.accountName} on AltoRank.`,
     html:
       `<p style="margin:0 0 4px;font-size:12px;color:#8A8A8A;">${esc(r.accountName)}</p>` +

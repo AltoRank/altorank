@@ -41,6 +41,9 @@ const ADAPTER_CLASSES: Record<string, { prototype: Partial<CMSAdapter> }> = {
   git: GitAdapter,
 };
 
+/** Every CMS type with an adapter. */
+export const ADAPTER_TYPES: readonly string[] = Object.keys(ADAPTER_CLASSES);
+
 /**
  * The CMS types whose adapter can edit a post in place.
  *
