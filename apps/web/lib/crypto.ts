@@ -105,6 +105,35 @@ export function encryptConfig(config: Record<string, unknown>): Record<string, u
   return result;
 }
 
+/**
+ * Keys of the credential records stored encrypted outside a connection's
+ * config: a Google consent (lib/google/oauth.ts), a Bing key
+ * (lib/bing/sync.ts), the impersonation stash (lib/auth/impersonation-stash.ts).
+ */
+const CREDENTIAL_RECORD_KEYS = ["refresh_token", "access_token", "id_token", "expiry_date", "apiKey"];
+
+/**
+ * Whether a decrypted value is one of those records rather than a config
+ * secret. Every value is encrypted with the same key, so a config field is
+ * checked to hold a plain secret: a connection's config is written by the
+ * person's own client, and a decrypted config field is sent to the address
+ * that config names.
+ */
+function isCredentialRecord(plain: string): boolean {
+  if (!plain.trimStart().startsWith("{")) return false;
+  try {
+    const value: unknown = JSON.parse(plain);
+    return (
+      typeof value === "object" &&
+      value !== null &&
+      !Array.isArray(value) &&
+      CREDENTIAL_RECORD_KEYS.some((k) => Object.prototype.hasOwnProperty.call(value, k))
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Decrypt sensitive fields in a stored config object. */
 export function decryptConfig(config: Record<string, unknown>): Record<string, unknown> {
   if (!config.__encrypted) return config;
@@ -112,7 +141,9 @@ export function decryptConfig(config: Record<string, unknown>): Record<string, u
   const result = { ...config };
   for (const key of Object.keys(result)) {
     if (fields.has(key) && typeof result[key] === "string") {
-      result[key] = decrypt(result[key] as string);
+      const plain = decrypt(result[key] as string);
+      if (isCredentialRecord(plain)) throw new Error(`The connection's ${key} is not a value this connection can use. Reconnect it.`);
+      result[key] = plain;
     }
   }
   delete result.__encrypted;
