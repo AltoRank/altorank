@@ -60,8 +60,15 @@ export async function middleware(request: NextRequest) {
   request.headers.set("content-security-policy", csp);
 
   const response = await updateSession(request);
-  response.headers.set("Content-Security-Policy", csp);
+  response.headers.set(cspHeaderName(), csp);
   return response;
+}
+
+// Report-only until CSP_ENFORCE=1. The nonce is stamped either way, so
+// flipping the variable after a check of sign-in, the editor, checkout and the
+// OAuth consent screen changes nothing but enforcement.
+export function cspHeaderName(): string {
+  return process.env.CSP_ENFORCE === "1" ? "Content-Security-Policy" : "Content-Security-Policy-Report-Only";
 }
 
 export const config = {

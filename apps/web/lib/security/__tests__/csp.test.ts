@@ -105,7 +105,7 @@ describe("middleware", () => {
     const { middleware } = await import("@/middleware");
     const req = new NextRequest(new URL("/dashboard", "https://app.altorank.co"), { headers: { "x-nonce": "client-sent" } });
     const res = await middleware(req);
-    const csp = res.headers.get("content-security-policy")!;
+    const csp = res.headers.get("content-security-policy-report-only")!;
     const nonce = req.headers.get("x-nonce")!;
     expect(nonce).not.toBe("client-sent");
     expect(csp).toContain(`'nonce-${nonce}'`);
@@ -116,8 +116,8 @@ describe("middleware", () => {
 
   it("sends a fresh nonce per request", async () => {
     const { middleware } = await import("@/middleware");
-    const a = (await middleware(new NextRequest("https://app.altorank.co/dashboard"))).headers.get("content-security-policy");
-    const b = (await middleware(new NextRequest("https://app.altorank.co/dashboard"))).headers.get("content-security-policy");
+    const a = (await middleware(new NextRequest("https://app.altorank.co/dashboard"))).headers.get("content-security-policy-report-only");
+    const b = (await middleware(new NextRequest("https://app.altorank.co/dashboard"))).headers.get("content-security-policy-report-only");
     expect(a).not.toBe(b);
   });
 
@@ -126,6 +126,18 @@ describe("middleware", () => {
     const { middleware } = await import("@/middleware");
     const res = await middleware(new NextRequest("https://app.altorank.co/articles"));
     expect(res.status).toBe(307);
-    expect(res.headers.get("content-security-policy")).toContain("'strict-dynamic'");
+    expect(res.headers.get("content-security-policy-report-only")).toContain("'strict-dynamic'");
+  });
+});
+
+describe("CSP enforcement switch", () => {
+  it("is report-only unless CSP_ENFORCE=1", async () => {
+    const { cspHeaderName } = await import("../../../middleware");
+    const prev = process.env.CSP_ENFORCE;
+    delete process.env.CSP_ENFORCE;
+    expect(cspHeaderName()).toBe("Content-Security-Policy-Report-Only");
+    process.env.CSP_ENFORCE = "1";
+    expect(cspHeaderName()).toBe("Content-Security-Policy");
+    if (prev === undefined) delete process.env.CSP_ENFORCE; else process.env.CSP_ENFORCE = prev;
   });
 });

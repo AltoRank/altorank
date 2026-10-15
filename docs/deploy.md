@@ -157,6 +157,8 @@ build args, not runtime env.
 | `DOGFOOD_EMAIL` | only read by `scripts/dogfood.ts`; irrelevant to a deployment |
 | the two `NEXT_PUBLIC_POSTHOG_*` variables (project token, host) | no product analytics; `npm run dev` logs one console warning. Read at build time; `docker/compose.yml` does not pass them, so the Docker image never sends analytics |
 
+**CSP_ENFORCE.** Unset, the policy below is sent as `Content-Security-Policy-Report-Only`: violations show in the browser console and nothing is blocked. Set `CSP_ENFORCE=1` once sign-in, the editor, checkout and the OAuth consent screen are clean, and redeploy.
+
 **Content-Security-Policy.** Every page is served with a nonce-based CSP
 (`apps/web/lib/security/csp.ts`, sent by `middleware.ts`): scripts run only
 when they carry the request's nonce, and the browser may connect only to this
