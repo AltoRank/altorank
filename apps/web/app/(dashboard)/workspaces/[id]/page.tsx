@@ -16,6 +16,8 @@ import { getQuota } from "@/lib/billing/quota";
 import { maxAllowedPace } from "@/lib/plan/pace-options";
 import { createClient } from "@/lib/supabase/server";
 import { plural } from "@/lib/utils";
+import { requireAuth } from "@/lib/auth/require-auth";
+import { canAddWorkspace } from "@/lib/team/access";
 
 type Props = {
   params: Promise<{ id: string }>;
@@ -46,6 +48,12 @@ export default async function ClientDetailPage({ params }: Props) {
       // reaches the volume the plan includes. Null when unmetered.
       getQuota(supabase, workspace.account_id),
     ]);
+
+  // Deleting a site is an owner's or an admin's (migration 072), the same
+  // people who may add one; nobody else is shown the control.
+  const canDelete = await requireAuth(undefined, { workspaceId: id })
+    .then(({ role }) => canAddWorkspace(role))
+    .catch(() => false);
 
   // The clock FirstDraftLive measures a stalled draft against. It has to be
   // the server's: a client timer restarts whenever the tab is reopened, so a
@@ -146,6 +154,7 @@ export default async function ClientDetailPage({ params }: Props) {
         cadence={cadence}
         planIncluded={quota.limit}
         maxPace={maxAllowedPace(quota)}
+        canDelete={canDelete}
       />
     </>
   );

@@ -119,7 +119,8 @@ describe("createWorkspace", () => {
     const result = await create({ name: "Acme", domain: "acme.com" });
     expect(result).toEqual({
       ok: false,
-      error: "One workspace is included before choosing a plan. Choose a plan on the Billing page to add more sites.",
+      error:
+        "One workspace is included before choosing a plan. Choose a plan on the Billing page to add more sites. Deleting a workspace from its Settings tab frees a slot; pausing one does not.",
     });
     expect(inserted).not.toHaveBeenCalled();
   });

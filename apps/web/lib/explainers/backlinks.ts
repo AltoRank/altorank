@@ -22,7 +22,7 @@ export const backlinksExplainer: Explainer = {
         "One row per referring domain, with the exact page the link sits on, its anchor text, the URL it points to, and whether it is followed or carries rel=nofollow, ugc or sponsored. Only followed links pass authority; the rest are mentions.",
         "Source authority is DataForSEO's 0-1000 domain rank mapped to 0-100. It is not Ahrefs DR, and it renders as a dash when unmeasured rather than dragging the average down as a zero.",
         "The index is re-read once a week inside the nightly rank cron: a site is due when its newest link is older than seven days or it has none. Check now looks it up immediately.",
-        "A link is marked Lost when it was present in an earlier check and missing from the latest one. First seen is the date the index first saw it.",
+        "Each check reads the 200 referring domains with the highest authority. A link is marked Lost when it was present in an earlier check and missing from a later one that read every referring domain; when a check stops at 200, a missing domain may only have ranked lower, so nothing is marked lost. First seen is the date the index first saw it.",
       ],
     },
     {

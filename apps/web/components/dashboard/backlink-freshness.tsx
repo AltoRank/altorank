@@ -67,6 +67,7 @@ export function BacklinkFreshness({
                     }
                     toast.success(
                       `${r.fetched} referring domains` +
+                        (r.capped ? " (the top ones by authority)" : "") +
                         (r.total !== null ? ` of ${r.total.toLocaleString()} links` : "") +
                         (r.lost ? `, ${r.lost} now lost` : ""),
                     );

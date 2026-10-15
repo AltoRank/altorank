@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui";
 import { useWorkspace } from "@/components/dashboard/workspace-context";
+import { GoogleDisconnectButton } from "@/components/dashboard/google-disconnect-button";
 
 /**
  * Connect button for the Google-backed integrations (Search Console, GA4).
@@ -50,6 +51,7 @@ export function GoogleConnectButton({
           {connected ? `Reconnect for ${target.name}` : `Connect for ${target.name}`}
         </Button>
       </a>
+      {connected && <GoogleDisconnectButton />}
     </div>
   );
 }

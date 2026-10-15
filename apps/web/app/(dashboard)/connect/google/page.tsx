@@ -3,6 +3,7 @@ import { PageHead } from "@/components/ui";
 import { Card } from "@/components/ui/card";
 import { listDetectedProperties } from "@/app/actions/google-properties";
 import { PropertyPicker } from "./property-picker";
+import { GoogleDisconnectButton } from "@/components/dashboard/google-disconnect-button";
 
 export const metadata: Metadata = { title: "Choose your sites" };
 
@@ -67,6 +68,11 @@ export default async function GooglePropertiesPage() {
               Use a different Google account
             </a>
           </p>
+        )}
+        {connected && (
+          <div className="mt-2 flex justify-center">
+            <GoogleDisconnectButton className="justify-center" />
+          </div>
         )}
       </div>
     </>
