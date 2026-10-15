@@ -1,7 +1,8 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { KeepRejectButtons, sanitizeHunkHtml } from "@/components/dashboard/review/hunk-controls";
+import { KeepRejectButtons } from "@/components/dashboard/review/hunk-controls";
+import { sanitizeHtml } from "@/lib/html/sanitize";
 import type { Hunk, HunkDecision } from "@/lib/refresh/types";
 
 // ---------------------------------------------------------------------------
@@ -27,7 +28,7 @@ const PROSE =
   "prose-block text-[12.5px] leading-[1.55] [&_h2]:mt-1 [&_h2]:text-[14px] [&_h2]:font-semibold [&_h3]:text-[13px] [&_h3]:font-semibold [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_a]:text-accent-ink [&_a]:underline [&_img]:my-1.5 [&_img]:max-h-32 [&_img]:rounded-[6px] [&_strong]:font-semibold [&_em]:italic";
 
 function Block({ html, className }: { html: string; className?: string }) {
-  return <div className={className} dangerouslySetInnerHTML={{ __html: sanitizeHunkHtml(html) }} />;
+  return <div className={className} dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }} />;
 }
 
 export function RewriteHunkList({

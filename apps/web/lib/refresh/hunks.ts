@@ -18,6 +18,7 @@
 // keeps the original. Nothing the model wrote reaches the site unless a
 // person accepted that specific block.
 
+import { sanitizeHtml } from "@/lib/html/sanitize";
 import type { ExecutionDecisions, Hunk, HunkDecision } from "./types";
 
 // ── Splitting ───────────────────────────────────────────────────────────────
@@ -195,6 +196,10 @@ export function diffBlocks(beforeHtml: string, afterHtml: string): Hunk[] {
  *
  * "Otherwise" includes "no decision recorded". That default is the guardrail:
  * pushing with nothing decided pushes the page as it was.
+ *
+ * What this adds to the page - the rewrite and the reviewer's own text - is
+ * rebuilt by the allowlist sanitiser (lib/html/sanitize.ts) on the way out.
+ * The original blocks are the page's own markup and go back as they were.
  */
 export function applyDecisions(
   hunks: readonly Hunk[],
@@ -204,7 +209,8 @@ export function applyDecisions(
   const parts: string[] = [];
   for (const h of hunks) {
     if (typeof edited[h.id] === "string") {
-      if (edited[h.id].trim()) parts.push(edited[h.id].trim());
+      const mine = sanitizeHtml(edited[h.id]).trim();
+      if (mine) parts.push(mine);
       continue;
     }
     const accepted = decisions[h.id] === "accepted";
@@ -213,10 +219,10 @@ export function applyDecisions(
         parts.push(h.before ?? "");
         break;
       case "changed":
-        parts.push(accepted ? h.after ?? "" : h.before ?? "");
+        parts.push(accepted ? sanitizeHtml(h.after ?? "") : h.before ?? "");
         break;
       case "added":
-        if (accepted) parts.push(h.after ?? "");
+        if (accepted) parts.push(sanitizeHtml(h.after ?? ""));
         break;
       case "removed":
         if (!accepted) parts.push(h.before ?? "");
