@@ -833,6 +833,13 @@ export type NothingWrittenEmail = {
   reason: NothingWrittenReason;
   /** For "paused", the date it lifts, when the pause carries one. */
   pausedUntil?: string | null;
+  /**
+   * For "queue-exhausted", the cron's tally of the buyer test's verdicts
+   * (summarizeQualification in lib/keyword-research/opportunity.ts), e.g.
+   * "0 qualified, 9 rejected (6 not a buyer search, 3 an existing page
+   * already targets it), 0 pending". Quoted as-is.
+   */
+  verdict?: string | null;
 };
 
 const NOTHING_WRITTEN: Record<
@@ -848,9 +855,14 @@ const NOTHING_WRITTEN: Record<
   },
   "queue-exhausted": {
     subject: (site) => `${site} has run out of keywords to write about`,
+    // Was "covered, already ranking, or filtered out as provider noise" and
+    // "the research page proposes new ones from what the site already ranks
+    // for": the reasons before the buyer test. Since then a keyword is
+    // passed over mostly because the buyer test rejected it, and the email
+    // quotes that tally (`verdict`) from the cron (cron/generate/route.ts).
     what:
-      "Every keyword in the queue is now covered, already ranking, or was filtered out as provider noise, so the scheduler passed over this workspace.",
-    fix: "Adding keywords starts it again. The research page proposes new ones from what the site already ranks for.",
+      "None of the keywords in the queue can be written: each one is already covered or ranking, or the buyer test turned it down, so the scheduler passed over this workspace.",
+    fix: "Adding keywords starts it again: type the searches your buyers make, or use Research keywords on the Keywords page.",
     cta: () => "Find more keywords",
     path: "/keywords",
   },
@@ -894,6 +906,7 @@ export function renderNothingWritten(a: NothingWrittenEmail): RenderedEmail {
       eyebrow(site) +
       heading("Nothing was written this week") +
       emailParagraph(esc(copy.what)) +
+      (a.reason === "queue-exhausted" && a.verdict ? emailParagraph(`What the last check found: ${esc(a.verdict)}.`) : "") +
       paused +
       emailParagraph(esc(copy.fix)) +
       emailButton(appLink(copy.path), copy.cta(copy.path)) +

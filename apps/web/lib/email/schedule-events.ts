@@ -107,6 +107,12 @@ export function nothingWrittenReason(detail: string): NothingWrittenReason | nul
   return null;
 }
 
+/** The verdict tally after "no keyword qualifies: ", for the email to quote. */
+export function nothingWrittenVerdict(detail: string): string | null {
+  const m = /^no keyword qualifies:\s*(.+)$/.exec(detail);
+  return m ? m[1].trim() : null;
+}
+
 /**
  * Tell a site's team that nothing is being written for it, and why.
  *
@@ -116,7 +122,8 @@ export function nothingWrittenReason(detail: string): NothingWrittenReason | nul
  */
 export async function announceNothingWritten(
   supabase: SupabaseClient,
-  scope: { accountId: string; workspaceId: string; domain: string | null },
+  /** `verdict` is quoted by the queue-exhausted email; see NothingWrittenEmail. */
+  scope: { accountId: string; workspaceId: string; domain: string | null; verdict?: string | null },
   reason: NothingWrittenReason,
   pausedUntil?: string | null,
   now: Date = new Date(),
@@ -135,7 +142,7 @@ export async function announceNothingWritten(
     const out = await notifyNothingWritten(
       supabase,
       { accountId: scope.accountId, workspaceId: scope.workspaceId },
-      { domain: scope.domain, reason, pausedUntil },
+      { domain: scope.domain, reason, pausedUntil, verdict: scope.verdict ?? null },
       now,
     );
     return describeSendOutcome(out);

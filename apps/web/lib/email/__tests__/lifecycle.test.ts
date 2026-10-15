@@ -345,6 +345,16 @@ describe("account emails", () => {
 });
 
 describe("nothing is being written", () => {
+  /** The buyer test is now the usual reason; the email quotes its tally. */
+  it("gives the buyer-test reason for an exhausted queue and quotes the verdicts", () => {
+    const verdict = "0 qualified, 9 rejected (6 not a buyer search, 3 an existing page already targets it), 0 pending";
+    const e = renderNothingWritten({ domain: "acme.com", reason: "queue-exhausted", verdict });
+    expect(e.html).toContain("buyer test turned it down");
+    expect(e.html).toContain(`What the last check found: ${verdict}.`);
+    expect(e.html).not.toContain("provider noise");
+    expect(e.html).not.toContain("from what the site already ranks for");
+  });
+
   it("gives the reason and the one-minute fix, per reason", () => {
     expect(renderNothingWritten({ domain: "acme.com", reason: "no-keywords" }).subject).toBe(
       "Nothing is being written for acme.com",

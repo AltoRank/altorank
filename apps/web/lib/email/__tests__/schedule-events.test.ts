@@ -13,6 +13,7 @@ import {
   announcePausedSites,
   announceSetupUnfinished,
   nothingWrittenReason,
+  nothingWrittenVerdict,
   remindEndingPauses,
   setupUnfinishedFacts,
   sweepUnfinishedSetups,
@@ -489,5 +490,14 @@ describe("sweepUnfinishedSetups", () => {
     liveArticle = { id: "art-1" };
     expect(await sweepUnfinishedSetups(client(), now)).toEqual([]);
     expect(sends()).toHaveLength(0);
+  });
+});
+
+describe("nothingWrittenVerdict", () => {
+  it("returns the tally after the cron's prefix, and nothing for other skips", () => {
+    expect(nothingWrittenVerdict("no keyword qualifies: 0 qualified, 3 rejected (3 not a buyer search), 0 pending")).toBe(
+      "0 qualified, 3 rejected (3 not a buyer search), 0 pending",
+    );
+    expect(nothingWrittenVerdict("weekly limit is 0")).toBeNull();
   });
 });
