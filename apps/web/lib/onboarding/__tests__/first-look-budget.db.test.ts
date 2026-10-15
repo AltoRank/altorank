@@ -21,7 +21,7 @@
 import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-const h = vi.hoisted(() => ({ phrases: [] as string[], rnd: () => 0.5 }));
+const h = vi.hoisted(() => ({ phrases: [] as string[], rnd: (): number => 0.5 }));
 vi.mock("@/lib/domain/reachable", () => ({ checkDomainReachable: async () => ({ ok: true, verdict: "live", url: "https://acme.example" }) }));
 vi.mock("../site-text", () => ({ readSiteText: async () => ({ text: "word ".repeat(200), source: "static", chars: 1000 }) }));
 vi.mock("@/lib/voice/train", async () => {
