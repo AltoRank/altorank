@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch) and **112** (article images served by path, not listed), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109 and 111 go in AFTER**; **112 goes in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch), **112** (article images served by path, not listed) and **114** (blog keys), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109, 111 and 114 go in AFTER**; **112 goes in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -161,7 +161,8 @@ m(file, applied) as (values
   ('108_first_body_progress',                exists (select 1 from col where t='articles' and c='body_progress') and not has_column_privilege('authenticated', 'public.articles', 'body_progress', 'SELECT') and pg_get_functiondef('public.articles_body_stream_server_only'::regproc) like '%body_progress%'),
   ('109_approval_written_by_server',         exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'articles_guard_approval' and c.relname = 'articles') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'workspaces_guard_auto_approve' and c.relname = 'workspaces')),
   ('111_member_scope_guards',                exists (select 1 from pg_trigger where tgname = 'api_keys_creator_sees_every_site') and exists (select 1 from pg_trigger where tgname = 'workspaces_domain_needs_every_site') and exists (select 1 from pg_trigger where tgname = 'workspace_integrations_google_server_written') and not has_column_privilege('authenticated', 'public.account_integrations', 'tokens', 'SELECT') and pg_get_functiondef('public.account_members_guard_roles'::regproc) like '%actor_sites%'),
-  ('112_article_images_private',             not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Article images are readable by anyone'))
+  ('112_article_images_private',             not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Article images are readable by anyone')),
+  ('114_blog_keys',                          exists (select 1 from col where t='api_keys' and c='workspace_id') and exists (select 1 from pg_constraint where conname = 'api_keys_blog_key_shape') and exists (select 1 from pg_trigger where tgname = 'api_keys_site_in_account'))
 )
 select file, applied from m order by file;
 ```
@@ -303,6 +304,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 100_pre_trial_spend_bounds.sql   #
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 109_approval_written_by_server.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 111_member_scope_guards.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 112_article_images_private.sql   # any time; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 114_blog_keys.sql   # AFTER its code is live; see its section
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -383,6 +385,7 @@ no code in the repo references either).
 | 109_approval_written_by_server.sql | `fix/approval-integrity` | 002, 003, 005, 013, 079, 094; **its code deployed first** | yes | yes, see its section (a member can again forge an approval over PostgREST) |
 | 111_member_scope_guards.sql | `fix/tighten-site-scope` | 033, 051, 053, 085, 099, 102; **its code deployed first** | yes | yes, see its section (re-apply 102 for the two member guards) |
 | 112_article_images_private.sql | `fix/tighten-site-scope` | 045; any time | yes | yes, see its section (the bucket can be listed again) |
+| 114_blog_keys.sql | `fix/blog-api-key-scope` | 051, 085, 099; **its code deployed first** | yes | yes, see its section (blog keys are revoked; agent keys are untouched) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1742,4 +1745,75 @@ Rollback:
 ```sql
 create policy "Article images are readable by anyone" on storage.objects
   for select using (bucket_id = 'article-images');
+```
+
+## 114 — blog keys read one site's published articles, nothing else
+
+`114_blog_keys.sql` adds `api_keys.workspace_id` (`references workspaces on
+delete cascade`) and makes a second kind of key possible. A **blog key** has
+`scopes = {blog}` and a site in `workspace_id`; it is what Settings → API keys
+now makes for `@altorank/next-blog`, whose key lives in a customer site's
+environment. The blog API (`lib/blog-api/auth.ts`) answers a blog key for its
+own site only (any other `workspace_id` is a 403), and the agent API and the
+hosted MCP refuse it (`lib/agent/auth.ts`). `blog` is not an OAuth scope
+(`lib/oauth/codes.ts` parses against the agent scopes only).
+
+- `api_keys_blog_key_shape` (check): a key with a site has exactly `{blog}`,
+  and a key with `blog` has a site. Every existing key has neither, so it
+  holds for them unchanged.
+- `api_keys_site_in_account`, `before insert or update of workspace_id,
+  account_id`: the site must belong to the key's account (42501 otherwise).
+  It binds every writer; createApiKey checks the same with the service role
+  first.
+- Grants: 099's are re-stated (a client token updates `revoked_at` only), so
+  `workspace_id` is server-written.
+
+Deleting a site deletes its blog keys. Agent keys and the legacy
+`accounts.api_key` still read the blog API as before, so no site stops
+building; owners should move each site to a blog key and revoke the agent key
+it used (the PR body says how).
+
+**Apply AFTER its code is live.** The new code reads `workspace_id` when it is
+there and reads again without it on 42703/PGRST204 (`lib/blog-api/auth.ts`,
+`lib/queries/api-keys.ts`); before 114 every key is an agent key and creating
+a blog key answers "needs a database update". Code from before 114 never
+selects the column, so applying first is harmless too, but a blog key made
+afterwards would then be read by old code as an agent key with no `read`
+scope (refused by the agent API's scope check, refused by the old blog API's
+`read` check) - so deploy first. Re-running is a no-op (`if not exists`,
+drop-then-add of the constraint and trigger, `create or replace`, grants
+re-stated). Depends on 051, 085 and 099.
+
+Test: `supabase/tests/114_blog_keys.rls.sql` (self-contained, rolls back).
+Green 2026-10-15 on a throwaway Postgres 15 holding a stub of `accounts`,
+`workspaces` and `api_keys` (051's columns, 099's grants, one existing
+three-scope key), with 114 applied twice: an agent key with no site and a
+blog key for its own account's site are written; a blog key with no site, a
+key with a site and agent scopes, a blog key with an extra scope and widening
+one are 23514; a blog key for, or moved to, another account's site is 42501;
+revoking works; a client token can update `revoked_at` and not
+`workspace_id`; deleting the site removes its blog key and keeps the agent
+key. The rollback below was run on the same database and 114 re-applied.
+Not yet run on a copy built from 001-114.
+
+Post-flight (expect `t`, `t`, `t`, `f`):
+
+```sql
+select exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'api_keys' and column_name = 'workspace_id'),
+       exists (select 1 from pg_constraint where conname = 'api_keys_blog_key_shape'),
+       exists (select 1 from pg_trigger where tgname = 'api_keys_site_in_account'),
+       has_column_privilege('authenticated', 'public.api_keys', 'workspace_id', 'UPDATE');
+```
+
+Rollback (blog keys are revoked first: without their site they would mean
+nothing, and the code refuses a blog key with no site anyway):
+
+```sql
+drop trigger if exists api_keys_site_in_account on public.api_keys;
+drop function if exists public.api_keys_site_in_account();
+alter table public.api_keys drop constraint if exists api_keys_blog_key_shape;
+update public.api_keys set revoked_at = now() where 'blog' = any (scopes) and revoked_at is null;
+drop index if exists public.api_keys_workspace;
+alter table public.api_keys drop column if exists workspace_id;
 ```

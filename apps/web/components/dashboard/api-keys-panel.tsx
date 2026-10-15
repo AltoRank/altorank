@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { createApiKey, revokeApiKey, type CreatedApiKey } from "@/app/actions/api-keys";
-import { apiKeyState, EXPIRY_OPTIONS, type ApiKeyState } from "@/lib/agent/api-key-state";
+import { apiKeyState, EXPIRY_OPTIONS, isBlogKey, type ApiKeyState } from "@/lib/agent/api-key-state";
 import type { ApiKeyRow } from "@/lib/types";
 import { Button, Card, Dialog, Icons } from "@/components/ui";
 
@@ -32,11 +32,15 @@ function when(iso: string | null): string {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
+export type KeySite = { id: string; domain: string };
+
 export function ApiKeysPanel({
   keys,
   canManage,
   canCreate = canManage,
   createNote,
+  sites = [],
+  startBlogKeyFor,
 }: {
   keys: ApiKeyRow[];
   /** Revoke, and create unless `canCreate` says otherwise. */
@@ -45,8 +49,15 @@ export function ApiKeysPanel({
   canCreate?: boolean;
   /** Why the create button is missing, when it is. */
   createNote?: string;
+  /** The account's sites, for a blog key's site picker and the list. */
+  sites?: KeySite[];
+  /** Open the create dialog on a blog key for this site (Settings → Blog links here). */
+  startBlogKeyFor?: string;
 }) {
-  const [createOpen, setCreateOpen] = useState(false);
+  const initialBlog = Boolean(canCreate && startBlogKeyFor && sites.some((s) => s.id === startBlogKeyFor));
+  const [createOpen, setCreateOpen] = useState(initialBlog);
+  const [kind, setKind] = useState<"agent" | "blog">(initialBlog ? "blog" : "agent");
+  const domainOf = (id: string | null | undefined) => sites.find((s) => s.id === id)?.domain ?? null;
   const [created, setCreated] = useState<CreatedApiKey | null>(null);
   const [revoking, setRevoking] = useState<ApiKeyRow | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,14 +69,21 @@ export function ApiKeysPanel({
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
-        <p className="text-[13px] text-ink-2 max-w-[620px]">
-          Keys let coding agents and scripts read this account and create drafts for review;
-          with edits allowed they can also move the plan, edit drafts, pause a workspace, and
-          retry a publish a person already approved. They can never approve, schedule or
-          publish a new post; that stays with a person in the editor.
-        </p>
+        <div className="text-[13px] text-ink-2 max-w-[620px] space-y-2">
+          <p>
+            Agent keys let coding agents and scripts read this account and create drafts for review;
+            with edits allowed they can also move the plan, edit drafts, pause a workspace, and
+            retry a publish a person already approved. They can never approve, schedule or
+            publish a new post; that stays with a person in the editor.
+          </p>
+          <p>
+            Blog keys are for a Next.js site using <code className="font-mono text-[12px]">@altorank/next-blog</code>:
+            they read one site&apos;s published articles and nothing else, so they are safe to put in
+            that site&apos;s environment.
+          </p>
+        </div>
         {canCreate ? (
-          <Button variant="accent" onClick={() => { setError(null); setCreateOpen(true); }}>
+          <Button variant="accent" onClick={() => { setError(null); setKind("agent"); setCreateOpen(true); }}>
             <Icons.plus size={14} />
             Create API key
           </Button>
@@ -92,7 +110,12 @@ export function ApiKeysPanel({
                 <tr key={k.id} className="hover:[&>td]:bg-panel">
                   <td className={TD}>
                     <div className="font-medium">{k.name}</div>
-                    <div className="font-mono text-[11px] text-ink-3">{k.prefix}…</div>
+                    <div className="font-mono text-[11px] text-ink-3">
+                      {k.prefix}…
+                      <span className="font-sans ml-2">
+                        {isBlogKey(k) ? `Blog key · ${domainOf(k.workspace_id) ?? "one site"}` : "Agent key"}
+                      </span>
+                    </div>
                   </td>
                   <td className={TD}>
                     <span className={`inline-block px-2 py-0.5 rounded-full text-[11.5px] font-medium ${STATE_CLASS[state]}`}>
@@ -145,10 +168,57 @@ export function ApiKeysPanel({
             })
           }
         >
+          <fieldset>
+            <legend className={LABEL}>Type</legend>
+            <div className="flex gap-4 text-[13px]">
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input type="radio" name="kind" value="agent" checked={kind === "agent"} onChange={() => setKind("agent")} />
+                Agent key
+              </label>
+              <label className="flex items-center gap-1.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="kind"
+                  value="blog"
+                  checked={kind === "blog"}
+                  onChange={() => setKind("blog")}
+                  disabled={sites.length === 0}
+                />
+                Blog key (one site, read-only)
+              </label>
+            </div>
+          </fieldset>
           <div>
             <label className={LABEL} htmlFor="api-key-name">Name</label>
-            <input id="api-key-name" name="name" required maxLength={80} placeholder="Claude Code on my laptop" className={INPUT} />
+            <input
+              id="api-key-name"
+              name="name"
+              required
+              maxLength={80}
+              placeholder={kind === "blog" ? "Blog on the client's Vercel" : "Claude Code on my laptop"}
+              className={INPUT}
+            />
           </div>
+          {kind === "blog" && (
+            <div>
+              <label className={LABEL} htmlFor="api-key-site">Site</label>
+              <select
+                id="api-key-site"
+                name="workspace_id"
+                required
+                defaultValue={initialBlog ? startBlogKeyFor : sites[0]?.id}
+                className={INPUT}
+              >
+                {sites.map((s) => (
+                  <option key={s.id} value={s.id}>{s.domain}</option>
+                ))}
+              </select>
+              <p className="text-[12px] text-ink-3 mt-1">
+                Reads this site&apos;s published articles through the blog API. It cannot see drafts,
+                other sites, or anything the agent API serves.
+              </p>
+            </div>
+          )}
           <div>
             <label className={LABEL} htmlFor="api-key-expiry">Expiration</label>
             <select id="api-key-expiry" name="expires_in_days" defaultValue="never" className={INPUT}>
@@ -157,6 +227,7 @@ export function ApiKeysPanel({
               ))}
             </select>
           </div>
+          {kind === "agent" && (
           <label className="flex items-start gap-2.5 text-[12.5px] text-ink-2 cursor-pointer">
             <input type="checkbox" name="allow_write" className="mt-0.5" />
             <span>
@@ -170,6 +241,7 @@ export function ApiKeysPanel({
               one, or publish anything for the first time.
             </span>
           </label>
+          )}
           <p className="text-[12.5px] text-amber-700 bg-amber-500/10 border border-amber-500/20 rounded-md px-3 py-2">
             Save the key right after creation. The full value will only be displayed once.
           </p>
@@ -206,11 +278,23 @@ export function ApiKeysPanel({
                 {copied ? "Copied" : "Copy"}
               </Button>
             </div>
-            <p className="text-[12.5px] text-ink-2">
-              Use this key as the <code className="font-mono">ALTORANK_API_KEY</code> environment variable.
-              It will not be shown again.
-            </p>
-            <pre className="text-[11.5px] font-mono bg-panel border border-line rounded-md px-3 py-2 overflow-x-auto">{`export ALTORANK_API_KEY=${created.key}`}</pre>
+            {created.workspace_id ? (
+              <>
+                <p className="text-[12.5px] text-ink-2">
+                  Add these to the site&apos;s environment (for example <code className="font-mono">.env.local</code>,
+                  or the host&apos;s environment settings). The key will not be shown again.
+                </p>
+                <pre className="text-[11.5px] font-mono bg-panel border border-line rounded-md px-3 py-2 overflow-x-auto">{`ALTORANK_BLOG_API_KEY=${created.key}\nALTORANK_WORKSPACE_ID=${created.workspace_id}`}</pre>
+              </>
+            ) : (
+              <>
+                <p className="text-[12.5px] text-ink-2">
+                  Use this key as the <code className="font-mono">ALTORANK_API_KEY</code> environment variable.
+                  It will not be shown again.
+                </p>
+                <pre className="text-[11.5px] font-mono bg-panel border border-line rounded-md px-3 py-2 overflow-x-auto">{`export ALTORANK_API_KEY=${created.key}`}</pre>
+              </>
+            )}
             <div className="flex justify-end">
               <Button variant="primary" onClick={() => setCreated(null)}>Done</Button>
             </div>

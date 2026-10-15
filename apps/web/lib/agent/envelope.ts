@@ -137,6 +137,10 @@ export const GUIDANCE = {
     "/settings/api-keys, export it as ALTORANK_API_KEY and retry.",
   missingScope: (scope: string) =>
     `This key lacks the "${scope}" scope. Ask the human to create a key that includes it at /settings/api-keys.`,
+  blogKey:
+    "This is a blog key: it reads one site's published articles through /api/blog/v1 " +
+    "and nothing else. Ask the human to create an agent key at /settings/api-keys, " +
+    "export it as ALTORANK_API_KEY and retry.",
   rateLimited: (retryAfterSeconds: number) =>
     `Rate limit reached for this key. Wait ${retryAfterSeconds}s (see Retry-After) before the next request, and batch reads where possible.`,
   humanOnly:

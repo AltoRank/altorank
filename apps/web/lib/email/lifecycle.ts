@@ -801,6 +801,8 @@ export type ApiKeyCreatedEmail = {
    * not what happened.
    */
   connector?: string;
+  /** Set for a blog key (migration 114): the one site whose published articles it reads. */
+  blogSite?: string;
 };
 
 /**
@@ -813,9 +815,11 @@ export type ApiKeyCreatedEmail = {
  * that created it.
  */
 export function renderApiKeyCreated(a: ApiKeyCreatedEmail): RenderedEmail {
-  const scope = a.canWrite
-    ? `It can read <em>and change</em> things: drafts, keywords, the plan.`
-    : `It can read only. It cannot change drafts, keywords or the plan.`;
+  const scope = a.blogSite
+    ? `It is a blog key for <strong>${esc(a.blogSite)}</strong>: it reads that site's published articles and nothing else.`
+    : a.canWrite
+      ? `It can read <em>and change</em> things: drafts, keywords, the plan.`
+      : `It can read only. It cannot change drafts, keywords or the plan.`;
   const expiry = a.expiresAt ? `It expires on ${dateLabel(a.expiresAt)}.` : `It does not expire.`;
   const created = a.connector
     ? `<strong>${esc(a.createdBy)}</strong> gave <strong>${esc(a.connector)}</strong> access to the account, which created an API key for it called <strong>${esc(a.keyName)}</strong>, starting <code>${esc(a.prefix)}</code>.`
