@@ -160,7 +160,7 @@ m(file, applied) as (values
   ('107_fast_first_look',                    exists (select 1 from col where t='onboarding_runs' and c='timings') and exists (select 1 from col where t='articles' and c='body_stream') and not has_column_privilege('authenticated', 'public.articles', 'body_stream', 'SELECT') and to_regclass('public.owed_bodies') is not null and exists (select 1 from pg_trigger where tgname = 'articles_body_stream_server_only')),
   ('108_first_body_progress',                exists (select 1 from col where t='articles' and c='body_progress') and not has_column_privilege('authenticated', 'public.articles', 'body_progress', 'SELECT') and pg_get_functiondef('public.articles_body_stream_server_only'::regproc) like '%body_progress%'),
   ('109_approval_written_by_server',         exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'articles_guard_approval' and c.relname = 'articles') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'workspaces_guard_auto_approve' and c.relname = 'workspaces')),
-  ('111_member_scope_guards',                exists (select 1 from pg_trigger where tgname = 'api_keys_creator_sees_every_site') and exists (select 1 from pg_trigger where tgname = 'workspace_integrations_google_server_written') and not has_column_privilege('authenticated', 'public.account_integrations', 'tokens', 'SELECT') and pg_get_functiondef('public.account_members_guard_roles'::regproc) like '%actor_sites%'),
+  ('111_member_scope_guards',                exists (select 1 from pg_trigger where tgname = 'api_keys_creator_sees_every_site') and exists (select 1 from pg_trigger where tgname = 'workspaces_domain_needs_every_site') and exists (select 1 from pg_trigger where tgname = 'workspace_integrations_google_server_written') and not has_column_privilege('authenticated', 'public.account_integrations', 'tokens', 'SELECT') and pg_get_functiondef('public.account_members_guard_roles'::regproc) like '%actor_sites%'),
   ('112_article_images_private',             not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Article images are readable by anyone'))
 )
 select file, applied from m order by file;
@@ -1584,19 +1584,22 @@ drop function if exists public.workspaces_guard_auto_approve();
 ## 111 — a member limited to some sites acts within them
 
 `111_member_scope_guards.sql`. `account_members.workspace_ids` limits a member
-to some sites (NULL is every site); four writes let such a member reach past
+to some sites (NULL is every site); five writes let such a member reach past
 that, and the database now refuses them as the app does
 (`apps/web/lib/team/access.ts`):
 
 - `account_members_guard_roles` (102's, replaced): for a signed-in member
   whose own `workspace_ids` is a list, whatever their role, an UPDATE that
-  sets another member's sites to NULL, adds a site the actor does not hold,
-  removes a site the actor does not hold, or touches the sites of a member
-  who has every site is 42501; so is a role change for a member whose sites
-  reach past the actor's. 102's rules (nobody edits themselves; owners are
-  touched only by owners) are unchanged.
-- `invites_guard_scope` (102's, replaced): the "within your own sites" rule
-  now applies to an owner limited to some sites as well.
+  sets another member's sites to NULL or to an empty list, adds a site the
+  actor does not hold, removes a site the actor does not hold, or touches the
+  sites of a member who has every site is 42501; so is a role change for, or
+  the removal of, a member whose sites reach past the actor's. 102's rules
+  (nobody edits themselves; owners are touched only by owners) are unchanged.
+- `invites_guard_scope` (102's, replaced, now also `before delete`): the
+  "within your own sites" rule now applies to an owner limited to some sites
+  as well, an invite names at least one site, and changing or revoking an
+  invite is held to the same reach as making it (the invite as it was, on its
+  own account, and as it becomes).
 - `api_keys_creator_sees_every_site`, `before insert` on `api_keys`: a key
   whose `created_by` is limited to some sites on that account is refused. It
   binds every writer, the service role included: a key acts for the whole
@@ -1613,8 +1616,13 @@ that, and the database now refuses them as the app does
   turning another row into one, is 42501. Marking a row for reconnect
   (`needs_reconnect`, `last_sync_error`) and deleting it still work; other
   integrations (CMS, Bing) are untouched.
+- `workspaces_domain_needs_every_site`, `before update of domain` on
+  `workspaces`: a signed-in member limited to some sites changing a site's
+  domain (other than its case) is 42501. A site's Search Console, Analytics
+  and Bing connections are matched to its domain with credentials that see
+  the account's other sites. `updateWorkspace` refuses it as well.
 
-The member guards and the Google guard pass the service role and the
+The member guards, the domain guard and the Google guard pass the service role and the
 database's own cascades (`pg_trigger_depth() > 1`), like 099-109.
 
 **Apply AFTER its code is live.** Code from before it reads
@@ -1627,7 +1635,7 @@ does them with the service role after its checks
 `app/actions/indexing.ts`) and works with or without 111; the membership
 and key rules are enforced in the app as well (`app/actions/team.ts`,
 `app/actions/api-keys.ts`, `app/oauth/authorize/actions.ts`,
-`lib/oauth/codes.ts`). Re-running is a no-op (`create or replace`,
+`lib/oauth/codes.ts`, and `app/actions/workspaces.ts` for the domain). Re-running is a no-op (`create or replace`,
 drop-then-create of each trigger, grants re-stated). Depends on 033, 051,
 053, 085, 099 and 102.
 
@@ -1650,23 +1658,31 @@ rolls back; run it on an isolated copy). Green 2026-10-15 on a throwaway
 Postgres 15 holding a stub of the tables it touches (`auth.users`,
 `accounts`, `workspaces`, `account_members`, `invites`, `api_keys`,
 `account_integrations`, `workspace_integrations`) with 102 applied and
-then 111 applied twice: the fourteen writes a limited admin should not make
-(every site, a site they lack, removing a site they lack, narrowing a member
-with every site, two role changes, their own sites, two invites, reading the
-consent, four Google-row writes), a limited owner's invite to every site and
-an owner's client-side Google-row write are 42501, as is a key created by a
-limited member; promoting a member inside the actor's sites, changing the
-actor's part of a member's sites, inviting to the actor's own site, seeing
-that a connection exists, marking a row for reconnect, editing a non-Google
-row, the owner's wide grants, a key created by a member with every site,
-and the server's Search Console writes all work. With 102 alone, the first
-case fails. Not yet run on a copy built from 001-111.
+then 111 applied twice: the twenty-three writes a limited admin should not
+make (every site, a site they lack, removing a site they lack, narrowing a
+member with every site, two role changes, their own sites, two invites,
+reading the consent, four Google-row writes, removing a member with more
+sites or with every site, an empty site list on a member or an invite, a
+list with an unknown entry, revoking, narrowing or moving to another account
+an invite to every site, moving a site's domain), a limited owner's invite
+to every site and an owner's client-side Google-row write are 42501, as is a
+key created by a limited member; promoting a member inside the actor's
+sites, changing the actor's part of a member's sites, inviting to the
+actor's own site and revoking that invite, removing a member inside the
+actor's sites, re-sending a domain in another case, seeing that a
+connection exists, marking a row for reconnect, editing a non-Google row,
+the owner's wide grants, domain change and revoke, a key created by a member
+with every site, and the server's Search Console writes all work. With 102
+alone, the first case fails; with the first draft of 111 (no removal,
+revoke or domain rule), "remove a member with more sites" fails. Not yet run
+on a copy built from 001-111.
 
-Post-flight (expect `t`, `t`, `f`, `t`):
+Post-flight (expect `t`, `t`, `t`, `f`, `t`):
 
 ```sql
 select exists (select 1 from pg_trigger where tgname = 'api_keys_creator_sees_every_site'),
        exists (select 1 from pg_trigger where tgname = 'workspace_integrations_google_server_written'),
+       exists (select 1 from pg_trigger where tgname = 'workspaces_domain_needs_every_site'),
        has_column_privilege('authenticated', 'public.account_integrations', 'tokens', 'SELECT'),
        pg_get_functiondef('public.account_members_guard_roles'::regproc) like '%actor_sites%';
 ```
@@ -1679,6 +1695,8 @@ drop trigger if exists api_keys_creator_sees_every_site on public.api_keys;
 drop function if exists public.api_keys_creator_sees_every_site();
 drop trigger if exists workspace_integrations_google_server_written on public.workspace_integrations;
 drop function if exists public.workspace_integrations_google_server_written();
+drop trigger if exists workspaces_domain_needs_every_site on public.workspaces;
+drop function if exists public.workspaces_domain_needs_every_site();
 grant select on table public.account_integrations to authenticated;
 ```
 
