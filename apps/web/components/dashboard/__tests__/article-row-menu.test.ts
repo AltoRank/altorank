@@ -9,7 +9,7 @@ vi.mock("@/app/actions/publish", () => ({
   releaseHold: async () => {},
 }));
 
-import { publishOutcome } from "../article-row-menu";
+import { publishOutcome, statusChoices } from "../article-row-menu";
 
 describe("publishOutcome", () => {
   /** A draft-mode connection leaves the article Approved, not Live. */
@@ -26,5 +26,16 @@ describe("publishOutcome", () => {
     expect(publishOutcome({ publishMode: "publish", status: "publish" })).toBe("Published");
     expect(publishOutcome({ publishMode: "publish" }, true)).toBe("Published this time");
     expect(publishOutcome({ publishMode: "draft" }, true)).toBe("Saved as a draft this time");
+  });
+});
+
+describe("statusChoices", () => {
+  /** The Archived filter and the hold page name it; no control could set it. */
+  it("offers Archived for a draft, a review draft or a failed article", () => {
+    for (const status of ["draft", "review", "error", "approved"]) expect(statusChoices(status)).toContain("archived");
+  });
+
+  it("does not offer it on a live article, where it would not take the post down", () => {
+    expect(statusChoices("live")).toEqual(["draft", "review"]);
   });
 });
