@@ -10,13 +10,14 @@ const LABEL = "text-[12.5px] font-medium text-ink-2 mb-1.5 block";
 
 /**
  * The signup form's fields, one question at a time: the website, then the
- * email. Both stay in the one server-action form (the page owns it), so a
- * browser without JavaScript gets both fields at once and still signs up.
- * A domain from the homepage's growth plan starts on the email.
+ * email, in the one server-action form the page owns. Without JavaScript the
+ * domain step submits and the server answers with the email step, so it
+ * still signs up. A domain from the homepage's growth plan starts on the email.
  */
-export function SignupSteps({ prefilledDomain }: { prefilledDomain: string | null }) {
+export function SignupSteps({ prefilledDomain, startOnDomain = false }: { prefilledDomain: string | null; startOnDomain?: boolean }) {
   const [domain, setDomain] = useState(prefilledDomain ?? "");
-  const [step, setStep] = useState<"domain" | "email">(prefilledDomain ? "email" : "domain");
+  // A domain the server refused comes back on the domain step, with it filled in.
+  const [step, setStep] = useState<"domain" | "email">(prefilledDomain && !startOnDomain ? "email" : "domain");
   const [error, setError] = useState<string | null>(null);
   const emailRef = useRef<HTMLInputElement | null>(null);
   const domainRef = useRef<HTMLInputElement | null>(null);
@@ -65,9 +66,15 @@ export function SignupSteps({ prefilledDomain }: { prefilledDomain: string | nul
               className={INPUT}
               placeholder="yourbusiness.com"
             />
+            {/* A submit button, so before hydration or without JavaScript it
+                still works: the server checks the domain and comes back on
+                the email step. Once hydrated, the click is handled here. */}
             <button
-              type="button"
-              onClick={next}
+              type="submit"
+              onClick={(e) => {
+                e.preventDefault();
+                next();
+              }}
               className="shrink-0 py-2.5 px-4 bg-ink text-bg font-medium text-[14px] rounded-[7px] hover:opacity-90 transition-opacity cursor-pointer"
             >
               Continue

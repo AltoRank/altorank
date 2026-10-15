@@ -57,7 +57,9 @@ export function EmbeddedCheckoutForm({
   const [ready, setReady] = useState(false);
   // The latest handler, without making it a reason to rebuild the form.
   const report = useRef(onError);
-  report.current = onError;
+  useEffect(() => {
+    report.current = onError;
+  }, [onError]);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,8 +138,6 @@ export function CheckoutSheet({
   lede?: string;
   children: React.ReactNode;
 }) {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -149,7 +149,8 @@ export function CheckoutSheet({
       document.body.style.overflow = prev;
     };
   }, [open, onClose]);
-  if (!mounted || !open) return null;
+  // Opened only by a click, so only ever in the browser.
+  if (!open || typeof document === "undefined") return null;
   return createPortal(
     <div className="theme-light fixed inset-0 z-[300]">
       <button type="button" aria-label="Close checkout" className="absolute inset-0 h-full w-full cursor-default bg-black/30" onClick={onClose} />

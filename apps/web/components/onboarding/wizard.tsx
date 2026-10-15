@@ -491,10 +491,20 @@ export function OnboardingWizard({
   const autoReady = autoEligible && !autoTried && !reading && profile !== null && readFailure === null && !rivalsLoading && discovery !== "pending";
   useEffect(() => {
     if (!autoReady || !profile) return;
-    setAutoTried(true);
-    if (finishBlocker(withPendingCompetitor(profile, competitorDraft.current))) return;
-    finish({ auto: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- finish is a plain function; this fires once, when the read has landed
+    const blocked = finishBlocker(withPendingCompetitor(profile, competitorDraft.current)) !== null;
+    // After this render, and only for the effect that is still current: in
+    // development React mounts effects twice, and two finishes would be two
+    // saves racing to start the run.
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (cancelled) return;
+      setAutoTried(true);
+      if (!blocked) finish({ auto: true });
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- finish and profile are read once, when the read has landed
   }, [autoReady]);
   // Until then the reading screen stays up, so the form never flashes on
   // the way to the run.

@@ -59,6 +59,14 @@ async function signUp(formData: FormData) {
     redirect("/signup?error=" + encodeURIComponent(reach.reason) + "&domain=" + encodeURIComponent(domain) + carry);
   }
 
+  // The domain step on its own: the form asks one question at a time, and
+  // before the page has hydrated (or without JavaScript) "Continue" submits
+  // here with no email yet. The domain is checked, so a typo is caught before
+  // anything else is asked, and the form comes back on the email.
+  if (!email?.trim()) {
+    redirect("/signup?domain=" + encodeURIComponent(domain) + carry);
+  }
+
   // The account's name, from the domain, because asking for both is asking
   // the same question twice: nobody signs up as "Acme" from vitaminshop.de.
   // The wizard overwrites the BUSINESS name minutes later from what it reads
@@ -280,7 +288,7 @@ export default async function SignUpPage(props: {
         )}
         {/* The domain, then the email, then a code typed on the next page:
             no password, and no leaving the tab to click a link. */}
-        <SignupSteps prefilledDomain={prefilled} />
+        <SignupSteps prefilledDomain={prefilled} startOnDomain={Boolean(searchParams?.error)} />
       </form>
 
       <p className="text-center text-sm text-ink-3">

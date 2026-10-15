@@ -12,12 +12,12 @@ export function CodeInput({ length = 6 }: { length?: number }) {
   const ref = useRef<HTMLInputElement | null>(null);
   return (
     <div>
-      <label htmlFor="signup-code" className="text-[12.5px] font-medium text-ink-2 mb-1.5 block">
+      <label htmlFor="auth-code" className="text-[12.5px] font-medium text-ink-2 mb-1.5 block">
         Code
       </label>
       <input
         ref={ref}
-        id="signup-code"
+        id="auth-code"
         name="code"
         required
         autoFocus

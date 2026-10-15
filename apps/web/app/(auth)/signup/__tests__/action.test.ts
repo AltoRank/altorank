@@ -123,6 +123,15 @@ beforeEach(() => {
   mocks.existingSignup.mockResolvedValue({ accountId: null, workspaceId: null });
 });
 
+describe("the domain step on its own", () => {
+  it("checks the domain and comes back on the email step, creating nothing", async () => {
+    const url = await submit({ domain: "acme.com", ...SOURCE });
+    expect(url).toBe("/signup?domain=acme.com" + CARRY);
+    expect(mocks.checkDomainReachable).toHaveBeenCalledWith("acme.com");
+    expect(mocks.sendSignupConfirmation).not.toHaveBeenCalled();
+  });
+});
+
 describe("a new account records where it came from, once", () => {
   it("writes one info row with the source in its context", async () => {
     const url = await submit({ ...BASE, ...SOURCE });

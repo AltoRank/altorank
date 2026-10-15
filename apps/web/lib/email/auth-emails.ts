@@ -81,13 +81,17 @@ export function renderPasswordReset(url: string, email: string) {
   };
 }
 
-export function renderMagicLink(url: string, email: string) {
+export function renderMagicLink(url: string, email: string, code?: string | null) {
   return {
     footerNote: `Sent to ${email} because a sign-in link was requested on AltoRank.`,
-    subject: "Your AltoRank sign-in link",
+    subject: code ? `${code} is your AltoRank sign-in code` : "Your AltoRank sign-in link",
     html:
       `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Sign in to AltoRank</h1>` +
-      emailParagraph("Here is your one-time sign-in link. No password needed.") +
+      (code
+        ? emailParagraph("Type this code on the sign-in page:") +
+          `<p style="margin:0 0 18px;font-family:ui-monospace,Menlo,monospace;font-size:28px;letter-spacing:6px;font-weight:600;color:${EMAIL_INK};">${esc(code)}</p>` +
+          emailParagraph("Or sign in with one click:")
+        : emailParagraph("Here is your one-time sign-in link. No password needed.")) +
       emailButton(url, "Sign in") +
       emailParagraph("The link works once and expires in one hour. If you did not request it, ignore this email; nobody can sign in without it.") +
       fallbackLine(url),
@@ -195,5 +199,26 @@ export async function sendPasswordReset(email: string): Promise<boolean> {
   const url = authLink("recovery", token, "/reset-password/confirm");
   const { subject, html, footerNote } = renderPasswordReset(url, email);
   await sendTransactionalEmail(email, subject, html, footerNote, "Set a new password in one click.");
+  return true;
+}
+
+/**
+ * Email a one-time sign-in code, with the link beside it, for accounts made
+ * without a password (signup asks for a code since 2026-10-15). Resolves
+ * false, silently, when the address has no account, like the reset: the form
+ * says the same thing either way. Throws on a configuration failure.
+ */
+export async function sendSignInCode(email: string, next: string): Promise<boolean> {
+  const admin = createServiceClient();
+  const { data, error } = await admin.auth.admin.generateLink({ type: "magiclink", email });
+  if (error) {
+    if (isUserNotFound(error)) return false;
+    throw new Error(`Could not generate the sign-in code: ${error.message}`);
+  }
+  const token = data.properties?.hashed_token;
+  if (!token) throw new Error("Supabase returned a sign-in link without a token hash");
+  const url = authLink("magiclink", token, next);
+  const { subject, html, footerNote } = renderMagicLink(url, email, data.properties?.email_otp || null);
+  await sendTransactionalEmail(email, subject, html, footerNote, "Your one-time sign-in code.");
   return true;
 }
