@@ -42,6 +42,23 @@ export const INTEGRATION_DESCRIPTIONS: Record<string, string> = {
 };
 
 /**
+ * Tile copy for the read-only analytics connections, where the seeded row is
+ * wrong. Kept apart from INTEGRATION_DESCRIPTIONS because those are also
+ * written to the table by migration 065; the /connect page reads both maps
+ * before the row (app/(dashboard)/connect/page.tsx), so no migration is
+ * needed for these.
+ *
+ * GA4 was seeded as "Traffic + engagement, auto-attributed to each
+ * article". The only reader of GA4 rows is the monthly report, which sums
+ * pageviews and sessions for the whole site over the period
+ * (aggregateReportData in lib/reports/metrics.ts). Nothing attributes them
+ * to an article.
+ */
+export const ANALYTICS_DESCRIPTIONS: Record<string, string> = {
+  ga4: "Site-wide pageviews and sessions, summed in the monthly report",
+};
+
+/**
  * Nouns a description must not use unless the named adapter sends them.
  *
  * The audit's list, kept as an assertion rather than a comment. Add to the

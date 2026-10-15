@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  ANALYTICS_DESCRIPTIONS,
   INTEGRATION_DESCRIPTIONS,
   UNIMPLEMENTED_FEATURE_NOUNS,
 } from "../integration-descriptions";
@@ -54,5 +55,14 @@ describe("INTEGRATION_DESCRIPTIONS", () => {
       const source = readFileSync(join(ADAPTER_DIR, file), "utf8");
       expect(source, `${id} claims tags`).toMatch(/tags/);
     }
+  });
+});
+
+describe("ANALYTICS_DESCRIPTIONS", () => {
+  /** GA4 rows reach only the monthly report, as a site total. */
+  it("does not say GA4 traffic is attributed to each article", () => {
+    expect(ANALYTICS_DESCRIPTIONS.ga4).toBeDefined();
+    expect(ANALYTICS_DESCRIPTIONS.ga4.toLowerCase()).not.toMatch(/attribut|each article|per article/);
+    expect(ANALYTICS_DESCRIPTIONS.ga4).toContain("monthly report");
   });
 });
