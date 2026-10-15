@@ -1,16 +1,23 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui";
 import { createCheckoutSession } from "@/app/actions/billing";
-import type { BillingInterval, SelfServePlan } from "@/lib/stripe";
+import { PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
+import { CheckoutSheet, EmbeddedCheckoutForm, embeddedCheckoutAvailable } from "./embedded-checkout";
 
 /**
  * The one button that opens the trial's checkout: card required, seven days
  * before the first charge, Managed and monthly unless told otherwise.
  * Everywhere the trial is offered renders this so the offer and the checkout
  * it opens cannot drift. TrialOffer passes the plan and interval chosen on it.
+ *
+ * With a publishable key the card is taken on this page, in Stripe's Embedded
+ * Checkout (./embedded-checkout.tsx): in a sheet over the page by default, or
+ * in place of the button with `embed="inline"` (the gate's side rail, so the
+ * form sits beside the article rather than over it). Without one, the button
+ * goes to Stripe's hosted page as it always did.
  */
 export function StartTrialButton({
   returnTo,
@@ -21,6 +28,7 @@ export function StartTrialButton({
   className,
   onError,
   onStart,
+  embed = "sheet",
 }: {
   /** Same-origin path to land on after the card is taken. */
   returnTo?: string;
@@ -39,8 +47,56 @@ export function StartTrialButton({
   onError?: (message: string) => void;
   /** Told when the button is pressed, before checkout opens: instrumentation (onboarding.step). */
   onStart?: () => void;
+  /** Where Stripe's form opens when it can open on the page: a sheet, or in place of the button. */
+  embed?: "sheet" | "inline";
 }) {
   const [pending, start] = useTransition();
+  const [open, setOpen] = useState(false);
+  const fail = (message: string) => {
+    onError?.(message);
+    toast.error(message);
+    setOpen(false);
+  };
+
+  if (embeddedCheckoutAvailable) {
+    const price = interval === "month" ? `${PLAN_PRICES[plan]} per month` : `${PLAN_YEARLY_PRICES[plan]} per year`;
+    const form = <EmbeddedCheckoutForm key={`${plan}-${interval}`} plan={plan} interval={interval} returnTo={returnTo} onError={fail} />;
+    if (embed === "inline" && open) {
+      return (
+        <div className="flex flex-col gap-2">
+          {form}
+          <button type="button" onClick={() => setOpen(false)} className="self-center text-[12.5px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink-2">
+            Not now
+          </button>
+        </div>
+      );
+    }
+    return (
+      <>
+        <Button
+          variant={variant}
+          className={className}
+          onClick={() => {
+            onStart?.();
+            setOpen(true);
+          }}
+        >
+          {label}
+        </Button>
+        {embed === "sheet" && (
+          <CheckoutSheet
+            open={open}
+            onClose={() => setOpen(false)}
+            title={`Start your ${TRIAL_DAYS}-day trial`}
+            lede={`${PLAN_LABELS[plan]}: €0 today, then ${price}. Cancel from Billing before the trial ends and nothing is charged.`}
+          >
+            {form}
+          </CheckoutSheet>
+        )}
+      </>
+    );
+  }
+
   return (
     <Button
       variant={variant}
