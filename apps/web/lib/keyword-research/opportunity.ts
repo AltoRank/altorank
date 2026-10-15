@@ -429,7 +429,7 @@ export async function qualifyOpportunities(
       let failed = false;
       const page = await patiently(() => watchRefusals(async () => {
         try {
-          const serp = await timed("results_pages", () => withStage("results_pages", () => fetchAdvancedSerp(c.term, context)));
+          const serp = await timed("results_pages", () => withStage("results_pages", () => fetchAdvancedSerp(c.term, context, { rich: true })));
           firstLook?.serps?.set(c.term.trim().toLowerCase(), serp);
           return serp;
         } catch (err) {
@@ -663,7 +663,7 @@ export const OPPORTUNITY_MIN_TOKENS = 400;
 
 /** Business names the navigational rule should recognise in a phrase. */
 function namedBusinesses(business: FitProfile | null): string[] {
-  return [...(business?.competitors ?? []), ...(business?.searchRivals ?? [])].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+  return [...(business?.competitors ?? []), ...(business?.competitorNames ?? []), ...(business?.searchRivals ?? [])].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
 }
 
 /** The evidence an approval cites: the editorial results, then discussion when the page has only one article. */

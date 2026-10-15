@@ -162,8 +162,8 @@ export async function regenerateImageAction(input: {
       },
     );
     const path = proposalPath(workspace.id, article.id, image.extension);
-    // The bucket only has a public-read policy; writes go through the service
-    // role, as the generator's do.
+    // The bucket has no policy for a person's client (public by path only,
+    // migration 112); writes go through the service role, as the generator's do.
     const url = await uploadImageBuffer(createServiceClient(), image.data, path, image.contentType);
     return { ok: true, url, path };
   } catch (err) {
@@ -214,7 +214,8 @@ export async function discardProposedImageAction(input: { articleId: string; pat
     if (!input.path.startsWith(prefix)) return;
     await createServiceClient().storage.from("article-images").remove([input.path]);
   } catch {
-    // An orphaned file in a public bucket is a cost, not a leak.
+    // A proposal left behind goes with its article if that is deleted before it
+    // is ever published (lib/storage/purge.ts).
   }
 }
 

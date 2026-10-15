@@ -17,6 +17,9 @@ export const ONBOARDING_STEPS = [
   "profile_shown",
   "competitor_step_done",
   "plan_clicked",
+  // The run started by itself once the site read landed (wizard autoStart),
+  // with no click: kept apart from plan_clicked so the funnel says which.
+  "plan_auto",
   "run_started",
   "gate_shown",
   "trial_clicked",

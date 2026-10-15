@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { getValidAccessToken } from "@/lib/google/oauth";
 import { GSCApiError, inspectUrl } from "@/lib/google/gsc";
@@ -55,11 +55,15 @@ export async function checkIndexing(articleId: string): Promise<CheckIndexingRes
   }
 
   try {
+    // The row was read through the person's own client above, so it is one of
+    // their sites; the refreshed token and the resolved property are written
+    // by the server (a Google connection is server-written, migration 111).
+    const admin = createServiceClient();
     const accessToken = await getValidAccessToken(encrypted, async (next) => {
-      await supabase.from("workspace_integrations").update({ tokens: { encrypted: next } }).eq("id", integration.id);
+      await admin.from("workspace_integrations").update({ tokens: { encrypted: next } }).eq("id", integration.id);
     });
     const siteUrl = await resolveGscSiteUrl(
-      supabase,
+      admin,
       { id: integration.id, config: (integration.config as { gscSiteUrl?: string } | null) ?? null },
       workspace.domain,
       accessToken,

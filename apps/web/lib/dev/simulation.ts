@@ -28,6 +28,12 @@ export type Simulation = {
    * customer sees is to put live keys on a laptop.
    */
   gate?: boolean;
+  /**
+   * Override ONBOARDING_AUTOSTART for this browser. The e2e server runs with
+   * it off so the check form keeps its coverage; this turns it back on for
+   * the one spec that walks the auto-started run.
+   */
+  autostart?: boolean;
 };
 
 export async function getSimulation(): Promise<Simulation | null> {

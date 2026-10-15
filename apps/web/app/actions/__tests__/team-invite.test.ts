@@ -44,7 +44,13 @@ vi.mock("@/lib/supabase/server", () => ({
       select: () =>
         builder(
           table,
-          table === "invites" ? pendingInvite : table === "workspaces" ? [{ id: "ws-1" }] : null,
+          table === "invites"
+            ? pendingInvite
+            : table === "workspaces"
+              ? [{ id: "ws-1" }]
+              : table === "account_members"
+                ? { workspace_ids: null }
+                : null,
         ),
     }),
   }),

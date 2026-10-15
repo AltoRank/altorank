@@ -71,9 +71,18 @@ export type SerpData = {
   aiOverview: AiOverview | null;
 };
 
+/**
+ * `rich` also asks for the AI Overview when Google loads it asynchronously
+ * (without it DataForSEO returns only a cached one) and opens People Also Ask
+ * one click deep. Measured on ten first-draft keywords (2026-10-15): AI
+ * Overview on 8 of 9 results pages against 6 of 10, more questions kept for
+ * the FAQ, for about $0.0007 more a page (the AI Overview charge is refunded
+ * when there is none).
+ */
 export async function fetchAdvancedSerp(
   keyword: string,
   locale: { languageCode: string; locationCode: number },
+  options: { rich?: boolean } = {},
 ): Promise<SerpData> {
   const response = await post<SerpAdvancedResult>(
     "/serp/google/organic/live/advanced",
@@ -82,6 +91,7 @@ export async function fetchAdvancedSerp(
         keyword,
         location_code: locale.locationCode,
         language_code: locale.languageCode,
+        ...(options.rich ? { load_async_ai_overview: true, people_also_ask_click_depth: 1 } : {}),
       },
     ],
   );

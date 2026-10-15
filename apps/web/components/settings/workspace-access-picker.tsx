@@ -9,18 +9,24 @@ import type { Workspace } from "@/lib/types";
  *
  * Empty is the default and means every workspace, present and future. The copy
  * says so, because "no boxes ticked" would otherwise read as "no access".
+ *
+ * `limited`: the person choosing holds only some sites, so the list is theirs
+ * and empty is not "every site" but "pick one" (lib/team/access.ts).
  */
 export function WorkspaceAccessPicker({
   workspaces,
   value,
   onChange,
   name = "workspace_ids",
+  limited = false,
 }: {
   workspaces: Pick<Workspace, "id" | "name" | "domain">[];
   value: string[];
   onChange: (next: string[]) => void;
   /** Form field name, so a plain form submit carries the selection too. */
   name?: string;
+  /** The person choosing holds only some sites. */
+  limited?: boolean;
 }) {
   function toggle(id: string, on: boolean) {
     onChange(on ? Array.from(new Set([...value, id])) : value.filter((v) => v !== id));
@@ -29,7 +35,7 @@ export function WorkspaceAccessPicker({
     <div>
       <div className="mb-1.5 flex items-baseline justify-between">
         <span className="text-[12.5px] font-medium text-ink-2">Workspace access</span>
-        <span className="text-[11.5px] text-ink-3">{value.length === 0 ? "All workspaces" : `${value.length} of ${workspaces.length}`}</span>
+        <span className="text-[11.5px] text-ink-3">{value.length === 0 ? (limited ? "None picked" : "All workspaces") : `${value.length} of ${workspaces.length}`}</span>
       </div>
       <div className="max-h-[180px] overflow-y-auto rounded-lg border border-line bg-panel">
         {workspaces.map((w) => (
@@ -48,7 +54,11 @@ export function WorkspaceAccessPicker({
         ))}
         {workspaces.length === 0 && <div className="px-3 py-3 text-[12.5px] text-ink-3">No workspaces yet.</div>}
       </div>
-      <p className="mt-1.5 text-[11.5px] text-ink-3">Leave empty to give access to all workspaces, including ones added later.</p>
+      <p className="mt-1.5 text-[11.5px] text-ink-3">
+        {limited
+          ? "Pick at least one. You can give access only to workspaces you have yourself."
+          : "Leave empty to give access to all workspaces, including ones added later."}
+      </p>
     </div>
   );
 }

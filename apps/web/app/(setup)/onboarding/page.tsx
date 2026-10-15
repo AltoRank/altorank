@@ -19,6 +19,8 @@ import { OPEN_SETUP, type PreTrialSetup } from "@/lib/onboarding/setup-retry";
 import { followUpPromised } from "@/lib/auth/operators";
 import { TrackStep } from "@/components/onboarding/track-step";
 import { fullArticleOn, readFirstArticleBody } from "@/lib/onboarding/first-article-body";
+import { trialOfferFacts } from "@/lib/billing/trial-offer";
+import { stripeTaxEnabled } from "@/lib/stripe";
 
 export const metadata: Metadata = { title: "Set up your site" };
 
@@ -197,6 +199,13 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       gateReport={gateReport}
       initialRun={run}
       otherSites={otherSites}
+      // When a trial started now would end, on the server's clock, and
+      // whether checkout adds VAT: the two facts the price box states.
+      offer={trialOfferFacts(new Date(), stripeTaxEnabled)}
+      // The run starts as soon as the site read lands, with what was read
+      // shown beside it (components/onboarding/what-we-understood.tsx). On
+      // unless ONBOARDING_AUTOSTART=0 puts the check screen back first.
+      autoStart={simulation?.autostart ?? process.env.ONBOARDING_AUTOSTART !== "0"}
     />
     </>
   );

@@ -38,7 +38,11 @@ function perTask(endpoint: string, task: Task): number {
     if (endpoint.includes("/task_post")) return 0.0012;
     const depth = Number(task.depth);
     const pages = Number.isFinite(depth) && depth > 0 ? Math.ceil(depth / 10) : 1;
-    return 0.004 * pages;
+    // An asynchronous AI Overview is $0.002 more (refunded when absent), each
+    // People Also Ask click $0.00015.
+    const aio = task.load_async_ai_overview === true ? 0.002 : 0;
+    const clicks = Number(task.people_also_ask_click_depth);
+    return 0.004 * pages + aio + (Number.isFinite(clicks) && clicks > 0 ? 0.00015 * clicks : 0);
   }
   if (endpoint.startsWith("/backlinks/")) {
     const targets = task.targets && typeof task.targets === "object" ? Object.keys(task.targets as object).length : 0;

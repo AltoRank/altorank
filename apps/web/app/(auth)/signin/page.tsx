@@ -91,6 +91,15 @@ export default async function SignInPage(props: {
         <SubmitButton pendingLabel="Signing in…">Sign in</SubmitButton>
       </form>
 
+      {/* Accounts made since signup asked for a code have no password they
+          know: this is their way in, and anyone's who forgot theirs. */}
+      <p className="text-center text-[12.5px] text-ink-3">
+        No password?{" "}
+        <Link href={next ? `/signin/code?next=${encodeURIComponent(next)}` : "/signin/code"} className="font-medium text-accent-ink hover:underline">
+          Email me a sign-in code
+        </Link>
+      </p>
+
       <p className="text-center text-sm text-ink-3">
         Don&apos;t have an account?{" "}
         {/* No `next` here: signup ends at the confirm email and then the

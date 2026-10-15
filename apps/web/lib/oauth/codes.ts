@@ -95,6 +95,20 @@ export async function exchangeCode(supabase: SupabaseClient, input: ExchangeInpu
   if (row.redirect_uri !== input.redirectUri) return { ok: false, error: "invalid_grant", description: "redirect_uri does not match the authorization request." };
   if (!verifyPkce(input.codeVerifier, row.code_challenge)) return { ok: false, error: "invalid_grant", description: "PKCE verification failed." };
 
+  // The token is an account-wide key. The person who approved it must still be
+  // on the account with every site: their access can have been narrowed, or
+  // they removed, in the ten minutes the code lives (migration 111 refuses
+  // the key row in the database as well).
+  const { data: approver, error: approverError } = await supabase
+    .from("account_members")
+    .select("workspace_ids")
+    .eq("account_id", row.account_id)
+    .eq("user_id", row.user_id)
+    .maybeSingle();
+  if (approverError || !approver || (approver as { workspace_ids?: unknown }).workspace_ids != null) {
+    return { ok: false, error: "invalid_grant", description: "The person who approved this no longer has access to every site on the account." };
+  }
+
   // Burn the code first. If two exchanges race, the second update matches no
   // row and the loser gets invalid_grant rather than a second token.
   const { data: burned } = await supabase

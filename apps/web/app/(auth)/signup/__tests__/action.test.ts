@@ -27,9 +27,11 @@ const mocks = vi.hoisted(() => ({
   checkDomainReachable: vi.fn(),
   recordEvent: vi.fn(),
   existingSignup: vi.fn(),
+  cookieSet: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
+vi.mock("next/headers", () => ({ cookies: async () => ({ set: mocks.cookieSet }) }));
 vi.mock("@/lib/supabase/server", () => ({ createServiceClient: mocks.createServiceClient }));
 vi.mock("@/lib/email/auth-emails", () => ({ sendSignupConfirmation: mocks.sendSignupConfirmation }));
 vi.mock("@/lib/domain/reachable", () => ({ checkDomainReachable: mocks.checkDomainReachable }));
@@ -121,11 +123,20 @@ beforeEach(() => {
   mocks.existingSignup.mockResolvedValue({ accountId: null, workspaceId: null });
 });
 
+describe("the domain step on its own", () => {
+  it("checks the domain and comes back on the email step, creating nothing", async () => {
+    const url = await submit({ domain: "acme.com", ...SOURCE });
+    expect(url).toBe("/signup?domain=acme.com" + CARRY);
+    expect(mocks.checkDomainReachable).toHaveBeenCalledWith("acme.com");
+    expect(mocks.sendSignupConfirmation).not.toHaveBeenCalled();
+  });
+});
+
 describe("a new account records where it came from, once", () => {
   it("writes one info row with the source in its context", async () => {
     const url = await submit({ ...BASE, ...SOURCE });
 
-    expect(url).toBe("/signup?success=Check+your+email+to+confirm+your+account");
+    expect(url).toBe("/signup/verify");
     expect(mocks.recordEvent).toHaveBeenCalledOnce();
     expect(infoRows()).toEqual([
       {
@@ -152,7 +163,7 @@ describe("a new account records where it came from, once", () => {
 
     const url = await submit({ ...BASE, ...SOURCE });
 
-    expect(url).toBe("/signup?success=Check+your+email+to+confirm+your+account");
+    expect(url).toBe("/signup/verify");
     expect(mocks.recordEvent).not.toHaveBeenCalled();
     expect(admin.inserts).toEqual([]);
   });

@@ -17,8 +17,11 @@ import posthog from "posthog-js";
  * A dialog rather than the inline row it replaced: the workspace list needs
  * height, and the head row is one line tall. Owner is not offered - ownership
  * is changed on an existing member by an owner, never granted by email.
+ *
+ * `limited`: the inviter holds only some sites, so the invite names at least
+ * one of them (the action and migration 102 refuse anything wider).
  */
-export function InviteMemberForm() {
+export function InviteMemberForm({ limited = false }: { limited?: boolean } = {}) {
   const { workspaces } = useWorkspace();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -82,7 +85,7 @@ export function InviteMemberForm() {
             </select>
             <span className="text-[11.5px] text-ink-3">{EDITOR_LIMITS_COPY}</span>
           </label>
-          <WorkspaceAccessPicker workspaces={workspaces} value={access} onChange={setAccess} />
+          <WorkspaceAccessPicker workspaces={workspaces} value={access} onChange={setAccess} limited={limited} />
           <div className="flex justify-end gap-2 pt-1">
             <Button type="button" onClick={() => setOpen(false)} disabled={pending}>
               Cancel

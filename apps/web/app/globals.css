@@ -219,8 +219,13 @@ body {
 .article-text a { color: var(--accent-ink); text-decoration: underline; text-decoration-color: var(--accent-soft); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .article-text strong, .article-text b { font-weight: 600; }
 .article-text blockquote { margin: 1em 0; padding-left: 1em; border-left: 3px solid var(--line); color: var(--ink-2); }
-.article-text table { display: block; max-width: 100%; margin: 1em 0; overflow-x: auto; border-collapse: collapse; font-size: 13.5px; line-height: 1.55; }
-.article-text th, .article-text td { padding: 6px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+.article-text table { display: block; max-width: 100%; margin: 1em 0; overflow-x: auto; -webkit-overflow-scrolling: touch; border-collapse: collapse; font-size: 13.5px; line-height: 1.55; }
+/* Cells never break a word: `overflow-wrap: anywhere` above is for long URLs
+   in prose, and inherited by a cell it cut "Cross-stitch" into four lines
+   on a phone (UX audit 2026-10-12, #11). A cell keeps a readable width and
+   the table scrolls sideways in its own box instead. */
+.article-text th, .article-text td { min-width: 7.5rem; padding: 6px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: normal; word-break: normal; hyphens: manual; }
+.article-text a:not([href]) { color: inherit; text-decoration: none; }
 .article-text th { background: var(--panel-2); font-weight: 600; }
 .article-text img { max-width: 100%; height: auto; border-radius: var(--radius); }
 .article-text hr { margin: 1.5em 0; border: 0; border-top: 1px solid var(--line); }

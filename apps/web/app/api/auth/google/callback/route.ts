@@ -81,7 +81,9 @@ async function linkAccountWorkspaces(
       const fresh = { tokens: { encrypted }, connected_at: connectedAt, needs_reconnect: false, last_sync_error: null };
       if (site) rows.push({ workspace_id: ws.id, integration_id: "gsc", config: { type: "gsc", gscSiteUrl: site.siteUrl }, ...fresh });
       if (property) rows.push({ workspace_id: ws.id, integration_id: "ga4", config: { type: "ga4", ga4PropertyId: property.propertyId }, ...fresh });
-      await supabase.from("workspace_integrations").upsert(rows, { onConflict: "workspace_id,integration_id" });
+      // By the server (migration 111): the sites are the ones the person's
+      // own client listed above, and the property is the one matched to each.
+      await createServiceClient().from("workspace_integrations").upsert(rows, { onConflict: "workspace_id,integration_id" });
       linked.push({ id: ws.id as string, gsc: Boolean(site), ga4: Boolean(property) });
     }
   } catch (err) {
@@ -242,7 +244,7 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
       const withGsc = linked.filter((l) => l.gsc);
       if (withGsc.length === 1) {
         try {
-          await backfillAnalytics(supabase, withGsc[0].id, "gsc", 7);
+          await backfillAnalytics(createServiceClient(), withGsc[0].id, "gsc", 7);
         } catch {
           // The nightly sync covers the same days.
         }
@@ -250,8 +252,11 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
       return NextResponse.redirect(new URL("/connect/google", request.url));
     }
 
-    // Store encrypted tokens in workspace_integrations
-    const { error: dbError } = await supabase
+    // Store encrypted tokens in workspace_integrations, by the server
+    // (migration 111): the site was checked above through the person's own
+    // client, and the token is the one this consent has just returned.
+    const admin = createServiceClient();
+    const { error: dbError } = await admin
       .from("workspace_integrations")
       .upsert(
         // A row for every integration this token was granted, not for the
@@ -289,7 +294,7 @@ async function handleCallback(request: NextRequest): Promise<NextResponse> {
     // is not fatal; the nightly cron will cover the same days.
     let synced = 0;
     try {
-      const r = await backfillAnalytics(supabase, workspaceId, integrationId, 7);
+      const r = await backfillAnalytics(admin, workspaceId, integrationId, 7);
       synced = r.gsc + r.ga4;
     } catch {
       synced = 0;

@@ -63,6 +63,12 @@ export interface PublishResult {
    * editor can open.
    */
   status?: "draft" | "publish";
+  /**
+   * Where the destination serves the workspace's IndexNow key, when it serves
+   * it itself and says so (the WordPress plugin). The IndexNow submission
+   * after the publish uses it instead of assuming the host root.
+   */
+  indexNowKeyLocation?: string;
 }
 
 /** One existing post on the far side, for refreshes and internal-link discovery. */

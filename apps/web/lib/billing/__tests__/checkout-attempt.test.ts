@@ -97,3 +97,15 @@ it("hands back the same open checkout when the same price is chosen again", asyn
   expect(expire).not.toHaveBeenCalled();
   expect(create.mock.calls[0][1]).toEqual({idempotencyKey:"checkout:attempt-one"});
 });
+it("replaces an open hosted checkout when the embedded form asks for the same price", async () => {
+  const embedded = {...parameters, ui_mode:"embedded_page" as const, return_url:"https://app/checkout/complete"};
+  rpc.mockResolvedValueOnce({data:[{id:"attempt-one",parameters,stripe_session_id:"cs_one"}]})
+    .mockResolvedValueOnce({data:[{id:"attempt-two",expires_at:reservedAgo(0),parameters:embedded}]});
+  retrieve.mockResolvedValue({id:"cs_one",client_reference_id:"account",status:"open"});
+  create.mockResolvedValue({id:"cs_two",client_secret:"cs_two_secret",status:"open"});
+  const session = await createPendingCheckout("account",embedded);
+  // A hosted session has no client secret to mount: it is closed, not handed back.
+  expect(expire).toHaveBeenCalledWith("cs_one");
+  expect(create.mock.calls[0][0].ui_mode).toBe("embedded_page");
+  expect(session.client_secret).toBe("cs_two_secret");
+});

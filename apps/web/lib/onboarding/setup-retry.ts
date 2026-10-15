@@ -23,7 +23,7 @@
 // Pure and client-safe: the wizard reads it on the live run, the page on the
 // stored one.
 
-import { isTerminal, onboardingOutcome, stateFromRun, type OnboardingRunSnapshot, type OnboardingState } from "./events";
+import { isTerminal, onboardingOutcome, providerDown, stateFromRun, type OnboardingRunSnapshot, type OnboardingState } from "./events";
 
 /** The stored run as the state the screen renders, or null when there has never been one. */
 export function runStateOf(snapshot: OnboardingRunSnapshot | null | undefined): OnboardingState | null {
@@ -97,6 +97,10 @@ export function firstArticleFailed(fact: { hasArticle: boolean; writing: boolean
  *
  *   article          the first article exists: show its shape, ask for the card
  *   writing          it is being written right now
+ *   provider-down    the run fell short because a provider did not answer:
+ *                    our side, not the site. No retry button (it would buy
+ *                    the same outage) and no card; the server tries again
+ *                    tonight when it may (lib/onboarding/provider-retry.ts)
  *   retry            the run fell short and setup may run again
  *   first-failed     the one pre-trial article was attempted and failed on our
  *                    side; the trial writes it
@@ -109,14 +113,31 @@ export function firstArticleFailed(fact: { hasArticle: boolean; writing: boolean
  * 2026-09-28 and were shown "Setup finished without writing an article. The
  * trial opens the calendar" beside a card form, over an empty calendar.
  */
-export type SetupEnding = "article" | "writing" | "retry" | "first-failed" | "nothing-planned" | "no-article";
+export type SetupEnding = "article" | "writing" | "provider-down" | "retry" | "first-failed" | "nothing-planned" | "no-article";
 
 export function setupEnding(
   run: OnboardingState | null,
-  fact: { hasArticle: boolean; writing: boolean; setupAllowed: boolean; firstAttempted: boolean },
+  fact: {
+    hasArticle: boolean;
+    writing: boolean;
+    setupAllowed: boolean;
+    firstAttempted: boolean;
+    /**
+     * The overnight sweep will still pick this run up (provider-retry-gate.ts
+     * `providerRetryWindowOpen`). Unknown counts as open: a run the screen
+     * just watched end is inside it.
+     */
+    providerRetryOpen?: boolean;
+  },
 ): SetupEnding {
   if (fact.hasArticle) return "article";
   if (fact.writing) return "writing";
+  // Only when the promise behind it is kept: the spend gate would let the
+  // sweep start the run, and the run is not too old for the sweep. Outside
+  // that, the ordinary endings below, with a retry button where the gate
+  // allows one, instead of a dead end promising a retry that never comes
+  // (review, 2026-10-12).
+  if (run && isTerminal(run) && !run.error && providerDown(run) && fact.setupAllowed && fact.providerRetryOpen !== false) return "provider-down";
   if (offerSetupRetry(run, fact)) return "retry";
   if (firstArticleFailed(fact)) return "first-failed";
   if (run && isTerminal(run) && onboardingOutcome(run).tone === "nothing_planned") return "nothing-planned";
@@ -131,5 +152,5 @@ export function setupEnding(
  * the full card ask directly under the retry button.
  */
 export function asksForCard(ending: SetupEnding): boolean {
-  return ending !== "nothing-planned" && ending !== "retry";
+  return ending !== "nothing-planned" && ending !== "retry" && ending !== "provider-down";
 }

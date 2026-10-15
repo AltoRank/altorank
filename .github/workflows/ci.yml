@@ -79,6 +79,17 @@ jobs:
       # quietly needed a service fails here instead of passing on a laptop.
       - run: npm run test
 
+      # The WordPress plugin (packages/wordpress-plugin): every PHP file must
+      # parse, and its tests run against in-memory WordPress fakes. A step of
+      # its own rather than a unit test, because the unit tier runs the same on
+      # every machine and not every laptop has PHP; the runner image ships it.
+      # `php -v` first, so a runner without PHP fails here by name.
+      - name: WordPress plugin (php -l and tests)
+        run: |
+          php -v
+          find packages/wordpress-plugin -name '*.php' -print0 | xargs -0 -n1 php -l
+          php packages/wordpress-plugin/tests/run.php
+
       - run: npm run build
 
 

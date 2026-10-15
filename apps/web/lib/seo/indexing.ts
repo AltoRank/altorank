@@ -54,14 +54,37 @@ export function generateIndexNowKey(): string {
   return randomBytes(16).toString("hex");
 }
 
-async function submitIndexNow(host: string, key: string, urls: string[]): Promise<boolean> {
+/**
+ * Where IndexNow should fetch the key: the location the destination reported
+ * when it serves the key itself (the WordPress plugin, which knows its own
+ * scheme and any subdirectory WordPress lives in), else the host root.
+ *
+ * A reported location is used only when it is on the same host as the URL
+ * being submitted and names this key's file; anything else falls back to the
+ * root, so a stray value can never point the submission somewhere else.
+ */
+export function indexNowKeyLocation(host: string, key: string, reported?: string | null): string {
+  const fallback = `https://${host}/${key}.txt`;
+  if (!reported) return fallback;
+  try {
+    const u = new URL(reported);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return fallback;
+    if (u.host !== host || u.search || u.hash || u.username || u.password) return fallback;
+    if (!u.pathname.endsWith(`/${key}.txt`)) return fallback;
+    return u.toString();
+  } catch {
+    return fallback;
+  }
+}
+
+async function submitIndexNow(host: string, key: string, urls: string[], keyLocation: string): Promise<boolean> {
   const res = await fetch("https://api.indexnow.org/indexnow", {
     method: "POST",
     headers: { "content-type": "application/json; charset=utf-8" },
     body: JSON.stringify({
       host,
       key,
-      keyLocation: `https://${host}/${key}.txt`,
+      keyLocation,
       urlList: urls,
     }),
   });
@@ -84,6 +107,9 @@ async function resubmitSitemap(accessToken: string, host: string): Promise<boole
  * Submit a freshly published URL everywhere we can.
  *
  * @param opts.indexNowKey  workspace.indexnow_key; skipped when null.
+ * @param opts.keyLocation  Where the destination says it serves that key
+ *                          (the WordPress plugin reports it); the host root
+ *                          when absent or not on the URL's host.
  * @param opts.gscToken     A live Search Console access token, when the
  *                          workspace has the Google integration; skipped when
  *                          null.
@@ -92,6 +118,7 @@ export async function submitForIndexing(opts: {
   url: string;
   indexNowKey: string | null;
   gscToken: string | null;
+  keyLocation?: string | null;
 }): Promise<IndexingResult> {
   const result: IndexingResult = { indexnow: "no-key", google: "not-connected" };
 
@@ -104,7 +131,8 @@ export async function submitForIndexing(opts: {
 
   if (opts.indexNowKey) {
     try {
-      result.indexnow = (await submitIndexNow(host, opts.indexNowKey, [opts.url]))
+      const keyLocation = indexNowKeyLocation(host, opts.indexNowKey, opts.keyLocation);
+      result.indexnow = (await submitIndexNow(host, opts.indexNowKey, [opts.url], keyLocation))
         ? "submitted"
         : "failed";
     } catch {

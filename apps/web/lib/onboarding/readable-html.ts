@@ -93,6 +93,20 @@ export function safeUrl(raw: string, opts: { images?: boolean } = {}): string | 
   return null;
 }
 
+/**
+ * Where a link in the gate's reader may go: another site (http, https), a
+ * mail address, or a place on the same page. A relative path is the
+ * customer's own site's, and on the gate it would resolve against this
+ * app's origin and land on a page that is not theirs, so it is dropped and
+ * its text kept.
+ */
+function gateLink(raw: string): string | null {
+  const url = safeUrl(raw);
+  if (!url) return null;
+  const probe = url.replace(/[\u0000- \u007f-\u009f]/g, "").toLowerCase();
+  return /^https?:\/\//.test(probe) || probe.startsWith("mailto:") || probe.startsWith("#") ? url : null;
+}
+
 function unquote(value: string): string {
   const q = value[0];
   return value.length >= 2 && (q === "\"" || q === "'") && value.endsWith(q) ? value.slice(1, -1) : value;
@@ -108,7 +122,7 @@ function attributesFor(tag: string, raw: string): string {
     seen.add(name);
     const value = unquote(m[2] ?? "");
     if (tag === "a" && name === "href") {
-      const url = safeUrl(value);
+      const url = gateLink(value);
       if (url) out.push(`href="${escapeAttr(url)}"`);
     } else if (tag === "img" && name === "src") {
       const url = safeUrl(value, { images: true });
@@ -119,7 +133,14 @@ function attributesFor(tag: string, raw: string): string {
       if (/^\d{1,3}$/.test(value.trim())) out.push(`${name}="${value.trim()}"`);
     }
   }
-  if (tag === "a" && out.some((a) => a.startsWith("href="))) out.push('rel="nofollow noopener noreferrer"');
+  // A source opens in a new tab, so a click never leaves the gate mid-pitch,
+  // and sits outside the tab order, so a keyboard reaches the trial button
+  // in one Tab rather than after every citation. Still a link to a screen
+  // reader, which follows it from its own list of links (UX audit
+  // 2026-10-12). Plain text would have thrown the citations away, and they
+  // are the article's evidence.
+  const href = out.find((a) => a.startsWith("href="));
+  if (tag === "a" && href) out.push(href.startsWith('href="#') ? 'tabindex="-1"' : 'rel="nofollow noopener noreferrer" target="_blank" tabindex="-1"');
   return out.length ? ` ${out.join(" ")}` : "";
 }
 

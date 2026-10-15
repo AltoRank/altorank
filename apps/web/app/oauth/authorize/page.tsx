@@ -7,6 +7,8 @@ import { loadClient, redirectAllowed } from "@/lib/oauth/clients";
 import { parseScopes } from "@/lib/oauth/codes";
 import { SCOPE_LABELS, type ApiKeyScope } from "@/lib/agent/api-keys";
 import { APP_NAME } from "@/lib/constants";
+import { isSiteLimited, LIMITED_NO_KEYS } from "@/lib/team/access";
+import { readMemberSites } from "@/lib/team/member-sites";
 import { SubmitButton } from "@/components/auth/submit-button";
 import { decideAuthorization } from "./actions";
 
@@ -69,10 +71,13 @@ export default async function AuthorizePage(props: { searchParams: Promise<Param
 
   let accountName = "";
   let canDecide = true;
+  let limited = false;
   try {
     const { accountId } = await requireAuth(["owner", "admin"]);
     const { data: account } = await supabase.from("accounts").select("name").eq("id", accountId).single();
     accountName = account?.name ?? "your account";
+    // The connector's token reaches every site on the account.
+    limited = isSiteLimited(await readMemberSites(supabase, accountId, user.id));
   } catch {
     canDecide = false;
   }
@@ -98,7 +103,9 @@ export default async function AuthorizePage(props: { searchParams: Promise<Param
         </p>
       </div>
 
-      {!canDecide ? (
+      {limited ? (
+        <Problem title="This needs access to every site">{LIMITED_NO_KEYS}</Problem>
+      ) : !canDecide ? (
         <Problem title="An owner or admin has to approve this">
           {"You are signed in, but only an owner or admin of the account can connect an app. Ask one of them to open this same link."}
         </Problem>
