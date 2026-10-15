@@ -8,6 +8,8 @@ import { GenerationPaceForm } from "@/components/dashboard/generation-pace-form"
 import { AutoApproveForm } from "@/components/dashboard/auto-approve-form";
 import { LocaleSelector } from "@/components/dashboard/locale-selector";
 import { FirstDraftLive } from "./first-draft-live";
+import { DeleteWorkspaceCard } from "./delete-workspace-card";
+import { deleteConfirmationText } from "@/lib/workspaces/delete";
 import type { Article, Keyword, CalendarEntry, Backlink, VoiceProfile, Workspace, PublishingCadence } from "@/lib/types";
 
 type ClientTabsProps = {
@@ -25,6 +27,8 @@ type ClientTabsProps = {
   maxPace: number;
   /** Server clock at render; see FirstDraftLive. */
   now: number;
+  /** Owners and admins may delete the workspace from its Settings tab. */
+  canDelete?: boolean;
 };
 
 const TABS = [
@@ -37,7 +41,7 @@ const TABS = [
   { id: "settings", label: "Settings", icon: <Icons.settings size={14} /> },
 ];
 
-export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, planIncluded, maxPace, now }: ClientTabsProps) {
+export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, planIncluded, maxPace, now, canDelete = false }: ClientTabsProps) {
   const [activeTab, setActiveTab] = useState("overview");
 
   const tabs = TABS.map((t) => {
@@ -59,7 +63,7 @@ export function ClientTabs({ workspace, articles, keywords, calendar, backlinks,
         {activeTab === "voice" && <VoiceTab voice={voice} />}
         {activeTab === "backlinks" && <BacklinksTab backlinks={backlinks} />}
         {activeTab === "settings" && (
-          <SettingsTab workspace={workspace} cadence={cadence} planIncluded={planIncluded} maxPace={maxPace} />
+          <SettingsTab workspace={workspace} cadence={cadence} planIncluded={planIncluded} maxPace={maxPace} canDelete={canDelete} />
         )}
       </div>
     </>
@@ -484,11 +488,13 @@ function SettingsTab({
   cadence,
   planIncluded,
   maxPace,
+  canDelete,
 }: {
   workspace: Workspace;
   cadence: PublishingCadence | null;
   planIncluded: number | null;
   maxPace: number;
+  canDelete: boolean;
 }) {
   return (
     <div className="max-w-lg space-y-4">
@@ -525,6 +531,7 @@ function SettingsTab({
         hasCadence={Boolean(cadence?.enabled)}
       />
       <PublishingCadenceForm workspaceId={workspace.id} cadence={cadence} />
+      {canDelete && <DeleteWorkspaceCard workspaceId={workspace.id} confirmText={deleteConfirmationText(workspace)} />}
     </div>
   );
 }

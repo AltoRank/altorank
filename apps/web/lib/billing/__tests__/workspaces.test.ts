@@ -27,4 +27,14 @@ describe("workspace limits", () => {
     expect(msg).toContain("4 workspaces exist");
     expect(msg).toContain("None has been removed");
   });
+
+  it("says that deleting a workspace frees a slot and pausing does not", () => {
+    for (const a of [
+      { limit: 1, used: 1, remaining: 0, reason: "no-plan" as const, plan: null },
+      { limit: 3, used: 3, remaining: 0, reason: "plan" as const, plan: "starter" as const },
+      { limit: 3, used: 5, remaining: 0, reason: "plan" as const, plan: "starter" as const },
+    ]) {
+      expect(workspaceLimitMessage(a)).toContain("Deleting a workspace from its Settings tab frees a slot");
+    }
+  });
 });

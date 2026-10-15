@@ -103,9 +103,10 @@ export function ClientActions({
             {allowance?.noPlan
               ? "One workspace before choosing a plan. Choose a plan for more workspaces"
               : allowance?.limit !== null && allowance?.limit !== undefined && (allowance.used ?? 0) > allowance.limit
-                ? `This plan includes ${allowance.limit} workspaces and ${allowance.used} are in use. None removed — upgrade for more`
+                ? `This plan includes ${allowance.limit} workspaces and ${allowance.used} are in use. None removed; upgrade for more`
                 : `All ${allowance?.limit} workspaces on this plan are in use. Upgrade for more`}
           </Link>
+          <span className="text-[11px] text-ink-3">Or delete one from its Settings tab to free a slot.</span>
         </div>
       ) : (
         <Button
