@@ -19,6 +19,8 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { sendTransactionalEmail } from "@/lib/email/resend";
 import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_3 } from "@/lib/email/layout";
 import { appUrl } from "@/lib/app-url";
+import { billingEnabled } from "@/lib/stripe";
+import { trialGateBypassed } from "@/lib/billing/trial";
 
 
 
@@ -40,7 +42,26 @@ function fallbackLine(url: string): string {
   return `<p style="margin:0 0 14px;font-size:12px;line-height:1.6;color:${EMAIL_INK_3};word-break:break-all;">If the button does not work, paste this into your browser:<br>${esc(url)}</p>`;
 }
 
-export function renderConfirmSignup(url: string, email: string) {
+/**
+ * The confirmation email.
+ *
+ * `beforeTrial` is whether this signup will meet the trial gate
+ * (lib/billing/trial.ts). Behind it, onboarding writes one article
+ * (PRE_TRIAL_DRAFTS in lib/billing/trial-hold.ts) and shows its title,
+ * outline and sources; the text itself is withheld until the trial starts
+ * (`draftBodyLocked`). This used to promise "until you have read your first
+ * drafts", which is two things the gate does not do. On an install with no
+ * billing, or with the gate off, nobody is asked for a card, so the line is
+ * left out.
+ *
+ * The link lifetime is the Supabase email OTP lifetime, `otp_expiry = 3600`
+ * in supabase/config.toml: one hour, the same as the reset and sign-in links.
+ * This said 24 hours.
+ */
+export function renderConfirmSignup(url: string, email: string, opts: { beforeTrial?: boolean } = {}) {
+  const expiry = opts.beforeTrial
+    ? "The link expires in one hour. No card is asked for until you have seen your first article's title, outline and sources. The full text opens with the trial."
+    : "The link expires in one hour.";
   return {
     footerNote: `Sent to ${email} because an account was created on AltoRank with this address. If that was not you, ignore this email.`,
     subject: "Confirm your AltoRank account",
@@ -48,7 +69,7 @@ export function renderConfirmSignup(url: string, email: string) {
       `<h1 style="margin:0 0 12px;font-size:22px;line-height:1.25;color:${EMAIL_INK};">Confirm your email</h1>` +
       emailParagraph("One click and your account is live. Your workspace is already set up; the first thing you will see is what your site ranks for.") +
       emailButton(url, "Confirm my email") +
-      emailParagraph("The link expires in 24 hours. Nothing is charged and no card is asked for until you have read your first drafts.") +
+      emailParagraph(expiry) +
       fallbackLine(url),
   };
 }
@@ -109,20 +130,28 @@ async function tokenHashFor(type: "recovery", email: string): Promise<string | n
  * Create the user (unconfirmed) and email the confirmation link.
  * Returns the new user's id, or throws with a message safe to show.
  */
-export async function sendSignupConfirmation(opts: { email: string; password: string; name: string; next?: string }): Promise<string> {
+export async function sendSignupConfirmation(opts: { email: string; password: string; next?: string }): Promise<string> {
   const admin = createServiceClient();
   // `signup` creates the user when it does not exist and returns the token
   // for the confirmation link; no email leaves Supabase.
+  //
+  // No `name` in the user metadata. The form asks for none, and what used to
+  // go here was the account name made from the domain, which every email that
+  // names a person then read back as theirs: "You are in, Acme" and "Acme
+  // approved this draft" (callback/route.ts, approval-events.ts `actorName`).
+  // With no name those fall back to the address, which is the person.
   const { data, error } = await admin.auth.admin.generateLink({
     type: "signup",
     email: opts.email,
     password: opts.password,
-    options: { data: { name: opts.name } },
   });
   if (error || !data.user) throw new Error(error?.message ?? "Could not create the account");
 
   const url = authLink("signup", data.properties.hashed_token, opts.next ?? "/dashboard");
-  const { subject, html, footerNote } = renderConfirmSignup(url, opts.email);
+  // A new signup has no plan and has not had a trial, so it meets the gate
+  // unless billing is off, the gate is switched off, or the address is exempt.
+  const beforeTrial = billingEnabled && process.env.TRIAL_GATE_DISABLED !== "1" && !trialGateBypassed(opts.email);
+  const { subject, html, footerNote } = renderConfirmSignup(url, opts.email, { beforeTrial });
   try {
     await sendTransactionalEmail(opts.email, subject, html, footerNote, "One click and your account is live.");
   } catch (e) {
