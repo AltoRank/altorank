@@ -1,11 +1,13 @@
 "use client";
 
 import { useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { pauseWorkspace, resumeWorkspace } from "@/app/actions/workspaces";
 import type { PausedMeta } from "@/lib/types";
+import { formatPauseDate } from "@/lib/billing/pause";
 
 function sinceLabel(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -24,15 +26,40 @@ function sinceLabel(iso: string | null | undefined): string {
 export function PausedBanner({
   workspaceId,
   meta,
+  pausedUntil = null,
   className = "",
 }: {
   workspaceId: string;
   meta: PausedMeta | null | undefined;
+  /**
+   * Set when the site is paused by the account pause on Billing. That pause
+   * is lifted on Billing, for every site and for billing together; a Resume
+   * here used to lift it for one site while Stripe kept voiding invoices.
+   */
+  pausedUntil?: string | null;
   className?: string;
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const since = sinceLabel(meta?.since);
+
+  if (pausedUntil) {
+    return (
+      <div
+        role="status"
+        className={`flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[8px] border border-line bg-panel px-4 py-2.5 text-[12.5px] text-ink-2 ${className}`}
+      >
+        <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3">Paused</span>
+        <span>
+          The whole account is paused until {formatPauseDate(pausedUntil)}. Nothing is drafted or billed until then. Your
+          plan and drafts are kept.
+        </span>
+        <Link href="/settings/billing" className="ml-auto">
+          <Button size="sm" variant="primary">Open Billing</Button>
+        </Link>
+      </div>
+    );
+  }
 
   function resume() {
     start(async () => {
@@ -80,12 +107,15 @@ export function PauseSiteControl({
   workspaceId,
   name,
   status,
+  pausedUntil = null,
   className = "",
   asButton = false,
 }: {
   workspaceId: string;
   name: string;
   status: string;
+  /** Set when the account pause on Billing paused it: lifted there, not here. */
+  pausedUntil?: string | null;
   className?: string;
   /** Render as a Button (page header) rather than a text link (sidebar). */
   asButton?: boolean;
@@ -96,6 +126,23 @@ export function PauseSiteControl({
   // A site still in setup has nothing running to pause; the wizard is the
   // thing to finish or skip.
   if (!paused && status === "setup") return null;
+  // Paused with the account: the way out is Billing, for every site at once.
+  if (paused && pausedUntil) {
+    return asButton ? (
+      <Link href="/settings/billing" onClick={(e) => e.stopPropagation()} className={className}>
+        <Button size="sm">Account paused · Billing</Button>
+      </Link>
+    ) : (
+      <Link
+        href="/settings/billing"
+        onClick={(e) => e.stopPropagation()}
+        title={`The whole account is paused until ${formatPauseDate(pausedUntil)}`}
+        className={`text-[11px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink ${className}`}
+      >
+        Account paused
+      </Link>
+    );
+  }
 
   // The event matters: on /workspaces this button sits inside a row that
   // navigates to the workspace on click (client-row.tsx), and pausing must not

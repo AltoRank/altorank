@@ -68,3 +68,27 @@ export function formatPauseDate(pausedUntilDate: string): string {
 export function accountPausedMessage(pausedUntilDate: string): string {
   return `This account is paused until ${formatPauseDate(pausedUntilDate)}: nothing is drafted and nothing is billed until then. Resume it on the Billing page to start writing again — your articles, keywords and settings are exactly as you left them.`;
 }
+
+/**
+ * Why one site of a paused account cannot be resumed on its own.
+ *
+ * The per-site Resume used to lift a billing pause: the site went back to
+ * drafting while Stripe kept voiding the invoices until the pause date, and
+ * once every site was resumed the Billing page no longer saw the pause at all
+ * (it finds it on the workspaces). The account pause is lifted in one place,
+ * for every site and for billing together.
+ */
+export function accountPauseResumeMessage(pausedUntilDate: string): string {
+  return `This workspace is paused with the whole account until ${formatPauseDate(pausedUntilDate)}, and nothing is drafted or billed until then. Resume the account on the Billing page to start every workspace and billing again.`;
+}
+
+/**
+ * Why a site cannot be added while the account pause runs. A new site would
+ * have drafted normally through a pause that promises nothing is drafted.
+ */
+export function accountPauseAddSiteMessage(pausedUntilDate: string): string {
+  return `This account is paused until ${formatPauseDate(pausedUntilDate)}: nothing is drafted or billed until then, so a new workspace cannot start. Resume the account on the Billing page first, then add it.`;
+}
+
+/** Thrown where a site-level control meets the account pause. */
+export class AccountPausedError extends Error {}

@@ -151,6 +151,6 @@ describe("quotaExceededMessage", () => {
     expect(msg).toContain("Oct 1");
     expect(msg).not.toContain("The next article is billed as overage");
     // The overage is still the way through, named as the human action it is.
-    expect(msg).toContain("by hand" );
+    expect(msg).toContain("start one yourself with New article");
   });
 });

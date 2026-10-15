@@ -340,7 +340,7 @@ describe("runOnboarding", () => {
     expect(paid.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
       .toMatchObject({ detail: expect.stringContaining("This month's included 100 articles are used") });
     expect(paid.find((e) => e.phase === "drafting" && "status" in e && e.status === "skipped"))
-      .toMatchObject({ detail: expect.stringContaining("write one by hand") });
+      .toMatchObject({ detail: expect.stringContaining("New article on the Articles page") });
   });
 
   /**

@@ -191,7 +191,10 @@ beforeEach(() => {
 });
 
 describe("invoice.payment_failed → the dunning email", () => {
-  it("goes to the owner and admin, never to an editor", async () => {
+  // Owners only: the email's button ("Update the card") is one only the
+  // owner can use, and an admin found "Only the account owner can update the
+  // card" behind it.
+  it("goes to the owner only, never to an admin or an editor", async () => {
     accountRow = {
       id: "account-1",
       plan_status: "active",
@@ -201,8 +204,8 @@ describe("invoice.payment_failed → the dunning email", () => {
     };
     await deliver(invoiceFailed());
 
-    expect(sends().map((s) => s.to).sort()).toEqual(["admin@acme.co", "owner@acme.co"]);
-    expect(sends().some((s) => s.to === "editor@acme.co")).toBe(false);
+    expect(sends().map((s) => s.to)).toEqual(["owner@acme.co"]);
+    expect(sends().some((s) => s.to === "editor@acme.co" || s.to === "admin@acme.co")).toBe(false);
   });
 
   /**
@@ -229,7 +232,7 @@ describe("invoice.payment_failed → the dunning email", () => {
   it("sends once per episode however many retries arrive", async () => {
     accountRow = { id: "account-1", plan_status: "active", payment_failed_at: null, plan: "starter", name: "Acme" };
     await deliver(invoiceFailed());
-    expect(sends()).toHaveLength(2);
+    expect(sends()).toHaveLength(1);
 
     // The row now carries the timestamp the first failure wrote.
     accountRow = {
@@ -239,7 +242,7 @@ describe("invoice.payment_failed → the dunning email", () => {
     };
     await deliver(invoiceFailed({ id: "in_2", created: Date.parse("2026-09-03T10:00:00Z") / 1000 }));
     await deliver(invoiceFailed({ id: "in_3", created: Date.parse("2026-09-05T10:00:00Z") / 1000 }));
-    expect(sends()).toHaveLength(2);
+    expect(sends()).toHaveLength(1);
   });
 
   it("says nothing when the invoice matches no account", async () => {
@@ -266,7 +269,7 @@ describe("customer.subscription.updated → the plan-change email", () => {
     const [first] = sends();
     expect(first.subject).toBe("Your plan is now Agency");
     expect(first.html).toContain("400 articles a month");
-    expect(first.html).toContain("charged the difference");
+    expect(first.html).toContain("added to your next invoice");
   });
 
   it("says nothing when the tier did not change", async () => {
@@ -281,7 +284,7 @@ describe("customer.subscription.updated → the plan-change email", () => {
     await deliver(subscriptionEvent({ items: { data: [{ price: { id: STARTER } }] } }));
 
     expect(sends()[0].subject).toBe("Your plan is now Managed");
-    expect(sends()[0].html).toContain("credited the unused part");
+    expect(sends()[0].html).toContain("credited against your next invoice");
   });
 });
 

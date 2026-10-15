@@ -241,6 +241,8 @@ export interface ArticlesPlanState {
   schedule: string;
   status: string;
   pausedMeta: PausedMeta | null;
+  /** Set when the account pause on Billing paused the site (lifted there, not per site). */
+  pausedUntil: string | null;
 }
 
 async function ownWorkspace(workspaceId: string) {
@@ -248,7 +250,7 @@ async function ownWorkspace(workspaceId: string) {
   const supabase = await createClient();
   const { data: ws, error } = await supabase
     .from("workspaces")
-    .select("id, account_id, status, auto_generate_weekly_limit, paused_meta")
+    .select("id, account_id, status, auto_generate_weekly_limit, paused_meta, paused_until")
     .eq("id", workspaceId)
     .eq("account_id", accountId)
     .maybeSingle();
@@ -285,6 +287,7 @@ export async function getArticlesPlanState(workspaceId: string): Promise<Article
     schedule: scheduleSentence(),
     status: ws.status as string,
     pausedMeta: (ws.paused_meta ?? null) as PausedMeta | null,
+    pausedUntil: (ws.paused_until as string | null | undefined) ?? null,
   };
 }
 

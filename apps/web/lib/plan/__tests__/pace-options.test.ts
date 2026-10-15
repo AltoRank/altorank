@@ -105,3 +105,15 @@ describe("maxAllowedPace", () => {
     }
   });
 });
+
+describe("paceOnDowngrade", () => {
+  it("slows a site above the new tier's ceiling to the ceiling, and leaves the rest", async () => {
+    const { paceOnDowngrade } = await import("../pace-options");
+    // Managed includes 100 a month: 23 a week is the most that fits.
+    expect(paceOnDowngrade(25, "starter")).toBe(23);
+    expect(paceOnDowngrade(23, "starter")).toBeNull();
+    expect(paceOnDowngrade(3, "starter")).toBeNull();
+    expect(paceOnDowngrade(null, "starter")).toBeNull();
+    expect(paceOnDowngrade(25, "growth")).toBeNull();
+  });
+});

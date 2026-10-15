@@ -30,7 +30,7 @@ export function CalendarControls({ currentMonth, monthLabel }: CalendarControlsP
   return (
     <>
     {active?.status === "paused" && (
-      <PausedBanner workspaceId={active.id} meta={active.paused_meta} className="mb-4" />
+      <PausedBanner workspaceId={active.id} meta={active.paused_meta} pausedUntil={active.paused_until ?? null} className="mb-4" />
     )}
     <div className="flex items-center gap-2 mb-4 flex-wrap">
       <div className="flex items-center gap-2 ml-2">

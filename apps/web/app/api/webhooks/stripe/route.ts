@@ -6,7 +6,9 @@ import {
   planForPriceId,
   PLAN_ARTICLE_LIMITS,
   PLAN_LABELS,
-  PLAN_PRICES,
+  intervalForSubscription,
+  planChargeLabel,
+  type BillingInterval,
   type PlanTier,
   type SelfServePlan,
 } from "@/lib/stripe";
@@ -14,11 +16,13 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { recordEvent } from "@/lib/observability/record";
 import { describe as describeError } from "@/lib/observability/event";
 import { paceOnActivation } from "@/lib/content/pace";
+import { paceOnDowngrade } from "@/lib/plan/pace-options";
 import { dispatchResume } from "@/lib/plan/resume-dispatch";
 import { oweResume } from "@/lib/plan/resume-week";
 import { canSelfInvoke } from "@/lib/content/fan-out";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
 import { graceEndsAt } from "@/lib/billing/dunning";
+import { invoicePendingCharges, paymentMethodId } from "@/lib/billing/invoice-pending";
 import {
   notifyPaymentFailed,
   notifyPlanChanged,
@@ -134,6 +138,28 @@ export async function trialForCheckoutSession(session: Stripe.Checkout.Session):
     throw new Error(`checkout.session.completed: could not read subscription ${subscriptionId} to tell a trial from a paid plan (${err instanceof Error ? err.message : String(err)})`);
   }
   return trialEndOf(sub);
+}
+
+/**
+ * How often a checkout's subscription bills, for the trial-started email's
+ * amount. Read from the subscription, like the tier and the trial; when that
+ * read fails, the `interval` our checkout wrote on the session stands in,
+ * because a failed read must not cost the customer the email that tells them
+ * when they will be charged.
+ */
+export async function intervalForCheckoutSession(session: Stripe.Checkout.Session): Promise<BillingInterval> {
+  const fallback: BillingInterval = session.metadata?.interval === "year" ? "year" : "month";
+  const subscriptionId =
+    typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+  if (!subscriptionId) return fallback;
+  try {
+    const sub = await getStripe().subscriptions.retrieve(subscriptionId, {}, { timeout: STRIPE_READ_TIMEOUT_MS, maxNetworkRetries: 1 });
+    // The session's hint sits under the subscription's own metadata, so a
+    // price this deployment does not recognise still reads the checkout's.
+    return intervalForSubscription({ items: sub.items, metadata: { ...(session.metadata ?? {}), ...(sub.metadata ?? {}) } });
+  } catch {
+    return fallback;
+  }
 }
 
 /** One Stripe read inside the webhook: long enough for a slow answer, short enough for a retry. */
@@ -472,10 +498,13 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
           const weekHandedOff =
             canSelfInvoke() && (sites ?? []).some((s) => s.auto_generate === true && s.status !== "paused");
           try {
+            // The amount the card is charged on day eight: the yearly price
+            // for a yearly trial, which used to be quoted the monthly one.
+            const interval = await intervalForCheckoutSession(session);
             await notifyTrialStarted(
               supabase,
               accountId,
-              { planLabel: PLAN_LABELS[tier] ?? tier, planPrice: PLAN_PRICES[tier] ?? "", endsAt: trial, weekHandedOff },
+              { planLabel: PLAN_LABELS[tier] ?? tier, planPrice: planChargeLabel(tier, interval), endsAt: trial, weekHandedOff },
               key,
             );
           } catch (err) {
@@ -584,12 +613,47 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
           await supabase.from("accounts").update(updates).eq("stripe_subscription_id", sub.id);
       if (writeError) throw new Error(`${event.type}: could not record the subscription on the account (${writeError.message})`);
 
+      // The plan has ended. A subscription cancelled at period end makes no
+      // final invoice, so the last period's overage - pending items waiting
+      // for a next invoice - was never billed. Billed now; a failure is thrown
+      // so Stripe delivers the event again, and a redelivery finds nothing
+      // pending and bills nothing twice.
+      if (event.type === "customer.subscription.deleted" && sub.customer) {
+        const customerId = typeof sub.customer === "string" ? sub.customer : sub.customer.id;
+        try {
+          await invoicePendingCharges(getStripe(), customerId, { paymentMethod: paymentMethodId(sub.default_payment_method) });
+        } catch (err) {
+          // A customer deleted at Stripe has nothing left to invoice, and
+          // retrying would only fail the same way for three days.
+          if ((err as { code?: string } | null)?.code !== "resource_missing") {
+            throw new Error(`${event.type}: could not invoice the final period's overage (${err instanceof Error ? err.message : String(err)})`);
+          }
+          console.error(`[stripe] final overage: customer ${customerId} is gone at Stripe`);
+        }
+      }
+
       // Every remaining write and read comes before any email. A failure
       // below throws and Stripe delivers the event again; if the change
       // emails had already gone out, the retry would read the row this
       // delivery wrote, see nothing changed, and an email that failed the
       // first time would never be tried again.
       const previous = event.data.previous_attributes as Partial<Stripe.Subscription> | undefined;
+
+      /**
+       * The tier the subscription moved from, when this event moved it.
+       *
+       * The event's own `previous_attributes` first: the in-app switch writes
+       * the new tier to the row the moment Stripe accepts it (actions/billing.ts),
+       * and Stripe delivers this event after that, so the row read above
+       * usually already held the new tier and the change email - which the
+       * comment below promises for "our own in-place switch" - was skipped.
+       * The row's tier stays the answer for a portal change, whose event the
+       * row has not seen.
+       */
+      const previousTier = planForPriceId(previous?.items?.data?.[0]?.price?.id);
+      const fromTier = (previousTier ?? before?.plan ?? null) as PlanTier | null;
+      const tierMoved = Boolean(before && plan && fromTier && fromTier !== plan && status !== "canceled");
+      const trialingNow = status === "trialing";
       const failedAt = new Date(event.created * 1000);
       const pastDue = event.type === "customer.subscription.updated" && status === "past_due";
       if (event.type === "customer.subscription.updated") {
@@ -625,6 +689,28 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
           }
           if (target) await resumePausedWorkspaces(supabase, target);
         }
+
+        // A downgrade slows every site to what the new tier includes. Nothing
+        // did: a site at 25 a week on Agency kept that pace on Managed until
+        // the month's 100 were used and scheduled writing stopped dead, while
+        // the downgrade email said it "will slow to" the new pace. Only a
+        // pace above the new ceiling moves, and only down.
+        if (tierMoved && before && plan && fromTier && rungOf(plan) < rungOf(fromTier)) {
+          const { data: sites, error: sitesError } = await supabase
+            .from("workspaces")
+            .select("id, auto_generate_weekly_limit")
+            .eq("account_id", before.id);
+          if (sitesError) throw new Error(`${event.type}: could not read the sites to slow to the new plan (${sitesError.message})`);
+          for (const site of sites ?? []) {
+            const next = paceOnDowngrade(site.auto_generate_weekly_limit as number | null, plan);
+            if (next === null) continue;
+            const { error: paceError } = await supabase
+              .from("workspaces")
+              .update({ auto_generate_weekly_limit: next })
+              .eq("id", site.id);
+            if (paceError) throw new Error(`${event.type}: could not slow a site to the new plan's pace (${paceError.message})`);
+          }
+        }
       }
 
       /**
@@ -637,8 +723,8 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
        * while the several `customer.subscription.updated` events one switch
        * produces collapse into one email.
        */
-      if (before && plan && before.plan && before.plan !== plan && status !== "canceled") {
-        const from = before.plan as PlanTier;
+      if (tierMoved && before && plan && fromTier) {
+        const from = fromTier;
         const day = new Date(event.created * 1000).toISOString().slice(0, 10);
         try {
           await notifyPlanChanged(
@@ -649,6 +735,7 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
               toLabel: PLAN_LABELS[plan] ?? plan,
               articleLimit: PLAN_ARTICLE_LIMITS[plan] ?? null,
               upgrade: rungOf(plan) > rungOf(from),
+              trialing: trialingNow,
             },
             `${from}->${plan}:${day}`,
           );
@@ -749,7 +836,7 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
           account.id,
           {
             planLabel: PLAN_LABELS[plan] ?? plan,
-            planPrice: PLAN_PRICES[plan] ?? "",
+            planPrice: planChargeLabel(plan, intervalForSubscription(sub)),
             endsAt: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : account.trial_ends_at ?? null,
           },
           sub.id,

@@ -112,12 +112,12 @@ export default async function ClientDetailPage({ params }: Props) {
 
           </>
         }
-        actions={<PauseSiteControl workspaceId={workspace.id} name={workspace.name} status={workspace.status} asButton />}
+        actions={<PauseSiteControl workspaceId={workspace.id} name={workspace.name} status={workspace.status} pausedUntil={workspace.paused_until ?? null} asButton />}
       />
 
       {workspace.status === "paused" && (
         <div className="px-8 pt-4">
-          <PausedBanner workspaceId={workspace.id} meta={workspace.paused_meta} />
+          <PausedBanner workspaceId={workspace.id} meta={workspace.paused_meta} pausedUntil={workspace.paused_until ?? null} />
         </div>
       )}
 

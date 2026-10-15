@@ -12,12 +12,14 @@
 // planned entries stay on their days, the pace stays set: it is "not now", and
 // the generate, analyze, site-pages and publish crons all skip
 // `status = 'paused'` (lib/plan/__tests__/cron-pause-guard.test.ts). Distinct
-// from the account-wide pause on Billing, which sets `paused_until`.
+// from the account-wide pause on Billing, which sets `paused_until` and is
+// not lifted here: `resumeWorkspace` refuses a row that carries it.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { schedulePlan } from "@/lib/onboarding/plan";
 import type { PausedMeta } from "@/lib/types";
+import { AccountPausedError, accountPauseResumeMessage } from "@/lib/billing/pause";
 
 export type PauseOutcome = {
   /** False when the site was already paused and nothing changed. */
@@ -80,13 +82,17 @@ export async function resumeWorkspace(
 ): Promise<ResumeOutcome> {
   const { data: ws, error: readError } = await supabase
     .from("workspaces")
-    .select("id, status, paused_meta, auto_generate_weekly_limit")
+    .select("id, status, paused_meta, paused_until, auto_generate_weekly_limit")
     .eq("id", workspaceId)
     .eq("account_id", accountId)
     .maybeSingle();
   if (readError) throw new Error(readError.message);
   if (!ws) throw new Error("That site is not in your account.");
   if (ws.status !== "paused") return { changed: false, status: ws.status as string, replanned: null };
+  // Paused by the account pause on Billing, not by hand: that pause is lifted
+  // for every site and for billing together, on Billing. Lifting it here for
+  // one site restarted its drafting while Stripe kept voiding the invoices.
+  if (ws.paused_until) throw new AccountPausedError(accountPauseResumeMessage(ws.paused_until as string));
 
   const meta = (ws.paused_meta ?? null) as PausedMeta | null;
   const previous: PausedMeta["previous_status"] =
