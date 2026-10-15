@@ -9,8 +9,8 @@ import { renderBarChart } from "@/lib/content/enrich/infographic";
 
 // Static checks on the plugin source that hold with or without a PHP binary.
 // The behaviour itself is tested in PHP (packages/wordpress-plugin/tests, run
-// by wordpress-plugin-php.test.ts where PHP is installed); these pin the
-// properties that must never regress even on a machine that skips those.
+// with php -l by CI's "WordPress plugin" step); these pin the properties that
+// must never regress, on every machine that runs the unit tier.
 
 let dir: string;
 const read = (rel: string) => fs.readFile(path.join(dir, rel), "utf8");

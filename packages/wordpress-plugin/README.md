@@ -91,10 +91,12 @@ php tests/run.php           # plugin functions against in-memory WordPress fakes
 ```
 
 `tests/bootstrap.php` fakes only the WordPress functions the plugin calls, so
-a new WordPress call needs a fake on purpose. The app's unit suite runs this
-and `php -l` over every file whenever `php` is on the PATH
-(`apps/web/lib/cms/__tests__/wordpress-plugin-php.test.ts`); the static
-checks beside it run everywhere.
+a new WordPress call needs a fake on purpose; a PHP warning or notice fails
+the run. CI runs this and `php -l` over every file in its "WordPress plugin"
+step, and `bin/build-zip.sh` runs it when `php` is installed. Static checks
+that need no PHP (one version everywhere, the zip route, the REST filter's
+inputs) are in `apps/web/lib/cms/__tests__/wordpress-plugin-release.test.ts`
+and run with the unit suite.
 
 ## Releases and updates
 

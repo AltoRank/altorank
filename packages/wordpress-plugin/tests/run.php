@@ -5,8 +5,9 @@
  * bootstrap.php defines the handful of WordPress functions the plugin calls
  * as small in-memory fakes, loads the plugin, and every test-*.php file in
  * this directory then calls the plugin's functions directly. Exits non-zero
- * when any check fails. Run by apps/web/lib/cms/__tests__/wordpress-plugin-php.test.ts
- * whenever `php` is on the PATH.
+ * when any check fails. CI runs it (with php -l over every file) in the
+ * "WordPress plugin" step of .github/workflows/ci.yml; bin/build-zip.sh runs
+ * it too when `php` is on the PATH.
  *
  * @package AltoRank
  */
