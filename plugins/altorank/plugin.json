@@ -1,0 +1,33 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "altorank",
+  "version": "1.0.0",
+  "description": "Agent-readiness audits, Search Console reporting, keyword research and SEO drafts into a human review queue. Nothing publishes without a person approving it.",
+  "author": {
+    "name": "AltoRank",
+    "email": "hello@altorank.co",
+    "url": "https://altorank.co"
+  },
+  "homepage": "https://altorank.co/docs/mcp/",
+  "repository": "https://github.com/AltoRank/altorank",
+  "license": "AGPL-3.0-only",
+  "keywords": ["seo", "geo", "ai-search", "search-console", "keyword-research", "content"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "AltoRank",
+        "shortDescription": "SEO drafts you approve",
+        "longDescription": "AltoRank writes search and AI-search content for websites you own or manage.\n\nFrom a chat you can check whether an AI assistant can read a site (nine checks covering AI-crawler rules, sitemaps, structured data and machine-readable content), propose the JSON-LD a page is missing, read Google Search Console performance, find keyword cannibalisation and coverage gaps, get keyword suggestions, move the content calendar, and generate SEO drafts.\n\nDrafts land in a review queue inside AltoRank. A person approves and publishes them in the editor. There is no publish, approve or delete tool, and no endpoint behind one. Assistants prepare work; people decide what goes live.\n\nThe readiness tools work on any public domain. The account tools need an AltoRank workspace and a connection you authorise, with write access opt-in on the consent screen and revocable under Settings, API keys.\n\nAltoRank is open source (AGPL-3.0) and can be self-hosted.",
+        "developerName": "AltoRank",
+        "category": "Productivity",
+        "capabilities": [],
+        "websiteURL": "https://altorank.co",
+        "privacyPolicyURL": "https://altorank.co/privacy/",
+        "termsOfServiceURL": "https://altorank.co/terms/",
+        "defaultPrompt": "Check whether an AI assistant can read my site and tell me what is failing.",
+        "brandColor": "#3A61C4",
+        "logo": "./assets/icon.png"
+      }
+    }
+  }
+}

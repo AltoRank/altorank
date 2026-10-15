@@ -118,6 +118,20 @@ page's "New connection" button, a draft's publish panel and
 any draft as Markdown (front matter included) or HTML, or downloads it as a
 `.md` file.
 
+## Install the plugin
+
+Claude Code:
+
+```bash
+/plugin marketplace add AltoRank/altorank
+/plugin install altorank@altorank
+```
+
+`plugins/altorank/` bundles the hosted MCP server (`https://app.altorank.co/api/mcp`,
+OAuth, no API key to copy) with a skill written for those tools. The same folder
+carries the portable `plugin.json` + `mcp.json` that ChatGPT and Codex read, and
+`.agents/plugins/marketplace.json` lists it for them.
+
 ## Install the skill
 
 ```bash
@@ -247,6 +261,7 @@ apps/web/               the engine and dashboard (Next.js)
   lib/geo/              AI-answer visibility
   scripts/mcp.ts        MCP server
   scripts/cli.ts        CLI over /api/agent/v1
+plugins/altorank/       Claude / ChatGPT / Codex plugin: hosted MCP server + skill
 skills/altorank/        the skill file a coding agent reads (`npx skills add AltoRank/altorank`)
 packages/altorank-cli/  npm package `altorank`: bundles scripts/cli.ts into a bin
 docker/                 container setup for self-hosting
