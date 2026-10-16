@@ -146,9 +146,8 @@ export default async function ImprovementsPage() {
 
   // A task still `running` long after any run could last was cut off; the
   // card offers it back to the person instead of "Rewriting now…".
-  const now = Date.now();
   const taskByCandidate = new Map<string, CandidateRow["task"]>();
-  for (const t of (tasks ?? []) as RefreshTask[]) taskByCandidate.set(t.candidate_id, { ...t, stale: isStaleRunning(t, now) });
+  for (const t of (tasks ?? []) as RefreshTask[]) taskByCandidate.set(t.candidate_id, { ...t, stale: isStaleRunning(t) });
 
   const candidateRows: CandidateRow[] = ((candidates ?? []) as RefreshCandidate[]).map((c) => ({
     ...c,
