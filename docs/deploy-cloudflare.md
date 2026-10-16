@@ -8,13 +8,15 @@ application that matters is not quite there yet.
 - **`apps/web`** builds for Cloudflare Workers with `@opennextjs/cloudflare`
   and serves pages, middleware, API routes and cron dispatch from `wrangler
   dev` today. This was tried on 2026-09-05; the evidence is below, including
-  the one line the build printed in red. Two things stand between the
-  experiment and a production deployment: the repository pins a Next.js
-  version the current adapter refuses, and one `next.config.ts` redirect does
-  not survive the port.
+  the one line the build printed in red. On that date two things stood
+  between the experiment and a production deployment: the repository pinned a
+  Next.js version the adapter refused, and one `next.config.ts` redirect did
+  not survive the port. The first is gone: `apps/web` now pins `next@^16.4.1`,
+  inside the adapter's peer range. The redirect and a full run against a real
+  Supabase remain (see "Recommendation").
 - **Postgres, auth and file storage** stay on Supabase. Cloudflare has no
   Postgres and no authentication service for end users. D1 is SQLite and
-  cannot run a single one of the 47 migrations; Hyperdrive pools a Postgres you
+  cannot run a single one of the 109 migrations; Hyperdrive pools a Postgres you
   host somewhere else. Supabase runs either hosted or as its own Docker stack
   on a VM. Replacing it is sized honestly below, and the size is "a rewrite of
   the data layer", not "a weekend".
@@ -26,11 +28,14 @@ cron rule). It is not a way to stop paying for or running Postgres.
 
 Everything below is checked against the code at the commit that added this
 file, and against vendor documentation fetched on 2026-09-05. Where a claim
-was not exercised, it says so.
+was not exercised, it says so. Re-read against the code on 2026-10-16: the
+Next.js version, the route names, the storage buckets and the data-layer
+counts are current as of that date; the build and run results are still the
+2026-09-05 experiment's and were not repeated.
 
 ## What was actually tried
 
-Versions: Next.js 16.2.4 (what `apps/web/package.json` pins),
+Versions: Next.js 16.2.4 (what `apps/web/package.json` pinned then; `^16.4.1` today),
 `@opennextjs/cloudflare` 1.20.6 (published 2026-09-02, latest), wrangler
 4.129.0, Node 22. Placeholder environment only: an unreachable Supabase URL,
 a made-up anon key, a made-up `CRON_SECRET`. No database, no real key of any
@@ -57,8 +62,9 @@ floor is not arbitrary. The adapter's website says "all minor and patch
 versions of Next.js 16" are supported; the package's `peerDependencies` is
 what npm enforces, and it says otherwise. The experiment continued with
 `--legacy-peer-deps`, which is fine for an experiment and not for production.
-The real fix is to move `apps/web` to Next.js 16.3.x, which is a separate
-change with its own build and test run.
+The real fix was to move `apps/web` to Next.js 16.3.x or later, and that
+has since happened (`next@^16.4.1`), so the install should no longer need
+`--legacy-peer-deps`. Not re-run since.
 
 ### Build
 
@@ -116,7 +122,7 @@ assets (69 files). It is gitignored.
 | `GET /?code=abc123` | 307 → `/callback?code=abc123` | **307 → `/callback?code=abc123`** | The stray-auth-code handler in middleware works. |
 | `GET /clients` | 308 → `/workspaces` | **308 → `/workspaces`** | `next.config.ts` redirects are applied… |
 | `GET /pricing`, `/blog/hello`, `/integrations` | 308 → `altorank.co/…` | **308 → `altorank.co/…`** | …including the external ones… |
-| `GET /` (no `code`) | 308 → `https://altorank.co` | **404** | …except this one. See "Known gap" below. |
+| `GET /` (no `code`) | 308 → `https://altorank.co` | **404** | …except this one. See "Known gap" below. (Today only the hosted build sends `/` to altorank.co; every other build, a Workers deploy included, sends it to `/dashboard`.) |
 | `GET /api/cron/publish` | 401 | **401** `{"error":"Unauthorized"}` | Cron auth runs before any database call. |
 | `GET /api/cron/publish` with the `.dev.vars` secret | (runs) | **500** `{"error":"Expected 3 parts in JWT; got 1"}` | The secret matched, so `process.env.CRON_SECRET` is visible at runtime; the route then died on the placeholder anon key, which is the correct failure with no database. |
 | `GET /favicon.ico` | 200 | **200** | Static assets served from the `ASSETS` binding. |
@@ -163,7 +169,9 @@ connection); confidence high from the documentation.
 
 Two routes build a `ReadableStream` and send `text/event-stream`:
 `app/api/generate/route.ts` (the editor's live draft) and
-`app/api/onboard/stream/route.ts` (the post-signup pipeline). Workers stream
+`app/api/editor/rewrite/route.ts` (the editor's whole-article rewrite). The
+post-signup pipeline no longer streams; it runs as a background job
+(`app/api/onboard/run/route.ts`) that the setup screen polls. Workers stream
 responses natively and Cloudflare's limits page says there is "no hard limit
 on duration for HTTP-triggered Workers. As long as the client remains
 connected, the Worker can continue processing." The limit that applies is CPU
@@ -183,7 +191,7 @@ onto `ctx.waitUntil`. Untested here.
 
 | Path | Declared | Vercel Hobby | Vercel Pro | Workers Paid |
 |---|---|---|---|---|
-| `/api/cron/generate`, `/api/cron/analyze`, `/api/cron/geo`, `/api/cron/site-pages`, `/api/onboard/stream` | `maxDuration = 300` | 300 s max | 300 s default, 800 s max | wall: unlimited while the caller is connected; CPU: up to 300 s |
+| `/api/cron/generate`, `/api/cron/analyze`, `/api/cron/geo`, `/api/cron/site-pages`, `/api/onboard/start`, `/api/onboard/run` | `maxDuration = 300` | 300 s max | 300 s default, 800 s max | wall: unlimited while the caller is connected; CPU: up to 300 s |
 | `/api/audit`, `/api/growth-plan`, `/api/cron/publish` | `maxDuration = 60` | fine | fine | fine |
 | A cron invocation (`scheduled` handler) | – | – | – | 15 minutes wall, per Cloudflare's limits page |
 
@@ -317,14 +325,19 @@ experimental in 1.20.3.
 
 ### Known gap: the root redirect
 
-`next.config.ts` redirects `/` to `https://altorank.co` unless the request
-carries `?code=` (an auth code has to reach the middleware instead). On Workers
-`/` answers 404. The other seven redirects in the same file work, including
-the external ones and the `/clients/:path*` pattern; the root one is the only
-redirect with a `missing` condition, so that condition is the likely cause
-(moderate confidence; not traced into the adapter). There is no `app/page.tsx`
-to fall back to. Cheapest fix if this path is pursued: handle `/` in
-`middleware.ts`, which already inspects `/?code=`.
+On 2026-09-05 `next.config.ts` redirected `/` to `https://altorank.co` unless
+the request carried `?code=` (an auth code has to reach the middleware
+instead), and on Workers `/` answered 404. The other seven redirects in the
+same file worked, including the external ones and the `/clients/:path*`
+pattern; the root one was the only redirect with a `missing` condition, so
+that condition is the likely cause (moderate confidence; not traced into the
+adapter). There is no `app/page.tsx` to fall back to.
+
+Today the altorank.co redirect applies only to the hosted build. Every other
+build, which a Workers deploy always is, sends `/` to `/dashboard` with the
+same `missing: [{ type: 'query', key: 'code' }]` condition, so the gap is
+expected to remain (not re-run). Cheapest fix if this path is pursued: handle
+`/` in `middleware.ts`, which already inspects `/?code=`.
 
 ### Region
 
@@ -336,24 +349,30 @@ set in the committed config because it should be measured, not assumed.
 
 ## Database, auth, storage: what the code needs
 
-Counted in `apps/web` on 2026-09-05.
+Counted in `apps/web` on 2026-09-05; the migration, policy, trigger and `.rpc()` figures re-counted on 2026-10-16.
 
 **Postgres via PostgREST.** Every query module uses `@supabase/supabase-js`
-over HTTP. There is no `pg`, no Drizzle, no Prisma, no `.rpc()` call and no
-realtime channel. 47 migrations in `apps/web/supabase/migrations/`, which
-between them:
+over HTTP. There is no `pg`, no Drizzle, no Prisma and no realtime channel.
+Five `.rpc()` calls in three modules (`lib/public-tools/spend.ts`,
+`lib/billing/run-budget.ts`, `lib/billing/checkout-attempt.ts`) reserve spend
+atomically in SQL functions. 109 migrations in
+`apps/web/supabase/migrations/`, which between them:
 
-- `create policy` 40 times and `enable row level security` on 31 tables. The
-  policies call `auth.uid()` and two SQL functions,
-  `public.user_account_ids()` and `public.user_admin_account_ids()`, both
-  `security definer` and both reading `auth.uid()`. RLS is the second line of
+- `create policy` 95 times and `enable row level security` on 53 tables. The
+  policies call `auth.uid()` and SQL functions such as
+  `public.user_account_ids()`, `public.user_admin_account_ids()` and
+  `public.user_workspace_ids()`, all `security definer` and all reading
+  `auth.uid()`. RLS is the second line of
   defence behind the application's own scoping; take it away and every query
   module has to enforce the account boundary itself.
-- Reference `auth.users` (foreign keys) or `auth.uid()` in 7 files.
+- Reference `auth.users` (foreign keys) or `auth.uid()` in 21 files.
 - Insert into `storage.buckets` and create a policy on `storage.objects`
   (migration 045, the `article-images` bucket).
-- Use `gen_random_uuid()` 29 times and `jsonb` columns 35 times.
-- Create no triggers, no PL/pgSQL, no extensions.
+- Mention `gen_random_uuid()` 40 times and `jsonb` 84 times.
+- Define PL/pgSQL functions in 16 files and `create trigger` 19 times in 10
+  files. The triggers are security-bearing: they keep approvals, member roles
+  and site access, billing columns and other server-written fields out of a
+  signed-in user's reach. No extensions.
 
 **Auth via GoTrue.** 13 distinct `supabase.auth.*` calls: `getUser` (22
 sites), `getClaims`, `getSession`, `signInWithPassword`, `signOut`,
@@ -364,7 +383,7 @@ magic-link emails via Resend), `admin.getUserById`, `admin.listUsers`,
 `middleware.ts`.
 
 **Storage.** Two buckets: `article-images` (created by migration 045) and
-`reports` (created by hand; see deploy.md). Upload, `getPublicUrl`.
+`reports` (created private by migration 066). Upload, `getPublicUrl`.
 
 ### Option A: hosted Supabase (what production uses)
 
@@ -394,7 +413,7 @@ What it would take, honestly:
 
 | Supabase piece | Nearest Cloudflare thing | Gap |
 |---|---|---|
-| Postgres | **D1** (SQLite; 10 GB max on Paid, 500 MB on Free) | Not Postgres. No `auth.uid()`, no RLS, no `storage`/`auth` schemas, no `jsonb`, no `gen_random_uuid()`, no `security definer`. All 47 migrations rewritten by hand; the 40 policies become application code in every query module. |
+| Postgres | **D1** (SQLite; 10 GB max on Paid, 500 MB on Free) | Not Postgres. No `auth.uid()`, no RLS, no `storage`/`auth` schemas, no `jsonb`, no `gen_random_uuid()`, no `security definer`. All 109 migrations rewritten by hand, the triggers included; the 95 policies become application code in every query module. |
 | Postgres | **Hyperdrive** | "Turn your existing regional database into a globally distributed database." It pools and caches connections to a Postgres you still host. And the app speaks PostgREST over HTTP, not the Postgres wire protocol, so Hyperdrive would only matter after a rewrite to a SQL client. |
 | GoTrue | nothing | Cloudflare Access is for a workforce, not for a product's customers. An auth library (Better Auth, Lucia, Auth.js) plus your own user, session and token tables, plus re-implementing the admin-generated link flow the auth emails rely on. |
 | Storage | **R2** | The easy part: two modules, `upload` and a public URL. R2 has no row-level policies; public reads are per bucket. |
@@ -407,12 +426,11 @@ hosted, Docker and any future deployment). Not recommended.
 
 ## Recommendation
 
-1. **Marketing on Pages** stays, and the workflow on this branch automates it
-   once two secrets exist (below).
+1. **Marketing on Pages** stays; it deploys from its own repository (see the
+   last section).
 2. **`apps/web` on Workers is viable and is the way to escape the Hobby cron
    rule without paying Vercel Pro.** Prerequisites before anyone deploys it:
-   Next.js 16.3.x in `apps/web/package.json` (also closes the open
-   advisories); a fix for the `/` redirect; one full run against a real
+   a fix for the `/` redirect; one full run against a real
    Supabase in `wrangler dev` covering sign-in, a generated draft, a publish
    and the PDF report. The config to do that is in the repository and is
    inert on Vercel.
@@ -438,7 +456,7 @@ $25 with the VM's price and your time.
 ## Migration checklist for `apps/web` to Workers
 
 ```
-[ ] apps/web on Next.js >= 16.3.3 (npm install refuses the adapter below that)
+[x] apps/web on Next.js >= 16.3.3 (npm install refuses the adapter below that; done, ^16.4.1)
 [ ] npm install --no-save -w apps/web @opennextjs/cloudflare wrangler
 [ ] npx wrangler login   (or CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID in the shell)
 [ ] NEXT_PUBLIC_SUPABASE_URL / _ANON_KEY / NEXT_PUBLIC_APP_URL in the shell for the build

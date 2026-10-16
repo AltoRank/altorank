@@ -192,7 +192,7 @@ Project settings that have to match the repository:
 ### Function duration
 
 Several routes declare `export const maxDuration = 300` (the cron routes,
-`/api/onboard/stream`) or `60` (`/api/audit`, `/api/growth-plan`,
+`/api/onboard/start`, `/api/onboard/run`) or `60` (`/api/audit`, `/api/growth-plan`,
 `/api/cron/publish`). One article draft was measured at 103 seconds end to
 end (`lib/content/generate-queue.ts`), and the generate cron caps itself at
 two drafts per run so that it fits inside 300. A plan whose function ceiling is
