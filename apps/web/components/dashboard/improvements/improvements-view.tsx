@@ -211,7 +211,7 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
             {!refresh.enabled && (
               <Blocker
                 title="Scheduled rewrites are off for this workspace"
-                body="Candidates can be found and scheduled, but nothing runs until the schedule is switched on."
+                body="Analyze now still finds candidates. Scheduling a rewrite, and the weekly re-check of candidates, wait until the schedule is switched on."
                 href="/settings/refresh"
                 cta="Open settings"
               />
@@ -295,8 +295,13 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
                   Repeating the CTA here made the same request twice on one
                   screen; what this list owes the reader is why it in
                   particular is empty. */}
+              {/* The weekly pass is cron/refresh, which visits only sites with
+                  scheduled rewrites on and a plan; say so rather than promise
+                  a re-check that a default site never gets. */}
               {gscConnected
-                ? "Nothing flagged. Analyze now reads the last 28 days of Search Console against your pages; the weekly pass does the same."
+                ? refresh.enabled
+                  ? "Nothing flagged. Analyze now reads the last 28 days of Search Console against your pages; while scheduled rewrites run on this site, a weekly pass does the same."
+                  : "Nothing flagged. Analyze now reads the last 28 days of Search Console against your pages. With scheduled rewrites off, nothing re-reads them on its own; press it again after new data comes in."
                 : "No candidates: pages are ranked for rewriting by their Search Console impressions, and there are none."}
             </div>
           ) : (
