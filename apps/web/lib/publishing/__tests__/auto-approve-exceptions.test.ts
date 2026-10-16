@@ -125,6 +125,16 @@ describe("opt-outs: one row per rule", () => {
     expect(d).toMatchObject({ kind: "facts" });
   });
 
+  it("a fact-check hold says what to do for its cause", () => {
+    const fix = (blocker: string) => {
+      const d = decideAutoApproval(rule, { ...clean, factCheckBlocker: blocker }, NOW);
+      return d.approve ? null : d.fix;
+    };
+    expect(fix("not fact-checked: the checker does not read Japanese, so a person has to approve it")).toContain("Read it");
+    expect(fix("cites rival.com, which could not be classified: a person has to check it is not a competitor")).toContain("not a competitor");
+    expect(fix("1 unsourced figure is still in the draft")).toContain("Add a source");
+  });
+
   it("turning one rule off leaves the others on", () => {
     expect(decide({ pricesNotOnSite: ["£45"], competitorsNamed: ["rival.com"] }, { price: false })).toMatchObject({ kind: "competitor" });
   });

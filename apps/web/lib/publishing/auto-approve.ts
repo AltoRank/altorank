@@ -143,6 +143,17 @@ export function reviewerNamedIn(html: string, research: unknown): string | null 
   return decode(stripTags(html)).replace(/\s+/g, " ").includes(name.replace(/\s+/g, " ")) ? name : null;
 }
 
+/**
+ * The one thing to do about a fact-check hold. The blocker strings come from
+ * `autoApprovalBlocker` (lib/ai/fact-check.ts): a language the checker cannot
+ * read and a cited site nobody classified need a reader, not a source.
+ */
+function factCheckFix(blocker: string): string {
+  if (blocker.startsWith("not fact-checked")) return "Read it and approve it yourself: nothing checked its figures.";
+  if (blocker.startsWith("cites ")) return "Check the cited site is not a competitor, then approve, or replace the source.";
+  return "Add a source for the figure or take it out, then approve.";
+}
+
 const SENSITIVE_WORD: Record<string, string> = {
   health: "health",
   legal: "legal",
@@ -197,7 +208,7 @@ export function decideAutoApproval(
       "Connect a place to publish in Integrations.",
     );
   }
-  if (a.factCheckBlocker) return refuse("facts", a.factCheckBlocker, "Add a source for the figure or take it out, then approve.");
+  if (a.factCheckBlocker) return refuse("facts", a.factCheckBlocker, factCheckFix(a.factCheckBlocker));
 
   // Exceptions: the drafts a person is asked about under autopilot. Absent
   // facts (a caller that did not compute them) fire nothing.
