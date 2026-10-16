@@ -17,9 +17,12 @@ import { storefrontLocked } from "./first-look";
  * read here and shaped like crawled pages, so the topical profile, keyword
  * research and voice work as they do for any site.
  *
- * Only for a connection made by the App Store install (config.installationId)
- * and only when the storefront is actually locked: an open storefront is
- * crawled as before, rendered pages being the better evidence.
+ * Only for a connection made by the App Store install (config.installationId).
+ * The pages stand in for the crawl only when the storefront is actually
+ * locked (`locked`): an open storefront is crawled as before, rendered pages
+ * being the better evidence. Either way the catalogue is what the business
+ * profile is inferred from, since an App Store install never saw the wizard
+ * that would have asked (lib/onboarding/pipeline.ts).
  */
 
 export interface StoreContent {
@@ -29,6 +32,15 @@ export interface StoreContent {
   text: string;
   /** Plain text of the newest articles, for the voice. */
   articleText: string;
+  /**
+   * What the store is and sells, for inferring its business profile: the
+   * pages' text plus one line per product. A store's catalogue is often all
+   * titles and tags with no descriptions, which is too little prose for a
+   * voice and plenty to say what is sold.
+   */
+  profileText: string;
+  /** The storefront answers with its password page: the pages replace the crawl. */
+  locked: boolean;
 }
 
 const STORE_CONTENT = `query AltoRankStoreContent {
@@ -113,11 +125,12 @@ function page(url: string, title: string, bodyHtml: string | null | undefined, s
 const BOILERPLATE = /(^|-)(privacy|contact|terms|refund|return|shipping|policy|policies|cookie|legal|data-sharing|opt-out|your-privacy-choices)(-|$)/;
 
 /** Shape an Admin API answer into pages and text. Pure, for tests. */
-export function storeContentFrom(domain: string, data: StoreContentResponse): StoreContent {
+export function storeContentFrom(domain: string, data: StoreContentResponse): Omit<StoreContent, "locked"> {
   const base = `https://${domain}`;
   const pages: CrawlResult[] = [];
   const texts: string[] = [];
   const articleTexts: string[] = [];
+  const catalogue: string[] = [];
 
   const name = data.shop?.name?.trim() ?? "";
   const description = data.shop?.description?.trim() ?? "";
@@ -143,6 +156,11 @@ export function storeContentFrom(domain: string, data: StoreContentResponse): St
       h2: [p.productType, ...(p.tags ?? [])].filter((t): t is string => Boolean(t && t.trim())),
     });
     if (description) texts.push(`${p.title}\n${description}`);
+    catalogue.push(
+      [p.title, p.productType, p.vendor && `by ${p.vendor}`, p.tags?.length && `tags: ${p.tags.join(", ")}`, lead(description, 160)]
+        .filter(Boolean)
+        .join(" - "),
+    );
   }
   // Newest first, so the voice sample is the store's current writing.
   for (const a of data.articles?.nodes ?? []) {
@@ -151,14 +169,20 @@ export function storeContentFrom(domain: string, data: StoreContentResponse): St
     const t = htmlToText(a.body);
     if (t) articleTexts.push(`${a.title}\n${t}`);
   }
-  return { pages, text: texts.join("\n\n"), articleText: articleTexts.slice(0, 2).join("\n\n") };
+  const profileText = [
+    name && `STORE: ${name}`,
+    texts.join("\n\n"),
+    catalogue.length && `PRODUCTS (${catalogue.length}):\n${catalogue.map((c) => `- ${c}`).join("\n")}`,
+    articleTexts.length && `ARTICLES:\n${articleTexts.map((a) => a.split("\n")[0]).join("\n")}`,
+  ].filter(Boolean).join("\n\n");
+  return { pages, text: texts.join("\n\n"), articleText: articleTexts.slice(0, 2).join("\n\n"), profileText };
 }
 
 /**
- * The store's content when the first look should read it this way, or null:
- * not an App Store installation, the storefront is open, or the API refused.
+ * The store's content, or null: not an App Store installation, or the API
+ * refused. `locked` says whether it should replace the crawl.
  */
-export async function lockedStoreContent(
+export async function installedStoreContent(
   supabase: SupabaseClient,
   workspaceId: string,
   domain: string,
@@ -167,14 +191,14 @@ export async function lockedStoreContent(
   // Optional by design: anything that goes wrong here leaves the first look
   // to the crawl it would have done anyway, never fails it.
   try {
-    return await readLockedStoreContent(supabase, workspaceId, domain, deps);
+    return await readStoreContent(supabase, workspaceId, domain, deps);
   } catch (err) {
     console.warn(`[first-look] could not check for a locked Shopify store: ${err instanceof Error ? err.message : err}`);
     return null;
   }
 }
 
-async function readLockedStoreContent(
+async function readStoreContent(
   supabase: SupabaseClient,
   workspaceId: string,
   domain: string,
@@ -191,10 +215,10 @@ async function readLockedStoreContent(
   const installationId = typeof config.installationId === "string" ? config.installationId : null;
   const storeUrl = typeof config.storeUrl === "string" ? config.storeUrl : null;
   if (!installationId || !storeUrl) return null;
-  if (!(await storefrontLocked(domain, deps.fetchImpl))) return null;
 
   try {
-    const [data, products] = await Promise.all([
+    const [locked, data, products] = await Promise.all([
+      storefrontLocked(domain, deps.fetchImpl),
       queryShopify<StoreContentResponse>(storeUrl, { installationId }, STORE_CONTENT),
       queryShopify<Pick<StoreContentResponse, "products">>(storeUrl, { installationId }, STORE_PRODUCTS).catch((err) => {
         console.warn(`[first-look] products not readable (read_products not approved yet?): ${err instanceof Error ? err.message : err}`);
@@ -202,7 +226,7 @@ async function readLockedStoreContent(
       }),
     ]);
     const content = storeContentFrom(domain, { ...data, ...products });
-    return content.pages.length ? content : null;
+    return content.pages.length ? { ...content, locked } : null;
   } catch (err) {
     console.warn(`[first-look] could not read the store's content through Shopify: ${err instanceof Error ? err.message : err}`);
     return null;
