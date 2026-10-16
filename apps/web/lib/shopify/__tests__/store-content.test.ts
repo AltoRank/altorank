@@ -7,7 +7,7 @@ const m = vi.hoisted(() => {
 vi.mock("@/lib/cms/shopify", () => ({ queryShopify: m.queryShopify }));
 
 import { encryptConfig } from "@/lib/crypto";
-import { htmlToText, lockedStoreContent, storeContentFrom } from "../store-content";
+import { htmlToText, installedStoreContent, storeContentFrom } from "../store-content";
 
 const locked = vi.fn(async () => new Response(null, { status: 302, headers: { location: "https://fern.myshopify.com/password" } })) as unknown as typeof fetch;
 const open = vi.fn(async () => new Response("<html/>", { status: 200 })) as unknown as typeof fetch;
@@ -79,6 +79,20 @@ describe("products", () => {
     expect(c.text).toContain("Hand-thrown stoneware with a drainage hole.");
     expect(c.pages).toHaveLength(2);
   });
+
+  it("lists the catalogue for the profile even when products have no descriptions", () => {
+    // Shopify's test data: seventeen snowboards, not a sentence of copy
+    // between them. Too little prose for a voice; plenty to say what is sold.
+    const c = storeContentFrom("dev.myshopify.com", {
+      shop: { name: "altorank-dev", description: null },
+      pages: { nodes: [] },
+      products: { nodes: [{ title: "The Hidden Snowboard", handle: "hidden", description: "", productType: "snowboard", vendor: "Snowboard Vendor", tags: ["Winter"] }] },
+      articles: { nodes: [] },
+    });
+    expect(c.text).toBe("");
+    expect(c.profileText).toContain("STORE: altorank-dev");
+    expect(c.profileText).toContain("- The Hidden Snowboard - snowboard - by Snowboard Vendor - tags: Winter");
+  });
 });
 
 describe("boilerplate", () => {
@@ -100,15 +114,16 @@ describe("boilerplate", () => {
   });
 });
 
-describe("lockedStoreContent", () => {
+describe("installedStoreContent", () => {
   it("reads the store through Shopify when the storefront is locked", async () => {
     m.queryShopify.mockImplementation(async (_u: string, _c: unknown, q: string) =>
       q.includes("AltoRankStoreProducts")
         ? { products: { nodes: [{ title: "Planter", handle: "planter", description: "Stoneware.", productType: "Planters", tags: [] }] } }
         : answer,
     );
-    const c = await lockedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked });
+    const c = await installedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked });
     expect(c?.pages.length).toBe(6);
+    expect(c?.locked).toBe(true);
     expect(m.queryShopify).toHaveBeenCalledWith("https://fern.myshopify.com", { installationId: "inst-1" }, expect.any(String));
     m.queryShopify.mockReset();
   });
@@ -118,28 +133,32 @@ describe("lockedStoreContent", () => {
       if (q.includes("AltoRankStoreProducts")) throw new Error("Shopify: Access denied for products field.");
       return answer;
     });
-    const c = await lockedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked });
+    const c = await installedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked });
     expect(c?.pages.length).toBe(5);
     m.queryShopify.mockReset();
   });
 
-  it("leaves an open storefront to the crawl", async () => {
-    expect(await lockedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: open })).toBeNull();
-    expect(m.queryShopify).not.toHaveBeenCalled();
+  it("says an open storefront is open, so its pages leave the crawl alone", async () => {
+    m.queryShopify.mockResolvedValue(answer);
+    const c = await installedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: open });
+    expect(c?.locked).toBe(false);
+    // Still read: the catalogue is what an install's business profile comes from.
+    expect(c?.profileText).toContain("Fern & Co");
+    m.queryShopify.mockReset();
   });
 
   it("does nothing for a site with no app-installed Shopify connection", async () => {
     m.row = null;
-    expect(await lockedStoreContent(db(), "ws", "x.com", { fetchImpl: locked })).toBeNull();
+    expect(await installedStoreContent(db(), "ws", "x.com", { fetchImpl: locked })).toBeNull();
     m.row = { config: encryptConfig({ type: "shopify", storeUrl: "https://fern.myshopify.com", accessToken: "shpat_x" }) };
-    expect(await lockedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked })).toBeNull();
+    expect(await installedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked })).toBeNull();
     expect(m.queryShopify).not.toHaveBeenCalled();
   });
 
   it("falls back to the crawl when Shopify refuses or the store is empty", async () => {
     m.queryShopify.mockRejectedValueOnce(new Error("Shopify 401"));
-    expect(await lockedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked })).toBeNull();
+    expect(await installedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked })).toBeNull();
     m.queryShopify.mockResolvedValueOnce({ shop: { name: null, description: null }, pages: { nodes: [] }, articles: { nodes: [] } });
-    expect(await lockedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked })).toBeNull();
+    expect(await installedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked })).toBeNull();
   });
 });
