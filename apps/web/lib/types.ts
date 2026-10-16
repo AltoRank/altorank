@@ -613,8 +613,10 @@ export type AuditIssue = {
 };
 
 // === Backlink Exchange ===
+// `matched` is still allowed by the table's check (008) but nothing writes it:
+// a host claims a request straight to `accepted`.
 export type BacklinkExchangeStatus =
-  | "requested" | "matched" | "accepted" | "placed"
+  | "requested" | "accepted" | "placed"
   | "verified" | "live" | "rejected" | "expired";
 
 export type BacklinkExchange = {
