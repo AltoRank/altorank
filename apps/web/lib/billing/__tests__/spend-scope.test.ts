@@ -25,6 +25,7 @@ vi.mock("@/lib/billing/spend-gate", async (original) => ({
 }));
 
 import { BudgetRefusedError, claimSpend, currentSpendScope, withSpendScope, withStage, type RunBudget, type SpendStage } from "../spend-scope";
+import { memoryRunBudget } from "../run-budget";
 import { post } from "@/lib/seo/client";
 import { askStructured } from "@/lib/keyword-research/buyer-model";
 import { firstLookTermUsd, qualifyOpportunities } from "@/lib/keyword-research/opportunity";
@@ -318,5 +319,16 @@ describe("the plan's questions under a first look's budget", () => {
     await vi.waitFor(() => expect(spend).toHaveLength(1));
     expect(spend[0]).toMatchObject({ workspace_id: "ws-q", operation: "keywords/questions" });
     expect(spend[0].stage).toBeUndefined();
+  });
+});
+
+describe("a refused claim's message", () => {
+  it("names the range a sized claim asked for, not only its most", async () => {
+    const budget = memoryRunBudget("run-r", 0.04, {});
+    const refused = await withSpendScope({ budget, stage: "buyer_fit" }, () => claimSpend("keyword-research/buyer-fit", 0.0855, { minUsd: 0.0566 })).catch((err: unknown) => err);
+    expect(refused).toBeInstanceOf(BudgetRefusedError);
+    expect((refused as Error).message).toBe("The first look's budget does not cover keyword-research/buyer-fit ($0.0566 to $0.0855, buyer_fit); not bought.");
+    const whole = await withSpendScope({ budget, stage: "judge" }, () => claimSpend("op", 0.05)).catch((err: unknown) => err);
+    expect((whole as Error).message).toBe("The first look's budget does not cover op (about $0.0500, judge); not bought.");
   });
 });

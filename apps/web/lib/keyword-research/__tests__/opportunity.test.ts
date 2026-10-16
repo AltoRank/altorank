@@ -5,7 +5,7 @@ vi.mock("../buyer-fit", async (original) => ({ ...await original<object>(), judg
 vi.mock("@/lib/seo/client", () => ({ hasDataForSEOCredentials: available }));
 vi.mock("@/lib/seo/brief-data", () => ({ fetchAdvancedSerp: fetchSerp }));
 import { askedKey } from "../buyer-fit";
-import { firstLookTermUsd, opportunitySchema, qualifyOpportunities, readOpportunity, contextKey, validArticleAngle, assertAutonomousTopic, summarizeQualification, type Opportunity } from "../opportunity";
+import { firstLookTermUsd, opportunitySchema, qualifyOpportunities, readOpportunity, contextKey, validArticleAngle, assertAutonomousTopic, summarizeQualification, type FirstLook, type Opportunity } from "../opportunity";
 import { sameIntent, sharedResults } from "../intent";
 import { claimSpend, withSpendScope, type RunBudget } from "@/lib/billing/spend-scope";
 import { memoryRunBudget } from "@/lib/billing/run-budget";
@@ -479,6 +479,106 @@ describe("a first look", () => {
         expect(memory.state().committedUsd).toBeLessThanOrEqual(0.12 + 1e-9);
         if (blind) expect(memory.state().refused).toBeGreaterThan(0);
       }
+    });
+    // The production stall of 2026-10-15: terms waited on calls that never
+    // came back, and qualification waited on the terms.
+    describe("waiting, bounded", () => {
+      const terms = ["clinic booking website cost", "clinic booking website price"];
+      const page = { organic: urls.map((url, i) => ({ url, title: "Clinic booking website cost guide", description: "A buyer guide", rank: i + 1 })), peopleAlsoAsk: [], aiOverview: null };
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      const keepAll = () => judge.mockImplementation(async (_b: unknown, asked: string[]) => ({ basis: "model", verdicts: new Map(asked.map((t) => [t.toLowerCase(), { keep: true, reason: "specific buyer need" }])) }));
+      /** A read that claims, answers `extra` over the approval, and settles below its claim, as askStructured does. */
+      const reads = (extra: Record<string, unknown> = {}) => ask.mockImplementation(async (_op: string, prompt: string) => {
+        let claim;
+        try { claim = await claimSpend("keyword-research/opportunity", 0.02, { minUsd: 0.015 }); } catch { return null; }
+        await claim.settle(0.01);
+        return JSON.stringify({ ...approval, ...extra, kinds: Array(shown(prompt)).fill("article") });
+      });
+      beforeEach(() => { vi.spyOn(console, "warn").mockImplementation(() => {}); });
+
+      it("stops a refused term at once when no other running term holds a claim: it does not wait for one that is only saving", async () => {
+        keepAll();
+        // The second term's page comes back after the first term has read and started saving.
+        fetchSerp.mockImplementation(async (t: string) => { const c = await claimSpend("/serp/google/organic/live/advanced", 0.004); await sleep(t.endsWith("price") ? 30 : 0); await c.settle(0.002); return page; });
+        // One read only: a searcher not served is refused on the first read.
+        reads({ stage: "unrelated" });
+        // Room for one judge read; every other is refused.
+        const memory = memoryRunBudget("run-1", 1, {});
+        let judgeClaims = 0;
+        const refusedAt: number[] = [];
+        const budget: RunBudget = { ...memory, room: async () => null, claim: async (stage, want, min) => {
+          if (stage === "judge" && judgeClaims++ >= 1) { refusedAt.push(Date.now()); return null; }
+          return memory.claim(stage, want, min);
+        } };
+        // The first term's save takes 100ms.
+        let saveEnded = 0;
+        const shared = db as unknown as { from: (t: string) => Record<string, unknown> };
+        const slowDb = { ...(db as object), from: (t: string) => t !== "keywords" ? shared.from(t) : { ...shared.from(t), update: (row: unknown) => {
+          const q = { eq: () => q, then: (resolve: (v: unknown) => unknown) => setTimeout(() => { writes.push(row); saveEnded = Date.now(); resolve({ error: null }); }, 100) };
+          return q;
+        } } } as never;
+        const out = await withSpendScope({ budget }, () => qualifyOpportunities(slowDb, "ws", terms.map((t, i) => ({ id: `k${i}`, term: t })), context, { firstLook }));
+        expect(out.get("k0")).toMatchObject({ status: "rejected", cause: "buyer_mismatch" });
+        expect(out.has("k1")).toBe(false);
+        // Asked once and given up while the other term was still saving: it
+        // used to wait for that save and be refused a second time.
+        expect(refusedAt).toHaveLength(1);
+        expect(refusedAt[0]).toBeLessThan(saveEnded);
+      });
+
+      it("ends at its deadline when a call never answers: what finished is kept, the stuck term is not judged, and nothing is saved for it later", async () => {
+        keepAll();
+        reads();
+        let answer: () => void = () => {};
+        fetchSerp.mockImplementation(async (t: string) => {
+          const c = await claimSpend("/serp/google/organic/live/advanced", 0.004);
+          if (t.endsWith("price")) await new Promise<void>((r) => { answer = r; });
+          await c.settle(0.002);
+          return page;
+        });
+        const look: FirstLook = { runId: "run-1", deadline: Date.now() + 200 };
+        const started = Date.now();
+        const out = await withSpendScope({ budget: memoryRunBudget("run-1", 1, {}) }, () =>
+          qualifyOpportunities(db, "ws", terms.map((t, i) => ({ id: `k${i}`, term: t })), context, { firstLook: look }));
+        expect(Date.now() - started).toBeGreaterThanOrEqual(150);
+        expect(Date.now() - started).toBeLessThan(2_000);
+        expect(out.get("k0")?.status).toBe("qualified");
+        expect(out.has("k1")).toBe(false);
+        expect(look.timedOut).toBe(true);
+        // The stuck call answers after the stage is over: nothing more is asked or saved.
+        const saved = writes.length;
+        const asked = ask.mock.calls.length;
+        answer();
+        await sleep(20);
+        expect(writes.length).toBe(saved);
+        expect(ask.mock.calls.length).toBe(asked);
+      });
+
+      it("ends at its deadline when the buyer test never answers, and buys no results page", async () => {
+        judge.mockImplementation(() => new Promise(() => {}));
+        const look: FirstLook = { runId: "run-1", deadline: Date.now() + 50 };
+        const out = await withSpendScope({ budget: memoryRunBudget("run-1", 1, {}) }, () =>
+          qualifyOpportunities(db, "ws", terms.map((t, i) => ({ id: `k${i}`, term: t })), context, { firstLook: look }));
+        expect(out.size).toBe(0);
+        expect(fetchSerp).not.toHaveBeenCalled();
+        expect(writes).toEqual([]);
+      });
+
+      it("buys nothing once its deadline has passed, and keeps the verdicts it already had", async () => {
+        keepAll();
+        reads();
+        const cached = (await run()) as Opportunity;
+        vi.clearAllMocks();
+        writes.length = 0;
+        const look: FirstLook = { runId: "run-1", deadline: Date.now() - 1 };
+        const out = await withSpendScope({ budget: memoryRunBudget("run-1", 1, {}) }, () =>
+          qualifyOpportunities(db, "ws", [{ id: "k", term, opportunity: cached }, { id: "k2", term: "clinic booking website price" }], context, { firstLook: look }));
+        expect(out.get("k")?.status).toBe("qualified");
+        expect(out.has("k2")).toBe(false);
+        expect(judge).not.toHaveBeenCalled();
+        expect(fetchSerp).not.toHaveBeenCalled();
+        expect(ask).not.toHaveBeenCalled();
+      });
     });
     it("judges a first look's whole batch side by side, and never commits past the run's ceiling", async () => {
       const terms = Array.from({ length: 12 }, (_, i) => `clinic booking website option ${i + 1}`);

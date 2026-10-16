@@ -19,6 +19,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RunBudget, SpendStage } from "./spend-scope";
+import { BUDGET_RPC_TIMEOUT_MS } from "@/lib/onboarding/time-limits";
 
 /** $1 a first look, the article included (founder decision 2026-09-29). */
 export const FIRST_LOOK_CEILING_USD = 1;
@@ -198,25 +199,41 @@ const num = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
-/** A claim interface over the run's row. Every call goes to the database. */
+/**
+ * A claim interface over the run's row. Every call goes to the database, and
+ * none waits longer than BUDGET_RPC_TIMEOUT_MS for its answer: supabase-js
+ * sends with no timeout, and a settle whose answer never came held its paid
+ * call - and the qualification waiting on it - for good (2026-10-15: a first
+ * look's results pages and judge reads granted and never settled, 25 minutes
+ * of nothing). A claim that times out is refused by the caller (it may have
+ * been granted: the row then holds it at its estimate, the safe side); a
+ * settle that times out leaves the claim at its estimate; a room that cannot
+ * be read is null.
+ */
 export function runBudget(db: SupabaseClient, runId: string): RunBudget {
   return {
     runId,
     async claim(stage, wantUsd, minUsd) {
-      const { data, error } = await db.rpc("run_budget_claim", { p_run_id: runId, p_stage: stage, p_want: wantUsd, p_min: minUsd });
+      const { data, error } = await bounded(db.rpc("run_budget_claim", { p_run_id: runId, p_stage: stage, p_want: wantUsd, p_min: minUsd }));
       if (error) throw new Error(error.message);
       return data === null || data === undefined ? null : num(data);
     },
     async settle(stage, grantedUsd, actualUsd) {
-      const { error } = await db.rpc("run_budget_settle", { p_run_id: runId, p_stage: stage, p_granted: grantedUsd, p_actual: actualUsd });
+      const { error } = await bounded(db.rpc("run_budget_settle", { p_run_id: runId, p_stage: stage, p_granted: grantedUsd, p_actual: actualUsd }));
       if (error) throw new Error(error.message);
     },
     async room(stage) {
-      const { data, error } = await db.rpc("run_budget_room", { p_run_id: runId, p_stage: stage });
+      const { data, error } = await bounded(db.rpc("run_budget_room", { p_run_id: runId, p_stage: stage }));
       if (error || data === null || data === undefined) return null;
       return num(data);
     },
   };
+}
+
+/** A PostgREST request that gives up after BUDGET_RPC_TIMEOUT_MS, answered as an error (the builder's own `abortSignal`). */
+function bounded<T>(query: T): T {
+  const q = query as T & { abortSignal?: (signal: AbortSignal) => T };
+  return typeof q.abortSignal === "function" ? q.abortSignal(AbortSignal.timeout(BUDGET_RPC_TIMEOUT_MS)) : query;
 }
 
 /**
