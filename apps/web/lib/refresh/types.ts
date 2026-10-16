@@ -46,6 +46,8 @@ export interface Evidence {
   ctr: number | null;
   expected_ctr: number | null;
   word_count: number | null;
+  /** The day these numbers were measured (YYYY-MM-DD). Absent on rows from before it was recorded. */
+  as_of?: string | null;
 }
 
 export interface Detection {
@@ -66,6 +68,8 @@ export interface RefreshCandidate {
   brief: string | null;
   brief_status: BriefStatus;
   dismissed_at: string | null;
+  /** Set with `dismissed_at` when a pass retired it rather than a person (migration 117). */
+  resolved_at?: string | null;
   created_at: string;
 }
 

@@ -149,7 +149,7 @@ async function run(request: Request) {
         out.analysed =
           a.reason === "gsc_not_connected"
             ? "skipped: Search Console is not connected"
-            : `${a.pages} pages, ${a.created} new candidates, ${a.refreshed} refreshed`;
+            : `${a.pages} pages, ${a.created} new candidates, ${a.refreshed} refreshed, ${a.retired} retired`;
       }
 
       const days = (ws.refresh_days as number[] | null) ?? [];

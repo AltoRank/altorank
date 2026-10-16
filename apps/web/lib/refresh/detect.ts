@@ -21,6 +21,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { tiptapToHtml } from "@/lib/cms/html";
 import type { GscShapes } from "@/lib/gsc/analysis";
 import { readGsc } from "@/lib/gsc/read";
+import { isMissingColumn } from "@/lib/supabase/missing-column";
+import { closeOpenTasks, readTasks } from "./tasks";
 import type { Detection, Evidence, Opportunity } from "./types";
 
 // ── Inputs ──────────────────────────────────────────────────────────────────
@@ -301,7 +303,8 @@ export function headingsOf(html: string): string[] {
 
 export type AnalyzeResult =
   | { reason: "gsc_not_connected" }
-  | { reason: "ok"; pages: number; created: number; refreshed: number };
+  /** `retired`: open candidates the numbers no longer support, closed by this pass. */
+  | { reason: "ok"; pages: number; created: number; refreshed: number; retired: number };
 
 const normUrl = (u: string) => {
   try {
@@ -319,6 +322,17 @@ const normUrl = (u: string) => {
  * is not dismissed gets its evidence refreshed and keeps its id, brief and
  * any task pointing at it. Dismissed rows are left alone; if the numbers still
  * say so next week, a new row is raised.
+ *
+ * An open candidate that does not fire again is retired: the page recovered,
+ * or is no longer one of the site's pages, and a rewrite scheduled on the old
+ * numbers would spend a model call on a page that no longer needs it. It is
+ * closed the way a dismissal is (`dismissed_at`, so a later pass may raise it
+ * again) with `resolved_at` saying the pass did it, and its open task is
+ * cancelled. Nothing is retired when the current window holds no Search
+ * Console rows or the page list could not be read: unmeasured is not
+ * recovered.
+ *
+ * Every candidate's evidence carries `as_of`, the day it was measured.
  *
  * Does nothing without Search Console. Every detector reads its rows, and a
  * page with no impressions data is not "getting no impressions", it is
@@ -367,7 +381,7 @@ export async function analyzeWorkspace(
 
   const serp = await loadSerpHistory(supabase, workspaceId, now);
 
-  const [{ data: articles, error: articlesError }, { data: sitePages }] = await Promise.all([
+  const [{ data: articles, error: articlesError }, { data: sitePages, error: sitePagesError }] = await Promise.all([
     supabase
       .from("articles")
       .select("id, keyword, word_count, published_url")
@@ -432,23 +446,30 @@ export async function analyzeWorkspace(
     });
   }
 
-  const { data: openRows } = await supabase
+  const { data: openRows, error: openError } = await supabase
     .from("refresh_candidates")
     .select("id, url, opportunity")
     .eq("workspace_id", workspaceId)
     .is("dismissed_at", null);
-  const open = new Map((openRows ?? []).map((r) => [`${normUrl(r.url as string)}|${r.opportunity}`, r.id as string]));
+  if (openError) throw new Error(`refresh: could not read this site's candidates (${openError.message})`);
+  const keyOf = (url: string, opportunity: string) => `${normUrl(url)}|${opportunity}`;
+  const open = new Map((openRows ?? []).map((r) => [keyOf(r.url as string, r.opportunity as string), r.id as string]));
 
+  const asOf = now.toISOString().slice(0, 10);
   let created = 0;
   let refreshed = 0;
+  const fired = new Set<string>();
   const inserts: Record<string, unknown>[] = [];
   for (const page of pages) {
     for (const d of detectOpportunities({ page, current, previous })) {
-      const existing = open.get(`${normUrl(page.url)}|${d.opportunity}`);
+      const key = keyOf(page.url, d.opportunity);
+      fired.add(key);
+      const evidence: Evidence = { ...d.evidence, as_of: asOf };
+      const existing = open.get(key);
       if (existing) {
         await supabase
           .from("refresh_candidates")
-          .update({ evidence: d.evidence, site_page_id: page.site_page_id, article_id: page.article_id })
+          .update({ evidence, site_page_id: page.site_page_id, article_id: page.article_id })
           .eq("id", existing);
         refreshed++;
       } else {
@@ -458,7 +479,7 @@ export async function analyzeWorkspace(
           article_id: page.article_id,
           url: page.url,
           opportunity: d.opportunity,
-          evidence: d.evidence,
+          evidence,
         });
       }
     }
@@ -469,12 +490,57 @@ export async function analyzeWorkspace(
     created += Math.min(50, inserts.length - i);
   }
 
+  const measured = windows.current.length > 0 && !sitePagesError;
+  const gone = measured
+    ? (openRows ?? []).filter((r) => !fired.has(keyOf(r.url as string, r.opportunity as string))).map((r) => r.id as string)
+    : [];
+  const retired = gone.length ? await retireCandidates(supabase, workspaceId, gone, now) : 0;
+
   await supabase
     .from("workspaces")
     .update({ refresh_last_analyzed_at: now.toISOString() })
     .eq("id", workspaceId);
 
-  return { reason: "ok", pages: pages.length, created, refreshed };
+  return { reason: "ok", pages: pages.length, created, refreshed, retired };
+}
+
+/**
+ * Close candidates the numbers no longer support, and cancel their open
+ * tasks (lib/refresh/tasks.ts). `resolved_at` arrives with migration 117;
+ * before it the row is closed with `dismissed_at` alone. Returns how many
+ * were closed.
+ */
+async function retireCandidates(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  ids: string[],
+  now: Date,
+): Promise<number> {
+  const at = now.toISOString();
+  let retired = 0;
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const close = (patch: Record<string, unknown>) =>
+      supabase
+        .from("refresh_candidates")
+        .update(patch)
+        .eq("workspace_id", workspaceId)
+        .in("id", chunk)
+        .is("dismissed_at", null)
+        .select("id");
+    let { data, error } = await close({ dismissed_at: at, resolved_at: at });
+    if (isMissingColumn(error)) ({ data, error } = await close({ dismissed_at: at }));
+    if (error) throw new Error(`refresh_candidates retire: ${error.message}`);
+    retired += (data ?? []).length;
+
+    const tasks = await readTasks(supabase, {
+      candidateIds: chunk,
+      workspaceId,
+      statuses: ["scheduled", "failed", "running"],
+    });
+    await closeOpenTasks(supabase, tasks, { status: "cancelled" }, now.getTime());
+  }
+  return retired;
 }
 
 /**

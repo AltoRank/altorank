@@ -164,7 +164,7 @@ m(file, applied) as (values
   ('112_article_images_private',             not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Article images are readable by anyone')),
   ('113_push_record',                        exists (select 1 from col where t='refresh_executions' and c='pushed_by') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'refresh_executions_guard_push' and c.relname = 'refresh_executions')),
   ('114_blog_keys',                          exists (select 1 from col where t='api_keys' and c='workspace_id') and exists (select 1 from pg_constraint where conname = 'api_keys_blog_key_shape') and exists (select 1 from pg_trigger where tgname = 'api_keys_site_in_account')),
-  ('117_refresh_engine',                     exists (select 1 from col where t='refresh_tasks' and c='started_at'))
+  ('117_refresh_engine',                     exists (select 1 from col where t='refresh_tasks' and c='started_at') and exists (select 1 from col where t='refresh_candidates' and c='resolved_at'))
 )
 select file, applied from m order by file;
 ```
@@ -391,7 +391,7 @@ no code in the repo references either).
 | 112_article_images_private.sql | `fix/tighten-site-scope` | 045; any time | yes | yes, see its section (the bucket can be listed again) |
 | 113_push_record.sql | `fix/approval-around-push` | 052, `auth.users`; **its code deployed first** | yes | yes, see its section (loses who pushed each rewrite; a member can again mark a rewrite pushed over PostgREST) |
 | 114_blog_keys.sql | `fix/blog-api-key-scope` | 051, 085, 099; **its code deployed first** | yes | yes, see its section (blog keys are revoked; agent keys are untouched) |
-| 117_refresh_engine.sql | `fix/refresh-engine` | 052; **its code deployed first** | yes | yes, see its section (nothing is lost but the start times; the code reads `created_at` instead) |
+| 117_refresh_engine.sql | `fix/refresh-engine` | 052; **its code deployed first** | yes | yes, see its section (loses the start times and which candidates a pass retired; the code works without both) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1885,34 +1885,47 @@ alter table public.api_keys drop column if exists workspace_id;
 
 ## 117 — refresh engine bookkeeping
 
-`117_refresh_engine.sql` adds `refresh_tasks.started_at` (timestamptz,
-nullable): when cron/refresh claimed a task and set it `running`. A rewrite
-runs inside one cron invocation (300 s); a task still `running` fifteen
-minutes after it started was cut off before it could record an outcome. The
-cron marks those `failed` with a sentence saying so at the start of each run,
-and cancel, reschedule and dismiss on Improvements treat them as open
-(`lib/refresh/tasks.ts`). The claim is conditional on `status = 'scheduled'`,
-so two invocations cannot both run one task.
+`117_refresh_engine.sql` adds two nullable timestamptz columns:
 
-**Apply AFTER its code is live.** The new code reads and writes `started_at`
-when it is there, and on 42703/PGRST204 reads again without it and judges a
-running task by its `created_at`, which is never later than the start. Code
-from before 117 never names the column, so applying first is harmless too.
-Re-running is a no-op (`add column if not exists`). Depends on 052.
+- `refresh_tasks.started_at`: when cron/refresh claimed a task and set it
+  `running`. A rewrite runs inside one cron invocation (300 s); a task still
+  `running` fifteen minutes after it started was cut off before it could
+  record an outcome. The cron marks those `failed` with a sentence saying so
+  at the start of each run, and cancel, reschedule and dismiss on
+  Improvements treat them as open (`lib/refresh/tasks.ts`). The claim is
+  conditional on `status = 'scheduled'`, so two invocations cannot both run
+  one task.
+- `refresh_candidates.resolved_at`: set together with `dismissed_at` when an
+  analysis pass retires an open candidate whose numbers no longer fire
+  (`lib/refresh/detect.ts`), and its open task is cancelled. `dismissed_at`
+  alone stays a person's dismissal. Closing through `dismissed_at` keeps
+  052's one-open-candidate index as it is and lets a later pass raise the
+  page again.
 
-Test: `lib/refresh/__tests__/tasks.test.ts` covers both sides of the column
-(the claim, the read and the reaper with and without it). No database test:
-the file adds one nullable column and no policy.
+**Apply AFTER its code is live.** The new code writes and reads both columns
+when they are there and, on 42703/PGRST204, works without them: a running
+task is judged by its `created_at` (never later than the start), and a pass
+retires a candidate with `dismissed_at` alone. Code from before 117 never
+names either column, so applying first is harmless too. Re-running is a
+no-op (`add column if not exists`). Depends on 052.
 
-Post-flight (expect `t`):
+Test: `lib/refresh/__tests__/tasks.test.ts` and
+`lib/refresh/__tests__/analyze-retire.test.ts` cover both sides of each
+column. No database test: the file adds two nullable columns and no policy.
+
+Post-flight (expect `t`, `t`):
 
 ```sql
 select exists (select 1 from information_schema.columns
-                where table_schema = 'public' and table_name = 'refresh_tasks' and column_name = 'started_at');
+                where table_schema = 'public' and table_name = 'refresh_tasks' and column_name = 'started_at'),
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'refresh_candidates' and column_name = 'resolved_at');
 ```
 
-Rollback (the code keeps working on `created_at`):
+Rollback (the code keeps working without both; retired candidates stay
+closed and read as dismissed):
 
 ```sql
 alter table public.refresh_tasks drop column if exists started_at;
+alter table public.refresh_candidates drop column if exists resolved_at;
 ```

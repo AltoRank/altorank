@@ -76,6 +76,10 @@ const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
 
+/** A YYYY-MM-DD day, read at noon UTC so no timezone moves it to a neighbour. */
+const fmtDay = (day: string) =>
+  new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+
 export function OpportunityBadge({ opportunity }: { opportunity: Opportunity }) {
   const tone: Record<Opportunity, string> = {
     almost_there: "bg-accent-soft text-accent-ink",
@@ -137,7 +141,8 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
           toast.error("Search Console is not connected, so there is nothing to analyse.");
         } else {
           toast.success(
-            `${plural(r.pages, "page")} checked: ${plural(r.created, "new candidate")}, ${r.refreshed} refreshed`,
+            `${plural(r.pages, "page")} checked: ${plural(r.created, "new candidate")}, ${r.refreshed} refreshed` +
+              (r.retired ? `, ${r.retired} no longer flagged` : ""),
           );
           router.refresh();
         }
@@ -344,7 +349,15 @@ function CandidateItem({ candidate: c, scheduleRuns }: { candidate: CandidateRow
             {c.url.replace(/^https?:\/\//, "")}
           </a>
           {evidence.length > 0 && (
-            <div className="mt-1.5 text-[12px] text-ink-3">{evidence.join(" · ")}</div>
+            <div className="mt-1.5 text-[12px] text-ink-3">
+              {evidence.join(" · ")}
+              {/* When these numbers were read: a candidate's evidence is
+                  refreshed by each pass, and one from before the date was
+                  recorded can only say when it was first raised. */}
+              <span className="ml-1.5 text-ink-4">
+                · {c.evidence.as_of ? `measured ${fmtDay(c.evidence.as_of)}` : `first flagged ${fmtDate(c.created_at)}`}
+              </span>
+            </div>
           )}
           {c.task && (
             <div className={cn("mt-1.5 text-[12px]", c.task.status === "failed" || c.task.stale ? "text-err-ink" : "text-ink-2")}>
