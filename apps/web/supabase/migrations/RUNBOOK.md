@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server) and **114** (blog keys), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113 and 114 go in AFTER**; **112 goes in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server), **114** (blog keys) and **116** (how often a paid door may be pressed, the Operations totals, and the customer's own last sign-in across "View as"; 115 is taken by an open branch), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113, 114 and 116 go in AFTER**; **112 goes in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -163,7 +163,8 @@ m(file, applied) as (values
   ('111_member_scope_guards',                exists (select 1 from pg_trigger where tgname = 'api_keys_creator_sees_every_site') and exists (select 1 from pg_trigger where tgname = 'workspaces_domain_needs_every_site') and exists (select 1 from pg_trigger where tgname = 'workspace_integrations_google_server_written') and not has_column_privilege('authenticated', 'public.account_integrations', 'tokens', 'SELECT') and pg_get_functiondef('public.account_members_guard_roles'::regproc) like '%actor_sites%'),
   ('112_article_images_private',             not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Article images are readable by anyone')),
   ('113_push_record',                        exists (select 1 from col where t='refresh_executions' and c='pushed_by') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'refresh_executions_guard_push' and c.relname = 'refresh_executions')),
-  ('114_blog_keys',                          exists (select 1 from col where t='api_keys' and c='workspace_id') and exists (select 1 from pg_constraint where conname = 'api_keys_blog_key_shape') and exists (select 1 from pg_trigger where tgname = 'api_keys_site_in_account'))
+  ('114_blog_keys',                          exists (select 1 from col where t='api_keys' and c='workspace_id') and exists (select 1 from pg_constraint where conname = 'api_keys_blog_key_shape') and exists (select 1 from pg_trigger where tgname = 'api_keys_site_in_account')),
+  ('116_spend_doors',                        to_regclass('public.spend_door_uses') is not null and to_regprocedure('public.take_spend_door(uuid,uuid,text,jsonb)') is not null and to_regprocedure('public.provider_spend_summary(timestamptz)') is not null and exists (select 1 from col where t='admin_impersonations' and c='target_last_sign_in_at'))
 )
 select file, applied from m order by file;
 ```
@@ -307,6 +308,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 111_member_scope_guards.sql   # AF
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 112_article_images_private.sql   # any time; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 113_push_record.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 114_blog_keys.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 116_spend_doors.sql   # AFTER its code is live; see its section
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -389,6 +391,7 @@ no code in the repo references either).
 | 112_article_images_private.sql | `fix/tighten-site-scope` | 045; any time | yes | yes, see its section (the bucket can be listed again) |
 | 113_push_record.sql | `fix/approval-around-push` | 052, `auth.users`; **its code deployed first** | yes | yes, see its section (loses who pushed each rewrite; a member can again mark a rewrite pushed over PostgREST) |
 | 114_blog_keys.sql | `fix/blog-api-key-scope` | 051, 085, 099; **its code deployed first** | yes | yes, see its section (blog keys are revoked; agent keys are untouched) |
+| 116_spend_doors.sql | `fix/spend-doors` | 025, 030, 085, 106; **its code deployed first** | yes | yes, see its section (presses are counted per instance again, the Operations page pages through provider_spend, and the kept last sign-ins are lost) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1877,4 +1880,84 @@ alter table public.api_keys drop constraint if exists api_keys_blog_key_shape;
 update public.api_keys set revoked_at = now() where 'blog' = any (scopes) and revoked_at is null;
 drop index if exists public.api_keys_workspace;
 alter table public.api_keys drop column if exists workspace_id;
+```
+
+## 116 — how often a paid door may be pressed, the Operations totals, and last sign-in across "View as"
+
+`116_spend_doors.sql` adds three things, all written and read by the server
+only.
+
+- `spend_door_uses` and `take_spend_door(account, workspace, door, limits)`.
+  A few paid doors are pressed by a person and cost a model call or a crawl
+  each time: the editor's whole-article rewrite and its quick rewrites, and
+  the setup wizard's site read, rival lookup and typed-rival lookup. Each
+  press is counted here against the limits the app passes (per account, per
+  site, in a window or for the account's whole life; the numbers live in
+  `apps/web/lib/billing/spend-doors.ts`). The function counts and inserts
+  under one advisory lock per account and door, so two presses at once
+  cannot both get under a limit, and a refused press writes nothing. The
+  wizard's reads keep what they bought on the row (`cache_key`, `result`), so
+  a reload of the wizard is handed the read it already paid for. A row
+  outlives its site (`on delete set null`), so deleting a site and adding it
+  again does not hand the count back. RLS on with no policies, no client
+  grants, and the function checks the request's role before anything else.
+- `provider_spend_summary(since)`: every provider_spend row summed in the
+  groups the Operations page reports by (provider, operation, site, stage,
+  whether an article was bought for, before or after `since`), plus the total
+  call count, the first row's date and the number of distinct articles priced
+  model calls were bought for. The page read the newest 2,000 rows, and
+  PostgREST answers at most 1,000, so its totals covered the newest thousand
+  calls. Service role only, same role check.
+- `admin_impersonations.target_last_sign_in_at`: the customer's own last
+  sign-in, read before "View as" signs in as them. The Users page shows it
+  instead of the sign-in "View as" made.
+
+**Apply AFTER its code is live.** Nothing from before 116 names any of these.
+The code that ships with it works without it: presses are counted in the
+instance's memory (`lib/billing/spend-doors.ts` falls back on any error from
+the function), the Operations page pages through provider_spend
+(`lib/admin/spend-summary.ts`), and "View as" writes its log row again
+without the new column when the insert is refused for it. Applying first is
+harmless too, but the order keeps the rule simple. Re-running is a no-op (`if
+not exists`, `create or replace`, grants and revokes re-stated). Depends on
+025 (and 106's `stage`), 030 and 085.
+
+Test: `supabase/tests/116_spend_doors.rls.sql` (self-contained, rolls back).
+Green 2026-10-16 on a throwaway Postgres 17 (supabase/postgres 17.11 image)
+holding a stub of `accounts`, `workspaces`, `articles`, `provider_spend`
+(025's columns plus 106's `stage`) and `admin_impersonations`, with 116
+applied twice: two presses per site and three per account in a day, the third
+on one site refused on the site limit and the fourth on the account limit; a
+refused press is not counted; doors are counted apart; a press older than the
+window frees the count while a lifetime limit still holds; deleting a site
+keeps its uses on the account; the summary sums 1,500 rows of $0.001 to
+$1.50; a client token is refused the two functions and the table (42501).
+Also checked by hand on the same database: with EXECUTE granted to
+`authenticated` on purpose, the function's own role check still refuses a
+client token, and the service role is answered. The rollback below was run
+on the same database, 116 re-applied, and the post-flight read as expected.
+Not yet run on a copy built from 001-116. (The supabase/postgres 17.6.1.106 image crashed on any
+permission-denied function call, ours or not, so use 17.11 or later for the
+throwaway.)
+
+Post-flight (expect `t`, `t`, `t`, `t`, `f`, `f`):
+
+```sql
+select to_regclass('public.spend_door_uses') is not null,
+       to_regprocedure('public.take_spend_door(uuid,uuid,text,jsonb)') is not null,
+       to_regprocedure('public.provider_spend_summary(timestamptz)') is not null,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'admin_impersonations' and column_name = 'target_last_sign_in_at'),
+       has_function_privilege('authenticated', 'public.take_spend_door(uuid,uuid,text,jsonb)', 'EXECUTE'),
+       has_table_privilege('authenticated', 'public.spend_door_uses', 'SELECT');
+```
+
+Rollback (the code keeps working: it counts in memory, pages through
+provider_spend, and writes the log row without the column):
+
+```sql
+drop function if exists public.provider_spend_summary(timestamptz);
+drop function if exists public.take_spend_door(uuid, uuid, text, jsonb);
+drop table if exists public.spend_door_uses;
+alter table public.admin_impersonations drop column if exists target_last_sign_in_at;
 ```
