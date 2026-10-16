@@ -73,39 +73,6 @@ export function promptContent(prompt: string, cachePrefix?: number): string | An
 }
 
 /**
- * How long the calls after the first wait for it at most. A cache entry is
- * readable once the response that writes it has begun, not when it ends: by
- * then its prompt (here ~3,000 tokens) has been read. Waiting for the whole
- * answer would tie every other judge read, and the budget each pledged, to
- * the first: 4-9 seconds when it is well, its full deadline when it hangs.
- */
-export const FIRST_CALL_HEAD_START_MS = 3_000;
-
-/**
- * `ask`, with its first call given a head start: the calls that come while
- * it is out wait for its answer, or `headStartMs`, whichever comes first.
- * Made for prompts that share a cached prefix (`cachePrefix`): calls sent
- * together would each pay to write the same prefix, and a first look sends
- * up to fifteen judge reads at once.
- */
-export function firstCallAlone(ask: AskModel, headStartMs: number = FIRST_CALL_HEAD_START_MS): AskModel {
-  let first: Promise<unknown> | null = null;
-  return async (operation, prompt, options) => {
-    if (first) {
-      await first;
-      return ask(operation, prompt, options);
-    }
-    const call = ask(operation, prompt, options);
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    first = Promise.race([
-      call.catch(() => undefined),
-      new Promise<void>((resolve) => { timer = setTimeout(resolve, headStartMs); }),
-    ]).finally(() => clearTimeout(timer));
-    return call;
-  };
-}
-
-/**
  * The request parameters a call is made with, beyond the model, prompt and
  * token cap: `DECISION_CALL` (lib/ai/models.ts) for a decision, temperature
  * 0 alone for the cheap tier. Temperature 0 where the model takes one;

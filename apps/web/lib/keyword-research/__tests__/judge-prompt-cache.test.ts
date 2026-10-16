@@ -19,7 +19,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }));
 vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: vi.fn(), spendClient: () => null }));
 
-import { askStructured, firstCallAlone, promptContent, type AskModel } from "../buyer-model";
+import { askStructured, promptContent } from "../buyer-model";
 import { askResultsJudge, judgeCachePrefix, opportunityPrompt, type OpportunityContext } from "../opportunity";
 import { anthropicModel } from "@/lib/ai/models";
 import { anthropicCost } from "@/lib/billing/spend";
@@ -78,47 +78,5 @@ describe("the judge's cached instructions", () => {
     expect(anthropicCost(model, 0, 0, { writeTokens: 1000 })).toBeCloseTo(anthropicCost(model, 1250, 0)!, 9);
     await askStructured("op", "prompt", { maxTokens: 100, cachePrefix: 3 });
     expect(create).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("the first judge read of a batch", () => {
-  it("goes alone: the reads that come while it is out wait for its answer", async () => {
-    const order: string[] = [];
-    let release!: () => void;
-    const gate = new Promise<void>((r) => { release = r; });
-    const inner: AskModel = async (_op, prompt) => {
-      order.push(`start ${prompt}`);
-      if (prompt === "a") await gate;
-      order.push(`end ${prompt}`);
-      return prompt;
-    };
-    const ask = firstCallAlone(inner);
-    const all = Promise.all(["a", "b", "c"].map((p) => ask("op", p, { maxTokens: 1 })));
-    await new Promise((r) => setTimeout(r, 5));
-    expect(order).toEqual(["start a"]);
-    release();
-    expect(await all).toEqual(["a", "b", "c"]);
-    expect(order.slice(0, 2)).toEqual(["start a", "end a"]);
-  });
-
-  it("holds the rest only for its head start: a slow first read does not stall the batch", async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((r) => { release = r; });
-    const ended: string[] = [];
-    const ask = firstCallAlone(async (_op, prompt) => { if (prompt === "a") await gate; ended.push(prompt); return prompt; }, 20);
-    const first = ask("op", "a", { maxTokens: 1 });
-    const second = ask("op", "b", { maxTokens: 1 });
-    expect(await second).toBe("b");
-    expect(ended).toEqual(["b"]);
-    release();
-    expect(await first).toBe("a");
-  });
-
-  it("does not hold the rest when it fails", async () => {
-    const ask = firstCallAlone(async (_op, prompt) => { if (prompt === "a") throw new Error("down"); return prompt; });
-    const first = ask("op", "a", { maxTokens: 1 });
-    const second = ask("op", "b", { maxTokens: 1 });
-    await expect(first).rejects.toThrow("down");
-    expect(await second).toBe("b");
   });
 });

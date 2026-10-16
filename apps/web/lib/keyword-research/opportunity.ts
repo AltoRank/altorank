@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { fetchAdvancedSerp, type SerpData } from "@/lib/seo/brief-data";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
-import { askStructured, describeBusiness, extractJson, firstCallAlone, modelAvailable, type AskModel, type SpendSink } from "./buyer-model";
+import { askStructured, describeBusiness, extractJson, modelAvailable, type AskModel, type SpendSink } from "./buyer-model";
 
 export type { AskModel };
 import { profileUsable } from "./business-context";
@@ -344,10 +344,6 @@ export async function qualifyOpportunities(
     if (!gate.allowed) throw new SpendRefusedError(gate);
   }
   const spend = { supabase, workspaceId };
-  // Every judge read of this batch shares its instructions, cached
-  // (`askResultsJudge`): the first read writes them alone, then the rest
-  // read them back.
-  const judgeAsk = firstCallAlone(askStructured);
   const firstLook = options.firstLook;
   // The deadline, as something to wait on: everything below that waits -
   // for the buyer test, for room, for the terms in flight - waits for it
@@ -532,7 +528,7 @@ export async function qualifyOpportunities(
           for (const key of Object.keys(result) as Array<keyof Opportunity>) delete result[key];
           Object.assign(result, fresh);
           try {
-            await timed("judge", () => withStage("judge", () => judgeOnResults(result, input, { spend, ask: judgeAsk })));
+            await timed("judge", () => withStage("judge", () => judgeOnResults(result, input, { spend })));
           } catch (err) {
             if (!isBudgetRefusal(err)) {
               result.cause = "provider_error";
@@ -555,7 +551,7 @@ export async function qualifyOpportunities(
         // read the budget refused leaves the term not judged, as a refused
         // first read does: one approval is not what a first look plans on.
         if (firstLook && input && (result.status as Opportunity["status"]) === "qualified") {
-          const again = await patiently(c.id, () => watchRefusals(() => timed("judge", () => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend, ask: judgeAsk })))));
+          const again = await patiently(c.id, () => watchRefusals(() => timed("judge", () => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend })))));
           if (again.refused) { stop(); return; }
           if (closed) return;
           const second = again.value;
