@@ -76,7 +76,7 @@ describe("PUBLIC_PREFIXES covers every sessionless page", () => {
     expect(found.length).toBeGreaterThan(0);
     // The ones that exist today. Named so a deletion is deliberate, not silent.
     expect(found).toEqual(
-      expect.arrayContaining(["/check", "/hold", "/share", "/unsubscribe", "/oauth/authorize"]),
+      expect.arrayContaining(["/b", "/check", "/hold", "/share", "/unsubscribe", "/oauth/authorize"]),
     );
   });
 
@@ -115,6 +115,15 @@ describe("PUBLIC_PREFIXES covers every sessionless page", () => {
    * the signed-out case itself, which says nothing about whatever else lands
    * under /oauth later.
    */
+  it("serves the hosted blog with no session, and only under /b/", () => {
+    for (const p of ["/b/acme", "/b/acme/a-post", "/b/acme/sitemap.xml", "/b/acme/rss.xml"]) {
+      expect(isPublicPath(p), p).toBe(true);
+    }
+    expect(isPublicPath("/billing")).toBe(false);
+    expect(isPublicPath("/blog")).toBe(false);
+    expect(isPublicPath("/brand")).toBe(false);
+  });
+
   it("keeps /oauth/authorize from making the rest of /oauth public", () => {
     expect(isPublicPath("/oauth/authorize")).toBe(true);
     expect(isPublicPath("/oauth")).toBe(false);

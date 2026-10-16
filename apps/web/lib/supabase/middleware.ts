@@ -68,6 +68,10 @@ export const PUBLIC_PREFIXES = [
   // session cookies are not sent; every API call it makes is authenticated by
   // a Shopify ID token instead (lib/shopify/request-auth.ts).
   "/shopify",
+  // The hosted blog (app/b/[slug], migration 120): a site's live articles,
+  // read by anyone. Nothing behind it knows a session; a blog that is off is
+  // a 404, not a sign-in.
+  "/b",
 ] as const;
 
 /** Whether the middleware serves this path to a request with no session. */
