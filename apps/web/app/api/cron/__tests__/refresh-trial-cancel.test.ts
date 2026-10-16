@@ -21,9 +21,16 @@ function table(name: string) {
   const chain: Record<string, unknown> = {};
   const self = () => chain;
   Object.assign(chain, {
-    select: self, eq: self, neq: self, gte: self, lte: self, order: self, limit: self,
-    maybeSingle: async () => ({ data: name === "refresh_tasks" ? { id: "task-1", scheduled_for: "2026-09-29" } : null, error: null }),
-    then: (r: (v: unknown) => unknown) => r(name === "workspaces" ? { data: workspaces, error: null } : { data: [], count: 0, error: null }),
+    select: self, eq: self, neq: self, gte: self, lte: self, order: self, limit: self, in: self,
+    maybeSingle: async () => ({ data: null, error: null }),
+    then: (r: (v: unknown) => unknown) =>
+      r(
+        name === "workspaces"
+          ? { data: workspaces, error: null }
+          : name === "refresh_tasks"
+            ? { data: [{ id: "task-1", workspace_id: "ws-1", status: "scheduled", scheduled_for: "2026-09-29", created_at: "2026-09-28T00:00:00Z" }], error: null }
+            : { data: [], count: 0, error: null },
+      ),
   });
   return chain;
 }

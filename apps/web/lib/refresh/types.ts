@@ -46,6 +46,8 @@ export interface Evidence {
   ctr: number | null;
   expected_ctr: number | null;
   word_count: number | null;
+  /** The day these numbers were measured (YYYY-MM-DD). Absent on rows from before it was recorded. */
+  as_of?: string | null;
   /**
    * Whose numbers the Search Console fields are: "page" for this page's own
    * (query_page rows), "site" for every page of the site on this query, used
@@ -73,6 +75,8 @@ export interface RefreshCandidate {
   brief: string | null;
   brief_status: BriefStatus;
   dismissed_at: string | null;
+  /** Set with `dismissed_at` when a pass retired it rather than a person (migration 117). */
+  resolved_at?: string | null;
   created_at: string;
 }
 
@@ -86,6 +90,8 @@ export interface RefreshTask {
   status: TaskStatus;
   error: string | null;
   created_at: string;
+  /** When the rewrite was claimed; migration 117. Absent before it, null on rows never run. */
+  started_at?: string | null;
 }
 
 export type HunkKind = "unchanged" | "changed" | "added" | "removed";
