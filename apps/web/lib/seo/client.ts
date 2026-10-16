@@ -5,6 +5,7 @@
 import { e2eStubsEnabled } from "@/lib/e2e/stubs";
 import { claimSpend, currentSpendScope, scopeAttribution } from "@/lib/billing/spend-scope";
 import { estimateDataForSEOUsd } from "./dataforseo-cost";
+import { callSignal, outOfTime } from "@/lib/onboarding/deadline";
 
 const BASE_URL = "https://api.dataforseo.com/v3";
 
@@ -242,6 +243,9 @@ export async function post<T = unknown>(
 ): Promise<DataForSEOResponse<T>> {
   const maxAttempts = Math.max(1, opts.maxAttempts ?? MAX_ATTEMPTS);
   if (e2eStubsEnabled()) throw new DataForSEOError(`E2E_STUBS: refused to call DataForSEO ${endpoint}`, 0);
+  // The work this call is part of is out of time (lib/onboarding/deadline.ts):
+  // nothing is claimed or sent, and the caller sees a timeout.
+  if (outOfTime()) throw new DOMException(`Out of time before DataForSEO ${endpoint} was asked`, "TimeoutError");
   // Under a first look's budget the estimate is claimed before anything is
   // sent; a refusal throws BudgetRefusedError and nothing is bought. Settled
   // with the reported cost, or with nothing when every attempt failed.
@@ -270,7 +274,7 @@ async function postAttempts<T>(endpoint: string, body: unknown[], maxAttempts: n
           "Content-Type": "application/json",
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: callSignal(REQUEST_TIMEOUT_MS),
       });
 
       const parsed = await handleResponse<T>(res);
@@ -314,7 +318,7 @@ export async function get<T = unknown>(
       Authorization: getAuthHeader(),
       "Content-Type": "application/json",
     },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: callSignal(REQUEST_TIMEOUT_MS),
   });
 
   const parsed = await handleResponse<T>(res);

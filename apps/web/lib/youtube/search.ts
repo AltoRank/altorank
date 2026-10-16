@@ -1,3 +1,6 @@
+import { callSignal } from "@/lib/onboarding/deadline";
+import { YOUTUBE_REQUEST_MS } from "@/lib/onboarding/time-limits";
+
 export interface YouTubeVideo {
   videoId: string;
   title: string;
@@ -18,6 +21,13 @@ export interface YouTubeSearchOptions {
 const CHANNEL_ID = /^UC[A-Za-z0-9_-]{22}$/;
 
 /**
+ * Each request is bounded (it had no limit at all), and so is the draft it
+ * is part of (lib/onboarding/deadline.ts): the search runs between the
+ * writer and the save.
+ */
+const requestSignal = () => callSignal(YOUTUBE_REQUEST_MS);
+
+/**
  * A `@handle` to its `UC…` id via the channels endpoint. Null when the handle
  * is unknown, the key is missing or the call fails.
  */
@@ -27,7 +37,7 @@ export async function resolveYouTubeChannelId(channel: string): Promise<string |
   if (!apiKey || !channel.startsWith("@")) return null;
   const params = new URLSearchParams({ part: "id", forHandle: channel, key: apiKey });
   try {
-    const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?${params}`);
+    const res = await fetch(`https://www.googleapis.com/youtube/v3/channels?${params}`, { signal: requestSignal() });
     if (!res.ok) return null;
     const data = (await res.json()) as { items?: { id?: string }[] };
     const id = data.items?.[0]?.id;
@@ -65,6 +75,7 @@ export async function searchYouTubeVideos(
 
   const res = await fetch(
     `https://www.googleapis.com/youtube/v3/search?${params}`,
+    { signal: requestSignal() },
   );
 
   if (!res.ok) return [];

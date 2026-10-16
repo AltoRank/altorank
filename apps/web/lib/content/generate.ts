@@ -43,7 +43,7 @@ import { matchingOfferings, topicLinkNote } from "@/lib/content/topic-pages";
 import { faqPlan, faqReviewNote, fitTitle, givenTitleKept, removeTitleHeading, titleReviewNote } from "@/lib/content/on-page";
 import { buildTrust } from "@/lib/content/trust";
 import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
-import { GenerationTruncatedError } from "@/lib/ai/errors";
+import { GenerationTimedOutError, GenerationTruncatedError } from "@/lib/ai/errors";
 import { generateImage } from "@/lib/ai/image-generator";
 import { outputFromRow, resolveFeaturedImage, type OutputSettingsRow } from "@/lib/onboarding/output-settings";
 import { imageWriter, uploadImageBuffer } from "@/lib/storage/images";
@@ -73,6 +73,21 @@ import { timed } from "@/lib/onboarding/timings";
 import { jsonbSafe } from "@/lib/supabase/jsonb-safe";
 import { conformToOutline, h2sOf, offeredSources, outlineHeadings, OutlineNotFollowedError, OutlineNotOwedError, planOutline, type ArticleOutline } from "@/lib/content/outline";
 import { WRITER_FLOOR_USD } from "@/lib/billing/run-budget";
+import { Deadline, OutOfTimeError, until, withDeadline, within } from "@/lib/onboarding/deadline";
+import {
+  DRAFT_ENRICH_TAIL_MS,
+  DRAFT_FACT_CHECK_MS,
+  DRAFT_FINISH_MS,
+  DRAFT_IMAGES_MS,
+  DRAFT_INVOCATION_MS,
+  DRAFT_LINK_CHECK_MS,
+  DRAFT_LOOKUP_MS,
+  DRAFT_OUTLINE_MS,
+  DRAFT_RECORD_MS,
+  DRAFT_SAVE_MS,
+  DRAFT_WRITER_MIN_MS,
+  IMAGE_CALL_MS,
+} from "@/lib/onboarding/time-limits";
 
 export type KeywordFacts = { volume: number | null; difficulty: number | null; cpc: number | null };
 
@@ -228,6 +243,20 @@ export interface GenerateArticleOptions {
    * nothing is claimed again, and the outline is followed as given.
    */
   resumeOutline?: ArticleOutline;
+  /**
+   * When the whole draft must be over, in epoch milliseconds: the start of
+   * the invocation writing it, plus DRAFT_INVOCATION_MS, less DRAFT_RECORD_MS
+   * for the caller to record how it ended (lib/onboarding/time-limits.ts).
+   * Measured from the invocation's start, not this call's, because whatever
+   * the caller did first is already spent. Omitted: from now.
+   *
+   * Every step shares it out: the waits before the writer end in time for it
+   * to start with DRAFT_WRITER_MIN_MS, the writer stops DRAFT_FINISH_MS
+   * before it, the checks, images and fact check get what is left before
+   * DRAFT_SAVE_MS, and a draft out of time fails like any failed draft -
+   * nothing partial saved, its claims at their estimates.
+   */
+  deadline?: number;
 }
 
 export interface GenerateArticleResult {
@@ -330,12 +359,31 @@ export async function generateArticle(
   // and cleared after: a draft and anything else running in the process
   // billed each other's calls. Inside a first look the scope also carries the
   // run's budget and the `draft` stage, and the writer's claim is sized to it.
-  return withSpendScope({ workspaceId: options.workspaceId }, (scope) => writeArticle(options, scope));
+  //
+  // The draft's deadline travels the same way (lib/onboarding/deadline.ts):
+  // every paid call it makes - research, questions, outline, images - is
+  // aborted when it runs into the time the save needs, and everything still
+  // in flight when the draft ends, well or badly, is aborted then.
+  const deadline = new Deadline(options.deadline ?? Date.now() + DRAFT_INVOCATION_MS - DRAFT_RECORD_MS);
+  const stop = new AbortController();
+  const bound = AbortSignal.any([stop.signal, deadline.signal(Number.POSITIVE_INFINITY, DRAFT_SAVE_MS)]);
+  try {
+    return await withSpendScope({ workspaceId: options.workspaceId }, (scope) => withDeadline(bound, () => writeArticle(options, scope, deadline)));
+  } finally {
+    stop.abort();
+  }
+}
+
+/** A wait that ran out of time is no answer: null, as a model with no answer is. */
+function noAnswerOnTime<T>(err: unknown): T | null {
+  if (err instanceof OutOfTimeError) return null;
+  throw err;
 }
 
 async function writeArticle(
   options: GenerateArticleOptions,
   scope: SpendScope,
+  deadline: Deadline,
 ): Promise<GenerateArticleResult | RefreshArticleResult> {
   const { supabase, workspaceId, keyword, keywordId, title, autonomous, onChunk, onWritten, onResearch,
     selection, articleId, billToAccountId, callerEmail, refreshOf,
@@ -803,6 +851,17 @@ async function writeArticle(
     // caller's client stand in.
     const spendDb = spendClient() ?? supabase;
 
+    // The latest the writer may start: DRAFT_WRITER_MIN_MS before it must
+    // stop. Every wait before it ends then, and a draft whose research or
+    // outline was still out fails as out of time rather than starting a
+    // writer that cannot finish.
+    const writerReserve = DRAFT_FINISH_MS + DRAFT_WRITER_MIN_MS;
+    const beforeWriter = deadline.signal(Number.POSITIVE_INFINITY, writerReserve);
+    // Both asks of the outline share one bound (DRAFT_OUTLINE_MS from the
+    // first): past it the body is written without one, as before #272.
+    let outlineSignal: AbortSignal | null = null;
+    const outlineBound = () => (outlineSignal ??= AbortSignal.any([AbortSignal.timeout(DRAFT_OUTLINE_MS), beforeWriter]));
+
     // Every call from here on is this article's, in this job (a first look's
     // run id wins over the job's on its rows).
     scope.db = spendDb;
@@ -869,10 +928,10 @@ async function writeArticle(
           articleType: early.article_type, articleSubtype: early.article_subtype, instructions: briefInstructions, site,
           targetWordCount: targetWordCountFor(keywordRow?.expected_length ?? "auto", undefined) ?? 1500,
           domain: workspace.domain, callToAction: outputSettings.callToAction,
-        }, { spend: { supabase: spendDb, workspaceId } }));
+        }, { spend: { supabase: spendDb, workspaceId }, signal: outlineBound() }));
       }).catch(() => null);
     };
-    const research = resumed?.research ?? await timed("draft_research", () => gatherArticleResearch({
+    const research = resumed?.research ?? await within(beforeWriter, "research", () => timed("draft_research", () => gatherArticleResearch({
       keyword,
       locale: workspace.language ?? "en",
       locationCode: workspace.location_code ?? undefined,
@@ -897,8 +956,8 @@ async function writeArticle(
         questionsPending ??= pickQuestions(paa).catch(() => pickQuestions(paa));
         startOutline(questionsPending);
       },
-    }));
-    const siteFacts = siteFactsPending ? await siteFactsPending : null;
+    })));
+    const siteFacts = siteFactsPending ? await until(siteFactsPending, beforeWriter, "the site's own pages") : null;
     // Saved with the research, so the reviewer sees what the writer was told
     // about the business and whether the conversion page checked out.
     if (siteFacts) {
@@ -926,7 +985,7 @@ async function writeArticle(
 
     // A resumed body's questions were picked when it was outlined.
     if (!resumed?.research) {
-      const questionSelection = await (questionsPending ?? pickQuestions(research.peopleAlsoAsk));
+      const questionSelection = await until(questionsPending ?? pickQuestions(research.peopleAlsoAsk), beforeWriter, "the question pick");
       research.questionSelection = questionSelection;
       research.peopleAlsoAsk = questionSelection.kept;
     }
@@ -956,10 +1015,11 @@ async function writeArticle(
     let facts = knownKeywordFacts(selection, keywordRow);
     if (needsKeywordFactsLookup(facts) && hasDataForSEOCredentials()) {
       try {
-        const map = await fetchKeywordFacts([keyword], {
+        // Two numbers the article does without: not worth the writer's time.
+        const map = await within(deadline.signal(DRAFT_LOOKUP_MS, writerReserve), "the keyword's volume", () => fetchKeywordFacts([keyword], {
           languageCode: workspace.language ?? "en",
           locationCode: workspace.location_code ?? 2840,
-        });
+        }));
         facts = map.get(keyword.toLowerCase()) ?? facts;
         await supabase.from("keywords").upsert(
           {
@@ -1020,11 +1080,11 @@ async function writeArticle(
     if (outlineMode && article.id) {
       // Assigned inside a callback, which control flow does not follow.
       const pendingOutline = earlyOutline as Promise<ArticleOutline | null> | null;
-      const early: ArticleOutline | null = pendingOutline ? await pendingOutline : null;
+      const early: ArticleOutline | null = pendingOutline ? await until(pendingOutline, outlineBound(), "the outline").catch(noAnswerOnTime<ArticleOutline>) : null;
       outline = early
         // Planned beside the research: now with what only the research knew.
         ? { ...early, targetWordCount: targetWordCount ?? early.targetWordCount, sources: offeredSources(research).slice(0, 5) }
-        : await timed("outline", () => planOutline({
+        : await until(timed("outline", () => planOutline({
         keyword,
         angle: approvedTitle ?? null,
         language: workspace.language,
@@ -1036,7 +1096,7 @@ async function writeArticle(
         targetWordCount: targetWordCount ?? research.recommendedWordCount,
         domain: workspace.domain,
         callToAction: outputSettings.callToAction,
-      }, { spend: { supabase: spendDb, workspaceId } }));
+      }, { spend: { supabase: spendDb, workspaceId }, signal: outlineBound() })), outlineBound(), "the outline").catch(noAnswerOnTime<ArticleOutline>);
       // The gate opens on an outline only when the budget can still write
       // its body: the outline and the questions came out of the draft's
       // reserve, and a writer refused after the gate is showing would leave
@@ -1085,9 +1145,12 @@ async function writeArticle(
     }
     if (resumed) outlinedRow = true;
 
-    // The related keywords, now that the writer is next.
+    // The related keywords, now that the writer is next: waited for a little
+    // (DRAFT_LOOKUP_MS) and no longer. Not back is a failed layer, not a
+    // failed draft.
     if (relatedPending) {
-      const got = await relatedPending;
+      const got = await until(relatedPending, deadline.signal(DRAFT_LOOKUP_MS, writerReserve), "the related keywords")
+        .catch((err: unknown) => (err instanceof Error ? err : new Error(String(err))));
       const layer = research.layers.find((l) => l.id === "related_keywords");
       if (got instanceof Error) {
         if (layer) { layer.status = "failed"; layer.detail = got.message.slice(0, 300); }
@@ -1097,6 +1160,18 @@ async function writeArticle(
       }
     }
 
+    // The writer stops DRAFT_FINISH_MS before the deadline, so the draft can
+    // still be finished or failed, and the caller can record which. With
+    // less than DRAFT_WRITER_MIN_MS to write in it is not started: nothing
+    // is claimed, and the attempt fails as out of time.
+    const writerMs = deadline.left(DRAFT_FINISH_MS);
+    if (writerMs < DRAFT_WRITER_MIN_MS) {
+      throw new OutOfTimeError(
+        "writer",
+        `Out of time before the writer: ${Math.round(writerMs / 1000)}s were left to write in, under the ` +
+          `${Math.round(DRAFT_WRITER_MIN_MS / 1000)}s an article needs, so nothing was asked and the draft can be tried again.`,
+      );
+    }
     const generator = provider.streamArticle({
       keyword,
       title: outline?.title ?? approvedTitle,
@@ -1124,7 +1199,7 @@ async function writeArticle(
             metaDescription: refreshOf.metaDescription ?? null,
           }
         : undefined,
-    });
+    }, { signal: deadline.signal(Number.POSITIVE_INFINITY, DRAFT_FINISH_MS) });
 
     let articleResult = await timed("draft", async () => {
       while (true) {
@@ -1183,13 +1258,18 @@ async function writeArticle(
      * These steps resolve link placeholders and enrich the body. Neither can
      * legitimately shrink an article to nothing, so a much shorter result is
      * a bug in the step, not an edit.
+     *
+     * `bound`: when the step must be done. Out of time is a step that failed:
+     * the original is kept, and the step's calls are aborted.
      */
     async function enhance(
       label: string,
       step: (html: string) => Promise<string>,
+      bound?: AbortSignal,
     ): Promise<void> {
       try {
-        const next = await step(processedHtml);
+        const input = processedHtml;
+        const next = bound ? await within(bound, label, () => step(input)) : await step(input);
         if (!next || next.trim().length < processedHtml.trim().length / 2) {
           console.warn(
             `[generate] ${label} returned ${next ? "a suspiciously short result" : "nothing"}; keeping the original HTML`,
@@ -1206,6 +1286,9 @@ async function writeArticle(
     // which honours the workspace's video switch and channel and embeds from
     // the privacy-enhanced host. An older step here embedded the keyword's
     // top YouTube result on every draft first, whatever those settings said.
+    // What an optional step may take: at most its own share, and never the
+    // time the fact check and the save are kept.
+    const optional = (cap: number) => deadline.signal(cap, DRAFT_SAVE_MS + DRAFT_FACT_CHECK_MS);
     await enhance("internal links", async (html) => resolveInternalLinks(html, linkTargets));
 
     // What the draft may point at on its own site: the pool it was offered
@@ -1239,11 +1322,13 @@ async function writeArticle(
     // bounded fetch time. Runs through `enhance` for the same reason the two
     // steps above do: a step that returns nothing must not wipe the article.
     let linkChecks: LinkCheck[] | null = null;
+    const linkBound = optional(DRAFT_LINK_CHECK_MS);
     await enhance("outbound link check", async (html) => {
-      const verified = await verifyOutboundLinks(html, workspace.domain);
-      linkChecks = verified.checks;
+      const verified = await verifyOutboundLinks(html, workspace.domain, { signal: linkBound });
+      // A check that answered after the step gave up is not this article's.
+      if (!linkBound.aborted) linkChecks = verified.checks;
       return verified.html;
-    });
+    }, linkBound);
 
     // Everything a finished article has beyond prose: heading ids, a table of
     // contents, section images, a how-to video, charts for quoted numbers, a
@@ -1274,9 +1359,12 @@ async function writeArticle(
         conversion: siteFacts?.facts.conversion?.url ?? null,
         service: topicPages[0] ?? null,
         trust,
+        // The images get what is left before the steps after them, and
+        // never hold up the article (DRAFT_IMAGES_MS at most).
+        imageSignal: deadline.signal(DRAFT_IMAGES_MS, DRAFT_SAVE_MS + DRAFT_FACT_CHECK_MS + DRAFT_ENRICH_TAIL_MS),
       });
       return enriched.html;
-    }));
+    }, optional(Number.POSITIVE_INFINITY)));
 
     const model = anthropicModel("content");
     await recordSpend(spendDb, {
@@ -1334,8 +1422,12 @@ async function writeArticle(
     // Two passes: the first asks whether each figure is attributed, the second
     // opens the pages the attributions point at. The second is what catches a
     // real citation carrying a wrong number, which the first cannot see.
+    // The pages are read until DRAFT_FACT_CHECK_MS is up or the save's time
+    // is reached; a claim whose page was not read stays as the first pass
+    // marked it, for a person to open.
     const factCheck = await timed("fact_check", () => verifyCitedFigures(factCheckArticle(processedHtml, research, workspace.language), {
       sourceReview: research.sourceReview,
+      signal: deadline.signal(DRAFT_FACT_CHECK_MS, DRAFT_SAVE_MS),
     }));
 
     // What the reviewer has to know or do before publishing, said once at the
@@ -1408,29 +1500,35 @@ async function writeArticle(
         // In the site's featured preset: a title card, a body preset, or
         // whatever the body images use.
         const featured = resolveFeaturedImage(outputSettings);
-        const imageResult = await timed("images", () => generateImage(
-          articleResult.title,
-          keyword,
-          workspace.brand_style as Record<string, unknown> | undefined,
-          { style: featured.style, titleCover: featured.titleCover, brandColor: outputSettings.brandColor },
-        ));
-        // Never metered before: the section images wrote a row, the hero did
-        // not. Cost stays null, as for the section images - the images
-        // endpoint reports no price.
-        void recordSpend(spendDb, {
-          provider: "openai",
-          operation: `${openaiImageModel()} (featured image)`,
-          costUsd: null,
-          workspaceId,
-          articleId: article.id,
-          runId: job.id,
+        const id = article.id;
+        // What is left before the save, IMAGE_CALL_MS at most: the article
+        // is saved without its hero rather than late.
+        const heroBound = deadline.signal(IMAGE_CALL_MS, DRAFT_SAVE_MS);
+        featuredImageUrl = await within(heroBound, "the featured image", async () => {
+          const imageResult = await timed("images", () => generateImage(
+            articleResult.title,
+            keyword,
+            workspace.brand_style as Record<string, unknown> | undefined,
+            { style: featured.style, titleCover: featured.titleCover, brandColor: outputSettings.brandColor, signal: heroBound },
+          ));
+          // Never metered before: the section images wrote a row, the hero did
+          // not. Cost stays null, as for the section images - the images
+          // endpoint reports no price.
+          void recordSpend(spendDb, {
+            provider: "openai",
+            operation: `${openaiImageModel()} (featured image)`,
+            costUsd: null,
+            workspaceId,
+            articleId: id,
+            runId: job.id,
+          });
+          return uploadImageBuffer(
+            imageWriter(supabase),
+            imageResult.data,
+            `${workspaceId}/${id}.${imageResult.extension}`,
+            imageResult.contentType,
+          );
         });
-        featuredImageUrl = await uploadImageBuffer(
-          imageWriter(supabase),
-          imageResult.data,
-          `${workspaceId}/${article.id}.${imageResult.extension}`,
-          imageResult.contentType,
-        );
       }
     } catch (err) {
       console.warn(
@@ -1598,6 +1696,21 @@ async function writeArticle(
         costUsd: anthropicCost(model, err.inputTokens, err.outputTokens),
         inputTokens: err.inputTokens,
         outputTokens: err.outputTokens,
+        workspaceId,
+        articleId: article.id ?? null,
+        runId: job.id,
+      });
+    }
+    // A writer stopped at its deadline may have been billed for what it
+    // generated, and the API never said how much: the row says the call was
+    // made, at no price (the claim keeps its estimate).
+    if (err instanceof GenerationTimedOutError && (workspace.ai_provider ?? "claude") === "claude") {
+      await recordSpend(spendClient() ?? supabase, {
+        provider: "anthropic",
+        operation: anthropicModel("content"),
+        costUsd: null,
+        inputTokens: null,
+        outputTokens: null,
         workspaceId,
         articleId: article.id ?? null,
         runId: job.id,

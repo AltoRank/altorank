@@ -28,3 +28,24 @@ export class GenerationTruncatedError extends Error {
   }
 }
 
+
+/**
+ * The writer was still streaming when the draft's time ran out, and was
+ * aborted (lib/onboarding/time-limits.ts). Nothing it wrote is kept: a half
+ * article is not a draft. It may have been billed for what it generated, so
+ * its claim keeps its estimate; the attempt fails like any failed draft, and
+ * a body owed to a first look's gate is tried again.
+ */
+export class GenerationTimedOutError extends Error {
+  constructor(
+    public readonly elapsedMs: number,
+    public readonly chars: number,
+  ) {
+    super(
+      `The writer was stopped after ${Math.round(elapsedMs / 1000)}s, ` +
+        `${chars ? `${chars} characters in` : "before it had written anything"}, so the draft could still be ` +
+        `recorded and tried again; nothing it wrote was kept.`,
+    );
+    this.name = "GenerationTimedOutError";
+  }
+}

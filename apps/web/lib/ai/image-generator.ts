@@ -2,6 +2,8 @@ import OpenAI from "openai";
 import { openaiImageModel } from "./models";
 import { claimSpend } from "@/lib/billing/spend-scope";
 import type { ImageStyle } from "@/lib/onboarding/output-settings";
+import { callSignal } from "@/lib/onboarding/deadline";
+import { IMAGE_CALL_MS } from "@/lib/onboarding/time-limits";
 
 // ---------------------------------------------------------------------------
 // Featured images
@@ -105,6 +107,12 @@ export interface ImageGenerationOptions {
   titleCover?: boolean;
   /** `workspace_output_settings.brand_color`; named as the accent. Wins over `brand_style.colors`. */
   brandColor?: string | null;
+  /**
+   * When the caller stops waiting for this image: a draft gives its images
+   * what is left before the save (lib/content/generate.ts). The call is also
+   * bounded at IMAGE_CALL_MS, and by the work it is part of.
+   */
+  signal?: AbortSignal | null;
 }
 
 export async function generateImage(
@@ -168,7 +176,12 @@ export async function generateImage(
   // throws before anything is bought - every caller already treats a failed
   // image as no image. The endpoint reports no price, so the claim settles at
   // its estimate. Outside a first look the claim is granted at once.
+  const signal = callSignal(IMAGE_CALL_MS, options.signal);
+  // Out of time before it is asked: nothing claimed, nothing bought.
+  if (signal.aborted) throw new Error("No time left for the image; skipped.");
   const claim = await claimSpend(`${model} (image)`, IMAGE_ESTIMATE_USD);
+  // Bounded end to end, retries included: the SDK's ten-minute timeout
+  // stops when the headers arrive, and the reply carries the whole image.
   const response = await client.images.generate({
     model,
     prompt,
@@ -177,7 +190,7 @@ export async function generateImage(
     quality: QUALITY,
     output_format: OUTPUT_FORMAT,
     output_compression: OUTPUT_COMPRESSION,
-  }).finally(() => claim.settle(null));
+  }, { signal }).finally(() => claim.settle(null));
 
   const image = response.data?.[0];
   // Deliberately not falling back to `image.url`. A URL here would mean the

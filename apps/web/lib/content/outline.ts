@@ -189,7 +189,7 @@ function clean(text: unknown, max = 140): string {
  */
 export async function planOutline(
   input: OutlineInput,
-  options: { ask?: AskModel; spend?: SpendSink | null } = {},
+  options: { ask?: AskModel; spend?: SpendSink | null; signal?: AbortSignal } = {},
 ): Promise<ArticleOutline | null> {
   const locale = resolveLocale(input.language);
   const faq = faqPlan({ articleType: input.articleType, questions: input.research.peopleAlsoAsk }).include;
@@ -205,7 +205,7 @@ export async function planOutline(
   // outline is shown to the owner and then held to, so a reply the parser
   // loses or a heading list that changes between two asks is a gate that
   // opens late or an article that contradicts it.
-  const raw = await ask("content/outline", outlinePrompt(input, plan), { maxTokens: MAX_TOKENS, minTokens: MIN_TOKENS, tier: "decision", schema: SCHEMA, spend: options.spend ?? null });
+  const raw = await ask("content/outline", outlinePrompt(input, plan), { maxTokens: MAX_TOKENS, minTokens: MIN_TOKENS, tier: "decision", schema: SCHEMA, spend: options.spend ?? null, ...(options.signal ? { signal: options.signal } : {}) });
   const parsed = extractJson<Record<string, unknown>>(raw, "{", "}");
   if (!parsed || typeof parsed !== "object") return null;
   const body = (Array.isArray(parsed.sections) ? parsed.sections : []).map((s) => clean(s)).filter(Boolean);

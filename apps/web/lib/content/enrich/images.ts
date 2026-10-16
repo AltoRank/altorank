@@ -20,6 +20,7 @@ import { imageWriter, uploadImageBuffer } from "@/lib/storage/images";
 import { recordSpend } from "@/lib/billing/spend";
 import { spendClient } from "@/lib/billing/default-spend";
 import { altWordCount, minAltWords } from "@/lib/ai/alt-text";
+import { until } from "@/lib/onboarding/deadline";
 import { DEFAULT_OUTPUT_SETTINGS, type ImageStyle } from "@/lib/onboarding/output-settings";
 import { resolveLocale, matchesAnyHeading, scaleWords } from "@/lib/i18n/locale";
 import {
@@ -42,8 +43,11 @@ export interface ImageBrief {
   style: ImageStyle;
 }
 
-/** Returns the public URL of the stored image, or null to skip this slot. */
-export type ImageProducer = (brief: ImageBrief, index: number) => Promise<string | null>;
+/**
+ * Returns the public URL of the stored image, or null to skip this slot.
+ * `signal`, when given, is when the caller stops waiting for it.
+ */
+export type ImageProducer = (brief: ImageBrief, index: number, signal?: AbortSignal) => Promise<string | null>;
 
 export interface ImagesOptions {
   produce: ImageProducer;
@@ -56,6 +60,13 @@ export interface ImagesOptions {
    * to 80 English words, in the article language's words.
    */
   minSectionWords?: number;
+  /**
+   * When the images must be done (lib/content/generate.ts gives them what the
+   * draft has left before its fact check and save). Past it no image is
+   * started, the one being made is abandoned, and the images already made
+   * are kept: an image never holds up the article.
+   */
+  signal?: AbortSignal | null;
 }
 
 /**
@@ -159,8 +170,14 @@ export async function addSectionImages(
     const section = sections[i];
     const p = firstParagraph(section.body);
     const excerpt = truncate(stripTags(p?.inner ?? ""), 300);
+    const signal = opts.signal ?? undefined;
+    if (signal?.aborted) {
+      warnings.push(`images stopped at ${n} of ${points.length}: the draft had no time left for more`);
+      break;
+    }
     try {
-      const url = await opts.produce({ heading: section.headingText, excerpt, style }, n);
+      const making = opts.produce({ heading: section.headingText, excerpt, style }, n, signal);
+      const url = signal ? await until(making, signal, "images") : await making;
       if (!url) break;
       // Alt text names the subject the image was drawn for, in the style it
       // was drawn in. The caption is the section heading: a fact about where
@@ -175,7 +192,11 @@ export async function addSectionImages(
         sentence && sentence.length <= 140 && /[.!?]$/.test(sentence) ? sentence : section.headingText;
       figures.set(i, renderImageFigure(url, alt, caption));
     } catch (err) {
-      warnings.push(`image ${n + 1} failed: ${err instanceof Error ? err.message : String(err)}`);
+      warnings.push(
+        signal?.aborted
+          ? `images stopped at ${n} of ${points.length}: image ${n + 1} was not ready in the time the draft had left`
+          : `image ${n + 1} failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
       break;
     }
   }
@@ -204,12 +225,15 @@ export function storageImageProducer(args: {
 }): ImageProducer | null {
   if (!process.env.OPENAI_API_KEY || process.env.E2E_STUBS) return null;
   const { supabase, workspaceId, articleId, keyword, brandStyle, brandColor, runId } = args;
-  return async (brief, index) => {
+  return async (brief, index, signal) => {
     const result = await generateImage(brief.heading, keyword, brandStyle ?? undefined, {
       section: { heading: brief.heading, excerpt: brief.excerpt },
       style: brief.style,
       brandColor,
+      signal,
     });
+    // Made too late to be used: not stored.
+    if (signal?.aborted) return null;
     // The images endpoint reports no price, so cost stays null rather than a
     // guess: an unmeasured number is not a zero.
     // The service client, as the Anthropic row is written: provider_spend

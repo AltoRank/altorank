@@ -208,7 +208,14 @@ export interface ArticleResult {
  * `streamArticle` is an async generator that:
  *   - yields incremental HTML chunks while the model streams
  *   - returns the final `ArticleResult` once the stream ends
+ *   - throws GenerationTimedOutError (lib/ai/errors.ts) once `signal` aborts,
+ *     whether or not the stream noticed: the draft's deadline, not the SDK's
  */
+export interface StreamOptions {
+  /** When the writer must stop (lib/onboarding/time-limits.ts DRAFT_FINISH_MS before the draft's deadline). */
+  signal?: AbortSignal;
+}
+
 export interface AIProvider {
-  streamArticle(prompt: ArticlePrompt): AsyncGenerator<string, ArticleResult>;
+  streamArticle(prompt: ArticlePrompt, options?: StreamOptions): AsyncGenerator<string, ArticleResult>;
 }

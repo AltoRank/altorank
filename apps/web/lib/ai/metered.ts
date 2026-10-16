@@ -16,6 +16,7 @@ import { anthropicCost, anthropicEstimate } from "@/lib/billing/spend";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import { claimSpend } from "@/lib/billing/spend-scope";
 import { METERED_CALL_DEADLINE_MS } from "@/lib/onboarding/time-limits";
+import { callSignal } from "@/lib/onboarding/deadline";
 
 export async function createMetered(
   client: Anthropic,
@@ -27,8 +28,9 @@ export async function createMetered(
   let cost: number | null = 0;
   try {
     // Bounded end to end: the SDK's own timeout stops when the headers come,
-    // and the voice read is awaited before a first look's plan.
-    const response = await client.messages.create(params, { signal: AbortSignal.timeout(METERED_CALL_DEADLINE_MS) });
+    // and the voice read is awaited before a first look's plan. Inside a
+    // draft, the draft's deadline bounds it too (lib/onboarding/deadline.ts).
+    const response = await client.messages.create(params, { signal: callSignal(METERED_CALL_DEADLINE_MS) });
     const inputTokens = response.usage?.input_tokens ?? 0;
     const outputTokens = response.usage?.output_tokens ?? 0;
     cost = anthropicCost(params.model, inputTokens, outputTokens);

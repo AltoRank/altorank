@@ -57,12 +57,15 @@ import { fullArticleOn } from "@/lib/onboarding/first-article-body";
 import { recordRunTiming } from "@/lib/onboarding/funnel-event";
 import { BODY_PROGRESS_VERSION, measureStream, type BodyProgress } from "@/lib/onboarding/body-progress";
 import type { BodyStage } from "@/lib/onboarding/setup-progress";
+import { DRAFT_INVOCATION_MS, DRAFT_RECORD_MS } from "@/lib/onboarding/time-limits";
 
 /** The streamed text, for the owner's reader: often enough that it reads as typed. */
 const STREAM_FLUSH_MS = 500;
 /** The counts alone, with the text locked: the outline ticks once a second at most. */
 const PROGRESS_FLUSH_MS = 1_000;
 
+// A literal, as route segment config must be; kept equal to
+// DRAFT_INVOCATION_MS, which the draft's deadline is measured from, by a test.
 export const maxDuration = 300;
 
 interface Body {
@@ -100,6 +103,13 @@ interface Body {
 export const MAX_BODY_ATTEMPTS = 3;
 
 export async function POST(request: NextRequest) {
+  // The draft's deadline, from the start of this invocation: everything done
+  // before the writer starts is already spent. It ends DRAFT_RECORD_MS before
+  // the platform's ceiling, so a draft that runs out of time - a writer
+  // still streaming, a call that never answered - fails in time for this
+  // route to record it and send the retry, instead of being killed with
+  // nothing recorded (lib/onboarding/time-limits.ts).
+  const deadline = Date.now() + DRAFT_INVOCATION_MS - DRAFT_RECORD_MS;
   if (!authorised(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -389,6 +399,7 @@ export async function POST(request: NextRequest) {
       selection,
       relatedKeywords,
       billToAccountId: workspace.account_id as string,
+      deadline,
       ...(onChunk ? { onChunk } : {}),
       ...(onWritten ? { onWritten } : {}),
       // Read, not bought again: only a page shaped like one, for a first look's own draft.

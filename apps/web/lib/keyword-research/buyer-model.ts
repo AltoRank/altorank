@@ -14,6 +14,7 @@ import { anthropicCost, anthropicEstimate, anthropicOutputRate, recordSpend } fr
 import { claimSpend, currentSpendScope, isBudgetRefusal } from "@/lib/billing/spend-scope";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import { BUDGET_RPC_TIMEOUT_MS, STRUCTURED_CALL_DEADLINE_MS } from "@/lib/onboarding/time-limits";
+import { callSignal, outOfTime } from "@/lib/onboarding/deadline";
 
 /** Where to write the spend row. Optional: scripts and tests have none. */
 export interface SpendSink {
@@ -50,6 +51,12 @@ export interface AskOptions {
    * the shape, so a replayed or schema-less answer parses the same way.
    */
   schema?: Record<string, unknown>;
+  /**
+   * A bound tighter than the call's own: the draft's outline is given what
+   * the draft has left before its writer (lib/content/generate.ts). The work
+   * the call is part of bounds it too (lib/onboarding/deadline.ts).
+   */
+  signal?: AbortSignal;
   /**
    * How many leading characters of the prompt are the same on every call of
    * this kind in a run (instructions, before the per-call data). Sent as
@@ -144,6 +151,8 @@ export async function askStructured(
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
   const model = anthropicModel(options.tier ?? "structured");
+  // Out of time before it is asked: no decision, and nothing claimed.
+  if (options.signal?.aborted || outOfTime()) return null;
   // A first look claims the call's most before making it
   // (lib/billing/spend-scope.ts). A refusal is no decision, like any other
   // missing answer, and the caller's watch on the scope sees it was refused.
@@ -164,13 +173,14 @@ export async function askStructured(
     // The SDK's timeout ends when the reply's headers arrive (client.js
     // `fetchWithTimeout` clears it), so a body that never came held the call,
     // its claim and whatever waited on it for good (2026-10-15). The signal
-    // bounds all of it: both attempts, the backoff and the reply.
+    // bounds all of it: both attempts, the backoff and the reply. So do the
+    // caller's bound and the deadline of the work the call is part of.
     const response = await client.messages.create({
       model,
       max_tokens: sized.maxTokensFor(claim.grantedUsd),
       messages: [{ role: "user", content: promptContent(prompt, options.cachePrefix) }],
       ...samplingFor(model, options.tier, options.schema),
-    } as Anthropic.MessageCreateParamsNonStreaming, { signal: AbortSignal.timeout(STRUCTURED_CALL_DEADLINE_MS) });
+    } as Anthropic.MessageCreateParamsNonStreaming, { signal: callSignal(STRUCTURED_CALL_DEADLINE_MS, options.signal) });
     const uncached = response.usage?.input_tokens ?? 0;
     const writeTokens = response.usage?.cache_creation_input_tokens ?? 0;
     const readTokens = response.usage?.cache_read_input_tokens ?? 0;

@@ -26,6 +26,7 @@
 
 import { stripTags } from "@/lib/audit/html-utils";
 import { isUnsafeHost } from "@/lib/seo/link-check";
+import { until } from "@/lib/onboarding/deadline";
 import { bareHost, isBlockedSource, type SourceReview } from "@/lib/seo/source-classes";
 import type { ExtractedClaim, FactCheckReport } from "@/lib/ai/fact-check";
 import { ENTITY_KINDS, summarise } from "@/lib/ai/fact-check";
@@ -50,6 +51,13 @@ export interface VerifyCitationsOptions {
   fetcher?: PageFetcher;
   timeoutMs?: number;
   concurrency?: number;
+  /**
+   * When the pages must have been read (a draft gives the check what is left
+   * before its save). Past it no page is opened and the ones in flight are
+   * not waited for: their claims are left exactly as the first pass marked
+   * them, for a person to open, as an unreadable page's are.
+   */
+  signal?: AbortSignal | null;
 }
 
 const UA =
@@ -293,9 +301,14 @@ export async function verifyCitedFigures(
   const urls = [...new Set(checkable.map((c) => c.sourceUrl!))].slice(0, MAX_CITED_PAGES);
   const pages = new Map<string, string | null>();
 
+  const signal = opts.signal ?? null;
   const read = async (url: string): Promise<void> => {
+    if (signal?.aborted) {
+      pages.set(url, null);
+      return;
+    }
     try {
-      const { status, body } = await fetcher(url);
+      const { status, body } = signal ? await until(fetcher(url), signal, "fact check") : await fetcher(url);
       const text = status >= 200 && status < 300 ? readablePageText(body) : "";
       pages.set(url, text.length >= MIN_READABLE_CHARS ? text : null);
     } catch {

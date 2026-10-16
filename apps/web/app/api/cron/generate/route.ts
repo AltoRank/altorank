@@ -38,6 +38,7 @@ import {
 import { observedCron } from "@/lib/observability/cron";
 import { firstLookPlannedNothing, setupFinishedElsewhere } from "@/lib/onboarding/setup-state";
 import { sweepUnfinishedResumes } from "@/lib/plan/resume-sweep";
+import { DRAFT_INVOCATION_MS, DRAFT_RECORD_MS } from "@/lib/onboarding/time-limits";
 
 /**
  * Scheduled draft generation.
@@ -119,6 +120,10 @@ interface WorkspaceOutcome {
 }
 
 async function run(request: Request) {
+  // Every draft this invocation writes ends by the same deadline, measured
+  // from here: a draft started late fails in time to be recorded rather
+  // than being killed at the platform's ceiling (lib/onboarding/time-limits.ts).
+  const draftDeadline = Date.now() + DRAFT_INVOCATION_MS - DRAFT_RECORD_MS;
   if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -446,6 +451,7 @@ async function run(request: Request) {
         // owner's brief: instructions, answers, shape, length.
         keywordId: planned ? (due?.keywordId ?? next.keywordId) : next.keywordId,
         autonomous: true,
+        deadline: draftDeadline,
         // Explicitly nobody, matching the getQuota call above. Without this the
         // gate inside generateArticle resolves its own answer and can reach a
         // different verdict for the same account.
