@@ -46,4 +46,27 @@ describe("analyzeWorkspace evidence", () => {
     expect(a[0]).toMatchObject({ impressions: 6000, clicks: 380, scope: "page" });
     expect(b[0]).toMatchObject({ impressions: 2000, clicks: 20, scope: "page" });
   });
+
+  it("finds the page's own numbers when Google reports its URL with www and a trailing slash", async () => {
+    const rows: Row[] = [];
+    for (let ago = 1; ago <= 20; ago++) {
+      rows.push(metric({ metric_date: day(ago), query: "booking software", clicks: 20, impressions: 400, avg_position: 4 }));
+      rows.push(metric({ metric_date: day(ago), query: "booking software", page_url: "https://www.acme.com/a/", clicks: 2, impressions: 50, avg_position: 9 }));
+    }
+    const db = fakeSupabase({
+      workspace_integrations: [{ id: "wi", workspace_id: WS, integration_id: "gsc", tokens: { encrypted: "x" } }],
+      analytics_metrics: rows,
+      keywords: [],
+      keyword_rankings: [],
+      articles: [{ id: "art-a", workspace_id: WS, status: "live", keyword: "booking software", word_count: 400, published_url: "https://acme.com/a" }],
+      site_pages: [],
+      refresh_candidates: [],
+      workspaces: [{ id: WS }],
+    });
+    await analyzeWorkspace(db as unknown as SupabaseClient, WS, { now: NOW, readBodies: async () => [] });
+    const evidence = db.tables.refresh_candidates.filter((c) => c.url === "https://acme.com/a").map((c) => c.evidence as Evidence);
+    expect(evidence.length).toBeGreaterThan(0);
+    // The page's 1,000 impressions, not the site's 8,000 under its name.
+    expect(evidence[0]).toMatchObject({ impressions: 1000, clicks: 40, scope: "page" });
+  });
 });

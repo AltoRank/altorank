@@ -22,7 +22,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { tiptapToHtml } from "@/lib/cms/html";
-import type { GscShapes } from "@/lib/gsc/analysis";
+import { normalizeUrl, type GscShapes } from "@/lib/gsc/analysis";
 import { readGsc } from "@/lib/gsc/read";
 import type { Detection, Evidence, Opportunity } from "./types";
 
@@ -261,7 +261,9 @@ export function aggregatePageQueries(gsc: GscShapes<MetricRow, "query_page">): M
   const byPage = new Map<string, MetricRow[]>();
   for (const r of gsc.query_page) {
     if (!r.page_url) continue;
-    const key = normUrl(r.page_url);
+    // www-blind, like every other Search Console page join: Google reports the
+    // URL it serves, which can carry a www the stored page URL does not.
+    const key = normalizeUrl(r.page_url);
     const list = byPage.get(key) ?? [];
     list.push(r);
     byPage.set(key, list);
@@ -403,7 +405,7 @@ export async function analyzeWorkspace(
   const pageCurrent = aggregatePageQueries({ query_page: pageWindows.current });
   const pagePrevious = aggregatePageQueries({ query_page: pageWindows.previous });
   const onPageFor = (url: string): DetectInput["onPage"] => {
-    const key = normUrl(url);
+    const key = normalizeUrl(url);
     if (!pageCurrent.has(key) && !pagePrevious.has(key)) return null;
     return { current: pageCurrent.get(key) ?? new Map(), previous: pagePrevious.get(key) ?? new Map() };
   };
