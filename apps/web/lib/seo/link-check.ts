@@ -38,6 +38,7 @@
 
 import { extractLinks, hostOf, type LinkRef } from "./links";
 import { safeFetch, UnsafeUrlError, type SafeFetch } from "@/lib/public-tools/safe-fetch";
+import { OutOfTimeError, until } from "@/lib/onboarding/deadline";
 
 /**
  * live: the page answered. dead: definitively gone, and unwrapped.
@@ -86,7 +87,16 @@ export interface VerifyOptions {
   concurrency?: number;
   timeoutMs?: number;
   now?: () => Date;
+  /**
+   * When the check must be done (a draft gives it what is left before its
+   * fact check and save). Past it no link is opened and the ones in flight
+   * are not waited for: each is recorded as not checked, and none of them is
+   * removed - a link nobody answered for is not a dead link.
+   */
+  signal?: AbortSignal | null;
 }
+
+const OUT_OF_TIME = "not checked: the draft had no time left";
 
 const UA =
   "Mozilla/5.0 (compatible; AltoRank-LinkCheck/1.0; +https://altorank.co; citation check)";
@@ -278,14 +288,19 @@ export async function verifyOutboundLinks(
   if (urls.length === 0) return { html, checks: [] };
 
   const checks: LinkCheck[] = [];
+  const signal = opts.signal ?? null;
   const check = async (url: string): Promise<void> => {
     const checkedAt = now().toISOString();
     if (isUnsafeHost(url)) {
       checks.push({ url, status: null, ok: false, verdict: "dead", reason: "not a public host", removed: true, checkedAt });
       return;
     }
+    if (signal?.aborted) {
+      checks.push({ url, status: null, ok: false, verdict: "unverified", reason: OUT_OF_TIME, removed: false, checkedAt });
+      return;
+    }
     try {
-      const res = await fetcher(url);
+      const res = signal ? await until(fetcher(url), signal, "link check") : await fetcher(url);
       const { verdict, reason } = classifyLinkResponse(url, res);
       checks.push({
         url,
@@ -297,6 +312,10 @@ export async function verifyOutboundLinks(
         checkedAt,
       });
     } catch (err) {
+      if (err instanceof OutOfTimeError) {
+        checks.push({ url, status: null, ok: false, verdict: "unverified", reason: OUT_OF_TIME, removed: false, checkedAt });
+        return;
+      }
       // A host that does not exist, or refuses the connection, is dead.
       // Everything else is unknown.
       const { verdict, reason } = classifyLinkError(err);

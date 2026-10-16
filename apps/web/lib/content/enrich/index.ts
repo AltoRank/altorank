@@ -126,6 +126,12 @@ export interface EnrichContext {
    * caller saves whole. Attaching here keeps the call site to one line.
    */
   research?: Record<string, unknown> | null;
+  /**
+   * When the section images must be done (lib/onboarding/time-limits.ts
+   * DRAFT_IMAGES_MS, and what the draft has left): past it the article goes
+   * on with the images already made, and every later step still runs.
+   */
+  imageSignal?: AbortSignal | null;
   /** Test seams. Production leaves them unset. */
   imageProducer?: ImageProducer | null;
   maxImages?: number;
@@ -261,6 +267,7 @@ export async function enrichArticle(html: string, ctx: EnrichContext): Promise<E
           max: ctx.maxImages ?? DEFAULT_MAX_IMAGES,
           style: settings.imageStyle,
           language: ctx.language,
+          signal: ctx.imageSignal ?? null,
         })),
       { added: 0, warnings: [] as string[] },
     );

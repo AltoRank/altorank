@@ -1,14 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { buildSystemPrompt, buildUserMessage } from "./prompts";
-import type { AIProvider, ArticlePrompt, ArticleResult } from "./types";
+import type { AIProvider, ArticlePrompt, ArticleResult, StreamOptions } from "./types";
 import { extractArticleMeta, countWords } from "./utils";
 import { anthropicModel } from "./models";
-import { GenerationTruncatedError } from "./errors";
+import { GenerationTimedOutError, GenerationTruncatedError } from "./errors";
+import { until } from "@/lib/onboarding/deadline";
 import { anthropicCost, anthropicEstimate, anthropicOutputRate } from "@/lib/billing/spend";
 import { claimSpend } from "@/lib/billing/spend-scope";
 import { WRITER_MIN_OUTPUT_TOKENS } from "@/lib/billing/run-budget";
 
-export { GenerationTruncatedError };
+export { GenerationTimedOutError, GenerationTruncatedError };
 
 // ---------------------------------------------------------------------------
 // Claude (Anthropic) provider
@@ -50,10 +51,15 @@ export class ClaudeProvider implements AIProvider {
   }
 
   async *streamArticle(
-    prompt: ArticlePrompt
+    prompt: ArticlePrompt,
+    options: StreamOptions = {},
   ): AsyncGenerator<string, ArticleResult> {
+    const { signal } = options;
+    const startedAt = Date.now();
     const systemPrompt = buildSystemPrompt(prompt);
     const userMessage = buildUserMessage(prompt);
+    // Nothing is claimed for a writer whose time is already up.
+    if (signal?.aborted) throw new GenerationTimedOutError(0, 0);
 
     // Under a first look's budget (lib/billing/spend-scope.ts) the writer
     // claims what the budget has, up to the full ceiling below and never
@@ -78,8 +84,15 @@ export class ClaudeProvider implements AIProvider {
     // review: a 400 held $0.36 and the retry was refused for budget).
     let charged: number | null = null;
     let started = false;
+    let written = 0;
+    let stream: ReturnType<Anthropic["messages"]["stream"]> | null = null;
     try {
-      const stream = this.client.messages.stream({
+      // Bounded end to end by `signal` (the draft's deadline): the SDK's own
+      // timeout is cleared once the response headers arrive, so a stream that
+      // stalled after them was waited on until the platform killed the
+      // function. The signal aborts the request, and every wait below also
+      // ends on it, whether or not the stream notices.
+      stream = this.client.messages.stream({
         model: this.model,
         /**
          * Headroom for thinking plus the article.
@@ -109,13 +122,17 @@ export class ClaudeProvider implements AIProvider {
             content: userMessage,
           },
         ],
-      });
+      }, signal ? { signal } : undefined);
 
       let fullHtml = "";
       let inputTokens = 0;
       let outputTokens = 0;
 
-      for await (const event of stream) {
+      const events = stream[Symbol.asyncIterator]();
+      while (true) {
+        const next = signal ? await until(events.next(), signal, "writer") : await events.next();
+        if (next.done) break;
+        const event = next.value;
         started = true;
         // Accumulate text deltas
         if (
@@ -124,6 +141,7 @@ export class ClaudeProvider implements AIProvider {
         ) {
           const chunk = event.delta.text;
           fullHtml += chunk;
+          written = fullHtml.length;
           yield chunk;
         }
 
@@ -134,7 +152,7 @@ export class ClaudeProvider implements AIProvider {
       }
 
       // Get final message for input token count
-      const finalMessage = await stream.finalMessage();
+      const finalMessage = signal ? await until(stream.finalMessage(), signal, "writer") : await stream.finalMessage();
       inputTokens = finalMessage.usage?.input_tokens ?? 0;
       if (!outputTokens) {
         outputTokens = finalMessage.usage?.output_tokens ?? 0;
@@ -160,6 +178,13 @@ export class ClaudeProvider implements AIProvider {
         outputTokens,
       };
     } catch (err) {
+      // Out of time: the request is aborted (if the stream had not noticed),
+      // the claim keeps its estimate - it may have been billed for what it
+      // generated - and nothing it wrote leaves this function.
+      if (signal?.aborted) {
+        stream?.abort();
+        throw new GenerationTimedOutError(Date.now() - startedAt, written);
+      }
       if (!started && charged === null && unbilledRefusal(err)) charged = 0;
       throw err;
     } finally {
