@@ -29,6 +29,7 @@
 import type { RankedKeyword } from "@/lib/seo/ranked-keywords";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readSiteText } from "./site-text";
+import { withSiteReads } from "@/lib/seo/site-urls";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { trainVoiceProfile } from "@/lib/voice/train";
 import { composeVoiceSample, readExampleArticles, readExampleUrls } from "@/lib/voice/examples";
@@ -147,9 +148,13 @@ export async function runOnboarding(
   const db = spendClient() ?? supabase;
   const opened = runId ? await openFirstLookBudget(db, { runId, workspaceId: workspace.id }) : null;
   const clock = options.clock;
-  const run = () => withSpendScope({ workspaceId: workspace.id, runId, budget: opened?.budget ?? null }, () =>
+  // One read of the site's robots.txt, sitemap and feed for the whole run
+  // (lib/seo/site-urls.ts): the voice read, the readiness check, the page
+  // crawl and the link pool used to fetch each of them for themselves, four
+  // or five times, against hosts that ban after ten requests in forty seconds.
+  const run = () => withSiteReads(() => withSpendScope({ workspaceId: workspace.id, runId, budget: opened?.budget ?? null }, () =>
     runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", runId, opened?.read ?? null, clock ?? null),
-  );
+  ));
   return clock ? withRunClock(clock, run) : run();
 }
 
@@ -221,10 +226,14 @@ async function runPhases(
       // sample (lib/voice/examples.ts). Read alongside the site, never in
       // the way of it: a failure here only means the site text stands alone.
       const [read, chosen] = await Promise.all([
-        timed("site_read", () => withStage("voice", () => readSiteText(domain))),
+        // Two of the site's newest posts, for the voice: without them the
+        // sample was the pricing, features and about copy whenever those
+        // read well, and a blog's voice was learned from its sales pages.
+        timed("site_read", () => withStage("voice", () => readSiteText(domain, undefined, { articles: 2 }))),
         readExampleUrls(supabase, workspace.id).then((urls) => readExampleArticles(urls)).catch(() => ""),
       ]);
-      const text = composeVoiceSample(chosen, read.text);
+      // Chosen articles first, then the site's own newest, then the rest.
+      const text = composeVoiceSample(chosen, [read.articleText ?? "", read.text].filter(Boolean).join("\n\n"));
       if (text && text.split(/\s+/).length > 50) {
         await timed("voice", () => withStage("voice", () => trainVoiceProfile(supabase, workspace.id, text)));
         emit({
@@ -232,7 +241,7 @@ async function runPhases(
           status: "done",
           detail: chosen
             ? "Learned how your site writes, starting from the articles you chose."
-            : read.source === "sitemap" ? "Learned how your site writes, from its articles." : "Learned how your site writes.",
+            : read.articleText || read.source === "sitemap" ? "Learned how your site writes, from its articles." : "Learned how your site writes.",
         });
       } else {
         // Phrased so it still reads correctly when `onboardingOutcome` quotes

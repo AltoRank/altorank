@@ -188,7 +188,7 @@ async function run(request: Request) {
             // from a paying customer by an account that could not use it.
             rewrites += 1;
             if (r.ok) {
-              out.rewrite = `execution ${r.result.executionId}: ${r.result.changed} of ${r.result.hunks} blocks changed, ${r.result.issues} checks flagged, awaiting review`;
+              out.rewrite = `execution ${r.result.executionId}: ${r.result.changed} of ${r.result.hunks} blocks changed, ${r.result.checks} structural checks flagged, fact check ${r.result.factCheck.verdict}, awaiting review`;
               // A proposal nobody is told about is the same failure the
               // draft-ready email exists for: work done into a queue that
               // only shows itself to somebody who opens the dashboard.
@@ -205,7 +205,8 @@ async function run(request: Request) {
                     executionId: r.result.executionId,
                     changed: r.result.changed,
                     hunks: r.result.hunks,
-                    issues: r.result.issues,
+                    checks: r.result.checks,
+                    factCheck: r.result.factCheck,
                   },
                 );
                 out.rewrite += `, ${describeSendOutcome(sent)}`;

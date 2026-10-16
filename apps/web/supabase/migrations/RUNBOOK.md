@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch), **112** (article images served by path, not listed) and **114** (blog keys), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109, 111 and 114 go in AFTER**; **112 goes in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server) and **114** (blog keys), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113 and 114 go in AFTER**; **112 goes in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -162,6 +162,7 @@ m(file, applied) as (values
   ('109_approval_written_by_server',         exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'articles_guard_approval' and c.relname = 'articles') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'workspaces_guard_auto_approve' and c.relname = 'workspaces')),
   ('111_member_scope_guards',                exists (select 1 from pg_trigger where tgname = 'api_keys_creator_sees_every_site') and exists (select 1 from pg_trigger where tgname = 'workspaces_domain_needs_every_site') and exists (select 1 from pg_trigger where tgname = 'workspace_integrations_google_server_written') and not has_column_privilege('authenticated', 'public.account_integrations', 'tokens', 'SELECT') and pg_get_functiondef('public.account_members_guard_roles'::regproc) like '%actor_sites%'),
   ('112_article_images_private',             not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Article images are readable by anyone')),
+  ('113_push_record',                        exists (select 1 from col where t='refresh_executions' and c='pushed_by') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'refresh_executions_guard_push' and c.relname = 'refresh_executions')),
   ('114_blog_keys',                          exists (select 1 from col where t='api_keys' and c='workspace_id') and exists (select 1 from pg_constraint where conname = 'api_keys_blog_key_shape') and exists (select 1 from pg_trigger where tgname = 'api_keys_site_in_account'))
 )
 select file, applied from m order by file;
@@ -304,6 +305,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 100_pre_trial_spend_bounds.sql   #
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 109_approval_written_by_server.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 111_member_scope_guards.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 112_article_images_private.sql   # any time; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 113_push_record.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 114_blog_keys.sql   # AFTER its code is live; see its section
 ```
 
@@ -385,6 +387,7 @@ no code in the repo references either).
 | 109_approval_written_by_server.sql | `fix/approval-integrity` | 002, 003, 005, 013, 079, 094; **its code deployed first** | yes | yes, see its section (a member can again forge an approval over PostgREST) |
 | 111_member_scope_guards.sql | `fix/tighten-site-scope` | 033, 051, 053, 085, 099, 102; **its code deployed first** | yes | yes, see its section (re-apply 102 for the two member guards) |
 | 112_article_images_private.sql | `fix/tighten-site-scope` | 045; any time | yes | yes, see its section (the bucket can be listed again) |
+| 113_push_record.sql | `fix/approval-around-push` | 052, `auth.users`; **its code deployed first** | yes | yes, see its section (loses who pushed each rewrite; a member can again mark a rewrite pushed over PostgREST) |
 | 114_blog_keys.sql | `fix/blog-api-key-scope` | 051, 085, 099; **its code deployed first** | yes | yes, see its section (blog keys are revoked; agent keys are untouched) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
@@ -1746,6 +1749,64 @@ Rollback:
 create policy "Article images are readable by anyone" on storage.objects
   for select using (bucket_id = 'article-images');
 ```
+
+## 113 — who pushed a reviewed rewrite, written by the server
+
+`113_push_record.sql` adds `refresh_executions.pushed_by` (uuid, references
+`auth.users`, `on delete set null`) and a trigger,
+`refresh_executions_guard_push`, `before insert or update` on
+`refresh_executions`. "Push to site" on Improvements now runs the gates of a
+publish (plan, trial gate, figure check, an unchanged page) and records the
+pusher as the approval of the new text on the article (`approved_by`,
+`approved_at`, written by the server; see 109). `pushed_by` keeps the same
+record on the execution, so each push says who made it after the article's
+approval has moved on. For a signed-in user (`auth.uid()` set) the trigger
+refuses (42501):
+
+- an INSERT that starts `pushed` or carries `pushed_at`, `pushed_by` or
+  `published_url` (executions are written by the refresh cron);
+- moving an execution to `pushed`, or out of it;
+- any change to `pushed_at`, `pushed_by` or `published_url`.
+
+Saving decisions and Reject still work. It passes the service role and the
+database's own cascades (`pg_trigger_depth() > 1`), like 109.
+
+**Apply AFTER its code is live.** Code from before it marks an execution
+pushed through the person's own client; with 113 applied that write is
+refused, so the execution stays `awaiting_review` after a push that reached
+the site. The new code writes the push record with the service role
+(`lib/refresh/push.ts`), and writes `pushed_by` in its own update, so it works
+with or without 113 (without it, the push is recorded and only `pushed_by` is
+missing, with a warning in the log). Re-running is a no-op (`add column if
+not exists`, `create or replace`, drop-then-create of the trigger). Depends on
+052 and `auth.users`.
+
+Test: `supabase/tests/113_push_record.rls.sql` (self-contained, rolls back).
+Green 2026-10-15 on a throwaway Postgres 17 (supabase/postgres image) holding
+a stub of the tables it touches (`accounts`, `workspaces`,
+`account_members`, `user_workspace_ids()`, 052's three refresh tables with
+062's policies), with 113 applied twice: the eight forging writes (mark
+pushed, record or rewrite or clear who pushed, move the date, put a pushed
+execution back to review, change where it went, insert one already pushed)
+are 42501; saving decisions and rejecting still work; the service role still
+records a push. With the trigger dropped, the first case fails. Not yet run
+on a copy built from 001-113.
+
+Post-flight (expect `t`, `1`):
+
+```sql
+select exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'refresh_executions' and column_name = 'pushed_by'),
+       (select count(*) from pg_trigger t join pg_class c on c.oid = t.tgrelid
+         where t.tgname = 'refresh_executions_guard_push' and c.relname = 'refresh_executions');
+```
+
+Rollback (the code keeps working; it logs that `pushed_by` was not recorded):
+
+```sql
+drop trigger if exists refresh_executions_guard_push on public.refresh_executions;
+drop function if exists public.refresh_executions_guard_push();
+alter table public.refresh_executions drop column if exists pushed_by;
 
 ## 114 — blog keys read one site's published articles, nothing else
 
