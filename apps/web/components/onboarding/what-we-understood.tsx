@@ -51,7 +51,12 @@ export function WhatWeUnderstood({ profile, domain }: { profile: BusinessProfile
       </div>
       <div className="mx-2.5 mb-2.5 flex flex-col rounded-[8px] border border-line bg-bg">
         <Row label="Business">
-          <p className="m-0 text-[13px] leading-[1.5] text-ink">{businessLine(profile) || "Not read yet"}</p>
+          {/* The whole description, clamped by CSS with a real ellipsis:
+              businessLine's first-sentence cut stops at 140 characters
+              mid-word, which read as "...can read your si" on altorank.co. */}
+          <p className="m-0 line-clamp-4 text-[13px] leading-[1.5] text-ink" title={profile.description.trim() || undefined}>
+            {profile.description.trim() || businessLine(profile) || "Not read yet"}
+          </p>
         </Row>
         <Row label="What you sell">
           <Chips items={offerings.slice(0, 6)} empty="Read from your description" />
