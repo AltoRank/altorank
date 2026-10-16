@@ -464,7 +464,8 @@ describe("coverage", () => {
       ]),
       TODAY,
     );
-    expect([...served]).toEqual(["a.co/served"]);
+    expect([...served.keys()]).toEqual(["a.co/served"]);
+    expect(served.get("a.co/served")).toBe(day(1));
     const cov = indexCoverage(
       [
         { url: "https://a.co/served" },
@@ -477,6 +478,26 @@ describe("coverage", () => {
       served,
     );
     expect(cov).toEqual({ total: 5, indexed: 2, notIndexed: 1, unknown: 2, byInspection: 2, bySearch: 1 });
+  });
+
+  it("lets search evidence newer than a stored not-indexed verdict win, and only newer", () => {
+    const stale = { verdict: "NEUTRAL", checkedAt: `${day(20)}T09:00:00Z` };
+    expect(coverageBucket(stale, true, day(5))).toBe("indexed");
+    // Served on the day of the inspection or before it: the verdict stands.
+    expect(coverageBucket(stale, true, day(20))).toBe("not_indexed");
+    expect(coverageBucket(stale, true, day(25))).toBe("not_indexed");
+    expect(coverageBucket({ verdict: "FAIL", checkedAt: `${day(20)}T09:00:00Z` }, true, day(2))).toBe("indexed");
+    // Not served at all: nothing overtakes the verdict.
+    expect(coverageBucket(stale, false, null)).toBe("not_indexed");
+
+    const served = servedUrls(by([row({ metric_date: day(3), impressions: 4, page_url: "https://a.co/new-post" })]), TODAY);
+    const cov = indexCoverage([{ url: "https://a.co/new-post", inspection: stale }], served);
+    expect(cov).toMatchObject({ indexed: 1, notIndexed: 0, byInspection: 0, bySearch: 1 });
+  });
+
+  it("credits a PARTIAL verdict's page to the search evidence that decided it", () => {
+    const served = servedUrls(by([row({ metric_date: day(3), impressions: 4, page_url: "https://a.co/p" })]), TODAY);
+    expect(indexCoverage([{ url: "https://a.co/p", inspection: { verdict: "PARTIAL" } }], served)).toMatchObject({ indexed: 1, byInspection: 0, bySearch: 1 });
   });
 });
 

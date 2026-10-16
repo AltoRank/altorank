@@ -186,3 +186,47 @@ describe("the change against the previous window", () => {
     expect(env.agent_guidance).toMatch(/\+20% vs the 28 days before/);
   });
 });
+
+describe("url-inspection and coverage against the stored verdict", () => {
+  const URL = "https://acme.com/post";
+  const article = (inspection: Row): Row => ({
+    id: ART,
+    workspace_id: WS,
+    title: "Post",
+    status: "live",
+    published_url: URL,
+    indexing_status: { inspection: { verdict: null, coverageState: null, checkedAt: new Date(Date.now() - 20 * DAY).toISOString(), ...inspection } },
+  });
+  const servedRow = (ago: number) => metric(iso(ago), { page_url: URL, impressions: 6, clicks: 1 });
+
+  it("says indexed, and that the verdict is out of date, when the page was served after a not-indexed inspection", async () => {
+    setup({ articles: [article({ verdict: "NEUTRAL", coverageState: "Discovered - currently not indexed" })], metrics: [servedRow(4)] });
+    const { env } = await call("url-inspection", `&url=${encodeURIComponent(URL)}`);
+    expect(env.data.bucket).toBe("indexed");
+    expect(env.data.served_in_search).toBe(true);
+    expect(env.data.inspection_superseded).toBe(true);
+    expect(env.data.last_served_in_search).toBe(iso(4));
+    expect(env.agent_guidance).toMatch(/out of date/);
+    expect(env.agent_guidance).not.toMatch(/Not in the index/);
+
+    const cov = await call("coverage");
+    expect(cov.env.data.summary).toMatchObject({ indexed: 1, not_indexed: 0 });
+    expect(cov.env.data.pages[0]).toMatchObject({ bucket: "indexed", inspection_superseded: true });
+  });
+
+  it("keeps a not-indexed verdict that no later search evidence overtakes", async () => {
+    setup({ articles: [article({ verdict: "NEUTRAL", coverageState: "Crawled - currently not indexed" })], metrics: [servedRow(25)] });
+    const { env } = await call("url-inspection", `&url=${encodeURIComponent(URL)}&days=90`);
+    expect(env.data.bucket).toBe("not_indexed");
+    expect(env.agent_guidance).toMatch(/Not in the index/);
+  });
+
+  it("does not call a PARTIAL verdict on an unserved page indexed", async () => {
+    setup({ articles: [article({ verdict: "PARTIAL", coverageState: "Indexed, though blocked by robots.txt" })], metrics: [metric(iso(5))] });
+    const { env } = await call("url-inspection", `&url=${encodeURIComponent(URL)}`);
+    expect(env.data.bucket).toBe("unknown");
+    expect(env.data.served_in_search).toBe(false);
+    expect(env.agent_guidance).toMatch(/unknown/);
+    expect(env.agent_guidance).not.toMatch(/Indexed\. If/);
+  });
+});

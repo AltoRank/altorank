@@ -1,7 +1,7 @@
 import { withAgent, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
 import { gscRows, gscScope, syncBlock } from "@/lib/agent/gsc";
-import { coverageBucket, normalizeUrl, servedUrls } from "@/lib/gsc/analysis";
+import { coverageBucket, inspectionSuperseded, normalizeUrl, servedUrls } from "@/lib/gsc/analysis";
 import { inspectionFrom } from "@/lib/google/inspection";
 
 /**
@@ -35,8 +35,11 @@ export const GET = withAgent(async (request, ctx) => {
     (a) => normalizeUrl(a.published_url) === key,
   );
   const inspection = article ? inspectionFrom(article.indexing_status) : null;
-  const inSearch = servedUrls(gsc, scope.today, scope.days).has(key);
-  const bucket = coverageBucket(inspection, inSearch);
+  const lastServed = servedUrls(gsc, scope.today, scope.days).get(key) ?? null;
+  const inSearch = lastServed !== null;
+  const bucket = coverageBucket(inspection, inSearch, lastServed);
+  // A stored "not indexed" that Google's own search results have overtaken.
+  const superseded = bucket === "indexed" && (inspection?.verdict === "FAIL" || inspection?.verdict === "NEUTRAL") && inspectionSuperseded(inspection, lastServed);
   const base = appBaseUrl(request);
 
   const data = {
@@ -45,8 +48,12 @@ export const GET = withAgent(async (request, ctx) => {
     sync: syncBlock(scope.health),
     article: article ? { id: article.id, title: article.title, status: article.status, editor_url: `${base}/content/${article.id}` } : null,
     served_in_search: inSearch,
+    /** The newest day in the window Google served this URL in search. */
+    last_served_in_search: lastServed,
     bucket,
     inspection,
+    /** True when the page was served in search after the stored inspection said it was not indexed. */
+    inspection_superseded: superseded,
   };
 
   if (!article) {
@@ -65,11 +72,29 @@ export const GET = withAgent(async (request, ctx) => {
         : "Unknown: no URL Inspection stored and not served in search during the window. Ask the human to press 'Check indexing' at editor_url; you cannot run the inspection from here.",
     );
   }
-  return ok(
-    data,
-    `Google's verdict on ${inspection.checkedAt.slice(0, 10)}: ${inspection.coverageState ?? inspection.verdict ?? "unspecified"}. ` +
-      (bucket === "not_indexed"
-        ? "Not in the index. Relay coverage_state verbatim and, if googleCanonical differs from userCanonical, say Google chose another canonical. A fresh inspection is the human's click at editor_url."
-        : "Indexed. If the human wants a newer verdict they can press 'Check indexing' at editor_url."),
-  );
+  const verdict = `Google's verdict on ${inspection.checkedAt.slice(0, 10)}: ${inspection.coverageState ?? inspection.verdict ?? "unspecified"}. `;
+  if (superseded) {
+    return ok(
+      data,
+      verdict +
+        `Google has served this page in search since then (most recently ${lastServed}), so it is in the index now and the stored verdict is out of date. ` +
+        "Say it is indexed. Pressing 'Check indexing' at editor_url replaces the old verdict; that is the human's click.",
+    );
+  }
+  if (bucket === "not_indexed") {
+    return ok(
+      data,
+      verdict +
+        "Not in the index. Relay coverage_state verbatim and, if googleCanonical differs from userCanonical, say Google chose another canonical. A fresh inspection is the human's click at editor_url.",
+    );
+  }
+  if (bucket === "unknown") {
+    return ok(
+      data,
+      verdict +
+        "That verdict does not say whether the page is indexed, and Google did not serve the page in search during the window, so its index state is unknown - not \"not indexed\". " +
+        "Ask the human to press 'Check indexing' at editor_url for a fresh verdict; you cannot run it from here.",
+    );
+  }
+  return ok(data, verdict + "Indexed. If the human wants a newer verdict they can press 'Check indexing' at editor_url.");
 });

@@ -1,7 +1,7 @@
 import { withAgent, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
 import { gscRows, gscScope, syncBlock } from "@/lib/agent/gsc";
-import { coverageBucket, indexCoverage, normalizeUrl, servedUrls, type CoverageBucket } from "@/lib/gsc/analysis";
+import { coverageBucket, indexCoverage, inspectionSuperseded, normalizeUrl, servedUrls, type CoverageBucket } from "@/lib/gsc/analysis";
 import { knownPagesFrom } from "@/lib/gsc/queries";
 
 const BUCKETS: CoverageBucket[] = ["indexed", "not_indexed", "unknown"];
@@ -43,12 +43,17 @@ export const GET = withAgent(async (request, ctx) => {
       return true;
     })
     .map((p) => {
-      const inSearch = served.has(normalizeUrl(p.url));
+      const lastServed = served.get(normalizeUrl(p.url)) ?? null;
+      const bucket = coverageBucket(p.inspection, lastServed !== null, lastServed);
       return {
         url: p.url,
         title: p.title,
-        bucket: coverageBucket(p.inspection, inSearch),
-        served_in_search: inSearch,
+        bucket,
+        served_in_search: lastServed !== null,
+        last_served_in_search: lastServed,
+        // Served in search after a stored "not indexed": the verdict is out of date.
+        inspection_superseded:
+          bucket === "indexed" && (p.inspection?.verdict === "FAIL" || p.inspection?.verdict === "NEUTRAL") && inspectionSuperseded(p.inspection, lastServed),
         inspected_at: p.inspection?.checkedAt ?? null,
         coverage_state: p.inspection?.coverageState ?? null,
         article: p.articleId ? { id: p.articleId, editor_url: `${base}/content/${p.articleId}` } : null,

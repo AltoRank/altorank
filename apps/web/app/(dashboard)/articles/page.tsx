@@ -66,15 +66,19 @@ export default async function ArticlesPage({ searchParams }: Props) {
   ]);
   const clicksByArticle = new Map<string, number>();
   // Served in search at least once: the page is in Google's index, whatever
-  // else we do or do not know about it.
-  const servedArticles = new Set<string>();
+  // else we do or do not know about it. Kept with the newest day it was, so a
+  // stored "not indexed" verdict older than that is read as overtaken.
+  const servedArticles = new Map<string, string>();
   for (const m of metricRows) {
     if (!m.article_id) continue;
     clicksByArticle.set(
       m.article_id,
       (clicksByArticle.get(m.article_id) ?? 0) + (m.clicks ?? 0),
     );
-    if ((m.impressions ?? 0) > 0) servedArticles.add(m.article_id);
+    if ((m.impressions ?? 0) > 0) {
+      const seen = servedArticles.get(m.article_id);
+      if (!seen || m.metric_date > seen) servedArticles.set(m.article_id, m.metric_date);
+    }
   }
 
   // Which workspaces can publish from this list: the ones with a CMS
@@ -117,7 +121,9 @@ export default async function ArticlesPage({ searchParams }: Props) {
   const rows = allArticles.map((a) => {
     // Index coverage only means something for a published URL.
     const inspection = a.published_url ? inspectionFrom(a.indexing_status) : null;
-    const bucket = a.published_url ? coverageBucket(inspection, servedArticles.has(a.id)) : null;
+    const lastServed = servedArticles.get(a.id) ?? null;
+    const bucket = a.published_url ? coverageBucket(inspection, lastServed !== null, lastServed) : null;
+    const overtaken = bucket === "indexed" && inspection !== null && (inspection.verdict === "FAIL" || inspection.verdict === "NEUTRAL");
     return toHistoryRow(a, {
       canPublish: cmsWorkspaces.has(a.workspace_id),
       canRetry: canRetryPublish(lastPublishes.get(a.id), a.status),
@@ -125,7 +131,9 @@ export default async function ArticlesPage({ searchParams }: Props) {
       index: bucket
         ? {
             bucket,
-            title: inspection?.coverageState
+            title: overtaken
+              ? `Served in Google search on ${lastServed}, after the URL inspection of ${inspection!.checkedAt.slice(0, 10)} (${inspection!.coverageState ?? inspection!.verdict})`
+              : inspection?.coverageState
               ? `${inspection.coverageState} (URL inspection)`
               : bucket === "indexed"
                 ? "Served in Google search in the last 30 days"

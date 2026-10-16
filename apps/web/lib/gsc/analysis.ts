@@ -611,7 +611,17 @@ export function shortUrl(u: string): string {
 export type CoverageBucket = "indexed" | "not_indexed" | "unknown";
 
 /** What a URL Inspection call said; lib/google/inspection.ts builds these. */
-export type InspectionVerdictLike = { verdict: string | null } | null | undefined;
+export type InspectionVerdictLike = { verdict: string | null; checkedAt?: string | null } | null | undefined;
+
+/**
+ * Whether Google served the page in search on a day after the stored
+ * inspection was taken: newer evidence than the verdict. Compared by day,
+ * because Search Console dates are days.
+ */
+export function inspectionSuperseded(inspection: InspectionVerdictLike, lastServed: string | null | undefined): boolean {
+  const checked = inspection?.checkedAt?.slice(0, 10);
+  return Boolean(lastServed && checked && lastServed > checked);
+}
 
 /**
  * Where a page stands, from the two things we can actually know: what Google
@@ -620,16 +630,22 @@ export type InspectionVerdictLike = { verdict: string | null } | null | undefine
  * definition). A URL we merely fetched with a 200 is not indexed for having
  * responded, so `site_pages.status` never promotes a page here.
  *
- * Inspection wins when present: it is Google's direct answer about this URL.
+ * Inspection wins when present - it is Google's direct answer about this
+ * URL - unless the page was served in search on a later day than the verdict
+ * (`lastServed`). Inspections run only when a person clicks, so a "Discovered
+ * - currently not indexed" taken the day after publishing would otherwise
+ * outlive every impression the page has had since.
  */
-export function coverageBucket(inspection: InspectionVerdictLike, servedInSearch: boolean): CoverageBucket {
+export function coverageBucket(inspection: InspectionVerdictLike, servedInSearch: boolean, lastServed?: string | null): CoverageBucket {
   if (inspection?.verdict) {
     if (inspection.verdict === "PASS") return "indexed";
     // NEUTRAL is Google's "excluded" (noindex, canonical elsewhere, crawled
     // and not indexed); FAIL is an error. Neither URL is in the index.
     // PARTIAL and VERDICT_UNSPECIFIED say nothing about the index, so they
     // fall through to the search evidence.
-    if (inspection.verdict === "FAIL" || inspection.verdict === "NEUTRAL") return "not_indexed";
+    if (inspection.verdict === "FAIL" || inspection.verdict === "NEUTRAL") {
+      return servedInSearch && inspectionSuperseded(inspection, lastServed) ? "indexed" : "not_indexed";
+    }
   }
   return servedInSearch ? "indexed" : "unknown";
 }
@@ -650,18 +666,24 @@ export type IndexCoverage = {
   bySearch: number;
 };
 
-/** URLs Google served in the current window, normalised, from page rows. */
-export function servedUrls(gsc: GscShapes<GscRow, "page">, today: Date, days = WINDOW_DAYS): Set<string> {
+/**
+ * URLs Google served in the current window, normalised, from page rows, each
+ * with the newest day it was served (so a stored inspection can be weighed
+ * against it).
+ */
+export function servedUrls(gsc: GscShapes<GscRow, "page">, today: Date, days = WINDOW_DAYS): Map<string, string> {
   const w = windows(today, days);
-  const out = new Set<string>();
+  const out = new Map<string, string>();
   for (const r of gsc.page) {
     if (!inWindow(r.metric_date, w.current) || n(r.impressions) <= 0) continue;
-    out.add(normalizeUrl(r.page_url as string));
+    const key = normalizeUrl(r.page_url as string);
+    const seen = out.get(key);
+    if (!seen || r.metric_date > seen) out.set(key, r.metric_date);
   }
   return out;
 }
 
-export function indexCoverage(known: KnownPage[], served: Set<string>): IndexCoverage {
+export function indexCoverage(known: KnownPage[], served: ReadonlyMap<string, string>): IndexCoverage {
   const seen = new Set<string>();
   const out: IndexCoverage = { total: 0, indexed: 0, notIndexed: 0, unknown: 0, byInspection: 0, bySearch: 0 };
   for (const page of known) {
@@ -669,13 +691,17 @@ export function indexCoverage(known: KnownPage[], served: Set<string>): IndexCov
     if (seen.has(key)) continue;
     seen.add(key);
     out.total++;
-    const inSearch = served.has(key);
-    const bucket = coverageBucket(page.inspection, inSearch);
+    const lastServed = served.get(key) ?? null;
+    const bucket = coverageBucket(page.inspection, lastServed !== null, lastServed);
     if (bucket === "indexed") out.indexed++;
     else if (bucket === "not_indexed") out.notIndexed++;
     else out.unknown++;
     if (bucket !== "unknown") {
-      if (page.inspection?.verdict) out.byInspection++;
+      // Counted by what decided the bucket: a verdict that speaks to the
+      // index and was not overtaken, or else the search evidence.
+      const verdict = page.inspection?.verdict;
+      const decisive = verdict === "PASS" || verdict === "FAIL" || verdict === "NEUTRAL";
+      if (decisive && !inspectionSuperseded(page.inspection, lastServed)) out.byInspection++;
       else out.bySearch++;
     }
   }
