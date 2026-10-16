@@ -17,6 +17,7 @@ import {
   rejectExecution,
   saveExecutionDecisions,
 } from "@/app/actions/refresh";
+import type { FactCheckReport } from "@/lib/ai/fact-check";
 import type {
   Evidence,
   ExecutionDecisions,
@@ -31,6 +32,8 @@ type Props = {
   reviewStatus: ReviewStatus;
   hunks: Hunk[];
   issues: ValidationIssue[];
+  /** The fact check of the proposed rewrite as stored with it, or null when none was. */
+  factCheck: { report: FactCheckReport | null; verdict: FactCheckReport["verdict"] } | null;
   before: { title: string | null; metaDescription: string | null };
   after: { title: string | null; metaDescription: string | null };
   initialDecisions: ExecutionDecisions;
@@ -47,6 +50,7 @@ export function ReviewExecution({
   reviewStatus,
   hunks,
   issues,
+  factCheck,
   before,
   after,
   initialDecisions,
@@ -211,9 +215,11 @@ export function ReviewExecution({
           </div>
         )}
 
+        <FactCheckPanel factCheck={factCheck} />
+
         {issues.length > 0 && (
           <div className="rounded-[9px] border border-line bg-panel px-4 py-3 text-[13px]">
-            <div className="font-medium mb-1">{plural(issues.length, "check")} flagged before review</div>
+            <div className="font-medium mb-1">{plural(issues.length, "structural check")} flagged before review</div>
             <ul className="m-0 pl-4 space-y-0.5 text-ink-2">
               {issues.map((i) => (
                 <li key={i.code} className={i.severity === "error" ? "text-err-ink" : ""}>{i.message}</li>
@@ -348,7 +354,7 @@ export function ReviewExecution({
         open={confirmPush}
         onOpenChange={setConfirmPush}
         title="Push to site"
-        description={`This updates the live post in ${destinationLabel ?? "your CMS"} with ${summary.kept} of ${plural(summary.total, "change")}. Blocks you rejected or left undecided stay as they are today. This is the only step that writes to your site.`}
+        description={`This updates the live post in ${destinationLabel ?? "your CMS"} with ${summary.kept} of ${plural(summary.total, "change")}. Blocks you rejected or left undecided stay as they are today, and the push is refused if the page changed since the rewrite read it. The figures in what you keep are checked first, as at Approve, and the push is recorded under your name. This is the only step that writes to your site.`}
       >
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="ghost" onClick={() => setConfirmPush(false)} disabled={pending}>Cancel</Button>
@@ -358,6 +364,48 @@ export function ReviewExecution({
         </div>
       </Dialog>
     </>
+  );
+}
+
+const VERDICT_LABEL: Record<FactCheckReport["verdict"], string> = {
+  clean: "every claim verified",
+  review: "claims to verify",
+  high_risk: "claims to correct or remove",
+  unchecked: "nothing checked",
+};
+
+/**
+ * What the fact check said about the proposed rewrite, beside the diff. The
+ * check ran on the whole rewrite; Push runs it again on what is kept.
+ */
+export function FactCheckPanel({ factCheck }: { factCheck: Props["factCheck"] }) {
+  if (!factCheck) return null;
+  const { report, verdict } = factCheck;
+  // Every claim the verdict counts: anything not verified against its cited
+  // page, corroborated ones included, so a "claims to verify" verdict never
+  // comes with an empty list (lib/ai/fact-check.ts, lib/refresh/fact-check.ts).
+  const flagged = (report?.claims ?? []).filter((c) => c.status !== "verified");
+  return (
+    <div className="rounded-[9px] border border-line bg-panel px-4 py-3 text-[13px]">
+      <div className="font-medium mb-0.5">
+        Fact check of the proposed rewrite: <span className={verdict === "high_risk" ? "text-err-ink" : undefined}>{VERDICT_LABEL[verdict]}</span>
+      </div>
+      <p className="m-0 text-ink-3 leading-relaxed">
+        {report?.summary ?? "Only the verdict was stored for this rewrite, not the claims behind it."} Push checks the figures again
+        on the blocks you keep, and refuses an unsourced one.
+      </p>
+      {flagged.length > 0 && (
+        <ul className="mt-1.5 mb-0 pl-4 space-y-1 text-ink-2">
+          {flagged.slice(0, 12).map((c) => (
+            <li key={c.id} className={c.severity === "high" ? "text-err-ink" : undefined}>
+              <span className="font-medium">{c.text}</span>: {c.sentence}
+              {c.note ? <span className="text-ink-3"> ({c.note})</span> : null}
+            </li>
+          ))}
+          {flagged.length > 12 && <li className="text-ink-3">and {flagged.length - 12} more</li>}
+        </ul>
+      )}
+    </div>
   );
 }
 

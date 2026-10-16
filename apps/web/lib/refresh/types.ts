@@ -107,6 +107,14 @@ export interface ExecutionSide {
   metaDescription: string | null;
 }
 
+/** The fact check's verdict on a proposed rewrite, and how many claims it asks a person to act on. */
+export interface RewriteFactCheck {
+  verdict: "clean" | "review" | "high_risk" | "unchecked";
+  flagged: number;
+  /** Why nothing was checked, when the verdict is `unchecked`. */
+  unchecked?: "language" | "nothing_to_check";
+}
+
 export interface ValidationIssue {
   code: string;
   message: string;
