@@ -201,7 +201,8 @@ describe("token cache", () => {
 
     const p1 = listShopifyBlogs(STORE, CLIENT);
     const p2 = listShopifyBlogs(STORE, CLIENT);
-    await Promise.resolve();
+    // The cache key is digested asynchronously, so wait for the exchange to start.
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalled());
     resolveExchange(tokenResponse("tok_A"));
     await Promise.all([p1, p2]);
 

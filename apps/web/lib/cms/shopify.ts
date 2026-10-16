@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { CMSAdapter, PublishPayload, PublishResult } from "./types";
 import type { ShopifyConfig, ShopifyCredentials } from "@/lib/types";
 
@@ -117,8 +116,11 @@ export function clearShopifyTokenCache(): void {
  * earned it: the client id is public, and a key of store + client id alone
  * served the token to anyone who could name them.
  */
-function cacheKey(storeUrl: string, credential: Extract<ShopifyCredential, { kind: "client" }>): string {
-  const secret = createHash("sha256").update(credential.clientSecret).digest("hex");
+async function cacheKey(storeUrl: string, credential: Extract<ShopifyCredential, { kind: "client" }>): Promise<string> {
+  // Web Crypto rather than node:crypto: the connect form imports this module
+  // for its credential check, and a Node builtin cannot reach a client bundle.
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(credential.clientSecret));
+  const secret = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
   return `${new URL(storeUrl).host}|${credential.clientId}|${secret}`;
 }
 
@@ -162,7 +164,7 @@ async function exchangeClientCredentials(
 async function resolveToken(storeUrl: string, credential: ShopifyCredential, forceRefresh = false): Promise<string> {
   if (credential.kind === "token") return credential.accessToken;
 
-  const key = cacheKey(storeUrl, credential);
+  const key = await cacheKey(storeUrl, credential);
   if (forceRefresh) tokenCache.delete(key);
 
   const cached = tokenCache.get(key);
