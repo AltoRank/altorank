@@ -51,10 +51,19 @@ export async function createMetered(
  * ceiling, an error mid-stream - so the row is written from the usage the
  * stream reported so far rather than only from a finished message.
  *
+ * The API reports the output count once, at the end (`message_delta`): a
+ * stream stopped before then has reported one output token however much it
+ * wrote. So a stream that did not finish is billed for at least the text it
+ * delivered, counted at STOPPED_CHARS_PER_TOKEN, a rate that errs high like
+ * the claim's estimate rather than low.
+ *
  * `onText` gets each piece of text as it arrives. The final message is
  * returned; anything thrown (by the stream or by `onText`) is thrown on after
  * the row is written.
  */
+/** Characters per output token for a stream stopped before it reported its count: errs high, like anthropicEstimate. */
+export const STOPPED_CHARS_PER_TOKEN = 2.5;
+
 export async function streamMetered(
   client: Anthropic,
   params: Anthropic.MessageStreamParams,
@@ -66,6 +75,8 @@ export async function streamMetered(
   const claim = await claimSpend(operation, anthropicEstimate(params.model, promptChars, params.max_tokens));
   let inputTokens = 0;
   let outputTokens = 0;
+  let textChars = 0;
+  let finished = false;
   let cost: number | null = null;
   try {
     const run = client.messages.stream(params, opts.signal ? { signal: opts.signal } : undefined);
@@ -77,14 +88,17 @@ export async function streamMetered(
         // Cumulative, per the API: the latest is the total so far.
         outputTokens = event.usage?.output_tokens ?? outputTokens;
       } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+        textChars += event.delta.text.length;
         onText(event.delta.text);
       }
     }
     const final = await run.finalMessage();
     inputTokens = final.usage?.input_tokens ?? inputTokens;
     outputTokens = final.usage?.output_tokens ?? outputTokens;
+    finished = true;
     return final;
   } finally {
+    if (!finished) outputTokens = Math.max(outputTokens, Math.ceil(textChars / STOPPED_CHARS_PER_TOKEN));
     // A stream that never started bought nothing: no row. One that did is
     // written with what it reported, which is what was billed.
     if (inputTokens > 0 || outputTokens > 0) {

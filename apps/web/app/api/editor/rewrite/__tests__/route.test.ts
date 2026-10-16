@@ -227,4 +227,27 @@ describe("POST /api/editor/rewrite", () => {
     expect(out.at(-1)).toMatchObject({ type: "error", error: "connection reset" });
     expect(spendRows).toEqual([expect.objectContaining({ operation: "editor/rewrite", inputTokens: 3_000, outputTokens: 200 })]);
   });
+
+  it("bills a stream the reader left before the end for the text it wrote, not the one token it had reported", async () => {
+    // The API reports the output count once, in message_delta at the end. A
+    // reader that leaves after 20,000 characters has been billed for them.
+    const piece = "<p>" + "word ".repeat(199) + "</p>";
+    stream.mockImplementation(() => ({
+      async *[Symbol.asyncIterator]() {
+        yield { type: "message_start", message: { usage: { input_tokens: 3_000, output_tokens: 1 } } };
+        for (let i = 0; i < 20; i++) yield { type: "content_block_delta", delta: { type: "text_delta", text: piece } };
+        const err = new Error("Request was aborted.");
+        err.name = "APIUserAbortError";
+        throw err;
+      },
+      finalMessage: async () => {
+        throw new Error("never finished");
+      },
+    }));
+    const out = await events(await POST(post()));
+    expect(out.at(-1)).toMatchObject({ type: "error" });
+    expect(spendRows).toHaveLength(1);
+    expect(spendRows[0].outputTokens).toBeGreaterThanOrEqual(Math.ceil((piece.length * 20) / 4));
+    expect(spendRows[0].costUsd).toBeGreaterThan(0.05);
+  });
 });
