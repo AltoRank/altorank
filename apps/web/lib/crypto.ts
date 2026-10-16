@@ -4,14 +4,29 @@ const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
 const TAG_LENGTH = 16;
 
-function getKey(): Buffer {
+const HEX_KEY = /^[0-9a-f]{64}$/i;
+
+/**
+ * The 32-byte AES key. 64 hex characters (`openssl rand -hex 32`) are decoded;
+ * any other string is SHA-256'd to 32 bytes.
+ *
+ * Only a string that is entirely hex takes the decode path. Deciding by length
+ * alone sent a 64-character passphrase with a non-hex character through the hex
+ * decoder, which stops at the first non-hex pair and returned a short key, so
+ * every credential write failed with "Invalid key length" - CMS connections,
+ * Google and Bing tokens and the operator "View as" cookie alike.
+ */
+export function encryptionKey(): Buffer {
   const key = process.env.ENCRYPTION_KEY;
   if (!key) throw new Error("ENCRYPTION_KEY env var is required");
-  // Key must be 32 bytes — if provided as hex (64 chars), decode it
-  if (key.length === 64) return Buffer.from(key, "hex");
-  // Otherwise, derive a 32-byte key via SHA-256
-  return crypto.createHash("sha256").update(key).digest();
+  const bytes = HEX_KEY.test(key)
+    ? Buffer.from(key, "hex")
+    : crypto.createHash("sha256").update(key).digest();
+  if (bytes.length !== 32) throw new Error("ENCRYPTION_KEY did not produce a 32-byte key");
+  return bytes;
 }
+
+const getKey = encryptionKey;
 
 /**
  * Encrypt a string using AES-256-GCM.

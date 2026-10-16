@@ -26,9 +26,10 @@ anything the defaults get wrong.
 - **`SUPABASE_SERVICE_ROLE_KEY` bypasses row-level security** and is server-only
   by design. It must never be given a `NEXT_PUBLIC_` prefix. If you find a code
   path that leaks it to the browser, that is a real finding.
-- **`ENCRYPTION_KEY` encrypts stored CMS credentials** with AES-256-GCM
-  (`apps/web/lib/crypto.ts`). Rotating it makes existing stored credentials
-  undecryptable; that is expected, not a bug.
+- **`ENCRYPTION_KEY` encrypts stored CMS credentials, Google and Bing tokens
+  and the operator "View as" cookie** with AES-256-GCM
+  (`apps/web/lib/crypto.ts`). Rotating it makes existing stored credentials and
+  tokens undecryptable; that is expected, not a bug.
 - **`/api/cron/*` is gated on a shared secret** in the `x-cron-secret` header.
   With `CRON_SECRET` unset every cron endpoint returns 401, which is the safe
   default. A route reachable without that header would be a finding.
