@@ -103,7 +103,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms * h.latency));
 // cases were written against: 1s, 2s, 2s and 15s.
 vi.mock("@/lib/onboarding/time-limits", async (original) => ({
   ...(await original<typeof import("@/lib/onboarding/time-limits")>()),
-  BUDGET_RPC_TIMEOUT_MS: 20_000 * h.latency,
+  // The budget RPCs go to a real local database, whose latency does not
+  // shrink with the stand-ins': a loaded machine took over 1s for a claim,
+  // which the replay then counted as a dropped call. 3s is a floor in real time.
+  BUDGET_RPC_TIMEOUT_MS: Math.max(3_000, 20_000 * h.latency),
   STRUCTURED_CALL_DEADLINE_MS: 40_000 * h.latency,
   METERED_CALL_DEADLINE_MS: 40_000 * h.latency,
   // 15s at the default latency; STALL_QUALIFY_MS overrides it (production's is 150000).
