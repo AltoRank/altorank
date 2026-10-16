@@ -28,6 +28,7 @@ const CRON_ROUTES = {
   "0 8 * * 1": "/api/cron/geo",
   "0 10 * * *": "/api/cron/site-pages",
   "0 11 * * *": "/api/cron/ops-digest",
+  "30 8 * * *": "/api/cron/shopify-billing",
 };
 
 const worker = {

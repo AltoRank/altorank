@@ -288,17 +288,33 @@ export async function judgeBuyerFit(
   // a phrase not judged stays unjudged, and the run goes on.
   let asking = 0;
   let exhausted = false;
-  let waiters: Array<() => void> = [];
-  const wake = () => { const w = waiters; waiters = []; for (const f of w) f(); };
+  // Refused batches waiting for a settle to free room, best batch first.
+  let waiters: Array<{ rank: number; go: (letGo: boolean) => void }> = [];
+  // Waiters a settle let go whose ask has not come back yet.
+  let retrying = 0;
+  const wake = () => { const w = waiters; waiters = []; for (const x of w) x.go(false); };
   // A settle frees one batch's room, give or take: one waiter asks again,
   // not all of them, or each settle bought a refusal from every other
   // waiter (33 on a fifteen-batch pool) on the way to the same answers.
-  const wakeOne = () => { waiters.shift()?.(); };
-  const askPatiently = async (phrases: readonly string[]): Promise<string | null> => {
+  const wakeOne = () => { const next = waiters.shift(); if (next) { retrying += 1; next.go(true); } };
+  const waitTurn = (rank: number) => new Promise<boolean>((go) => {
+    const at = waiters.findIndex((w) => w.rank > rank);
+    waiters.splice(at === -1 ? waiters.length : at, 0, { rank, go });
+  });
+  // And the room a settle frees goes to the best batch waiting for it, not
+  // to whichever claim reaches the database first. A batch not yet refused
+  // used to claim straight away beside the waiter that settle let go, and
+  // win the room when its claim landed first: the first batch - the
+  // strongest forty phrases - refused at the start, lost that race at every
+  // settle while batches 5 to 14 were judged, and ended unjudged. So while
+  // anyone waits for room, or a waiter let go is still asking, a batch takes
+  // its place in the line instead of claiming.
+  const askPatiently = async (phrases: readonly string[], rank: number): Promise<string | null> => {
     const prompt = buyerFitPrompt(described, phrases);
     const room = buyerFitTokens(phrases.length);
+    let letGo = waiters.length > 0 || retrying > 0 ? await waitTurn(rank) : false;
     for (;;) {
-      if (exhausted) return null;
+      if (exhausted) { if (letGo) retrying -= 1; return null; }
       asking += 1;
       let raw: string | null = null;
       let refused = false;
@@ -309,23 +325,25 @@ export async function judgeBuyerFit(
       } catch (err) {
         if (!isBudgetRefusal(err)) {
           asking -= 1;
+          if (letGo) retrying -= 1;
           wake();
           throw err;
         }
         refused = true;
       }
       asking -= 1;
+      if (letGo) retrying -= 1;
       if (!refused) { wakeOne(); return raw; }
       // Nobody else holds a claim that could settle lower: the room is gone.
       if (asking === 0) { exhausted = true; wake(); return null; }
-      await new Promise<void>((r) => waiters.push(r));
+      letGo = await waitTurn(rank);
     }
   };
-  const answered = await mapLimit(batches, options.concurrency ?? BUYER_FIT_CONCURRENCY, async (batch) => {
+  const answered = await mapLimit(batches, options.concurrency ?? BUYER_FIT_CONCURRENCY, async (batch, rank) => {
     const got = new Map<string, FitVerdict>();
     let missing = batch;
     for (let attempt = 0; attempt < 2 && missing.length && !exhausted; attempt++) {
-      const raw = await askPatiently(missing);
+      const raw = await askPatiently(missing, rank);
       for (const [term, decision] of parseVerdicts(raw, missing)) got.set(term, { ...decision, asked });
       missing = missing.filter((term) => !got.has(term));
     }

@@ -20,7 +20,7 @@ import { languageCodeOf } from "@/lib/keyword-research/locale";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordingFetcher, runAgentReadiness, type ReadinessResult } from "./agent-readiness";
-import { crawlSite, usablePages, type CrawlOptions } from "./crawler";
+import { crawlSite, usablePages, type CrawlOptions, type CrawlResult } from "./crawler";
 import { clearRefusal } from "./host-circuit";
 import { decideFirstLook, firstLookPatch, type FirstLookDecision } from "./first-look";
 import { runAuditChecks, calculateAuditScore } from "./checks";
@@ -447,6 +447,15 @@ export async function analyseDomain(options: {
    * result lands on that row when it comes (`pageSpeedSettled`).
    */
   deferPageSpeed?: boolean;
+  /**
+   * Pages already read some other way, used in place of the crawl. A Shopify
+   * store behind its password page answers every crawl with /password, so
+   * the first look reads its pages and articles through the Admin API instead
+   * (lib/shopify/store-content.ts). They are the store's own words, not its
+   * rendered storefront, so they feed the topical profile but are not
+   * audited: an on-page score of text nobody can visit would be invented.
+   */
+  pages?: CrawlResult[];
 }): Promise<DomainAnalysis> {
   // E2E_STUBS: fixture keywords, no crawl, no provider, nothing measured (lib/e2e/stubs.ts).
   if (e2eStubsEnabled()) return stubAnalyseDomain(options);
@@ -502,6 +511,16 @@ export async function analyseDomain(options: {
   // were, so the run screen reads the same.
   const crawlLayers: AnalysisLayer[] = [];
   const crawlDone = (async () => {
+    if (options.pages?.length) {
+      profile = await timed("topical_profile", () => buildTopicalProfile(domain, options.pages!));
+      pagesCrawled = options.pages.length;
+      crawlLayers.push({
+        id: "crawl",
+        status: "ok",
+        detail: `${options.pages.length} pages read from the store itself (its storefront is password-protected), not audited`,
+      });
+      return;
+    }
     try {
       const home = recorded.resources.get(`${baseUrl}/`) ?? recorded.resources.get(baseUrl);
       const seedHtml = home && home.status >= 200 && home.status < 300 && /<html/i.test(home.body) ? home.body : null;

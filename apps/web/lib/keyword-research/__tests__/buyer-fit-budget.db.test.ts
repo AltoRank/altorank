@@ -34,16 +34,29 @@ const business = { name: "Acme Studio", description: "Acme Studio sells model ra
 const pool = (n: number) => Array.from({ length: n }, (_, i) => `acme kit idea ${String(i).padStart(4, "0")}`);
 
 /** The model: answers every phrase, after a moment, billing ~$0.025 a full batch. */
-function answering(delayMs: () => number) {
+function answering(delayMs: (asked: readonly string[]) => number) {
   create.mockImplementation(async (p: { messages: Array<{ content: string }>; max_tokens: number }) => {
     const prompt = p.messages[0].content;
     const asked = JSON.parse(prompt.slice(prompt.lastIndexOf("PHRASES") + "PHRASES".length).trim()) as string[];
-    await new Promise((r) => setTimeout(r, delayMs()));
+    await new Promise((r) => setTimeout(r, delayMs(asked)));
     return {
       content: [{ type: "text", text: JSON.stringify({ verdicts: asked.map((t) => ({ t, s: "solution", r: "a modeller" })) }) }],
       usage: { input_tokens: 1800, output_tokens: 50 * asked.length },
     };
   });
+}
+
+/**
+ * A number in [0, 1) fixed by the seed and the key, whatever order calls
+ * arrive in. One shared sequence handed each reply the next number in the
+ * order the calls reached the model, so a few milliseconds of database
+ * jitter on a claim reassigned every later delay.
+ */
+function draw(seed: number, key: string): number {
+  let x = (seed ^ 0x9e3779b9) >>> 0;
+  for (let i = 0; i < key.length; i++) x = Math.imul(x ^ key.charCodeAt(i), 0x01000193) >>> 0;
+  x ^= x >>> 16; x = Math.imul(x, 0x85ebca6b) >>> 0; x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35) >>> 0; x ^= x >>> 16;
+  return x / 4294967296;
 }
 
 describe.skipIf(!STACK)("the buyer test on a run budget in the local database", () => {
@@ -94,9 +107,14 @@ describe.skipIf(!STACK)("the buyer test on a run budget in the local database", 
   }, 30_000);
 
   it("returns with what it bought when the room falls below one batch's claim mid-stage, five batches in flight", async () => {
-    let s = 7;
-    const rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
-    answering(() => 50 + rnd() * 400);
+    // Each reply's delay is the batch's own: its first phrase and how often
+    // that batch has been answered, so a retry draws its own.
+    const answered = new Map<string, number>();
+    answering((asked) => {
+      const n = answered.get(asked[0]) ?? 0;
+      answered.set(asked[0], n + 1);
+      return 50 + draw(7, `${asked[0]}:${n}`) * 400;
+    });
     create.mockClear();
     const { budget, runId } = await budgetAt([["discovery", 0.351], ["voice", 0.011]]);
     const phrases = pool(MAX_JUDGED * 15);
@@ -109,6 +127,8 @@ describe.skipIf(!STACK)("the buyer test on a run budget in the local database", 
     // Part of the pool judged, the rest left unjudged - the best first, as far as five at a time allows.
     expect(out.verdicts.size).toBeGreaterThan(0);
     expect(out.verdicts.size).toBeLessThan(phrases.length);
+    // The strongest batch is always judged, whichever claim reaches the
+    // database first: the room a settle frees goes to the best batch waiting.
     expect(out.verdicts.has(phrases[0])).toBe(true);
     const judgedIn = (from: number, to: number) => phrases.slice(from, to).filter((p) => out.verdicts.has(p)).length;
     expect(judgedIn(0, MAX_JUDGED * 5)).toBeGreaterThan(judgedIn(MAX_JUDGED * 10, phrases.length));

@@ -9,7 +9,7 @@
 //
 // Three kinds of key are accepted, in this order:
 //
-//   1. A blog key (scopes `{blog}`, migration 114). Made for this: it is bound
+//   1. A blog key (scopes `{blog}`, migration 118). Made for this: it is bound
 //      to one site, reads that site's live articles here and nothing else, and
 //      the agent API refuses it. A request for any other site is a 403.
 //   2. An agent key with `read`. Accepted so sites set up before blog keys
@@ -74,7 +74,7 @@ type KeyRow = {
 
 const KEY_COLUMNS = "id, account_id, revoked_at, expires_at, last_used_at, scopes";
 
-/** The key's row, with its site when migration 114 is applied. */
+/** The key's row, with its site when migration 118 is applied. */
 async function readKeyRow(supabase: SupabaseClient, key: string): Promise<KeyRow | null> {
   const hash = hashApiKey(key);
   const first = await supabase.from("api_keys").select(`${KEY_COLUMNS}, workspace_id`).eq("key_hash", hash).maybeSingle();

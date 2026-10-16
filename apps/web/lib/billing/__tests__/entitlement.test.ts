@@ -71,7 +71,12 @@ const CRON_DIR = join(APP_DIR, "app", "api", "cron");
  * `serp-collect`'s money is indeed already spent, so it now filters between
  * the free listing call and the per-task fetches rather than not at all.
  */
-const UNGATED: Record<string, string> = {};
+const UNGATED: Record<string, string> = {
+  "shopify-billing":
+    "spends nothing itself: it reads Shopify's Partner API and writes the plan columns. The only paid " +
+    "work it can reach is the held-drafts resume (dispatchResume), handed off solely for an account " +
+    "this run has just found on a paid Shopify plan - the entitlement the gate would check.",
+};
 
 /**
  * The gate must stay reachable from the route's own source. Either form

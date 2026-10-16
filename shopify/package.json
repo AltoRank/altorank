@@ -1,0 +1,8 @@
+{
+  "name": "altorank-shopify-app",
+  "private": true,
+  "description": "Configuration-only Shopify app project: shopify.app.toml is deployed with the Shopify CLI. The app itself is apps/web.",
+  "scripts": {
+    "deploy": "shopify app deploy"
+  }
+}

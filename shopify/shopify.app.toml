@@ -1,0 +1,41 @@
+# The AltoRank app in the Shopify App Store.
+#
+# Deploy from this folder with the Shopify CLI after linking it to the app
+# created in the Dev Dashboard (that fills in client_id):
+#   cd shopify && shopify app config link && shopify app deploy
+#
+# The app itself is apps/web: the embedded page is /shopify, webhooks land on
+# /api/webhooks/shopify. Scopes are lib/cms/shopify-scopes.ts's
+# SHOPIFY_APP_SCOPES; the topics are lib/shopify/webhook-topics.ts. Keep
+# both in step with those files.
+
+name = "AltoRank"
+client_id = "6507d519f66b240c04c1e37db897e681"
+handle = "altorank"
+application_url = "https://app.altorank.co/shopify"
+embedded = true
+
+[access_scopes]
+# Managed installation (use_legacy_install_flow omitted): Shopify asks for
+# these on install, with no OAuth redirect through our servers. Publishing
+# needs the content pair; read_products lets the first look learn a store
+# whose storefront is password-protected (lib/shopify/store-content.ts).
+scopes = "read_content,write_content,read_products"
+
+[auth]
+# Required by the schema. Token exchange never redirects here.
+redirect_urls = ["https://app.altorank.co/shopify"]
+
+[webhooks]
+api_version = "2026-10"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/uninstalled"]
+  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+  uri = "https://app.altorank.co/api/webhooks/shopify"
+
+[pos]
+embedded = false
+
+[build]
+automatically_update_urls_on_dev = false

@@ -9,7 +9,7 @@
 // unsourced warning trains people to ignore the sourced ones.
 
 import type { CMSConfig } from "@/lib/types";
-import { SHOPIFY_REQUIRED_SCOPES } from "./shopify";
+import { SHOPIFY_REQUIRED_SCOPES } from "./shopify-scopes";
 import { MAX_ATTEMPTS } from "./retry-policy";
 
 export interface ConnectorNote {

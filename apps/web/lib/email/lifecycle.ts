@@ -827,7 +827,7 @@ export type ApiKeyCreatedEmail = {
    * not what happened.
    */
   connector?: string;
-  /** Set for a blog key (migration 114): the one site whose published articles it reads. */
+  /** Set for a blog key (migration 118): the one site whose published articles it reads. */
   blogSite?: string;
 };
 

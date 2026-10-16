@@ -19,6 +19,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BusinessProfile, InferenceReason } from "@/lib/onboarding/business-profile";
 import { inferVerifiedBusinessProfile } from "@/lib/onboarding/observed-facts";
+import type { SiteText } from "@/lib/onboarding/site-text";
 
 /** The profile as every reader holds it: every field optional, because rows predate most of them. */
 export interface BusinessFields {
@@ -59,19 +60,24 @@ const MISSING: Record<Exclude<InferenceReason, "ok">, string> = {
  * Spend: one structured model call, once per workspace that lacks a profile.
  * Callers on the scheduled path have already passed the entitlement gate
  * for the workspace; the wizard path never reaches here because it holds
- * the profile the person confirmed.
+ * the profile the person confirmed - except a store installed from the
+ * Shopify App Store, which skips the wizard (lib/onboarding/pipeline.ts).
+ *
+ * `read`: the text to infer from, when the caller already has it and the
+ * site cannot be fetched (a locked Shopify storefront).
  */
 export async function ensureBusinessProfile(
   supabase: SupabaseClient,
   workspaceId: string,
   domain: string | null | undefined,
   business: BusinessFields | null | undefined,
+  opts: { read?: SiteText } = {},
 ): Promise<EnsuredProfile> {
   if (profileUsable(business)) return { business: business ?? null, inferred: false, missing: null };
   if (!domain) return { business: null, inferred: false, missing: "no business profile, and no domain to read one from" };
 
   // Observed URLs checked before they are saved, as in the wizard.
-  const result = await inferVerifiedBusinessProfile(domain);
+  const result = await inferVerifiedBusinessProfile(domain, { read: opts.read });
   if (result.reason !== "ok" || !result.profile) {
     return { business: null, inferred: false, missing: MISSING[result.reason as Exclude<InferenceReason, "ok">] ?? MISSING.model_failed };
   }

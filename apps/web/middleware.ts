@@ -60,8 +60,22 @@ export async function middleware(request: NextRequest) {
   request.headers.set("content-security-policy", csp);
 
   const response = await updateSession(request);
-  response.headers.set(cspHeaderName(), csp);
+  if (!servesItsOwnPolicy(request.nextUrl.pathname)) response.headers.set(cspHeaderName(), csp);
   return response;
+}
+
+/**
+ * Pages that set their own policy and must not get the app's.
+ *
+ * The embedded Shopify app (app/shopify/route.ts) is framed by the Shopify
+ * admin and loads App Bridge and Polaris from Shopify's CDN - the two things
+ * the app-wide policy forbids (`frame-ancestors 'none'`, scripts by nonce
+ * only). It sends its own `frame-ancestors` naming the admin and the store;
+ * a second, stricter policy from here would be enforced alongside it and
+ * blank the app inside Shopify the day CSP_ENFORCE is turned on.
+ */
+export function servesItsOwnPolicy(pathname: string): boolean {
+  return pathname === "/shopify";
 }
 
 // Report-only until CSP_ENFORCE=1. The nonce is stamped either way, so
