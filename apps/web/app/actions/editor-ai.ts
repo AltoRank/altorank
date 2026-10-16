@@ -3,7 +3,8 @@
 import { z } from "zod";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
-import { rewriteField, type MicroAction, type MicroField } from "@/lib/ai/micro";
+import { type MicroAction, type MicroField } from "@/lib/ai/micro";
+import { rewriteField } from "@/lib/ai/micro-rewrite";
 import { canSpend } from "@/lib/billing/spend-gate";
 import { takeDoor } from "@/lib/billing/spend-doors";
 import { withSpendScope } from "@/lib/billing/spend-scope";
