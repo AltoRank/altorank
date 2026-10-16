@@ -64,9 +64,12 @@ export default async function ReviewExecutionPage({ params }: Props) {
     // The push refuses a page that changed after the rewrite read it (an
     // editor save, or another rewrite of it pushed first); say so before the
     // reviewer spends time on the blocks. Only the verdict leaves the server.
-    const current = await readVisibleArticle<{ content: unknown }>(supabase, candidate.article_id, "content");
-    const html = current?.content ? tiptapToHtml(current.content as Record<string, unknown>) : "";
-    if (pageChangedSinceRewrite(execution.before, html)) pushBlocker = PAGE_CHANGED_MESSAGE;
+    // An unreadable article leaves the button to the push, which asks again.
+    const current = await readVisibleArticle<{ content: unknown }>(supabase, candidate.article_id, "content").catch(() => undefined);
+    if (current !== undefined) {
+      const html = current?.content ? tiptapToHtml(current.content as Record<string, unknown>) : "";
+      if (pageChangedSinceRewrite(execution.before, html)) pushBlocker = PAGE_CHANGED_MESSAGE;
+    }
   }
 
   const title = article?.title ?? execution.before?.title ?? candidate.url;
