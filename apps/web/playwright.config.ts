@@ -3,6 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 // .env.local into this process and refuses any Supabase or base URL that is
 // not localhost. See e2e/README.md.
 import { BASE_URL } from "./e2e/fixtures/env";
+import { E2E_PORT, E2E_SERVER_ENV } from "./e2e/fixtures/server-env";
 
 /**
  * The e2e runner. Real UI, real server actions, real pipeline, real (local)
@@ -34,7 +35,7 @@ export default defineConfig({
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "npx next dev -p 3110",
+    command: `npx next dev -p ${E2E_PORT}`,
     // /signin answers 200 without a session; / is a redirect to the marketing site.
     url: `${BASE_URL}/signin`,
     // A server already on 3110 is reused locally, so `npm run dev:e2e` in one
@@ -45,29 +46,7 @@ export default defineConfig({
     timeout: 240_000,
     stdout: "ignore",
     stderr: "pipe",
-    env: {
-      ...process.env,
-      E2E_STUBS: "1",
-      // The check-what-we-found form stays the fallback when a site read
-      // fails, so the specs that walk it keep running with auto-start off;
-      // first-look-gate.spec turns it on per browser (lib/dev/simulation.ts).
-      ONBOARDING_AUTOSTART: "0",
-      // Own build directory, so this server can start beside a plain `next dev`
-      // of the same checkout (Next 16 locks `.next/dev` per process).
-      NEXT_DIST_DIR: ".next-e2e",
-      // The onboarding run and the fan-out call this server back over HTTP
-      // (lib/content/fan-out.ts); a base URL pointing at another dev server
-      // would run the worker there, against whatever database it has.
-      NEXT_PUBLIC_APP_URL: `http://localhost:3110`,
-      // Belt and braces: even a path the stubs miss cannot authenticate to a
-      // paid provider, and the approval gate is exercised as self-host (no
-      // Stripe), where approving needs no plan.
-      ANTHROPIC_API_KEY: "",
-      OPENAI_API_KEY: "",
-      DATAFORSEO_API_KEY: "",
-      DATAFORSEO_LOGIN: "",
-      DATAFORSEO_PASSWORD: "",
-      STRIPE_SECRET_KEY: "",
-    },
+    // The same overrides `npm run dev:e2e` uses (e2e/fixtures/server-env.ts).
+    env: { ...(process.env as Record<string, string>), ...E2E_SERVER_ENV },
   },
 });

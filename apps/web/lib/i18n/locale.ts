@@ -1442,6 +1442,20 @@ const SUPPORTED_NAMES = SUPPORTED_LANGUAGES.map((c) => RULES[c].name);
 export const SUPPORTED_LANGUAGE_LIST = `${SUPPORTED_NAMES.slice(0, -1).join(", ")} and ${SUPPORTED_NAMES[SUPPORTED_NAMES.length - 1]}`;
 
 /**
+ * The line under a language picker. Drafts can be written in every language
+ * on the list, but the fact check and the disclaimers on health, legal and
+ * money topics read only the supported ones; the draft says so afterwards
+ * ("Not checked for ..."), and this says it before the choice is made.
+ */
+export function languageCoverageHint(language: string | null | undefined): string {
+  const locale = resolveLocale(language);
+  if (locale.supported) {
+    return `Drafts in ${locale.name} get the automatic fact check and topic disclaimers.`;
+  }
+  return `Drafts are written in ${locale.name}, but the automatic fact check and topic disclaimers cover ${SUPPORTED_LANGUAGE_LIST} only: check figures in these drafts by hand.`;
+}
+
+/**
  * What a check says when it could not run on this language. One sentence,
  * the same everywhere, so a reviewer learns it once.
  */

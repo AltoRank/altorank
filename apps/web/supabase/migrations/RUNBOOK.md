@@ -15,8 +15,8 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server), **114** (blog keys), **115** (Search Console sync outcome), **116** (how often a paid door may be pressed, the Operations totals, and the customer's own last sign-in across "View as") and **117** (refresh engine bookkeeping), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113, 114, 115, 116 and 117 go in AFTER**; **112 goes in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
-both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **102** (rows stay put, and the member-role guard), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server), **114** (blog keys), **115** (Search Console sync outcome), **116** (how often a paid door may be pressed, the Operations totals, and the customer's own last sign-in across "View as") and **117** (refresh engine bookkeeping), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113, 114, 115, 116 and 117 go in AFTER**; **102 and 112 go in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+both run to the head; `lib/__tests__/migration-runbook.test.ts` fails when a file is missing from either. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
 hand (`accounts.free_drafts_used`) before applying 084. (076
@@ -154,6 +154,7 @@ m(file, applied) as (values
   ('099_trial_gate_server_writes',           not has_table_privilege('authenticated', 'public.api_keys', 'INSERT') and pg_get_functiondef('public.accounts_guard_privileged_columns'::regproc) like '%free_drafts_used%'),
   ('100_pre_trial_spend_bounds',             not has_table_privilege('authenticated', 'public.workspaces', 'INSERT') and exists (select 1 from pg_trigger where tgname = 'account_members_guard_own_row') and not has_column_privilege('authenticated', 'public.workspaces', 'first_analysed_at', 'UPDATE')),
   ('101_account_creator',                    exists (select 1 from col where t='accounts' and c='created_by') and not has_table_privilege('authenticated', 'public.account_members', 'INSERT')),
+  ('102_rows_stay_put',                      exists (select 1 from pg_trigger where tgname = 'account_members_guard_roles') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'rows_stay_put' and c.relname = 'articles')),
   ('104_onboarding_nothing_planned',         exists (select 1 from col where t='onboarding_runs' and c='empty_pool') and exists (select 1 from chk where conname='onboarding_runs_status_check' and def like '%nothing_planned%')),
   ('105_publish_log_found_on_site',          exists (select 1 from col where t='publish_log' and c='source') and exists (select 1 from col where t='publish_log' and c='url') and to_regclass('public.publish_log_found_on_site_once') is not null),
   ('106_run_budgets',                        to_regclass('public.run_budgets') is not null and exists (select 1 from col where t='provider_spend' and c='stage') and to_regprocedure('public.run_budget_claim(uuid,text,numeric,numeric)') is not null),
@@ -240,7 +241,9 @@ cd apps/web/supabase/migrations
 ### Fresh database (everything)
 
 ```bash
-for f in 0*.sql; do
+# Every numbered file, in numeric order (names are zero-padded, so a plain sort
+# is numeric). `0*.sql` stopped at 099.
+for f in $(ls [0-9]*.sql | sort); do
   echo "== $f"
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f "$f" || { echo "FAILED at $f"; break; }
 done
@@ -300,8 +303,12 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 094_found_on_site.sql   # BEFORE i
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 095_site_pages_extract.sql   # BEFORE its code is merged; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 098_fact_check_unchecked.sql   # BEFORE its code is merged; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 101_account_creator.sql   # BEFORE its code is deployed; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 102_rows_stay_put.sql   # any time; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 104_onboarding_nothing_planned.sql   # BEFORE its code is deployed; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 105_publish_log_found_on_site.sql   # BEFORE its code is merged (merge = deploy); see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 106_run_budgets.sql   # BEFORE its code is deployed; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 107_fast_first_look.sql   # BEFORE its code is deployed; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 108_first_body_progress.sql   # BEFORE its code is deployed; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 097_article_body_server_only.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 099_trial_gate_server_writes.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 100_pre_trial_spend_bounds.sql   # AFTER its code is live; see its section
@@ -315,11 +322,12 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 116_spend_doors.sql   # AFTER its 
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 117_refresh_engine.sql   # AFTER its code is live; see its section
 ```
 
-Re-running a file that is already applied is safe for 048, 049 (after 053),
-050, 053, 056, 057, 058, 059, 060, 061. It is **not** safe for 051, 052, 054,
-055 (and 049 before 053) — they error on an existing policy/table, and with
-`-1` that error is harmless (nothing changes), but it will stop a loop. See the
-report for the one-line fixes that would make them idempotent.
+Re-running a file that is already applied is safe from 048 on, with one
+exception: 072, two of whose `create policy` statements have no
+`drop policy if exists` in front of them (see its note). Re-running it errors
+on the existing policy; with `-1` that error is harmless (nothing changes), but
+it will stop a loop. 049, 051, 052, 054 and 055 used to be in the same position
+and now drop each policy before creating it.
 
 ## 4. Post-flight
 

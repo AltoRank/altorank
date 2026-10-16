@@ -296,7 +296,11 @@ export function ConnectCmsDialog({
           return;
         }
       }
-      const r = await testIntegrationConfig(config, publishMode);
+      if (!target) {
+        setTestResult({ ok: false, message: "Add a workspace before connecting a CMS to it." });
+        return;
+      }
+      const r = await testIntegrationConfig(target.id, config, publishMode);
       setTestResult(
         r.ok
           ? {

@@ -129,12 +129,12 @@ build args, not runtime env.
 |---|---|
 | `SUPABASE_SERVICE_ROLE_KEY` | every cron route, billing spend recording, invites, operator "view as", auth emails and the onboarding pipeline build a service client with an undefined key and fail. Server-only; never give it a `NEXT_PUBLIC_` prefix |
 | `ANTHROPIC_API_KEY` | no generation, no fact-check, no briefs, no summaries |
-| `ENCRYPTION_KEY` | `lib/crypto.ts` throws; **no CMS can be connected** and existing connections cannot be decrypted. 64 hex chars (`openssl rand -hex 32`); any other string is SHA-256'd to a key. Rotating it makes stored credentials unreadable, by design |
+| `ENCRYPTION_KEY` | `lib/crypto.ts` throws on every credential read and write: **no CMS can be connected**, Google (Search Console, GA4) and Bing cannot be connected, existing connections cannot be decrypted, and the operator "View as" switch fails. 64 hex chars (`openssl rand -hex 32`) are used as the key; any other string is SHA-256'd to one. Rotating it makes stored credentials and tokens unreadable, by design: reconnect each integration afterwards |
 | `CRON_SECRET` | `isAuthorizedCron()` returns `false` for every request; **every scheduled job answers 401** and nothing runs unattended. `docker compose` refuses to start the cron container without it. See [How cron auth works](#how-cron-auth-works) |
 | `RESEND_API_KEY` | no email at all: no invites, no auth emails, no approval notifications, no feedback widget. Signup confirms by email and rolls the new user back when the email cannot be sent, so **nobody can create an account** and nobody can reset a password |
 | `RESEND_FROM_EMAIL` | defaults to `AltoRank <noreply@updates.altorank.co>`, which will not be a verified sender on your Resend account, so every send is refused (same effect as no key). Set it |
 | `RESEND_REPLY_TO` | optional. The Reply-To on every app email. Unset: the hosted sender replies go to `hello@altorank.co`; any other sender gets no Reply-To, so replies go to `RESEND_FROM_EMAIL` |
-| `NEXT_PUBLIC_APP_URL` | links in every email, Stripe return URLs and the audit worker's self-call fall back to `http://localhost:3000` (or `:3100` in two files). Set it to the public origin |
+| `NEXT_PUBLIC_APP_URL` | in production every link the app builds (signup confirmation, invites, password reset, Stripe return URLs) throws instead of pointing at localhost, so those emails are not sent and nobody can confirm a signup; `npm run dev` falls back to `http://localhost:3000`. It is inlined at build time, so the Docker image needs it as a build arg (`docker compose` refuses to build without it) and a change needs a rebuild. Set it to the public origin |
 
 ### Each one disables exactly one feature
 
@@ -192,7 +192,7 @@ Project settings that have to match the repository:
 ### Function duration
 
 Several routes declare `export const maxDuration = 300` (the cron routes,
-`/api/onboard/stream`) or `60` (`/api/audit`, `/api/growth-plan`,
+`/api/onboard/start`, `/api/onboard/run`) or `60` (`/api/audit`, `/api/growth-plan`,
 `/api/cron/publish`). One article draft was measured at 103 seconds end to
 end (`lib/content/generate-queue.ts`), and the generate cron caps itself at
 two drafts per run so that it fits inside 300. A plan whose function ceiling is

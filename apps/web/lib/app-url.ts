@@ -19,8 +19,8 @@
 // constant, because `next build` runs with NODE_ENV=production and a constant
 // would turn a missing variable into a failed build instead of a failed send.
 
-/** The port `npm run dev` uses for apps/web. */
-const DEV_FALLBACK = "http://localhost:3100";
+/** Where `npm run dev` (`next dev`, no -p) serves apps/web. */
+const DEV_FALLBACK = "http://localhost:3000";
 
 let warned = false;
 

@@ -1153,12 +1153,12 @@ export function renderSetupFailed(a: SetupFailedEmail): RenderedEmail {
       emailParagraph(`${esc(line)}.`) +
       (a.transient
         ? emailParagraph(
-            `The next look is already scheduled and needs nothing from you. If you would rather not wait, try again now: it takes about a minute and nothing publishes without your approval.`,
+            `The next look is already scheduled and needs nothing from you. If you would rather not wait, try again now: it takes a few minutes and nothing publishes without your approval.`,
           )
         : emailParagraph(
             a.beforeTrial
-              ? `Trying again takes about a minute. If the site still cannot be read, connect Search Console from Integrations, and the plan can be built from there.`
-              : `Trying again takes about a minute. If the site still cannot be read, add a keyword by hand from Keywords or connect Search Console, and the plan can be built from there.`,
+              ? `Trying again takes a few minutes. If the site still cannot be read, connect Search Console from Integrations, and the plan can be built from there.`
+              : `Trying again takes a few minutes. If the site still cannot be read, add a keyword by hand from Keywords or connect Search Console, and the plan can be built from there.`,
           )) +
       emailButton(appLink("/onboarding"), a.transient ? "Try again now" : "Try again") +
       emailParagraph(`Nothing has been written or published, and nothing is wrong with your account.`),

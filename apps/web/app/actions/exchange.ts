@@ -165,7 +165,7 @@ export async function hostExchangeRequest(
     };
   }
 
-  const { error: claimErr } = await admin
+  const { data: claimed, error: claimErr } = await admin
     .from("backlink_exchanges")
     .update({
       provider_account_id: accountId,
@@ -177,13 +177,23 @@ export async function hostExchangeRequest(
     .eq("id", exchangeId)
     // Claim only if still unclaimed: two hosts pressing at once must not both win.
     .eq("status", "requested")
-    .is("provider_account_id", null);
+    .is("provider_account_id", null)
+    .select("id");
   if (claimErr) return { ok: false, error: claimErr.message };
+  // No row means the other press won: an update that matches nothing is not
+  // an error, and writing the article anyway would bill a draft for a claim
+  // this host does not hold.
+  if (!claimed?.length) return { ok: false, error: "Somebody else has already taken that request." };
 
   /**
    * Writing is a long model call, so it happens after the response and the
    * draft appears in the review queue a few minutes later. A failure releases
    * the claim rather than parking the request on a host that never delivered.
+   *
+   * Both closing writes apply only while this host still holds the claim. The
+   * daily cron releases a claim whose draft has not arrived after an hour
+   * (app/api/cron/exchange), and a host that finishes later must not
+   * overwrite, or release, a request another host has claimed since.
    */
   after(async () => {
     try {
@@ -234,13 +244,17 @@ export async function hostExchangeRequest(
           status: "placed",
           placed_at: new Date().toISOString(),
         })
-        .eq("id", exchangeId);
+        .eq("id", exchangeId)
+        .eq("status", "accepted")
+        .eq("provider_workspace_id", workspaceId);
     } catch (err) {
       console.error("[exchange] hosting failed, releasing the claim:", err instanceof Error ? err.message : err);
       await admin
         .from("backlink_exchanges")
         .update({ provider_account_id: null, provider_workspace_id: null, status: "requested", matched_at: null })
-        .eq("id", exchangeId);
+        .eq("id", exchangeId)
+        .eq("status", "accepted")
+        .eq("provider_workspace_id", workspaceId);
     }
   });
 

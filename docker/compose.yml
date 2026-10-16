@@ -33,7 +33,11 @@ services:
         # rather than runtime env. The anon key is public by design.
         NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?set it in docker/.env}
         NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?set it in docker/.env}
-        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+        # The address people open the app at. Every emailed link (signup
+        # confirmation, invites, password reset) is built from it, and it is
+        # baked into the image, so a default of localhost made every link on
+        # a real host point at the reader's own machine.
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?set it in docker/.env to the address people open the app at}
         # Stripe's publishable key, public by design: with it the trial card
         # is taken on the page (Embedded Checkout), without it on Stripe's.
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}

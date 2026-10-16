@@ -201,11 +201,27 @@ describe("token cache", () => {
 
     const p1 = listShopifyBlogs(STORE, CLIENT);
     const p2 = listShopifyBlogs(STORE, CLIENT);
-    await Promise.resolve();
+    // The cache key is digested asynchronously, so wait for the exchange to start.
+    await vi.waitFor(() => expect(mockFetch).toHaveBeenCalled());
     resolveExchange(tokenResponse("tok_A"));
     await Promise.all([p1, p2]);
 
     expect(calls().filter((c) => c.url.endsWith("/admin/oauth/access_token"))).toHaveLength(1);
+  });
+
+  /** The client id is public; a cached token must not be served to a caller without the secret. */
+  it("does not hand a cached token to a caller with the same store and client id but another secret", async () => {
+    mockFetch
+      .mockResolvedValueOnce(tokenResponse("tok_A"))
+      .mockResolvedValueOnce(blogsResponse)
+      .mockResolvedValueOnce(okJson({ error: "invalid_client" }, 401));
+
+    await listShopifyBlogs(STORE, CLIENT);
+    await expect(listShopifyBlogs(STORE, { clientId: CLIENT.clientId, clientSecret: "wrong" })).rejects.toThrow(/token exchange failed \(401\)/);
+
+    const api = calls().filter((c) => c.url.includes("/admin/api/"));
+    expect(api.map((c) => c.headers["X-Shopify-Access-Token"])).toEqual(["tok_A"]);
+    expect(calls().filter((c) => c.url.endsWith("/admin/oauth/access_token"))).toHaveLength(2);
   });
 });
 

@@ -162,8 +162,13 @@ function profileKey(domain: string, profile: BusinessProfile): string {
 export async function suggestCompetitors(workspaceId: string, profile: BusinessProfile): Promise<CompetitorSuggestions> {
   const { supabase, workspace } = await assertWorkspace(workspaceId);
   if (!workspace.domain) return { own: null, suggestions: [], searchRivals: [] };
-  // E2E_STUBS: a fixture, no provider (lib/e2e/stubs.ts).
-  if (e2eStubsEnabled()) return stubSuggestCompetitors(workspace.domain, profile);
+  // E2E_STUBS: a fixture, no provider (lib/e2e/stubs.ts). After the auth
+  // check, like every other stub, so the switch never skips who may ask
+  // (the paid path checks it in wizardDoor).
+  if (e2eStubsEnabled()) {
+    await requireAuth(undefined, { workspaceId });
+    return stubSuggestCompetitors(workspace.domain, profile);
+  }
   const key = profileKey(workspace.domain, profile);
   const kept = await readDoorCache<CompetitorSuggestions>("wizard-rivals", workspaceId, key);
   if (kept) return kept;
@@ -202,7 +207,10 @@ export async function resolveCompetitor(
   own: number | null,
 ): Promise<{ domain: string; authority: number | null; size: RivalSize | null } | null> {
   const { supabase, workspace } = await assertWorkspace(workspaceId);
+  // E2E_STUBS: after the auth check, like every other stub (the paid path
+  // checks it in wizardDoor).
   if (e2eStubsEnabled()) {
+    await requireAuth(undefined, { workspaceId });
     const domain = entry.trim().toLowerCase().replace(/\s+/g, "-");
     return domain ? { domain: domain.includes(".") ? domain : `${domain}.example`, authority: null, size: null } : null;
   }

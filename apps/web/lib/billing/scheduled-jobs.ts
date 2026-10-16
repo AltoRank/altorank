@@ -37,7 +37,7 @@ export const SCHEDULED_JOBS: Record<string, ScheduledJob> = {
     drivers: "same tasks",
   },
   "/api/cron/analytics": { key: null, does: "GSC / GA4 pull for connected workspaces. Google APIs, no provider spend.", drivers: "—" },
-  "/api/cron/exchange": { key: null, does: "Backlink-exchange matching between workspaces. No provider spend.", drivers: "—" },
+  "/api/cron/exchange": { key: null, does: "Backlink-exchange janitor: expires unclaimed requests past their date and releases claims whose draft never arrived. No provider spend.", drivers: "—" },
   "/api/cron/generate": {
     key: "generate",
     does: "Writes the day's drafts: advanced SERP + related keywords, then the model.",

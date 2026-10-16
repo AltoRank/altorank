@@ -229,3 +229,17 @@ describe("unsupported language: the prompt gives the writer no English label to 
     expect(prompt).toContain("add a short summary block with an <h2> label written in Portuguese,");
   });
 });
+
+describe("languageCoverageHint", () => {
+  it("says a supported language gets the fact check", async () => {
+    const { languageCoverageHint } = await import("../locale");
+    expect(languageCoverageHint("it")).toBe("Drafts in Italian get the automatic fact check and topic disclaimers.");
+  });
+
+  it("says before the choice that another language is written but not checked", async () => {
+    const { languageCoverageHint } = await import("../locale");
+    const hint = languageCoverageHint("pl");
+    expect(hint).toContain("Drafts are written in Polish");
+    expect(hint).toContain("English, Italian, Spanish, French, German and Turkish only");
+  });
+});

@@ -9,8 +9,10 @@ AltoRank writes search and AI-search content for websites. Its tools come
 from the `altorank` MCP server bundled with this plugin. You can read an
 account, create **drafts**, move planned keywords, edit a draft by
 find-and-replace, and pause or resume a workspace. A person decides what
-publishes. There is no publish, approve, hold or delete tool, and you must
-not look for a way around that.
+publishes. There is no approve, hold or delete tool and no tool that
+publishes a draft, and you must not look for a way around that. The one
+publish-side tool, `altorank_retry_publish`, only re-runs a failed publish of
+an article a person already approved.
 
 ## Two kinds of tools
 

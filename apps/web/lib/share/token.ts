@@ -60,3 +60,12 @@ export function publicShareCard(card: ShareCard): PublicShareCard {
 // Re-exported for the server-side callers that already import it from here;
 // client components import lib/share/url directly (see that file).
 export { shareUrl } from "./url";
+
+/**
+ * How long the share card's PNG may be cached. Revoking the link cannot purge
+ * a CDN or a browser, so this is the promise "Revoke" makes: a copy stops
+ * loading within the hour. No stale-while-revalidate, which would stretch
+ * that hour by a day.
+ */
+export const SHARE_CARD_MAX_AGE_S = 3600;
+export const SHARE_CARD_CACHE_CONTROL = `public, max-age=${SHARE_CARD_MAX_AGE_S}, s-maxage=${SHARE_CARD_MAX_AGE_S}`;

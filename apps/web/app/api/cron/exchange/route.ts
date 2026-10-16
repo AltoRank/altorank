@@ -4,13 +4,28 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { observedCron } from "@/lib/observability/cron";
 
 /**
- * Daily cron: expire old exchange requests. (Expiry janitor only.)
+ * Daily cron: the exchange's janitor. Two jobs, nothing else:
+ *
+ * - expire requests nobody claimed before their `expires_at`;
+ * - release a claim whose draft never arrived. Hosting a request claims it
+ *   (`accepted`) and writes the draft after the response
+ *   (app/actions/exchange.ts); a failure there releases the claim, but a
+ *   function killed mid-generation never reaches its catch, and the request
+ *   sat claimed by a host that would never deliver. After
+ *   STALE_CLAIM_MS with no draft attached, it goes back to `requested`.
  *
  * It deliberately does NOT auto-place links or auto-verify/auto-pay credits:
  * placing a link mutates a provider's published article content and must be an
  * explicit human action (placeExchange), and credit transfer must follow a real
  * verification (verifyExchange), not a timer.
  */
+/**
+ * How long a claim may wait for its draft. A draft takes a few minutes and
+ * the function writing it is cut off well inside this, so a claim this old
+ * with no draft is one nothing is still working on.
+ */
+const STALE_CLAIM_MS = 60 * 60 * 1000;
+
 async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -23,14 +38,26 @@ async function run(request: Request) {
  * single row. A cron has no user by definition: it must hold the service role.
  */
   const supabase = createServiceClient();
-  const now = new Date().toISOString();
+  const now = Date.now();
 
-  // Expire old requests past their expiry date
+  // Claims first, so a released request past its date expires in the same run.
+  const { data: released, error: releaseError } = await supabase
+    .from("backlink_exchanges")
+    .update({ provider_account_id: null, provider_workspace_id: null, status: "requested", matched_at: null })
+    .eq("status", "accepted")
+    .is("provider_article_id", null)
+    .lt("matched_at", new Date(now - STALE_CLAIM_MS).toISOString())
+    .select("id");
+  if (releaseError) {
+    return NextResponse.json({ error: releaseError.message }, { status: 500 });
+  }
+
+  // Nothing writes the old `matched` status; `requested` is the only open one.
   const { data: expired, error } = await supabase
     .from("backlink_exchanges")
     .update({ status: "expired" })
-    .in("status", ["requested", "matched"])
-    .lt("expires_at", now)
+    .eq("status", "requested")
+    .lt("expires_at", new Date(now).toISOString())
     .select("id");
 
   // `expired: 0` has to mean "nothing was due", never "the update never ran".
@@ -40,6 +67,7 @@ async function run(request: Request) {
 
   return NextResponse.json({
     success: true,
+    released: released?.length ?? 0,
     expired: expired?.length ?? 0,
   });
 }

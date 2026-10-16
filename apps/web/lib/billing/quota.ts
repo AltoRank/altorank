@@ -45,7 +45,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { billingEnabled, PLAN_ARTICLE_LIMITS, type PlanTier } from "@/lib/stripe";
 import { getSimulation } from "@/lib/dev/simulation";
 import { isAdminEmail } from "@/lib/auth/operators";
-import { inCustomerPreview } from "@/lib/auth/preview";
+import { customerPreviewPlan, inCustomerPreview } from "@/lib/auth/preview";
 import { accountHasOperator } from "@/lib/billing/operator-account";
 import { accountCountingClient } from "@/lib/billing/account-client";
 import { dunningInfo, planEntitled, type DunningInfo } from "@/lib/billing/dunning";
@@ -290,6 +290,19 @@ export async function getQuota(
   if (simulation?.plan) {
     plan = simulation.plan;
     active = true;
+  }
+
+  // The customer preview's plan picker drives the gates too, as the
+  // Operations control promises ("quota and plan gates applied as a
+  // customer's would be"). It used to change only the banner and the Billing
+  // page. Honoured for an operator's own session only: a plan is a grant and
+  // the cookie is unsigned. Every write is refused at the edge while it is on.
+  if (previewing && isAdminEmail(userEmail)) {
+    const previewPlan = await customerPreviewPlan();
+    if (previewPlan !== undefined) {
+      plan = previewPlan;
+      active = previewPlan !== null;
+    }
   }
 
   if (!active || !plan) {

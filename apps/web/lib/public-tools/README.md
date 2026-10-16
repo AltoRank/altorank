@@ -63,7 +63,8 @@ spend reservation (paid kinds only; fails closed) → run with a 45s deadline.
 
 Paid kinds reserve `estimateCents` against one daily cap shared by all tools
 (`spend.ts`, migration `091_public_tool_usage.sql`, RPC `reserve_public_tool_spend`).
-Cap: `PUBLIC_TOOLS_DAILY_CAP_CENTS`, default 500. If the RPC errors (migration not applied,
+Cap: `PUBLIC_TOOLS_DAILY_CAP_CENTS`; unset, it is 0 (paid tools off) with billing off
+(no `STRIPE_SECRET_KEY`, i.e. self-hosted) and 500 with billing on. If the RPC errors (migration not applied,
 DB unreachable) the paid tool answers `daily_cap`.
 
 ## Limits worth knowing

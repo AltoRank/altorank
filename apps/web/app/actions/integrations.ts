@@ -11,6 +11,7 @@ import { assertPublishMode, DEFAULT_PUBLISH_MODE, type PublishMode } from "@/lib
 import { listWebflowSites, listWebflowCollections, listWebflowFields } from "@/lib/cms/webflow";
 import { listWixSites } from "@/lib/cms/wix";
 import { listShopifyBlogs, shopifyCredential, shopifyCredentialsOf } from "@/lib/cms/shopify";
+import { assertSiteUrl } from "@/lib/cms/site-fetch";
 import type { ShopifyCredentials } from "@/lib/types";
 import { z } from "zod";
 
@@ -210,6 +211,29 @@ function parseConfig(config: CMSConfig): CMSConfig {
 }
 
 /**
+ * The address fields a person types for a CMS that runs on their own server.
+ * Each is checked against the same address policy as every other request to
+ * a site someone typed (lib/cms/site-fetch.ts): public http(s) hosts only,
+ * unless the install sets ALTORANK_ALLOW_PRIVATE_FETCH=1. Checked before the
+ * connection test, so neither the test nor a save sends a request to a local
+ * or reserved address.
+ */
+function assertConfigAddresses(config: CMSConfig): void {
+  const fields = config as unknown as Record<string, unknown>;
+  for (const key of ["siteUrl", "storeUrl", "baseUrl", "apiUrl", "url"] as const) {
+    const value = fields[key];
+    if (typeof value === "string" && value) assertSiteUrl(value);
+  }
+}
+
+/** The longest vendor answer "Send test" shows: enough to read, not a page. */
+const TEST_ERROR_MAX_CHARS = 300;
+
+function brief(message: string): string {
+  return message.length > TEST_ERROR_MAX_CHARS ? `${message.slice(0, TEST_ERROR_MAX_CHARS - 1)}…` : message;
+}
+
+/**
  * Read a site's post directory off its own sitemap, for the git connect form.
  *
  * A server action because the derivation fetches the customer's site
@@ -264,9 +288,18 @@ export async function listWixSitesAction(apiKey: string, accountId: string) {
   return attempt(() => listWixSites(apiKey, accountId));
 }
 
+/**
+ * The one picker that asks an address the person typed rather than a vendor's
+ * fixed API host, so it takes the same address policy and the same short
+ * error as "Send test".
+ */
 export async function listShopifyBlogsAction(storeUrl: string, credentials: ShopifyCredentials) {
   await requireAuth();
-  return attempt(() => listShopifyBlogs(storeUrl, credentials));
+  const result = await attempt(() => {
+    assertSiteUrl(storeUrl);
+    return listShopifyBlogs(storeUrl, credentials);
+  });
+  return result.ok ? result : { ok: false as const, error: brief(result.error) };
 }
 
 /**
@@ -278,18 +311,23 @@ export async function listShopifyBlogsAction(storeUrl: string, credentials: Shop
  * fails here with the same sentence it would fail with on save.
  */
 export async function testIntegrationConfig(
+  workspaceId: string,
   config: CMSConfig,
   publishMode: PublishMode = DEFAULT_PUBLISH_MODE,
 ): Promise<ListResult<true>> {
-  await requireAuth();
-  return attempt(async () => {
+  // The test is part of connecting a site, so it asks what Connect asks: a
+  // member who can act on this site.
+  await requireAuth(undefined, { workspaceId });
+  const result = await attempt(async () => {
     const parsed = parseConfig(config);
     const mode = publishModeSchema.parse(publishMode);
     assertPublishMode(parsed, mode);
+    assertConfigAddresses(parsed);
     const test = await resolveCMSAdapter(parsed).testConnection();
     if (!test.ok) throw new Error(test.error ?? "Connection failed");
     return true as const;
   });
+  return result.ok ? result : { ok: false, error: brief(result.error) };
 }
 
 export async function connectIntegration(
@@ -304,12 +342,13 @@ export async function connectIntegration(
    */
   publishMode: PublishMode = DEFAULT_PUBLISH_MODE,
 ) {
-  await requireAuth();
+  await requireAuth(undefined, { workspaceId });
 
   // Validate config
   const parsed = parseConfig(config);
   const mode = publishModeSchema.parse(publishMode);
   assertPublishMode(parsed, mode);
+  assertConfigAddresses(parsed);
 
   // Test connection before saving (uses plaintext credentials)
   const adapter = resolveCMSAdapter(parsed);
