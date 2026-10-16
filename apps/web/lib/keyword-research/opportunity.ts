@@ -808,7 +808,7 @@ export function askResultsJudge(
   options: { spend?: SpendSink | null; ask?: AskModel; today?: string } = {},
 ): Promise<string | null> {
   const prompt = opportunityPrompt({ ...input, today: options.today });
-  return (options.ask ?? askStructured)("keyword-research/opportunity", prompt, { maxTokens: OPPORTUNITY_MAX_TOKENS, minTokens: OPPORTUNITY_MIN_TOKENS, spend: options.spend ?? null, tier: "decision", schema: opportunitySchema(), cachePrefix: judgeCachePrefix(prompt) });
+  return (options.ask ?? askStructured)("keyword-research/opportunity", prompt, { maxTokens: OPPORTUNITY_MAX_TOKENS, minTokens: OPPORTUNITY_MIN_TOKENS, spend: options.spend ?? null, tier: "decision", schema: opportunitySchema(), cachePrefix: process.env.DEBUG_JUDGE_NO_CACHE ? undefined : judgeCachePrefix(prompt) });
 }
 
 /**
