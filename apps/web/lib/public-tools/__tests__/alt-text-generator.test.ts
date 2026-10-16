@@ -5,7 +5,7 @@ vi.mock("@anthropic-ai/sdk", () => ({ default: class { messages = { create }; } 
 vi.mock("@/lib/billing/default-spend", () => ({ recordSpendByDefault: vi.fn(), spendClient: () => null }));
 
 import { answer, ctx, quiet, issue, kvOf, codeOf, item } from "./paid-helpers";
-import { altTextGenerator as tool, sniffImage, MAX_IMAGE_BYTES } from "../tools/alt-text-generator";
+import { altTextGenerator as tool, sniffImage, MAX_IMAGE_BYTES, IMAGE_ACCEPT } from "../tools/alt-text-generator";
 import { fakeFetch } from "./fake-fetch";
 import { UnsafeUrlError } from "../safe-fetch";
 
@@ -45,6 +45,30 @@ describe("alt-text-generator", () => {
     expect(sniffImage(Buffer.from("RIFF\0\0\0\0WEBPVP8 "))).toBe("image/webp");
     expect(sniffImage(Buffer.from([0xff, 0xd8, 0xff, 0xe0]))).toBe("image/jpeg");
     expect(sniffImage(Buffer.from("not an image"))).toBeNull();
+  });
+
+  it("asks only for types it can read, so a CDN cannot answer a .jpg URL with AVIF", async () => {
+    const fetch = fakeFetch({ [IMG]: { headers: { "content-type": "image/png" }, bodyBuffer: PNG } });
+    create.mockResolvedValue(answer({ alt: "A chart", description: "", text_in_image: "", decorative: false }));
+    await tool.run(tool.input.parse({ image_url: IMG }), ctx(fetch));
+    const accept = (fetch.mock.calls[0][1] as { headers: Record<string, string> }).headers.Accept;
+    expect(accept).toBe(IMAGE_ACCEPT);
+    const named = accept.split(",").map((t) => t.split(";")[0].trim());
+    expect(named).not.toContain("*/*");
+    expect(named.some((t) => t.endsWith("/*"))).toBe(false);
+    // Every type the header names is one sniffImage accepts.
+    const readable = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+    for (const t of named) expect(readable.has(t), t).toBe(true);
+  });
+
+  it("says plainly when the server sent AVIF anyway, before any model call", async () => {
+    const avif = Buffer.concat([Buffer.from([0, 0, 0, 0x1c]), Buffer.from("ftypavif"), Buffer.alloc(16)]);
+    const fetch = fakeFetch({ [IMG]: { headers: { "content-type": "image/avif" }, bodyBuffer: avif } });
+    await expect(tool.run(tool.input.parse({ image_url: IMG }), ctx(fetch))).rejects.toMatchObject({
+      code: "invalid_input",
+      message: expect.stringMatching(/sent this image as AVIF/),
+    });
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("refuses an image over the size cap", async () => {
