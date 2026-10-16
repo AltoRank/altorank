@@ -9,6 +9,7 @@ import { getPublishingCadence } from "@/lib/queries/schedule";
 import { PageHead, DotSep, StatusPill, Avatar, StatStrip } from "@/components/ui";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ClientTabs } from "@/components/dashboard/client-tabs";
+import { isCleanApproval, type ApprovalRow } from "@/lib/publishing/auto-approve-exceptions";
 import { PausedBanner, PauseSiteControl } from "@/components/dashboard/paused-banner";
 import { MetricHistory } from "@/components/dashboard/metric-history";
 import { getWorkspaceMetrics } from "@/lib/queries/metrics";
@@ -52,6 +53,17 @@ export default async function ClientDetailPage({ params }: Props) {
       // the rule holds every draft in a workspace with nowhere to publish.
       getDestinations(supabase, id),
     ]);
+
+  // The exception rules' form says how close the site is to the clean
+  // approvals D5 asks for before health, legal and money advice can ship
+  // unread (lib/publishing/auto-approve-exceptions.ts).
+  const { data: approvalRows } = await supabase
+    .from("articles")
+    .select("status, approval_kind, approved_at, published_at, person_edited_at")
+    .eq("workspace_id", id)
+    .eq("status", "live")
+    .eq("approval_kind", "human");
+  const cleanApprovals = ((approvalRows ?? []) as ApprovalRow[]).filter(isCleanApproval).length;
 
   // Deleting a site is an owner's or an admin's (migration 072), the same
   // people who may add one; nobody else is shown the control.
@@ -160,6 +172,7 @@ export default async function ClientDetailPage({ params }: Props) {
         maxPace={maxAllowedPace(quota)}
         hasDestination={destinations.length > 0}
         canDelete={canDelete}
+        cleanApprovals={cleanApprovals}
       />
     </>
   );
