@@ -61,13 +61,20 @@ export type WorkspaceDrivers = {
   needsFirstLook: boolean;
 };
 
-export type JobKey = "serp" | "backlinks" | "generate" | "geo" | "analyze";
+/**
+ * The scheduled jobs the Operations schedule reports an actual cost for.
+ * `analyze` is the first look, whether the nightly cron or setup bought it;
+ * `refresh` is the scheduled rewrite, which has no forecast of its own.
+ */
+export type JobKey = "serp" | "backlinks" | "generate" | "geo" | "analyze" | "refresh";
+/** The jobs with a monthly forecast. */
+export type ForecastJob = "serp" | "backlinks" | "generate" | "geo";
 
 export type WorkspaceForecast = {
   id: string;
   domain: string;
   /** USD per month, by job. `analyze` is a one-off and reported separately. */
-  monthly: Record<Exclude<JobKey, "analyze">, number>;
+  monthly: Record<ForecastJob, number>;
   oneOff: number;
   total: number;
 };
@@ -96,7 +103,7 @@ export function forecastWorkspace(w: WorkspaceDrivers, rates: RateCard = DEFAULT
 
 export type Forecast = {
   perWorkspace: WorkspaceForecast[];
-  byJob: Record<Exclude<JobKey, "analyze">, number>;
+  byJob: Record<ForecastJob, number>;
   oneOff: number;
   monthlyTotal: number;
   /** Set when more workspaces opted into GEO than one weekly run can serve. */
@@ -124,19 +131,82 @@ export function forecastAll(workspaces: WorkspaceDrivers[], rates: RateCard = DE
   };
 }
 
+/** provider_spend.job, as the schedule files it. A job not named here is not a scheduled one. */
+const JOB_OF: Record<string, JobKey> = {
+  "cron.generate": "generate",
+  "cron.serp": "serp",
+  // observedCron's names use underscores (cron.serp_collect), not the path's
+  // hyphen; lib/billing/__tests__/scheduled-jobs.test.ts reads them from the
+  // routes so the two cannot drift.
+  "cron.serp_collect": "serp",
+  "cron.geo": "geo",
+  "cron.analyze": "analyze",
+  "cron.refresh": "refresh",
+  // Setup is a first look bought from the wizard instead of the night.
+  onboarding: "analyze",
+};
+
 /**
- * Which scheduled job a recorded operation belongs to, so actuals can sit in
- * the same row as the forecast. Null for anything not driven by a cron.
+ * Which scheduled job a recorded call belongs to, so actuals can sit in the
+ * same row as the forecast. Null for anything not driven by a cron.
+ *
+ * By the work that bought it (provider_spend.job, migration 116) when the row
+ * says: every call a cron makes is filed under that cron (observedCron), and
+ * setup's under the first look. A row from before that is read the old way,
+ * by its endpoint, with two corrections: a call made under a first look's
+ * budget (a `stage`) is the first look's, and a model call is the writer's
+ * only when it was bought for an article. Before, every model call - a
+ * refresh, the wizard's profile read, setup's - was filed under generate, and
+ * the first look's Actual was always empty.
  */
-export function jobForOperation(provider: string, operation: string): JobKey | null {
-  if (provider === "anthropic") return "generate";
-  if (operation.startsWith("/serp/google/organic/task_")) return "serp";
-  if (operation.startsWith("/serp/google/organic/tasks_ready")) return "serp";
-  if (operation.startsWith("/backlinks/")) return "backlinks";
-  if (operation.startsWith("/ai_optimization/")) return "geo";
-  if (operation.startsWith("/serp/google/organic/live/advanced")) return "generate";
-  if (operation.startsWith("/keywords_data/google_ads/keywords_for_keywords")) return "generate";
+export function jobForSpend(row: {
+  provider: string;
+  operation: string;
+  job?: string | null;
+  stage?: string | null;
+  hasArticle?: boolean;
+}): JobKey | null {
+  if (row.job) {
+    const job = JOB_OF[row.job] ?? null;
+    // The weekly backlink sync runs inside cron/serp and has a row of its own.
+    if (job === "serp" && row.operation.startsWith("/backlinks/")) return "backlinks";
+    return job;
+  }
+  if (row.stage) return "analyze";
+  if (row.operation.startsWith("editor/")) return null;
+  if (row.provider === "anthropic") return row.hasArticle ? "generate" : null;
+  if (row.operation.startsWith("/serp/google/organic/task_")) return "serp";
+  if (row.operation.startsWith("/serp/google/organic/tasks_ready")) return "serp";
+  if (row.operation.startsWith("/backlinks/")) return "backlinks";
+  if (row.operation.startsWith("/ai_optimization/")) return "geo";
+  if (row.operation.startsWith("/serp/google/organic/live/advanced")) return "generate";
+  if (row.operation.startsWith("/keywords_data/google_ads/keywords_for_keywords")) return "generate";
   return null;
+}
+
+/** Calls summed by provider and operation: what the rate card is measured from. */
+export interface PricedGroup {
+  provider: string;
+  operation: string;
+  /** Bought for an article. */
+  hasArticle: boolean;
+  /** Calls that reported a price. */
+  priced: number;
+  /** What those calls cost. */
+  usd: number;
+  /** provider_spend.job (migration 116), when the rows say. */
+  job?: string | null;
+}
+
+/**
+ * Whether a model call is part of writing an article, for "model cost per
+ * article". The editor's rewrites and the scheduled refresh are bought for an
+ * article that is already written: counted in, every rewrite pressed on a
+ * draft raised the forecast cost of every draft not yet written. The same
+ * rule is in migration 116's provider_spend_summary (`model_articles`).
+ */
+export function writesArticle(row: { provider: string; operation: string; job?: string | null }): boolean {
+  return row.provider === "anthropic" && !row.operation.startsWith("editor/") && row.job !== "editor" && row.job !== "cron.refresh";
 }
 
 /**
@@ -144,12 +214,35 @@ export function jobForOperation(provider: string, operation: string): JobKey | n
  * default. Three observations is the floor: one call is an anecdote.
  */
 export function measuredRates(
-  observed: Array<{ provider: string; operation: string; costUsd: number | null; articleId?: string | null }>,
+  observed: Array<{ provider: string; operation: string; costUsd: number | null; articleId?: string | null; job?: string | null }>,
   base: RateCard = DEFAULT_RATES,
 ): { rates: RateCard; measured: Array<keyof RateCard> } {
-  const avg = (pred: (o: (typeof observed)[number]) => boolean): number | null => {
-    const xs = observed.filter((o) => pred(o) && o.costUsd !== null).map((o) => o.costUsd as number);
-    return xs.length >= 3 ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+  const priced = observed.filter((o) => o.costUsd !== null);
+  const groups: PricedGroup[] = priced.map((o) => ({ provider: o.provider, operation: o.operation, job: o.job ?? null, hasArticle: Boolean(o.articleId), priced: 1, usd: o.costUsd as number }));
+  const articles = new Set(priced.filter((o) => writesArticle(o) && o.articleId).map((o) => o.articleId));
+  return measuredRatesFromGroups(groups, articles.size, base);
+}
+
+/**
+ * The same from sums (lib/admin/spend-summary.ts), so the card is measured on
+ * every recorded call rather than on the rows one read returned.
+ * `modelArticles` is the number of distinct articles priced model calls that
+ * write an article (writesArticle) were bought for.
+ */
+export function measuredRatesFromGroups(
+  groups: readonly PricedGroup[],
+  modelArticles: number,
+  base: RateCard = DEFAULT_RATES,
+): { rates: RateCard; measured: Array<keyof RateCard> } {
+  const avg = (pred: (g: PricedGroup) => boolean): number | null => {
+    let n = 0;
+    let usd = 0;
+    for (const g of groups) {
+      if (!pred(g)) continue;
+      n += g.priced;
+      usd += g.usd;
+    }
+    return n >= 3 ? usd / n : null;
   };
   const rates: RateCard = { ...base };
   const measured: Array<keyof RateCard> = [];
@@ -163,11 +256,10 @@ export function measuredRates(
   const kfk = avg((o) => o.operation.startsWith("/keywords_data/google_ads/keywords_for_keywords"));
   if (serpAdv !== null && kfk !== null) set("dfsPerArticle", serpAdv + kfk);
 
-  // Model cost per article: total anthropic spend over distinct articles.
-  const model = observed.filter((o) => o.provider === "anthropic" && o.articleId && o.costUsd !== null);
-  const articles = new Set(model.map((o) => o.articleId));
-  if (articles.size >= 3) {
-    set("modelPerArticle", model.reduce((a, o) => a + (o.costUsd as number), 0) / articles.size);
+  // Model cost per article: the writing calls' spend over distinct articles.
+  if (modelArticles >= 3) {
+    const model = groups.filter((g) => writesArticle(g) && g.hasArticle).reduce((a, g) => a + g.usd, 0);
+    set("modelPerArticle", model / modelArticles);
   }
   return { rates, measured };
 }

@@ -66,7 +66,12 @@ const PROMPT = [
   "  Return [] rather than guessing if the category is unclear.",
 ].join("\n");
 
-export type InferenceReason = "ok" | "no_model" | "unreadable" | "model_failed" | "needs_plan";
+/**
+ * `limited`: not read now - the site has been read as often as setup allows
+ * (lib/billing/spend-doors.ts), or an operator is viewing as the account and
+ * the read would be bought on theirs. The message says which.
+ */
+export type InferenceReason = "ok" | "no_model" | "unreadable" | "model_failed" | "needs_plan" | "limited";
 
 export interface InferenceResult {
   profile: BusinessProfile | null;
@@ -82,9 +87,10 @@ export interface InferenceResult {
   observed?: ObservedSite;
   /**
    * The exact sentence to show, when the reason alone does not carry it.
-   * `needs_plan` is the only producer: the billing gate's refusal names the
-   * account's state ("out of free drafts", "paused until 3 October", "the
-   * card was declined"), which a static copy map cannot.
+   * `needs_plan` and `limited` produce it: the billing gate's refusal names
+   * the account's state ("out of free drafts", "paused until 3 October", "the
+   * card was declined"), and a limit names itself, which a static copy map
+   * cannot.
    */
   message?: string;
   /** The first page's `lang`, from the read (lib/onboarding/site-text.ts). */

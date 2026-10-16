@@ -4,12 +4,12 @@ import {
   parseMicroResponse,
   sanitizeFragment,
   keepsAssets,
-  rewriteField,
   buildRewriteArticlePrompt,
   parseRewriteArticleResponse,
   FIELD_LIMITS,
   MICRO_ACTIONS,
 } from "../micro";
+import { rewriteField } from "../micro-rewrite";
 
 describe("buildMicroPrompt", () => {
   it("names the field's limit and the keyword for a title", () => {

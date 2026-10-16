@@ -128,7 +128,6 @@ export function RewritePanel({
         if (!reader) throw new Error("No stream");
         const decoder = new TextDecoder();
         let buffer = "";
-        let acc = "";
         let finished = false;
         while (true) {
           const { done, value } = await reader.read();
@@ -138,7 +137,7 @@ export function RewritePanel({
           buffer = lines.pop() ?? "";
           for (const line of lines) {
             if (!line.startsWith("data: ")) continue;
-            let data: { type: string; text?: string; html?: string; changes?: string[]; error?: string };
+            let data: { type: string; text?: string; words?: number; html?: string; changes?: string[]; error?: string };
             try {
               data = JSON.parse(line.slice(6));
             } catch {
@@ -146,10 +145,11 @@ export function RewritePanel({
             }
             if (data.type === "plan") {
               setPlan(data.text ?? null);
-            } else if (data.type === "chunk") {
+            } else if (data.type === "progress") {
+              // The route sends a word count while it writes, and the HTML
+              // only once it is checked, in `complete`.
               setPhase("writing");
-              acc += data.text ?? "";
-              setStreamedWords(acc.replace(/<[^>]+>/g, " ").split(/\s+/).filter(Boolean).length);
+              setStreamedWords(data.words ?? 0);
             } else if (data.type === "complete") {
               const proposed = data.html ?? "";
               const next = proposeHunks(html, proposed);

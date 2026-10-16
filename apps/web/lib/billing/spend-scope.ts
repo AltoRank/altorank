@@ -68,6 +68,14 @@ export interface SpendScope {
   articleId: string | null;
   /** Groups the rows of one piece of work (a generation job). A budget's run id wins over it. */
   runId: string | null;
+  /**
+   * Which piece of scheduled or interactive work this is, as provider_spend.job
+   * records it: the cron's own name (`cron.generate`, set by observedCron),
+   * `onboarding` for setup, `editor` for the editor's rewrites. Operations
+   * files each row's cost under its job by this, not by guessing from the
+   * provider (lib/billing/forecast.ts, jobForSpend).
+   */
+  job: string | null;
   stage: SpendStage | null;
   budget: RunBudget | null;
   /** Where spend rows are written. Null: the service-role client (lib/billing/default-spend.ts). */
@@ -77,7 +85,7 @@ export interface SpendScope {
   readonly parent: SpendScope | null;
 }
 
-export type SpendScopePatch = Partial<Pick<SpendScope, "workspaceId" | "articleId" | "runId" | "stage" | "budget" | "db">>;
+export type SpendScopePatch = Partial<Pick<SpendScope, "workspaceId" | "articleId" | "runId" | "job" | "stage" | "budget" | "db">>;
 
 const storage = new AsyncLocalStorage<SpendScope>();
 
@@ -97,6 +105,7 @@ export function withSpendScope<T>(patch: SpendScopePatch, fn: (scope: SpendScope
     workspaceId: parent?.workspaceId ?? null,
     articleId: parent?.articleId ?? null,
     runId: parent?.runId ?? null,
+    job: parent?.job ?? null,
     stage: parent?.stage ?? null,
     budget: parent?.budget ?? null,
     db: parent?.db ?? null,
@@ -107,6 +116,15 @@ export function withSpendScope<T>(patch: SpendScopePatch, fn: (scope: SpendScope
     if (value !== undefined) (scope as unknown as Record<string, unknown>)[key] = value;
   }
   return storage.run(scope, () => fn(scope));
+}
+
+/**
+ * Run `fn` with every spend row it writes filed under `job`
+ * (provider_spend.job): a cron's own name, from observedCron. A label only:
+ * it buys nothing and grants nothing, and scopes opened inside keep it.
+ */
+export function withSpendJob<T>(job: string, fn: () => T): T {
+  return withSpendScope({ job }, () => fn());
 }
 
 /** Run `fn` with its spend tagged `stage`. */
@@ -210,12 +228,14 @@ export function scopeAttribution(scope: SpendScope | undefined = storage.getStor
   workspaceId: string | null;
   articleId: string | null;
   runId: string | null;
+  job: string | null;
   stage: SpendStage | null;
 } {
   return {
     workspaceId: scope?.workspaceId ?? null,
     articleId: scope?.articleId ?? null,
     runId: scope?.budget?.runId ?? scope?.runId ?? null,
+    job: scope?.job ?? null,
     // A stage is a first look's: outside a budget (the crons, the editor)
     // the same code runs under the same stage names, and the rows say null.
     stage: scope?.budget ? (scope.stage ?? "other") : null,

@@ -4,6 +4,7 @@ import { startRun } from "@/lib/onboarding/run-store";
 import { dispatchWorker } from "@/lib/onboarding/run-dispatch";
 import { canSpend } from "@/lib/billing/spend-gate";
 import { recordOnboardingStep } from "@/lib/onboarding/step-events";
+import { refusedWhileViewingAs } from "@/lib/auth/impersonation";
 
 // ---------------------------------------------------------------------------
 // POST /api/onboard/start — begin (or find) the onboarding run for a workspace
@@ -73,6 +74,10 @@ export async function POST(request: NextRequest) {
     Date.now(),
     {
       mayCreate: async () => {
+        // A run already going is still handed back above; a new one would be
+        // bought on the customer's account and use their setup run.
+        const viewing = await refusedWhileViewingAs("Setting up the site");
+        if (viewing) return viewing;
         const gate = await canSpend(supabase, accountId, {
           userEmail: user.email ?? undefined,
           workspaceId: workspace.id as string,
