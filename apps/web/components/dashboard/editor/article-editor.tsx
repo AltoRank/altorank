@@ -181,6 +181,7 @@ export function ArticleEditor({
   // rather than read off the ref in render, so the header can show it.
   const [dirty, setDirty] = useState(false);
   const documentRef = useRef<HTMLDivElement>(null);
+  const publishRef = useRef<HTMLDivElement>(null);
   // Set once the editor exists; declared here so the editor's own callbacks
   // can reach it. An accepted body proposal counts as one change and becomes
   // the new snapshot, otherwise the same edit would be counted twice: once as
@@ -580,18 +581,29 @@ export function ArticleEditor({
     </div>
   );
 
+  /** Bring the rail's Publish section into view: where the next step lives. */
+  const showPublish = useCallback(() => {
+    setSidebarTab("draft");
+    requestAnimationFrame(() => publishRef.current?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }, []);
+
   const handleApprove = useCallback(async () => {
     setPublishing(true);
     try {
       await approveArticle(article.id);
-      toast.success("Article approved — ready to publish");
+      toast.success(
+        destinations.length > 0
+          ? "Approved. Publish it whenever you are ready."
+          : "Approved. Copy it out, publish it on your site, then paste the URL back here.",
+      );
+      showPublish();
       router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to approve article");
     } finally {
       setPublishing(false);
     }
-  }, [article.id, router]);
+  }, [article.id, destinations.length, showPublish, router]);
 
   const handleHold = useCallback(async () => {
     setPublishing(true);
@@ -677,12 +689,45 @@ export function ArticleEditor({
 
   const editing = mode === "editor";
 
+  /**
+   * The page's one decision, in the header beside Save: approve, then
+   * publish. It lived only at the bottom of the rail, under six sections and
+   * a screen below the fold on a laptop, while the header offered a disabled
+   * "Generate draft". The rail keeps the full controls; this is the shortcut
+   * to them. Hidden while there are unsaved edits, because approving takes
+   * the saved version: Save comes first, then this returns.
+   */
+  const nextStep =
+    foundOnSite || changes > 0 ? null : article.status === "review" && needsPlan ? (
+      <Link
+        href="/settings/billing"
+        className="ml-1 inline-flex items-center rounded-[7px] border border-accent bg-accent px-[9px] py-[5px] text-[12.5px] font-medium text-white hover:bg-accent-2"
+      >
+        Choose a plan to approve
+      </Link>
+    ) : article.status === "review" ? (
+      <Button size="sm" variant="accent" className="ml-1" onClick={handleApprove} disabled={publishing}>
+        <Icons.check size={13} />
+        {publishing ? "Approving…" : "Approve"}
+      </Button>
+    ) : article.status === "approved" && destinations.length > 0 && !retryable && !needsPlan ? (
+      <Button size="sm" variant="accent" className="ml-1" onClick={handlePublish} disabled={publishing}>
+        {publishing
+          ? destination?.publishMode === "draft" ? "Saving…" : "Publishing…"
+          : publishVerb(destination?.publishMode, destination?.label ?? "CMS")}
+      </Button>
+    ) : article.status === "approved" && destinations.length === 0 ? (
+      <Button size="sm" variant="accent" className="ml-1" onClick={showPublish}>
+        Publish it yourself
+      </Button>
+    ) : null;
+
   return (
     <EditorAiContext.Provider value={aiContext}>
     {/* Below md the three panes keep their desktop widths and the wrapper
         scrolls sideways; the page itself never does. */}
     <div className="flex-1 min-h-0 flex flex-col overflow-x-auto md:overflow-x-visible">
-    <div className="flex-1 grid min-h-0 min-w-[960px] md:min-w-0" style={{ gridTemplateColumns: `${reviewingRewrite ? 440 : 280}px 1fr 340px` }}>
+    <div className="flex-1 grid min-h-0 min-w-[960px] md:min-w-0" style={{ gridTemplateColumns: `${reviewingRewrite ? 440 : 280}px minmax(0,1fr) 340px` }}>
       {/* Rewrite panel: the whole-article proposal, reviewed hunk by hunk.
           It gets more room while a review is open so blocks read as prose. */}
       <RewritePanel
@@ -713,50 +758,56 @@ export function ArticleEditor({
               </button>
             ))}
           </div>
-          <ToolbarBtn disabled={!editing} icon={<Icons.h1 size={14} />} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} active={editor?.isActive("heading")} />
-          <ToolbarBtn disabled={!editing} icon={<Icons.bold size={14} />} onClick={() => editor?.chain().focus().toggleBold().run()} active={editor?.isActive("bold")} />
-          <ToolbarBtn disabled={!editing} icon={<Icons.italic size={14} />} onClick={() => editor?.chain().focus().toggleItalic().run()} active={editor?.isActive("italic")} />
-          <ToolbarBtn disabled={!editing} icon={<Icons.list size={14} />} onClick={() => editor?.chain().focus().toggleBulletList().run()} active={editor?.isActive("bulletList")} />
-          <ToolbarBtn
-            disabled={!editing}
-            icon={<Icons.link size={14} />}
-            active={editor?.isActive("link")}
-            onClick={() => {
-              if (!editor) return;
-              if (editor.isActive("link")) {
-                // Selecting into the link opens the Edit URL popover.
-                editor.chain().focus().extendMarkRange("link").run();
-                return;
-              }
-              if (editor.state.selection.empty) {
-                toast.info("Select the words to link first.");
-                return;
-              }
-              editor.chain().focus().setLink({ href: "https://" }).extendMarkRange("link").run();
-            }}
-          />
+          {/* Formatting only where it can act: in Review mode these were five
+              disabled buttons taking the room the Approve button needs. */}
+          {editing && (
+            <>
+              <ToolbarBtn icon={<Icons.h1 size={14} />} onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()} active={editor?.isActive("heading")} />
+              <ToolbarBtn icon={<Icons.bold size={14} />} onClick={() => editor?.chain().focus().toggleBold().run()} active={editor?.isActive("bold")} />
+              <ToolbarBtn icon={<Icons.italic size={14} />} onClick={() => editor?.chain().focus().toggleItalic().run()} active={editor?.isActive("italic")} />
+              <ToolbarBtn icon={<Icons.list size={14} />} onClick={() => editor?.chain().focus().toggleBulletList().run()} active={editor?.isActive("bulletList")} />
+              <ToolbarBtn
+                icon={<Icons.link size={14} />}
+                active={editor?.isActive("link")}
+                onClick={() => {
+                  if (!editor) return;
+                  if (editor.isActive("link")) {
+                    // Selecting into the link opens the Edit URL popover.
+                    editor.chain().focus().extendMarkRange("link").run();
+                    return;
+                  }
+                  if (editor.state.selection.empty) {
+                    toast.info("Select the words to link first.");
+                    return;
+                  }
+                  editor.chain().focus().setLink({ href: "https://" }).extendMarkRange("link").run();
+                }}
+              />
+            </>
+          )}
           <div className="flex-1" />
-          <span
-            className={`mr-2 font-mono text-[11px] ${changes > 0 ? "text-accent-ink" : "text-ink-3"}`}
-            aria-live="polite"
-          >
-            {changes === 0 ? "No changes yet" : pendingLabel({ ...NO_CHANGES, body: changes })}
+          <span className="mr-2 font-mono text-[11px] text-accent-ink" aria-live="polite">
+            {changes === 0 ? "" : pendingLabel({ ...NO_CHANGES, body: changes })}
           </span>
           {/* Parked, not removed: the streaming first-draft generation behind
               this works and is exercised by /api/generate. Turning it off in
               the editor is a product decision, so the handler stays wired and
-              the button simply cannot be pressed. */}
-          <Button size="sm" variant="ghost" onClick={handleAskAI} disabled title="Coming soon">
-            {phase === "researching"
-              ? "Researching…"
-              : phase === "writing"
-                ? "Writing…"
-                : phase === "checking"
-                  ? "Checking claims…"
-                  : generating
-                    ? "Generating…"
-                    : "Generate draft"}
-          </Button>
+              the button simply cannot be pressed. Shown only on an empty
+              document, the one place "Generate draft" means anything: on a
+              written draft it was a dead button beside Save. */}
+          {editor?.isEmpty && (
+            <Button size="sm" variant="ghost" onClick={handleAskAI} disabled title="Coming soon">
+              {phase === "researching"
+                ? "Researching…"
+                : phase === "writing"
+                  ? "Writing…"
+                  : phase === "checking"
+                    ? "Checking claims…"
+                    : generating
+                      ? "Generating…"
+                      : "Generate draft"}
+            </Button>
+          )}
           <ExportMenu
             articleId={article.id}
             getHtml={getHtml}
@@ -764,9 +815,16 @@ export function ArticleEditor({
             metaDescription={meta || null}
             featuredImageUrl={featured}
           />
-          <Button size="sm" variant="primary" onClick={handleSave} disabled={saving || changes === 0} className="ml-1">
+          <Button
+            size="sm"
+            variant={nextStep && changes === 0 ? "ghost" : "primary"}
+            onClick={handleSave}
+            disabled={saving || changes === 0}
+            className="ml-1"
+          >
             {saving ? "Saving…" : "Save"}
           </Button>
+          {nextStep}
         </div>
 
         {/* Editor mode: the typed-edit session's two buttons. */}
@@ -827,141 +885,11 @@ export function ArticleEditor({
 
         {sidebarTab === "draft" && (
         <>
-        {/* SEO score */}
-        {/* First, because the reviewer's first question is "why am I looking
-            at this?" rather than "what did it score?". */}
-        <SidebarSection title="Why this draft">
-          <WhyPanel
-            reasons={article.selection_reasons}
-            score={article.selection_score}
-            volume={article.volume}
-            difficulty={article.keyword_difficulty}
-            intent={article.search_intent}
-            checks={article.seo_checks}
-            seoScore={article.seo_score}
-            aeoChecks={article.aeo_checks as never}
-            aeoScore={article.aeo_score}
-          />
-        </SidebarSection>
-
-        <SidebarSection title="Scores">
-          {/* Two rings, because they answer two different questions and a
-              reviewer needs both. SEO is "will Google rank it"; citation
-              readiness is "will an AI answer quote it", which is the thing this
-              product actually claims. One ring was hiding the second. */}
-          <TooltipProvider>
-            <div className="flex items-center gap-5">
-              <ScoreRing
-                value={article.seo_score > 0 ? article.seo_score : null}
-                label="SEO"
-                caption="Google ranking"
-                checks={article.seo_checks as ScoringCheck[] | null}
-                basis="Weighted from keyword placement, density, heading tree, meta length, length and readability."
-              />
-              <ScoreRing
-                value={article.aeo_score}
-                label="GEO"
-                caption="AI citation"
-                checks={article.aeo_checks as ScoringCheck[] | null}
-                basis="Weighted from answer-first opening, a liftable definition, quotable figures with sources, question headings and structure."
-              />
-            </div>
-          </TooltipProvider>
-          <p className="mt-2.5 text-[11.5px] text-ink-3">
-            {article.seo_score > 0 || article.aeo_score !== null
-              ? "Both are computed from the draft, no model call. The checks below are what they are made of."
-              : "Generate content to score."}
-          </p>
-        </SidebarSection>
-
-        {/* Fact check — placed high because it is the thing that blocks approval */}
-        {article.fact_checks && (
-          <SidebarSection
-            title={
-              article.fact_checks.counts.total
-                ? `Fact check (${article.fact_checks.counts.total})`
-                : "Fact check"
-            }
-          >
-            <FactCheckPanel report={article.fact_checks} onLocate={locateInEditor} />
-          </SidebarSection>
-        )}
-
-        {/* Internal links: which words link where, against the configured count */}
-        <SidebarSection title="Internal links">
-          <InternalLinksPanel
-            html={docHtml}
-            siteDomain={workspace.domain}
-            targets={linkTargets}
-            wanted={internalLinksWanted}
-          />
-        </SidebarSection>
-
-        {/* What it is worth. Live articles only: the number is the article's
-            Search Console clicks × the cost-per-click of its keyword, which is
-            an estimate of what the same visits would have cost as ads, and
-            the caption says exactly that. Null renders as an em dash, never
-            $0: no synced rows or no CPC on file is "not measured", and only a
-            priced keyword with zero clicks earns a zero. */}
-        {article.status === "live" && value && (
-          <SidebarSection title="What this article is worth">
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="cursor-help">
-                    <div className="text-[22px] font-semibold tracking-tight text-ink">
-                      {formatOrganicValue(value.value, workspace.language)}
-                    </div>
-                    <div className="text-[11.5px] font-mono text-ink-3 mt-1">
-                      {value.value === null
-                        ? value.clicks > 0
-                          ? `${value.clicks.toLocaleString()} clicks, no cost-per-click on file for "${article.keyword}"`
-                          : `no Search Console clicks in the last ${value.days} days`
-                        : `${value.clicks.toLocaleString()} clicks × CPC of "${article.keyword}", ${value.days}d · estimate`}
-                    </div>
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[300px] font-normal">
-                  {describeOrganicValue(value, value.days)} Clicks are the
-                  article&apos;s own, from Search Console; the price is the
-                  keyword it was written for, so it undercounts an article that
-                  ranks for more than that.
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </SidebarSection>
-        )}
-
-        {/* Target keywords */}
-        <SidebarSection title="Target keywords">
-          <div className="flex flex-col gap-1.5">
-            <div className="flex justify-between px-2.5 py-1.5 rounded-[6px] text-[12.5px] border bg-accent-soft text-accent-ink border-transparent font-medium">
-              <span>{article.keyword}</span>
-              <span className="font-mono text-[11px] text-accent-ink">{typeof article.volume === "number" ? article.volume.toLocaleString() : "—"}</span>
-            </div>
-          </div>
-        </SidebarSection>
-
-        {/* Research */}
-        <SidebarSection title="Research">
-          {article.research ? (
-            <ResearchPanel research={article.research} />
-          ) : (
-            // Said "Regenerate to pull the live search results", but the
-            // editor's Generate draft button is disabled ("Coming soon"), so
-            // there was nothing to press.
-            <div className="text-[12.5px] text-ink-3 italic">
-              No research is stored for this draft. It was written by hand, or before drafts kept the search
-              results, questions and intent they were written from.
-            </div>
-          )}
-        </SidebarSection>
-
-        {/* The "Voice check" section is gone: it always read "available after
-            content generation", and nothing ever filled it, generated or not. */}
-
-        {/* Publish to */}
-        <SidebarSection title="Publish to" last>
+        {/* Publish to. First, because it holds the one decision this page
+            exists for: approve, then publish. It sat last, under six
+            sections, a screen below the fold on a laptop. */}
+        <div ref={publishRef} className="scroll-mt-14">
+        <SidebarSection title="Publish to">
           {foundOnSite ? (
             <FoundOnSiteNotice
               view={foundOnSite}
@@ -1270,6 +1198,140 @@ export function ArticleEditor({
             />
           )}
         </SidebarSection>
+        </div>
+
+        {/* Then why, because the reviewer's next question is "why am I looking
+            at this?" rather than "what did it score?". */}
+        <SidebarSection title="Why this draft">
+          <WhyPanel
+            reasons={article.selection_reasons}
+            score={article.selection_score}
+            volume={article.volume}
+            difficulty={article.keyword_difficulty}
+            intent={article.search_intent}
+            checks={article.seo_checks}
+            seoScore={article.seo_score}
+            aeoChecks={article.aeo_checks as never}
+            aeoScore={article.aeo_score}
+          />
+        </SidebarSection>
+
+        <SidebarSection title="Scores">
+          {/* Two rings, because they answer two different questions and a
+              reviewer needs both. SEO is "will Google rank it"; citation
+              readiness is "will an AI answer quote it", which is the thing this
+              product actually claims. One ring was hiding the second. */}
+          <TooltipProvider>
+            <div className="flex items-center gap-5">
+              <ScoreRing
+                value={article.seo_score > 0 ? article.seo_score : null}
+                label="SEO"
+                caption="Google ranking"
+                checks={article.seo_checks as ScoringCheck[] | null}
+                basis="Weighted from keyword placement, density, heading tree, meta length, length and readability."
+              />
+              <ScoreRing
+                value={article.aeo_score}
+                label="GEO"
+                caption="AI citation"
+                checks={article.aeo_checks as ScoringCheck[] | null}
+                basis="Weighted from answer-first opening, a liftable definition, quotable figures with sources, question headings and structure."
+              />
+            </div>
+          </TooltipProvider>
+          <p className="mt-2.5 text-[11.5px] text-ink-3">
+            {article.seo_score > 0 || article.aeo_score !== null
+              ? "Both are computed from the draft, no model call. The checks below are what they are made of."
+              : "Generate content to score."}
+          </p>
+        </SidebarSection>
+
+        {/* Fact check — placed high because it is the thing that blocks approval */}
+        {article.fact_checks && (
+          <SidebarSection
+            title={
+              article.fact_checks.counts.total
+                ? `Fact check (${article.fact_checks.counts.total})`
+                : "Fact check"
+            }
+          >
+            <FactCheckPanel report={article.fact_checks} onLocate={locateInEditor} />
+          </SidebarSection>
+        )}
+
+        {/* Internal links: which words link where, against the configured count */}
+        <SidebarSection title="Internal links">
+          <InternalLinksPanel
+            html={docHtml}
+            siteDomain={workspace.domain}
+            targets={linkTargets}
+            wanted={internalLinksWanted}
+          />
+        </SidebarSection>
+
+        {/* What it is worth. Live articles only: the number is the article's
+            Search Console clicks × the cost-per-click of its keyword, which is
+            an estimate of what the same visits would have cost as ads, and
+            the caption says exactly that. Null renders as an em dash, never
+            $0: no synced rows or no CPC on file is "not measured", and only a
+            priced keyword with zero clicks earns a zero. */}
+        {article.status === "live" && value && (
+          <SidebarSection title="What this article is worth">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="cursor-help">
+                    <div className="text-[22px] font-semibold tracking-tight text-ink">
+                      {formatOrganicValue(value.value, workspace.language)}
+                    </div>
+                    <div className="text-[11.5px] font-mono text-ink-3 mt-1">
+                      {value.value === null
+                        ? value.clicks > 0
+                          ? `${value.clicks.toLocaleString()} clicks, no cost-per-click on file for "${article.keyword}"`
+                          : `no Search Console clicks in the last ${value.days} days`
+                        : `${value.clicks.toLocaleString()} clicks × CPC of "${article.keyword}", ${value.days}d · estimate`}
+                    </div>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-[300px] font-normal">
+                  {describeOrganicValue(value, value.days)} Clicks are the
+                  article&apos;s own, from Search Console; the price is the
+                  keyword it was written for, so it undercounts an article that
+                  ranks for more than that.
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </SidebarSection>
+        )}
+
+        {/* Target keywords */}
+        <SidebarSection title="Target keywords">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex justify-between px-2.5 py-1.5 rounded-[6px] text-[12.5px] border bg-accent-soft text-accent-ink border-transparent font-medium">
+              <span>{article.keyword}</span>
+              <span className="font-mono text-[11px] text-accent-ink">{typeof article.volume === "number" ? article.volume.toLocaleString() : "—"}</span>
+            </div>
+          </div>
+        </SidebarSection>
+
+        {/* Research */}
+        <SidebarSection title="Research" last>
+          {article.research ? (
+            <ResearchPanel research={article.research} />
+          ) : (
+            // Said "Regenerate to pull the live search results", but the
+            // editor's Generate draft button is disabled ("Coming soon"), so
+            // there was nothing to press.
+            <div className="text-[12.5px] text-ink-3 italic">
+              No research is stored for this draft. It was written by hand, or before drafts kept the search
+              results, questions and intent they were written from.
+            </div>
+          )}
+        </SidebarSection>
+
+        {/* The "Voice check" section is gone: it always read "available after
+            content generation", and nothing ever filled it, generated or not. */}
+
         </>
         )}
         </div>
