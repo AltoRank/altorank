@@ -10,7 +10,7 @@
 # both in step with those files.
 
 name = "AltoRank"
-client_id = "SET_BY_shopify_app_config_link"
+client_id = "6507d519f66b240c04c1e37db897e681"
 handle = "altorank"
 application_url = "https://app.altorank.co/shopify"
 embedded = true
@@ -37,4 +37,3 @@ embedded = false
 
 [build]
 automatically_update_urls_on_dev = false
-include_config_on_deploy = true

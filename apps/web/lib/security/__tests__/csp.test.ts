@@ -121,6 +121,16 @@ describe("middleware", () => {
     expect(a).not.toBe(b);
   });
 
+  it("leaves the embedded Shopify app to its own policy", async () => {
+    const { middleware } = await import("@/middleware");
+    const res = await middleware(new NextRequest("https://app.altorank.co/shopify?shop=fern.myshopify.com"));
+    expect(res.headers.get("content-security-policy-report-only")).toBeNull();
+    expect(res.headers.get("content-security-policy")).toBeNull();
+    // Only that page: its API routes and everything else keep the app's policy.
+    const api = await middleware(new NextRequest("https://app.altorank.co/api/shopify/state"));
+    expect(api.headers.get("content-security-policy-report-only")).toContain("'strict-dynamic'");
+  });
+
   it("sends it on a redirect to sign-in too", async () => {
     getUser.mockResolvedValue({ data: { user: null } });
     const { middleware } = await import("@/middleware");

@@ -116,6 +116,7 @@ export function renderAccount(state) {
       <s-paragraph><s-text type="strong">${esc(plan.label)}</s-text> · ${esc(plan.line)}</s-paragraph>
       ${choose}
       ${signIn}
+      <s-link data-action="link-account">Use an AltoRank account I already have</s-link>
     </s-stack>
   </s-section>`;
 }
@@ -236,6 +237,13 @@ async function onAction(target) {
       // _top: the plan page is part of the Shopify admin, not of this app.
       window.open(target.dataset.url, "_top");
       return;
+    case "link-account": {
+      // A signed, one-time link; signing in and choosing the site happen in a
+      // top-level tab, where AltoRank's session cookie works.
+      const { url } = await api("/api/shopify/link-token", { method: "POST" });
+      window.open(url, "_blank", "noopener");
+      return;
+    }
     case "retry-first-look":
       await api("/api/shopify/first-look", { method: "POST" });
       return showHome();
