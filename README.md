@@ -172,6 +172,10 @@ npm run dev
 Required before a self-hosted install works end to end:
 
 - your Supabase URL, its anon key and its `SUPABASE_SERVICE_ROLE_KEY`
+- `NEXT_PUBLIC_APP_URL`, the address people open the app at. Every emailed
+  link (signup confirmation, invites, password reset) is built from it, and the
+  Docker build bakes it into the image, so set it before `docker compose up
+  --build`; compose refuses to build without it.
 - `ANTHROPIC_API_KEY`
 - `ENCRYPTION_KEY` and `CRON_SECRET` (`openssl rand -hex 32` for each).
   `docker compose` refuses to start without `CRON_SECRET`, and without it no

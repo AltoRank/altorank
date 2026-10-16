@@ -134,7 +134,7 @@ build args, not runtime env.
 | `RESEND_API_KEY` | no email at all: no invites, no auth emails, no approval notifications, no feedback widget. Signup confirms by email and rolls the new user back when the email cannot be sent, so **nobody can create an account** and nobody can reset a password |
 | `RESEND_FROM_EMAIL` | defaults to `AltoRank <noreply@updates.altorank.co>`, which will not be a verified sender on your Resend account, so every send is refused (same effect as no key). Set it |
 | `RESEND_REPLY_TO` | optional. The Reply-To on every app email. Unset: the hosted sender replies go to `hello@altorank.co`; any other sender gets no Reply-To, so replies go to `RESEND_FROM_EMAIL` |
-| `NEXT_PUBLIC_APP_URL` | links in every email, Stripe return URLs and the audit worker's self-call fall back to `http://localhost:3000` (or `:3100` in two files). Set it to the public origin |
+| `NEXT_PUBLIC_APP_URL` | in production every link the app builds (signup confirmation, invites, password reset, Stripe return URLs) throws instead of pointing at localhost, so those emails are not sent and nobody can confirm a signup; `npm run dev` falls back to `http://localhost:3000`. It is inlined at build time, so the Docker image needs it as a build arg (`docker compose` refuses to build without it) and a change needs a rebuild. Set it to the public origin |
 
 ### Each one disables exactly one feature
 

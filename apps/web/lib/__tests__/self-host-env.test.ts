@@ -111,6 +111,25 @@ describe("self-host env", () => {
     expect(appEnvReads().filter((k) => !passed.has(k) && !isExempt(k))).toEqual([]);
   });
 
+  /**
+   * NEXT_PUBLIC_APP_URL is baked into the image. A compose default of
+   * localhost built an image whose every emailed link (signup confirmation
+   * included) pointed at the reader's own machine, so on a real host nobody
+   * could confirm a signup. compose must refuse to build without it, and both
+   * "required" lists must name it.
+   */
+  it("compose refuses to build without NEXT_PUBLIC_APP_URL, and the required lists name it", () => {
+    const { text } = composeWeb();
+    expect(text).toMatch(/NEXT_PUBLIC_APP_URL: \$\{NEXT_PUBLIC_APP_URL:\?/);
+    const example = readFileSync(path.join(REPO_DIR, "docker", ".env.example"), "utf8");
+    const requiredBlock = example.slice(0, example.indexOf("# Everything else below is optional"));
+    expect(requiredBlock).toContain("NEXT_PUBLIC_APP_URL");
+    const readme = readFileSync(path.join(REPO_DIR, "README.md"), "utf8");
+    const start = readme.indexOf("Required before a self-hosted install works end to end");
+    expect(start).toBeGreaterThan(-1);
+    expect(readme.slice(start, readme.indexOf("\n\n", readme.indexOf("\n- ", start) + 1))).toContain("NEXT_PUBLIC_APP_URL");
+  });
+
   it("the exemptions are all still read somewhere", () => {
     const read = new Set(appEnvReads());
     expect(Object.keys(NOT_FORWARDED).filter((k) => !read.has(k))).toEqual([]);

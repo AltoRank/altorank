@@ -20,7 +20,7 @@ describe("appUrl", () => {
 
   /**
    * The defect this exists for: unset on Vercel, every mailed link silently
-   * became http://localhost:3100/... - a link that looks fine in the inbox and
+   * became http://localhost:.../... - a link that looks fine in the inbox and
    * cannot possibly work. A send that fails loudly is recoverable; a wrong
    * link is not.
    */
@@ -36,8 +36,8 @@ describe("appUrl", () => {
     vi.stubEnv("NODE_ENV", "development");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const { appUrl } = await fresh();
-    expect(appUrl()).toBe("http://localhost:3100");
-    expect(appUrl()).toBe("http://localhost:3100");
+    expect(appUrl()).toBe("http://localhost:3000");
+    expect(appUrl()).toBe("http://localhost:3000");
     expect(warn).toHaveBeenCalledTimes(1);
     warn.mockRestore();
   });
