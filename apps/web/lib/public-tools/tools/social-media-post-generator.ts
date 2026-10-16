@@ -18,9 +18,9 @@ import { INPUT_RULES, JSON_ONLY, charLength, newFigures, tagged } from "../promp
 const SLUG = "social-media-post-generator";
 
 // `hashtags` is the most the prompt asks for. Only Instagram enforces a cap:
-// five per post or Reel since December 2025, down from 30 (announced by
-// Instagram; reported by Social Media Today on 2025-12-18, rolled out gradually). A post over it
-// cannot be published with all its tags, so it is marked as failing.
+// five per post or Reel, down from 30. Instagram announced it in December 2025
+// and is rolling it out gradually (Social Media Today, 2025-12-18). A post
+// over it may not publish with all its tags, so it is marked as failing.
 export const PLATFORMS = {
   x: { label: "X", max: 280, fold: 280, hashtags: 2 },
   linkedin: { label: "LinkedIn", max: 3000, fold: 210, hashtags: 3 },
