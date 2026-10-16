@@ -33,8 +33,18 @@ export type BlogArticleSummary = {
 };
 
 export type BlogArticle = BlogArticleSummary & {
-  /** The body as HTML, the same rendering the dashboard publishes to a CMS. */
+  /**
+   * The body as HTML, through the same steps the dashboard runs before it
+   * publishes to a CMS: no H1 repeating the title (render `title` yourself),
+   * internal links resolved, the dateline, and the free tier's attribution.
+   */
   content_html: string;
+  /**
+   * JSON-LD objects (BlogPosting, and FAQPage when the site's FAQ schema
+   * setting is on). Emit them in a `<script type="application/ld+json">`;
+   * the starter shows how. Empty from a dashboard older than this field.
+   */
+  structured_data?: object[];
 };
 
 export type BlogArticleList = {
