@@ -33,7 +33,7 @@ export const GET = withAgent(async (request, ctx) => {
     count: issues.length,
   };
 
-  if (!measured) return ok(data, notSyncedGuidance(scope.health, scope.today));
+  if (!measured) return ok(data, notSyncedGuidance(scope.health, scope.now));
   return ok(
     data,
     (issues.length

@@ -4,14 +4,16 @@ import Link from "next/link";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getRecentArticles, getArticles } from "@/lib/queries/articles";
 import { getKeywords, getKeywordSourceYields } from "@/lib/queries/keywords";
-import { knownPagesFor, loadGscRows, syncHealthFor, type SyncHealth } from "@/lib/gsc/queries";
+import { coverageOf, knownPagesFor, loadGscRows, syncHealthFor, type SyncHealth } from "@/lib/gsc/queries";
 import {
   cannibalization,
   indexCoverage,
   queryOpportunities,
+  rowsCoverage,
   searchPerformance,
   servedUrls,
   topPages,
+  windowAnchor,
   WINDOW_DAYS,
 } from "@/lib/gsc/analysis";
 import {
@@ -127,11 +129,17 @@ export default async function DashboardPage() {
       getTrafficValue(scopeId ?? undefined),
       allowanceRead,
     ]);
-  const traffic = searchPerformance(gscRows, now);
-  const bestPages = scopeId ? topPages(gscRows, now) : [];
-  const cannibals = scopeId ? cannibalization(gscRows, now) : [];
-  const opportunities = scopeId ? queryOpportunities(gscRows, now, WINDOW_DAYS, 6) : [];
-  const coverage = knownPages ? indexCoverage(knownPages, servedUrls(gscRows, now)) : null;
+  // The days Search Console history covers: one site's recorded sync range,
+  // or, across sites, what the rows show (a site connected last week must not
+  // read as growth). The windows end on the newest synced day, and a change
+  // is stated only when both windows are whole.
+  const gscCoverage = health ? coverageOf(health) : rowsCoverage(gscRows);
+  const gscToday = windowAnchor(now, gscCoverage.through);
+  const traffic = searchPerformance(gscRows, gscToday, WINDOW_DAYS, gscCoverage);
+  const bestPages = scopeId ? topPages(gscRows, gscToday, WINDOW_DAYS, 8, gscCoverage) : [];
+  const cannibals = scopeId ? cannibalization(gscRows, gscToday) : [];
+  const opportunities = scopeId ? queryOpportunities(gscRows, gscToday, WINDOW_DAYS, 6) : [];
+  const coverage = knownPages ? indexCoverage(knownPages, servedUrls(gscRows, gscToday)) : null;
   const gscConnected = (gscCount ?? 0) > 0;
   // The row exists but Google refused its token (migration 070): every
   // Search Console block says "reconnect" instead of "not returned rows yet".
@@ -357,7 +365,7 @@ export default async function DashboardPage() {
                   <i className="inline-block w-2.5 h-0.5 rounded-sm bg-ink-4 mt-[1px]" />Previous {traffic.days}d
                 </span>
               ) : traffic.hasData ? (
-                <span className="text-ink-4">Previous period not synced yet</span>
+                <span className="text-ink-4">Previous period not fully synced yet</span>
               ) : null}
               {traffic.hasData && traffic.previousMeasured && (
                 <span className="text-ink-3">

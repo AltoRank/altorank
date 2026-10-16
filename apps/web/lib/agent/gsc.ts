@@ -11,8 +11,8 @@
 // Everything served is what the nightly sync already stored and the dashboard
 // already renders (lib/gsc/analysis.ts). Nothing here calls Google.
 
-import { touchesWindow, windowMeasured, WINDOW_DAYS, type DateWindow, type GscShapes, type GscRow } from "@/lib/gsc/analysis";
-import { loadGscRowsFrom, syncHealthFrom, type DashboardGscRows, type SyncHealth } from "@/lib/gsc/queries";
+import { touchesWindow, windowAnchor, windowMeasured, WINDOW_DAYS, type DateWindow, type GscShapes, type GscRow } from "@/lib/gsc/analysis";
+import { coverageOf, loadGscRowsFrom, syncHealthFrom, type DashboardGscRows, type SyncHealth } from "@/lib/gsc/queries";
 import type { Workspace } from "@/lib/types";
 import type { AgentContext } from "./auth";
 import { workspaceInAccount } from "./data";
@@ -25,7 +25,14 @@ export type GscScope = {
   workspace: Workspace;
   health: SyncHealth;
   days: number;
+  /**
+   * The day the windows end before: the day after the newest synced day when
+   * that is recent (analysis.ts `windowAnchor`), so both windows hold the same
+   * number of days Google has published.
+   */
   today: Date;
+  /** The real clock, for anything about the connection rather than the data. */
+  now: Date;
 };
 
 export const NOT_CONNECTED_GUIDANCE =
@@ -64,7 +71,7 @@ export async function gscScope(
   }
   const blocked = connectionProblem(health);
   if (blocked) return { envelope: blocked };
-  return { scope: { workspace, health, days: daysParam(daysRaw), today } };
+  return { scope: { workspace, health, days: daysParam(daysRaw), today: windowAnchor(today, coverageOf(health).through), now: today } };
 }
 
 /**

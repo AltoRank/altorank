@@ -151,3 +151,38 @@ describe("a sync that failed after earlier ones stored data", () => {
     expect(env.agent_guidance).toMatch(/most recent sync failed/);
   });
 });
+
+describe("the change against the previous window", () => {
+  const daily = (from: number, to: number, clicks: number) => {
+    const out: Row[] = [];
+    for (let ago = from; ago >= to; ago--) out.push(metric(iso(ago), { clicks, impressions: clicks * 10 }));
+    return out;
+  };
+
+  it("states none for a connection read 22 days later, whose history starts a week before the connect", async () => {
+    setup({
+      integration: { connected_at: new Date(Date.now() - 22 * DAY).toISOString(), synced_from: iso(29), synced_through: iso(3) },
+      metrics: daily(29, 3, 10),
+    });
+    const { env } = await call("performance");
+    expect(env.data.has_data).toBe(true);
+    expect(env.data.comparable).toBe(false);
+    expect(env.data.clicks.changePct).toBeNull();
+    expect(env.data.clicks.previous).toBeNull();
+    expect(env.agent_guidance).toMatch(/not whole/);
+    expect(env.agent_guidance).not.toMatch(/%/);
+  });
+
+  it("ends both windows on the newest synced day and compares them once both are whole", async () => {
+    setup({
+      integration: { connected_at: new Date(Date.now() - 90 * DAY).toISOString(), synced_from: iso(80), synced_through: iso(3) },
+      metrics: [...daily(58, 31, 10), ...daily(30, 3, 12)],
+    });
+    const { env } = await call("performance");
+    expect(env.data.window.current.end).toBe(iso(3));
+    expect(env.data.window.previous.end).toBe(iso(31));
+    expect(env.data.comparable).toBe(true);
+    expect(env.data.clicks).toEqual({ current: 336, previous: 280, changePct: 20 });
+    expect(env.agent_guidance).toMatch(/\+20% vs the 28 days before/);
+  });
+});

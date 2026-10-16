@@ -7,6 +7,8 @@ import {
   MAX_SERIES_DAYS,
   normalizeUrl,
   partitionByShape,
+  rowsCoverage,
+  windowAnchor,
   periodTotals,
   queryOpportunities,
   queryStats,
@@ -215,10 +217,15 @@ describe("searchPerformance", () => {
     expect(measuredZero.clicks.previous).toBeNull();
   });
 
+  // Synced history that covers both 28-day windows before TODAY.
+  const WHOLE = { from: day(56), through: day(1) };
+
   it("compares against the previous window only when that window was synced", () => {
     const s = searchPerformance(
       by([row({ metric_date: day(1), clicks: 30, impressions: 300 }), row({ metric_date: day(40), clicks: 20, impressions: 200 })]),
       TODAY,
+      28,
+      WHOLE,
     );
     expect(s.previousMeasured).toBe(true);
     expect(s.clicks).toEqual({ current: 30, previous: 20, changePct: 50 });
@@ -229,9 +236,89 @@ describe("searchPerformance", () => {
     const s = searchPerformance(
       by([row({ metric_date: day(1), clicks: 5, impressions: 50 }), row({ metric_date: day(40), clicks: 0, impressions: 10 })]),
       TODAY,
+      28,
+      WHOLE,
     );
     expect(s.clicks.previous).toBe(0);
     expect(s.clicks.changePct).toBeNull();
+  });
+
+  it("states no change for a connection read 22 days later: its history starts a week before the connect", () => {
+    // Connected 22 days ago; the connect backfill reached 7 days back, so
+    // stored history starts 29 days ago and the previous window holds only
+    // its last day or so. Every day since has rows.
+    const connect = 22;
+    const rows = [];
+    for (let ago = 1; ago <= connect + 7; ago++) rows.push(row({ metric_date: day(ago), clicks: 10, impressions: 100 }));
+    const s = searchPerformance(by(rows), TODAY, 28, { from: day(connect + 7), through: day(1) });
+    expect(s.clicks.current).toBe(280);
+    expect(s.previousMeasured).toBe(false);
+    expect(s.comparable).toBe(false);
+    expect(s.clicks.previous).toBeNull();
+    expect(s.clicks.changePct).toBeNull();
+    expect(s.impressions.changePct).toBeNull();
+    // Before this, one row in the previous window counted as a synced window:
+    // 280 clicks against 10 read as +2,700%.
+    const rowsOnly = searchPerformance(by(rows), TODAY);
+    expect(rowsOnly.clicks.changePct).toBeNull();
+  });
+
+  it("states no change while the newest days are not synced", () => {
+    const s = searchPerformance(
+      by([row({ metric_date: day(5), clicks: 30, impressions: 300 }), row({ metric_date: day(40), clicks: 20, impressions: 200 })]),
+      TODAY,
+      28,
+      { from: day(60), through: day(5) },
+    );
+    expect(s.previousMeasured).toBe(true);
+    expect(s.currentComplete).toBe(false);
+    expect(s.clicks.previous).toBe(20);
+    expect(s.clicks.changePct).toBeNull();
+  });
+
+  it("calls a window the sync answered with no rows a measured zero", () => {
+    const s = searchPerformance(by([]), TODAY, 28, { from: day(20), through: day(3) });
+    expect(s.hasData).toBe(true);
+    expect(s.clicks.current).toBe(0);
+    expect(s.clicks.changePct).toBeNull();
+  });
+});
+
+describe("windowAnchor", () => {
+  it("ends the windows on the newest synced day when it is recent", () => {
+    const anchor = windowAnchor(TODAY, day(3));
+    const w = windows(anchor, 28);
+    expect(w.current.end).toBe(day(3));
+    expect(w.previous.end).toBe(day(31));
+  });
+
+  it("keeps today when nothing is synced, when the data is stale, and never moves past today", () => {
+    expect(windowAnchor(TODAY, null)).toBe(TODAY);
+    expect(windowAnchor(TODAY, day(30))).toBe(TODAY);
+    expect(windowAnchor(TODAY, isoDaysAgo(TODAY, 0))).toBe(TODAY);
+  });
+
+  it("compares equal, whole windows once the newest days are the anchor", () => {
+    const rows = [];
+    for (let ago = 3; ago <= 70; ago++) rows.push(row({ metric_date: day(ago), clicks: ago <= 30 ? 12 : 10, impressions: 100 }));
+    const coverage = { from: day(70), through: day(3) };
+    const s = searchPerformance(by(rows), windowAnchor(TODAY, coverage.through), 28, coverage);
+    expect(s.comparable).toBe(true);
+    expect(s.clicks).toEqual({ current: 336, previous: 280, changePct: 20 });
+  });
+});
+
+describe("rowsCoverage", () => {
+  it("is the rows' first and last day for one site", () => {
+    expect(rowsCoverage(by([row({ metric_date: day(9) }), row({ metric_date: day(2), query: "a" })]))).toEqual({ from: day(9), through: day(2) });
+    expect(rowsCoverage(by([]))).toEqual({ from: null, through: null });
+  });
+
+  it("starts where the youngest site's history starts, so a new site is not read as growth", () => {
+    const old = { ...row({ metric_date: day(60) }), workspace_id: "ws-old" };
+    const oldNow = { ...row({ metric_date: day(2) }), workspace_id: "ws-old" };
+    const fresh = { ...row({ metric_date: day(8) }), workspace_id: "ws-new" };
+    expect(rowsCoverage(by([old, oldNow, fresh]))).toEqual({ from: day(8), through: day(2) });
   });
 });
 
@@ -247,7 +334,7 @@ describe("topPages", () => {
   ];
 
   it("merges spellings of one URL, weights position by impressions and carries the article id", () => {
-    const [one, two] = topPages(by(rows), TODAY);
+    const [one, two] = topPages(by(rows), TODAY, 28, 8, { from: day(56), through: day(1) });
     expect(one.url).toBe("https://a.co/one");
     expect(one.articleId).toBe("art-1");
     expect(one.clicks).toBe(10);
@@ -266,6 +353,12 @@ describe("topPages", () => {
 
   it("reports no delta when the previous window was never synced", () => {
     const [one] = topPages(by(rows.filter((r) => r.metric_date !== day(35))), TODAY);
+    expect(one.prevClicks).toBeNull();
+    expect(one.clicksDelta).toBeNull();
+  });
+
+  it("reports no delta when the previous window is only partly synced", () => {
+    const [one] = topPages(by(rows), TODAY, 28, 8, { from: day(35), through: day(1) });
     expect(one.prevClicks).toBeNull();
     expect(one.clicksDelta).toBeNull();
   });

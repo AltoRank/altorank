@@ -14,11 +14,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { inspectionFrom, type UrlInspection } from "@/lib/google/inspection";
-import { ROW_SHAPES, WINDOW_DAYS, windows, type GscCoverage, type GscShapes, type KnownPage } from "./analysis";
+import { ANCHOR_MAX_LAG_DAYS, isoDaysAgo, ROW_SHAPES, WINDOW_DAYS, type GscCoverage, type GscShapes, type KnownPage } from "./analysis";
 import { earliestGscDate, lastGscWriteAt, latestGscDate, readGsc, type ReadRow } from "./read";
 
 /** What the dashboard blocks read: every shape, with the columns the analysis uses. */
-export type DashboardGscRows = GscShapes<ReadRow<"clicks" | "impressions" | "avg_position" | "article_id">>;
+export type DashboardGscRows = GscShapes<ReadRow<"clicks" | "impressions" | "avg_position" | "article_id" | "workspace_id">>;
 
 /**
  * Every Search Console row for the two windows, by shape. Optional workspace
@@ -41,12 +41,16 @@ export async function loadGscRowsFrom(
   today: Date = new Date(),
   days = WINDOW_DAYS,
 ): Promise<DashboardGscRows> {
-  const { since } = windows(today, days);
+  // A week further back than the two windows: the windows end on the newest
+  // synced day (analysis.ts `windowAnchor`), which can be up to that many
+  // days before `today`, and a caller may only learn it from these rows.
+  const since = isoDaysAgo(today, days * 2 + ANCHOR_MAX_LAG_DAYS);
   return readGsc(supabase, {
     workspaceId: workspaceId ?? null,
     shapes: ROW_SHAPES,
     since,
-    columns: ["clicks", "impressions", "avg_position", "article_id"],
+    // workspace_id: the all-sites view tells each site's history apart (`rowsCoverage`).
+    columns: ["clicks", "impressions", "avg_position", "article_id", "workspace_id"],
   });
 }
 

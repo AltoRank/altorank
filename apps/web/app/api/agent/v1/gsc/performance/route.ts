@@ -1,7 +1,8 @@
 import { withAgent } from "@/lib/agent/http";
 import { ok } from "@/lib/agent/envelope";
-import { gscRows, gscScope, measuredIn, notSyncedGuidance, staleNote, syncBlock } from "@/lib/agent/gsc";
+import { gscRows, gscScope, notSyncedGuidance, staleNote, syncBlock } from "@/lib/agent/gsc";
 import { queryOpportunities, searchPerformance, topPages, windows } from "@/lib/gsc/analysis";
+import { coverageOf } from "@/lib/gsc/queries";
 
 /**
  * GET /api/agent/v1/gsc/performance?workspace_id=&days=28
@@ -17,19 +18,24 @@ export const GET = withAgent(async (request, ctx) => {
   const { scope } = resolved;
 
   const gsc = await gscRows(ctx, scope);
-  const performance = searchPerformance(gsc, scope.today, scope.days);
-  const pages = topPages(gsc, scope.today, scope.days, 10);
+  const coverage = coverageOf(scope.health);
+  const performance = searchPerformance(gsc, scope.today, scope.days, coverage);
+  const pages = topPages(gsc, scope.today, scope.days, 10, coverage);
   const opportunities = queryOpportunities(gsc, scope.today, scope.days, 10);
   const w = windows(scope.today, scope.days);
-  // Rows, or a sync that answered for the window with none: a measured zero.
-  const hasData = performance.hasData || measuredIn(scope, gsc, w.current) || measuredIn(scope, gsc, w.previous);
+  // Rows, or a sync that answered for a window with none: a measured zero.
+  const hasData = performance.hasData;
 
   const data = {
     workspace_id: scope.workspace.id,
     days: scope.days,
     sync: syncBlock(scope.health),
     has_data: hasData,
+    // The two windows, ending on the newest day Google has published.
+    window: { current: w.current, previous: w.previous },
     previous_window_measured: performance.previousMeasured,
+    // Both windows wholly synced: only then is a changePct stated.
+    comparable: performance.comparable,
     clicks: performance.clicks,
     impressions: performance.impressions,
     series: { current: performance.current, previous: performance.previous },
@@ -37,7 +43,7 @@ export const GET = withAgent(async (request, ctx) => {
     opportunities,
   };
 
-  if (!hasData) return ok(data, notSyncedGuidance(scope.health, scope.today));
+  if (!hasData) return ok(data, notSyncedGuidance(scope.health, scope.now));
   if (performance.impressions.current === 0) {
     return ok(
       data,
@@ -46,7 +52,14 @@ export const GET = withAgent(async (request, ctx) => {
     );
   }
   const delta = performance.clicks.changePct;
-  const trend = delta === null ? "no previous window to compare against" : `${delta >= 0 ? "+" : ""}${delta}% vs the ${scope.days} days before`;
+  const trend =
+    delta !== null
+      ? `${delta >= 0 ? "+" : ""}${delta}% vs the ${scope.days} days before`
+      : !performance.previousMeasured
+        ? `no previous window to compare against: synced history starts ${coverage.from ?? "within this window"}, so the ${scope.days} days before are not whole`
+        : !performance.currentComplete
+          ? "no comparison: the newest days of this window are not synced yet"
+          : "no comparison: the previous window had no clicks";
   return ok(
     data,
     `${performance.clicks.current} clicks and ${performance.impressions.current} impressions over ${scope.days} days (${trend}). ` +
