@@ -288,9 +288,18 @@ export async function listWixSitesAction(apiKey: string, accountId: string) {
   return attempt(() => listWixSites(apiKey, accountId));
 }
 
+/**
+ * The one picker that asks an address the person typed rather than a vendor's
+ * fixed API host, so it takes the same address policy and the same short
+ * error as "Send test".
+ */
 export async function listShopifyBlogsAction(storeUrl: string, credentials: ShopifyCredentials) {
   await requireAuth();
-  return attempt(() => listShopifyBlogs(storeUrl, credentials));
+  const result = await attempt(() => {
+    assertSiteUrl(storeUrl);
+    return listShopifyBlogs(storeUrl, credentials);
+  });
+  return result.ok ? result : { ok: false as const, error: brief(result.error) };
 }
 
 /**
