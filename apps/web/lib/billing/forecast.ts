@@ -135,7 +135,10 @@ export function forecastAll(workspaces: WorkspaceDrivers[], rates: RateCard = DE
 const JOB_OF: Record<string, JobKey> = {
   "cron.generate": "generate",
   "cron.serp": "serp",
-  "cron.serp-collect": "serp",
+  // observedCron's names use underscores (cron.serp_collect), not the path's
+  // hyphen; lib/billing/__tests__/scheduled-jobs.test.ts reads them from the
+  // routes so the two cannot drift.
+  "cron.serp_collect": "serp",
   "cron.geo": "geo",
   "cron.analyze": "analyze",
   "cron.refresh": "refresh",
