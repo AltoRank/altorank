@@ -102,9 +102,10 @@ export async function proposeProfile(workspaceId: string): Promise<InferenceResu
 export async function suggestCompetitors(workspaceId: string, profile: BusinessProfile): Promise<CompetitorSuggestions> {
   const { supabase, workspace } = await assertWorkspace(workspaceId);
   if (!workspace.domain) return { own: null, suggestions: [], searchRivals: [] };
-  // E2E_STUBS: a fixture, no provider (lib/e2e/stubs.ts).
-  if (e2eStubsEnabled()) return stubSuggestCompetitors(workspace.domain, profile);
   const { accountId, user } = await requireAuth(undefined, { workspaceId });
+  // E2E_STUBS: a fixture, no provider (lib/e2e/stubs.ts). After the auth
+  // check, like every other stub, so the switch never skips who may ask.
+  if (e2eStubsEnabled()) return stubSuggestCompetitors(workspace.domain, profile);
   const gate = await canSpend(supabase, accountId, { userEmail: user.email ?? undefined, workspaceId, action: "keyword-research" });
   if (!gate.allowed) return { own: null, suggestions: [], searchRivals: [] };
   const locale = resolveLocale(profile.language, profile.country);
@@ -128,6 +129,7 @@ export async function resolveCompetitor(
   own: number | null,
 ): Promise<{ domain: string; authority: number | null; size: RivalSize | null } | null> {
   const { supabase, workspace } = await assertWorkspace(workspaceId);
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   if (e2eStubsEnabled()) {
     const domain = entry.trim().toLowerCase().replace(/\s+/g, "-");
     return domain ? { domain: domain.includes(".") ? domain : `${domain}.example`, authority: null, size: null } : null;
@@ -135,7 +137,6 @@ export async function resolveCompetitor(
   // A results page and a bulk-rank read per press (~$0.024): gated like the
   // suggestion lookup above. A refused account gets the entry as typed when
   // it already is a domain, and nothing invented when it is not.
-  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const gate = await canSpend(supabase, accountId, { userEmail: user.email ?? undefined, workspaceId, action: "keyword-research" });
   if (!gate.allowed) {
     const typed = entry.trim().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "").toLowerCase();

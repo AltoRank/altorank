@@ -81,21 +81,30 @@ So:
 
 ## The `E2E_STUBS` switch
 
-One module, `lib/e2e/stubs.ts`, holds the fixtures. Six production call sites
+One module, `lib/e2e/stubs.ts`, holds the fixtures. Eleven production files
 check `e2eStubsEnabled()` (`process.env.E2E_STUBS === "1"`, read at call
-time) and return the fixture instead:
+time) and return a fixture, or skip a fetch, instead. None of them sits in
+front of an auth check: the switch replaces what a call reaches, never who
+may make it.
 
 | Entry point | Under the switch |
 | --- | --- |
+| `app/actions/onboarding-wizard.ts` `suggestCompetitors` / `resolveCompetitor` | fixture rivals; a typed name becomes `<name>.example`. After `requireAuth`, before the spend gate |
 | `lib/onboarding/business-profile.ts` `inferBusinessProfileDetailed` | a profile for the domain (Italian / Italy) - or `unreadable` when the domain starts with `unreadable.` |
+| `lib/onboarding/observed-facts.ts` `inferVerifiedBusinessProfile` | the fixture profile as is; no URL in it is fetched to verify it |
 | `lib/onboarding/site-text.ts` `readSiteText` | fixture text, no fetch |
 | `lib/onboarding/site-discovery.ts` `discoverSite` | a sitemap and a blog on the domain, `found: true` (or nothing for `unreadable.*`) |
+| `lib/onboarding/site-assessment.ts` | fixture pages for reserved test domains only; a real domain gets the real (free) crawl |
 | `lib/seo/client.ts` `hasDataForSEOCredentials` / `post` / `get` | `true`; every request throws |
 | `lib/audit/domain-analysis.ts` `analyseDomain` | eight keywords inserted for the workspace; nothing else measured |
+| `lib/keyword-research/opportunity.ts` | fixture "qualified" opportunities, only for a reserved test domain AND a loopback Supabase URL |
+| `lib/voice/examples.ts` `readExampleArticles` | `""`; example articles are not fetched |
 | `lib/content/generate.ts` `generateArticle` | a short fixture draft, written through the same rows (`articles`, `generation_jobs`) and the same `review` gate |
 
-The switch is off by default, is not set in any deployment, and must stay
-that small: add a stub only for a call that leaves the machine or costs money.
+The switch is off by default and is not set in any deployment. Add a stub
+only for a call that leaves the machine or costs money, and add its row here:
+`lib/__tests__/e2e-stubs-readme.test.ts` fails when a file checks the switch
+and the table does not name it.
 
 ## Specs
 

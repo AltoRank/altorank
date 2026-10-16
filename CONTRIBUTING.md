@@ -28,6 +28,13 @@ tier, `npm run test:db`, runs against a local Supabase only.
 The marketing site (altorank.co) lives in its own private repository,
 `AltoRank/altorank-marketing`. It moved out of this tree on 2026-09-06 so the
 product stays open while positioning and pricing copy do not. Nothing here
-imports it; the two are coupled only by the plan limits noted in
-`apps/web/lib/stripe.ts` and `apps/web/lib/billing/quota.ts`, which must be
-changed in both places together.
+imports it. The two are coupled in two places, each of which must be changed
+in both repositories together:
+
+- the plan limits noted in `apps/web/lib/stripe.ts` and
+  `apps/web/lib/billing/quota.ts`;
+- the public tools' form contract: the field names and limits in
+  `apps/web/lib/public-tools/fields.ts` and each tool's schema must match the
+  marketing site's `src/data/server-tools.ts`
+  (`apps/web/lib/public-tools/__tests__/paid-registry.test.ts` holds one body
+  per form).
