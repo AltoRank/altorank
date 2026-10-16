@@ -1,7 +1,7 @@
 import { withAgent } from "@/lib/agent/http";
 import { ok } from "@/lib/agent/envelope";
-import { gscRows, gscScope, NOT_SYNCED_GUIDANCE, syncBlock } from "@/lib/agent/gsc";
-import { cannibalization, windowMeasured, windows } from "@/lib/gsc/analysis";
+import { gscRows, gscScope, measuredIn, notSyncedGuidance, staleNote, syncBlock } from "@/lib/agent/gsc";
+import { cannibalization, windows } from "@/lib/gsc/analysis";
 
 /**
  * GET /api/agent/v1/gsc/cannibalization?workspace_id=&days=28&min_impressions=10&limit=10
@@ -20,7 +20,7 @@ export const GET = withAgent(async (request, ctx) => {
   const limit = Math.min(50, Math.max(1, Number(q.get("limit")) || 10));
 
   const gsc = await gscRows(ctx, scope);
-  const measured = windowMeasured(gsc, windows(scope.today, scope.days).current);
+  const measured = measuredIn(scope, gsc, windows(scope.today, scope.days).current);
   const issues = cannibalization(gsc, scope.today, scope.days, { minImpressions, limit });
 
   const data = {
@@ -33,11 +33,12 @@ export const GET = withAgent(async (request, ctx) => {
     count: issues.length,
   };
 
-  if (!measured) return ok(data, NOT_SYNCED_GUIDANCE);
+  if (!measured) return ok(data, notSyncedGuidance(scope.health, scope.now));
   return ok(
     data,
-    issues.length
+    (issues.length
       ? `${issues.length} quer${issues.length === 1 ? "y" : "ies"} where several pages compete. Each issue names the winner and a suggestion per loser (merge or differentiate). Relay the suggestion text; the change itself is the human's call in the editor.`
-      : `No cannibalisation found over ${scope.days} days at ${minImpressions}+ impressions. Say so; do not lower min_impressions to manufacture findings.`,
+      : `No cannibalisation found over ${scope.days} days at ${minImpressions}+ impressions. Say so; do not lower min_impressions to manufacture findings.`) +
+      staleNote(scope.health),
   );
 });

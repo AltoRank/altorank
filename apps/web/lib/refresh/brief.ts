@@ -66,6 +66,8 @@ export function describeEvidence(e: Evidence): string[] {
     );
   }
   if (e.word_count !== null) lines.push(`Length: ${e.word_count.toLocaleString()} words`);
+  const searchFields = e.impressions !== null || e.clicks !== null || e.ctr !== null;
+  if (searchFields && e.scope !== "page") lines.push("Search Console figures are for the whole site on this query, not this page alone");
   return lines;
 }
 

@@ -91,6 +91,7 @@ const byId = (f: FakeSupabase, table: string) => Object.fromEntries(f.tables[tab
 beforeEach(() => {
   readGsc.mockReset().mockResolvedValue({
     query: [row("booking software", 9, 400), row("gym scheduling", 3, 400, 120)],
+    query_page: [],
   });
 });
 
@@ -117,7 +118,7 @@ describe("analyzeWorkspace retires what no longer fires", () => {
   });
 
   it("retires nothing when the window holds no Search Console rows", async () => {
-    readGsc.mockResolvedValue({ query: [] });
+    readGsc.mockResolvedValue({ query: [], query_page: [] });
     const f = seed();
     const out = await run(f);
     expect(out).toMatchObject({ reason: "ok", retired: 0 });

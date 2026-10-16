@@ -48,6 +48,13 @@ export interface Evidence {
   word_count: number | null;
   /** The day these numbers were measured (YYYY-MM-DD). Absent on rows from before it was recorded. */
   as_of?: string | null;
+  /**
+   * Whose numbers the Search Console fields are: "page" for this page's own
+   * (query_page rows), "site" for every page of the site on this query, used
+   * only when the page has no per-page rows. Absent on evidence stored before
+   * the distinction, which was site-wide.
+   */
+  scope?: "page" | "site";
 }
 
 export interface Detection {

@@ -45,8 +45,28 @@ export class GSCApiError extends Error {
 }
 
 /**
- * One Search Analytics call. Four reports used to be four copies of this
- * fetch; the dimensions are the only thing that differs between them.
+ * The most rows one Search Analytics request returns. Google's own ceiling;
+ * a report with more rows than this is read a page at a time with `startRow`.
+ */
+export const SEARCH_ANALYTICS_PAGE = 25_000;
+
+/**
+ * How many pages one report reads before it stops. Google serves at most
+ * 50,000 rows per day per search type, so two pages hold any day this sync
+ * asks for; the bound is there so a misbehaving answer cannot loop forever.
+ */
+export const SEARCH_ANALYTICS_MAX_PAGES = 4;
+
+/**
+ * One Search Analytics report, every row of it. Four reports used to be four
+ * copies of this fetch; the dimensions are the only thing that differs
+ * between them.
+ *
+ * Every row, not the first 500. The sync used to send `rowLimit: 500` and no
+ * `startRow`, and Google sorts by clicks, so on a site with more than 500
+ * queries or pages a day the low-click rows were the ones dropped - and the
+ * readers then took a page missing from the stored rows as a page Google did
+ * not serve. A page that comes back shorter than the page size is the last.
  */
 async function searchAnalytics(
   accessToken: string,
@@ -54,24 +74,31 @@ async function searchAnalytics(
   startDate: string,
   endDate: string,
   dimensions: string[],
-  rowLimit = 500,
+  pageSize = SEARCH_ANALYTICS_PAGE,
 ): Promise<RawRow[]> {
-  const res = await fetch(
-    `${GSC_API}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
+  const out: RawRow[] = [];
+  for (let page = 0; page < SEARCH_ANALYTICS_MAX_PAGES; page++) {
+    const res = await fetch(
+      `${GSC_API}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ startDate, endDate, dimensions, rowLimit: pageSize, startRow: page * pageSize }),
       },
-      body: JSON.stringify({ startDate, endDate, dimensions, rowLimit }),
-    },
-  );
+    );
 
-  if (!res.ok) throw new GSCApiError(res.status, await res.text());
+    if (!res.ok) throw new GSCApiError(res.status, await res.text());
 
-  const data = (await res.json()) as { rows?: RawRow[] };
-  return data.rows ?? [];
+    const data = (await res.json()) as { rows?: RawRow[] };
+    const rows = data.rows ?? [];
+    out.push(...rows);
+    // The undimensioned total is one row; anything short of a full page is the end.
+    if (!dimensions.length || rows.length < pageSize) break;
+  }
+  return out;
 }
 
 const round4 = (v: number) => Math.round(v * 10000) / 10000;

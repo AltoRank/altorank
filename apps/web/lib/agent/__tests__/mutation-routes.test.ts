@@ -371,7 +371,7 @@ describe("GSC reads", () => {
   });
 
   it("connected but unsynced is ok:true with has_data false and its own sentence", async () => {
-    db = fakeSupabase(seed({ workspace_integrations: [{ id: "wi-gsc", workspace_id: WS, integration_id: "gsc", connected_at: "2026-09-01T00:00:00Z", config: { gscSiteUrl: "sc-domain:acme.com" } }] }));
+    db = fakeSupabase(seed({ workspace_integrations: [{ id: "wi-gsc", workspace_id: WS, integration_id: "gsc", connected_at: new Date().toISOString(), config: { gscSiteUrl: "sc-domain:acme.com" } }] }));
     const { GET } = await import("@/app/api/agent/v1/gsc/performance/route");
     const env = await (await GET(request(`/gsc/performance?workspace_id=${WS}`))).json();
     expect(env.ok).toBe(true);
