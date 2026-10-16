@@ -606,3 +606,18 @@ describe("a first look planned nothing: the operators' email", () => {
     }
   });
 });
+
+describe("setup-failed email timing", () => {
+  /** A first look takes about three minutes as measured; the email said one. */
+  it("never promises a retry takes about a minute", () => {
+    for (const a of [
+      { domain: "acme.com", line: "We could not read the site.", transient: false },
+      { domain: "acme.com", line: "We could not read the site.", transient: true },
+      { domain: "acme.com", line: "We could not read the site.", transient: false, beforeTrial: true },
+    ]) {
+      const e = renderSetupFailed(a);
+      expect(e.html).not.toContain("about a minute");
+      expect(e.html).toContain("a few minutes");
+    }
+  });
+});

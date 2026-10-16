@@ -1,3 +1,4 @@
+import { expectedRunPhrase } from "./run-timing";
 import type { Opportunity } from "@/lib/keyword-research/opportunity";
 // ---------------------------------------------------------------------------
 // The shape of onboarding, as it happens
@@ -687,7 +688,7 @@ export function onboardingOutcome(state: OnboardingState, handoff = false, opts:
   if (!state.ready) {
     return {
       tone: "working",
-      line: "This takes about a minute. Nothing publishes without your approval.",
+      line: `This takes ${expectedRunPhrase()}. Nothing publishes without your approval.`,
       produced: false,
     };
   }
