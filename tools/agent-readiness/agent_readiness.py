@@ -68,8 +68,11 @@ HERE = Path(__file__).parent
 # live inside the gitignored leadgen/ directory so no contact data lands in git.
 # Override with --shortlist / --db if your checkout is laid out differently.
 LEADGEN = (HERE / ".." / ".." / ".." / "hanoi" / "leadgen").resolve()
-DB_PATH = LEADGEN / "agent_readiness.db"
 SHORTLIST = LEADGEN / "target_shortlist.csv"
+# Results go to the current directory unless --db says otherwise, so the
+# one-site command works on any clone. The file is gitignored (*.db under
+# tools/): stored runs name the sites that were checked.
+DB_PATH = Path("agent_readiness.db")
 
 # Browser-shaped but honestly identified. A bare tool UA gets served a WAF
 # challenge or a stripped page by a good share of sites, which produced false
