@@ -128,6 +128,26 @@ describe("the recorded sync outcome", () => {
     expect(gscRow(supabase)).toMatchObject({ last_sync_error: expect.stringMatching(/no Search Console property/), needs_reconnect: false, synced_through: null });
   });
 
+  it("leaves the gsc row alone when the ga4 row's token drove the failing sync", async () => {
+    // Connecting Analytics backfills from the ga4 row; that token may not see
+    // Search Console at all. Its failure is not the gsc connection's.
+    const supabase = fakeSupabase({
+      workspace_integrations: [
+        { id: "wi-gsc", workspace_id: WS, integration_id: "gsc", needs_reconnect: false, last_sync_error: null, last_synced_at: null, synced_from: daysAgo(30), synced_through: daysAgo(3) },
+        { id: "wi-ga4", workspace_id: WS, integration_id: "ga4", needs_reconnect: false, last_sync_error: null },
+      ],
+      articles: [],
+      analytics_metrics: [],
+    });
+    const r = await syncWorkspaceAnalytics(
+      supabase as unknown as SupabaseClient,
+      integration({ id: "wi-ga4", config: { gscSiteUrl: "sc-domain:other.com" } }),
+      daysAgo(5),
+    );
+    expect(r.error).toMatch(/no Search Console property/);
+    expect(gscRow(supabase).last_sync_error).toBeNull();
+  });
+
   it("clears a stored failure once a sync succeeds", async () => {
     const supabase = withOutcome({ last_sync_error: "GSC API error (503)" });
     await syncWorkspaceAnalytics(supabase as unknown as SupabaseClient, integration(), daysAgo(5));

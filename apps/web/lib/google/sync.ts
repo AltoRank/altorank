@@ -135,12 +135,17 @@ async function recordGscSynced(supabase: SupabaseClient, workspaceId: string, da
  * an account with no Search Console property for the domain, which used to be
  * returned to the cron's log and nowhere else, so the product kept describing
  * the connection as new.
+ *
+ * Only when the gsc row's own token drove the sync. Connecting Analytics runs
+ * the same sync from the ga4 row, whose token may belong to someone who never
+ * granted Search Console; its failure says nothing about the gsc connection,
+ * and stamping it there would describe a working connection as failing.
  */
-async function recordGscFailed(supabase: SupabaseClient, workspaceId: string, message: string): Promise<void> {
+async function recordGscFailed(supabase: SupabaseClient, integrationId: string, message: string): Promise<void> {
   await supabase
     .from("workspace_integrations")
     .update({ last_sync_error: message.slice(0, 500) })
-    .eq("workspace_id", workspaceId)
+    .eq("id", integrationId)
     .eq("integration_id", "gsc")
     .eq("needs_reconnect", false);
 }
@@ -249,7 +254,7 @@ export async function syncWorkspaceAnalytics(
       await markGoogleNeedsReconnect(supabase, integration.id, message);
       return { workspaceId: ws.id, ga4: 0, gsc: 0, error: message, needsReconnect: true };
     }
-    if (ws.domain) await recordGscFailed(supabase, ws.id, message);
+    if (ws.domain) await recordGscFailed(supabase, integration.id, message);
     return { workspaceId: ws.id, ga4: 0, gsc: 0, error: message };
   }
 }
