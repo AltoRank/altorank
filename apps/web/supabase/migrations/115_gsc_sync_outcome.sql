@@ -13,12 +13,16 @@
 -- Three columns on the connection row (the gsc row of a site):
 --
 --   last_synced_at  when a sync of this site's Search Console last completed
---   synced_from     the oldest day Google has answered for, rows or not
---   synced_through  the newest such day
+--   synced_from     the first day of the unbroken run of days Google has
+--                   answered for, rows or not
+--   synced_through  the last day of that run
 --
 -- A day counts once Google answered it with rows, or answered it empty after
 -- its publishing lag (lib/google/sync.ts SYNC_LAG_DAYS), when an empty answer
--- is a zero and not a day Google has not written yet.
+-- is a zero and not a day Google has not written yet. The run restarts after
+-- days that were never synced (lib/google/sync.ts nextSyncedRange), so every
+-- day inside it was answered. The first run starts from the rows already
+-- stored, so history from before this migration still counts.
 --
 -- Idempotent: `add column if not exists`. Rollback in RUNBOOK.md.
 
@@ -34,6 +38,6 @@ alter table public.workspace_integrations
 comment on column public.workspace_integrations.last_synced_at is
   'When a sync of this connection last completed. Set by the server (lib/google/sync.ts).';
 comment on column public.workspace_integrations.synced_from is
-  'Search Console: the oldest day the sync has an answer for, including days Google reported as empty.';
+  'Search Console: the first day of the unbroken run of days the sync has an answer for, including days Google reported as empty.';
 comment on column public.workspace_integrations.synced_through is
-  'Search Console: the newest day the sync has an answer for, including days Google reported as empty.';
+  'Search Console: the last day of that run.';

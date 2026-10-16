@@ -173,6 +173,21 @@ describe("the change against the previous window", () => {
     expect(env.agent_guidance).not.toMatch(/%/);
   });
 
+  it("states none after weeks without a sync: the range restarted at the reconnect, older rows do not bridge the hole", async () => {
+    // Synced for months, the token was refused for three weeks, the person
+    // reconnected a week ago. Rows exist on both sides of the hole; the
+    // current window holds a week of them and three weeks of nothing.
+    setup({
+      integration: { connected_at: new Date(Date.now() - 7 * DAY).toISOString(), synced_from: iso(9), synced_through: iso(3) },
+      metrics: [...daily(90, 31, 10), ...daily(9, 3, 10)],
+    });
+    const { env } = await call("performance");
+    expect(env.data.comparable).toBe(false);
+    expect(env.data.clicks.changePct).toBeNull();
+    expect(env.data.clicks.previous).toBeNull();
+    expect(env.agent_guidance).not.toMatch(/%/);
+  });
+
   it("ends both windows on the newest synced day and compares them once both are whole", async () => {
     setup({
       integration: { connected_at: new Date(Date.now() - 90 * DAY).toISOString(), synced_from: iso(80), synced_through: iso(3) },

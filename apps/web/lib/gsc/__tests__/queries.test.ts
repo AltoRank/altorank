@@ -121,7 +121,14 @@ describe("syncHealthFor", () => {
     expect(h.earliestMetricDate).not.toBeNull();
     const c = coverageOf(h);
     expect(c.through).toBe("2026-09-17");
-    expect(c.from! <= "2026-08-25").toBe(true);
+    expect(c.from).toBe("2026-08-25");
+  });
+  it("takes the recorded start over older rows, which may sit before a hole the sync never filled", async () => {
+    const { coverageOf } = await import("../queries");
+    const recorded = { syncedFrom: "2026-09-10", syncedThrough: "2026-09-17", earliestMetricDate: "2026-06-01", latestMetricDate: "2026-09-17" };
+    expect(coverageOf(recorded)).toEqual({ from: "2026-09-10", through: "2026-09-17" });
+    // Without migration 115, the rows are all there is.
+    expect(coverageOf({ ...recorded, syncedFrom: null, syncedThrough: null })).toEqual({ from: "2026-06-01", through: "2026-09-17" });
   });
   it("carries the refused-token flag and its reason off the connection row", async () => {
     seed.workspace_integrations = seed.workspace_integrations.map((r) =>

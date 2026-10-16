@@ -205,6 +205,32 @@ export async function earliestGscDate(supabase: SupabaseClient, workspaceId: str
   return ((data?.[0] as { metric_date?: string } | undefined)?.metric_date as string | undefined) ?? null;
 }
 
+/**
+ * The oldest stored day, and the newest stored day before `before`, for one
+ * workspace: what the sync seeds its recorded range from the first time it
+ * records one (lib/google/sync.ts), so that history stored before migration
+ * 115 still counts, unless a run of days was never synced between it and now.
+ */
+export async function gscDatesAround(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  before: string,
+): Promise<{ earliest: string | null; latestBefore: string | null }> {
+  const [earliest, latest] = await Promise.all([
+    earliestGscDate(supabase, workspaceId),
+    supabase
+      .from("analytics_metrics")
+      .select("metric_date")
+      .eq("workspace_id", workspaceId)
+      .eq("source", "gsc")
+      .lt("metric_date", before)
+      .order("metric_date", { ascending: false })
+      .limit(1),
+  ]);
+  const latestBefore = ((latest.data?.[0] as { metric_date?: string } | undefined)?.metric_date as string | undefined) ?? null;
+  return { earliest, latestBefore };
+}
+
 /** When the newest Search Console row was written: the last sync that stored anything. */
 export async function lastGscWriteAt(supabase: SupabaseClient, workspaceId: string): Promise<string | null> {
   const { data } = await supabase

@@ -1754,7 +1754,9 @@ create policy "Article images are readable by anyone" on storage.objects
 `synced_through`. The sync (`lib/google/sync.ts`) writes them on a site's
 `gsc` row after each completed Search Console day: the range grows to cover
 every day Google answered with rows, or answered empty once the day is past
-`SYNC_LAG_DAYS`. Readers (`lib/gsc/queries.ts` `syncHealthFrom`, the
+`SYNC_LAG_DAYS`. It is one unbroken run: after days that were never synced
+(the cron did not run, or a refused token was reconnected weeks later) it
+starts again at the new day. Readers (`lib/gsc/queries.ts` `syncHealthFrom`, the
 dashboard, the agent API) use the range for two things: a window inside it
 with no rows is a measured zero rather than "not synced yet", and a
 "vs the previous N days" figure is shown only when both windows lie inside
@@ -1768,8 +1770,10 @@ on the next nightly run; until a connection's first sync after 115, its
 columns are null and the stored rows still answer. Re-running is a no-op
 (`add column if not exists`). Depends on 001 and 070.
 
-No data is backfilled: a connection's recorded range starts with its first
-sync after 115 and is widened by the stored rows' own dates when read.
+No data is backfilled by the migration. A connection's first recorded range
+starts from its stored rows when they reach to within a few days of the day
+synced, so history stored before 115 still counts; from then on the recorded
+start is what readers use.
 
 Post-flight (expect `3`):
 

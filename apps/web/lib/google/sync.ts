@@ -20,6 +20,7 @@ import {
 } from "@/lib/google/gsc";
 import { articleIndex, gscRowsForDay } from "@/lib/gsc/rows";
 import { isoDaysAgo } from "@/lib/gsc/analysis";
+import { gscDatesAround } from "@/lib/gsc/read";
 
 export type SyncableIntegration = {
   id: string;
@@ -99,10 +100,44 @@ export function dayAnswered(date: string, storedRows: number, now: Date = new Da
   return storedRows > 0 || date <= isoDaysAgo(now, lagDays);
 }
 
+const shiftDay = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * The recorded range after a day Google answered: one unbroken run of synced
+ * days, never a span with an unsynced hole in it.
+ *
+ * Readers take every day inside the range as measured (no rows there is a
+ * measured zero), so the range may only grow by days next to it. The nightly
+ * run asks for the last SYNC_LAG_DAYS days, so a day up to that far past the
+ * end still joins it; a day further out means the days between were never
+ * asked for (the cron did not run, or the token was refused for weeks and has
+ * just been reconnected), and the range starts again at that day. A day far
+ * before the start is left out rather than bridging the hole.
+ *
+ * `seed` is the stored history the first recorded range starts from, so the
+ * rows stored before migration 115 still count: the oldest stored day, kept
+ * only when the stored rows reach to within the same distance of the day.
+ */
+export function nextSyncedRange(
+  range: { from: string | null; through: string | null },
+  date: string,
+  seed: { earliest: string | null; latestBefore: string | null } = { earliest: null, latestBefore: null },
+  gapDays: number = SYNC_LAG_DAYS,
+): { from: string; through: string } | null {
+  if (!range.from || !range.through) {
+    const joins = seed.earliest && seed.latestBefore && seed.latestBefore >= shiftDay(date, -gapDays - 1);
+    return { from: joins && seed.earliest! < date ? seed.earliest! : date, through: date };
+  }
+  if (date > shiftDay(range.through, gapDays)) return { from: date, through: date };
+  if (date < shiftDay(range.from, -gapDays)) return null;
+  return { from: date < range.from ? date : range.from, through: date > range.through ? date : range.through };
+}
+
 /**
  * Record that a Search Console day synced, on the site's gsc row (whichever
  * row's token drove the sync). Clears a previous failure, and widens the
- * recorded range (migration 115) to cover the day when Google's answer counts.
+ * recorded range (migration 115) to cover the day when Google's answer counts
+ * (`nextSyncedRange`).
  *
  * The range columns are written only when the row read back has them, so
  * this is a no-op for them on a database without 115, not a failed update.
@@ -123,8 +158,14 @@ async function recordGscSynced(supabase: SupabaseClient, workspaceId: string, da
   if (!("synced_through" in r)) return;
   const patch: Record<string, string> = { last_synced_at: now.toISOString() };
   if (dayAnswered(date, storedRows, now)) {
-    patch.synced_from = r.synced_from && r.synced_from < date ? r.synced_from : date;
-    patch.synced_through = r.synced_through && r.synced_through > date ? r.synced_through : date;
+    const range = { from: r.synced_from ?? null, through: r.synced_through ?? null };
+    // Only the first range reads the stored history; after that it is the range.
+    const seed = range.from && range.through ? undefined : await gscDatesAround(supabase, workspaceId, date);
+    const next = nextSyncedRange(range, date, seed);
+    if (next) {
+      patch.synced_from = next.from;
+      patch.synced_through = next.through;
+    }
   }
   await supabase.from("workspace_integrations").update(patch).eq("id", r.id);
 }

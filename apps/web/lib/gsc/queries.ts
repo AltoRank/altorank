@@ -132,16 +132,20 @@ export async function syncHealthFrom(supabase: SupabaseClient, workspaceId: stri
 
 /**
  * The days this site's Search Console history covers: the recorded sync
- * range, widened by the stored rows' own first and last day (which is all
- * there is without migration 115). lib/gsc/analysis.ts reads it to decide
- * whether a window is whole.
+ * range (migration 115), or else the stored rows' own first and last day.
+ * lib/gsc/analysis.ts reads it to decide whether a window is whole.
+ *
+ * The recorded start wins over older rows: the sync restarts the range after
+ * a run of days it never asked Google for (lib/google/sync.ts
+ * `nextSyncedRange`), and rows from before that hole would otherwise make a
+ * window with weeks missing read as whole. The first recorded range starts
+ * from the stored history, so rows stored before 115 still count.
  */
 export function coverageOf(health: Pick<SyncHealth, "syncedFrom" | "syncedThrough" | "earliestMetricDate" | "latestMetricDate">): GscCoverage {
-  const earlier = (a: string | null, b: string | null) => (a && b ? (a < b ? a : b) : (a ?? b));
-  return {
-    from: earlier(health.syncedFrom, health.earliestMetricDate),
-    through: later(health.syncedThrough, health.latestMetricDate),
-  };
+  if (health.syncedFrom && health.syncedThrough) {
+    return { from: health.syncedFrom, through: later(health.syncedThrough, health.latestMetricDate) };
+  }
+  return { from: health.earliestMetricDate, through: health.latestMetricDate };
 }
 
 export type KnownPageRow = KnownPage & {

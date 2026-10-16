@@ -109,6 +109,33 @@ describe("the recorded sync outcome", () => {
     expect(gscRow(supabase)).toMatchObject({ synced_from: daysAgo(8), synced_through: daysAgo(1) });
   });
 
+  it("starts the first range from the history stored before it", async () => {
+    gsc.totals.mockResolvedValue({ clicks: 1, impressions: 10, ctr: 0.1, position: 9 });
+    const supabase = withOutcome();
+    for (let ago = 60; ago >= 6; ago--) {
+      supabase.tables.analytics_metrics.push({ id: `old-${ago}`, workspace_id: WS, source: "gsc", metric_date: daysAgo(ago), clicks: 1, impressions: 10, page_url: null, query: null });
+    }
+    await syncWorkspaceAnalytics(supabase as unknown as SupabaseClient, integration(), daysAgo(5));
+    expect(gscRow(supabase)).toMatchObject({ synced_from: daysAgo(60), synced_through: daysAgo(5) });
+  });
+
+  it("restarts the range after weeks nobody synced, when the reconnect backfills the last week", async () => {
+    gsc.totals.mockResolvedValue({ clicks: 1, impressions: 10, ctr: 0.1, position: 9 });
+    const supabase = withOutcome({ synced_from: daysAgo(90), synced_through: daysAgo(25) });
+    // The connect-time backfill: yesterday back to a week ago, newest first.
+    for (let ago = 1; ago <= 7; ago++) {
+      await syncWorkspaceAnalytics(supabase as unknown as SupabaseClient, integration(), daysAgo(ago));
+    }
+    expect(gscRow(supabase)).toMatchObject({ synced_from: daysAgo(7), synced_through: daysAgo(1) });
+  });
+
+  it("keeps the range across ordinary nights, newest day first", async () => {
+    gsc.totals.mockResolvedValue({ clicks: 1, impressions: 10, ctr: 0.1, position: 9 });
+    const supabase = withOutcome({ synced_from: daysAgo(40), synced_through: daysAgo(4) });
+    for (const ago of [1, 2, 3]) await syncWorkspaceAnalytics(supabase as unknown as SupabaseClient, integration(), daysAgo(ago));
+    expect(gscRow(supabase)).toMatchObject({ synced_from: daysAgo(40), synced_through: daysAgo(1) });
+  });
+
   it("writes no range on a database without migration 115, and still syncs", async () => {
     const supabase = fakeSupabase({
       workspace_integrations: [{ id: "wi-gsc", workspace_id: WS, integration_id: "gsc", needs_reconnect: false, last_sync_error: null }],
@@ -170,5 +197,27 @@ describe("dayAnswered", () => {
     expect(dayAnswered("2026-10-13", 0, now)).toBe(false);
     expect(dayAnswered("2026-10-12", 0, now)).toBe(true);
     expect(dayAnswered("2026-10-14", 5, now)).toBe(true);
+  });
+});
+
+describe("nextSyncedRange", () => {
+  it("joins a day within the nightly reach of either end, and no further", async () => {
+    const { nextSyncedRange } = await import("../sync");
+    const r = { from: "2026-09-01", through: "2026-10-10" };
+    expect(nextSyncedRange(r, "2026-10-13")).toEqual({ from: "2026-09-01", through: "2026-10-13" });
+    expect(nextSyncedRange(r, "2026-10-05")).toEqual(r);
+    expect(nextSyncedRange(r, "2026-08-29")).toEqual({ from: "2026-08-29", through: "2026-10-10" });
+    // A hole: the days between were never asked for.
+    expect(nextSyncedRange(r, "2026-10-14")).toEqual({ from: "2026-10-14", through: "2026-10-14" });
+    // Far before the start: left out rather than bridging a hole.
+    expect(nextSyncedRange(r, "2026-08-20")).toBeNull();
+  });
+
+  it("seeds the first range from stored history only when that history reaches the day", async () => {
+    const { nextSyncedRange } = await import("../sync");
+    const empty = { from: null, through: null };
+    expect(nextSyncedRange(empty, "2026-10-10", { earliest: "2026-07-01", latestBefore: "2026-10-08" })).toEqual({ from: "2026-07-01", through: "2026-10-10" });
+    expect(nextSyncedRange(empty, "2026-10-10", { earliest: "2026-07-01", latestBefore: "2026-09-01" })).toEqual({ from: "2026-10-10", through: "2026-10-10" });
+    expect(nextSyncedRange(empty, "2026-10-10")).toEqual({ from: "2026-10-10", through: "2026-10-10" });
   });
 });
