@@ -19,6 +19,8 @@ import {
   matchGSCSite,
 } from "@/lib/google/gsc";
 import { articleIndex, gscRowsForDay } from "@/lib/gsc/rows";
+import { isoDaysAgo } from "@/lib/gsc/analysis";
+import { gscDatesAround } from "@/lib/gsc/read";
 
 export type SyncableIntegration = {
   id: string;
@@ -86,6 +88,111 @@ export async function resolveGscSiteUrl(
     .eq("id", integration.id);
   return match.siteUrl;
 }
+
+/**
+ * Whether a day Google answered counts as measured. With rows, always: Google
+ * serves final data only. Empty, only once the day is past the publishing lag;
+ * before that, an empty answer is a day Google has not written yet, which is
+ * the trap SYNC_LAG_DAYS exists for, and recording it would turn "not in yet"
+ * into a measured zero.
+ */
+export function dayAnswered(date: string, storedRows: number, now: Date = new Date(), lagDays: number = SYNC_LAG_DAYS): boolean {
+  return storedRows > 0 || date <= isoDaysAgo(now, lagDays);
+}
+
+const shiftDay = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * The recorded range after a day Google answered: one unbroken run of synced
+ * days, never a span with an unsynced hole in it.
+ *
+ * Readers take every day inside the range as measured (no rows there is a
+ * measured zero), so the range may only grow by days next to it. The nightly
+ * run asks for the last SYNC_LAG_DAYS days, so a day up to that far past the
+ * end still joins it; a day further out means the days between were never
+ * asked for (the cron did not run, or the token was refused for weeks and has
+ * just been reconnected), and the range starts again at that day. A day far
+ * before the start is left out rather than bridging the hole.
+ *
+ * `seed` is the stored history the first recorded range starts from, so the
+ * rows stored before migration 115 still count: the oldest stored day, kept
+ * only when the stored rows reach to within the same distance of the day.
+ */
+export function nextSyncedRange(
+  range: { from: string | null; through: string | null },
+  date: string,
+  seed: { earliest: string | null; latestBefore: string | null } = { earliest: null, latestBefore: null },
+  gapDays: number = SYNC_LAG_DAYS,
+): { from: string; through: string } | null {
+  if (!range.from || !range.through) {
+    const joins = seed.earliest && seed.latestBefore && seed.latestBefore >= shiftDay(date, -gapDays - 1);
+    return { from: joins && seed.earliest! < date ? seed.earliest! : date, through: date };
+  }
+  if (date > shiftDay(range.through, gapDays)) return { from: date, through: date };
+  if (date < shiftDay(range.from, -gapDays)) return null;
+  return { from: date < range.from ? date : range.from, through: date > range.through ? date : range.through };
+}
+
+/**
+ * Record that a Search Console day synced, on the site's gsc row (whichever
+ * row's token drove the sync). Clears a previous failure, and widens the
+ * recorded range (migration 115) to cover the day when Google's answer counts
+ * (`nextSyncedRange`).
+ *
+ * The range columns are written only when the row read back has them, so
+ * this is a no-op for them on a database without 115, not a failed update.
+ */
+async function recordGscSynced(supabase: SupabaseClient, workspaceId: string, date: string, storedRows: number, now: Date): Promise<void> {
+  const { data: row } = await supabase
+    .from("workspace_integrations")
+    .select("*")
+    .eq("workspace_id", workspaceId)
+    .eq("integration_id", "gsc")
+    .maybeSingle();
+  if (!row) return;
+  const r = row as { id: string; needs_reconnect?: boolean | null; last_sync_error?: string | null; synced_from?: string | null; synced_through?: string | null };
+  // A refused token's message stays until a reconnect clears it.
+  if (r.last_sync_error && !r.needs_reconnect) {
+    await supabase.from("workspace_integrations").update({ last_sync_error: null }).eq("id", r.id);
+  }
+  if (!("synced_through" in r)) return;
+  const patch: Record<string, string> = { last_synced_at: now.toISOString() };
+  if (dayAnswered(date, storedRows, now)) {
+    const range = { from: r.synced_from ?? null, through: r.synced_through ?? null };
+    // Only the first range reads the stored history; after that it is the range.
+    const seed = range.from && range.through ? undefined : await gscDatesAround(supabase, workspaceId, date);
+    const next = nextSyncedRange(range, date, seed);
+    if (next) {
+      patch.synced_from = next.from;
+      patch.synced_through = next.through;
+    }
+  }
+  await supabase.from("workspace_integrations").update(patch).eq("id", r.id);
+}
+
+/**
+ * Record why a Search Console sync failed, on the site's gsc row. A refused
+ * token is markGoogleNeedsReconnect's; this is every other failure - above all
+ * an account with no Search Console property for the domain, which used to be
+ * returned to the cron's log and nowhere else, so the product kept describing
+ * the connection as new.
+ *
+ * Only when the gsc row's own token drove the sync. Connecting Analytics runs
+ * the same sync from the ga4 row, whose token may belong to someone who never
+ * granted Search Console; its failure says nothing about the gsc connection,
+ * and stamping it there would describe a working connection as failing.
+ */
+async function recordGscFailed(supabase: SupabaseClient, integrationId: string, message: string): Promise<void> {
+  await supabase
+    .from("workspace_integrations")
+    .update({ last_sync_error: message.slice(0, 500) })
+    .eq("id", integrationId)
+    .eq("integration_id", "gsc")
+    .eq("needs_reconnect", false);
+}
+
+/** Rows per insert request when storing a day of Search Console. */
+const INSERT_CHUNK = 1_000;
 
 /** Sync one day of GA4 and Search Console data for one integration. */
 export async function syncWorkspaceAnalytics(
@@ -165,9 +272,16 @@ export async function syncWorkspaceAnalytics(
       });
       if (rows.length) {
         await supabase.from("analytics_metrics").delete().eq("workspace_id", ws.id).eq("source", "gsc").eq("metric_date", dateStr);
-        await supabase.from("analytics_metrics").insert(rows);
+        // In chunks: a day is no longer capped at 500 rows per report, and one
+        // request carrying tens of thousands of rows is one a proxy refuses. A
+        // refused chunk fails the day, so it is not recorded as synced.
+        for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
+          const { error } = await supabase.from("analytics_metrics").insert(rows.slice(i, i + INSERT_CHUNK));
+          if (error) throw new Error(`Storing Search Console rows for ${dateStr} failed: ${error.message}`);
+        }
         gscCount = rows.length;
       }
+      await recordGscSynced(supabase, ws.id, dateStr, rows.length, new Date());
     }
 
     return { workspaceId: ws.id, ga4: ga4Count, gsc: gscCount, ...(ga4Error ? { error: ga4Error } : {}) };
@@ -181,6 +295,7 @@ export async function syncWorkspaceAnalytics(
       await markGoogleNeedsReconnect(supabase, integration.id, message);
       return { workspaceId: ws.id, ga4: 0, gsc: 0, error: message, needsReconnect: true };
     }
+    if (ws.domain) await recordGscFailed(supabase, integration.id, message);
     return { workspaceId: ws.id, ga4: 0, gsc: 0, error: message };
   }
 }

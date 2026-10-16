@@ -33,10 +33,11 @@
 // a read of more than one shape needs an entry, with a reason, in its list.
 //
 // Every number is measured or null. A page with no rows in the previous window
-// has `prevClicks: null` when nothing at all was synced for that window, and 0
-// when the window was synced and Google reported nothing for it - Search
+// has `prevClicks: null` when that window is not wholly inside the synced
+// history, and 0 when it is and Google reported nothing for the page - Search
 // Console omits zero rows, so absence inside a synced window is a measured
-// zero, and absence of the whole window is not.
+// zero, and absence of the whole window is not. A change between the windows
+// is stated only when both are whole (`windowState`).
 
 export type GscRow = {
   metric_date: string;
@@ -131,6 +132,72 @@ export function inWindow(date: string, w: DateWindow): boolean {
   return date >= w.start && date <= w.end;
 }
 
+/**
+ * The days a site's Search Console history covers, first to last, as the
+ * sync recorded them and the stored rows show (lib/gsc/queries.ts
+ * `coverageOf`). Null ends are "nothing synced".
+ */
+export type GscCoverage = { from: string | null; through: string | null };
+
+/** Every day of the window is inside the covered range. */
+export function coversWindow(c: GscCoverage, w: DateWindow): boolean {
+  return c.from !== null && c.through !== null && c.from <= w.start && c.through >= w.end;
+}
+
+/** Some day of the window is inside the covered range. */
+export function touchesWindow(c: GscCoverage, w: DateWindow): boolean {
+  return c.from !== null && c.through !== null && c.from <= w.end && c.through >= w.start;
+}
+
+/**
+ * How far back the newest synced day may be for the windows to end on it.
+ * Search Console publishes two to three days late; a night or two of failed
+ * syncs on top of that is still the same picture. Past this the data is
+ * stale, the windows end yesterday as before, and the current window is not
+ * whole, so no change is stated against it.
+ */
+export const ANCHOR_MAX_LAG_DAYS = 7;
+
+/**
+ * The day the windows are measured back from: the day after the newest synced
+ * day, when that is recent; otherwise `today`.
+ *
+ * The current window used to end yesterday whatever Google had published, so
+ * its last two or three days were always empty against a full previous window,
+ * and every change read 7-10% worse than it was. Ending both windows on the
+ * newest day Google has answered for compares the same number of measured
+ * days on each side.
+ */
+export function windowAnchor(today: Date, through: string | null): Date {
+  if (!through || through < isoDaysAgo(today, ANCHOR_MAX_LAG_DAYS)) return today;
+  const next = new Date(Date.parse(`${through}T00:00:00Z`) + 86_400_000);
+  return next.getTime() < today.getTime() ? next : today;
+}
+
+/**
+ * The coverage the rows themselves show, for a caller that has no recorded
+ * sync range (the all-sites dashboard). Rows from several sites are grouped by
+ * `workspace_id` when they carry it: the combined history starts where the
+ * youngest site's does, because a site connected last week adds clicks to the
+ * current window and nothing to the previous one, and summing it in would
+ * read as growth.
+ */
+export function rowsCoverage(gsc: Partial<GscShapes<Pick<GscRow, "metric_date"> & { workspace_id?: string | null }>>): GscCoverage {
+  const firstBySite = new Map<string, string>();
+  let through: string | null = null;
+  for (const shape of ROW_SHAPES) {
+    for (const r of gsc[shape] ?? []) {
+      const site = r.workspace_id ?? "";
+      const first = firstBySite.get(site);
+      if (!first || r.metric_date < first) firstBySite.set(site, r.metric_date);
+      if (!through || r.metric_date > through) through = r.metric_date;
+    }
+  }
+  let from: string | null = null;
+  for (const first of firstBySite.values()) if (!from || first > from) from = first;
+  return { from, through };
+}
+
 export type DayPoint = { date: string; clicks: number; impressions: number };
 
 const n = (v: number | null | undefined) => v ?? 0;
@@ -202,13 +269,14 @@ export type Comparison = {
   changePct: number | null;
 };
 
-function compare(current: number, previous: number | null): Comparison {
+function compare(current: number, previous: number | null, comparable: boolean): Comparison {
   return {
     current,
     previous,
     // No baseline means no percentage. "+100%" against zero is a number that
-    // sounds like growth and describes nothing.
-    changePct: previous !== null && previous > 0 ? Math.round(((current - previous) / previous) * 1000) / 10 : null,
+    // sounds like growth and describes nothing; so is a whole month against
+    // the last few days of the month before.
+    changePct: comparable && previous !== null && previous > 0 ? Math.round(((current - previous) / previous) * 1000) / 10 : null,
   };
 }
 
@@ -218,10 +286,23 @@ export type SearchPerformance = {
   previous: DayPoint[];
   clicks: Comparison;
   impressions: Comparison;
-  /** Any Search Console row at all, in either window. */
+  /**
+   * Either window was measured: a row in it, or a synced day in it that
+   * Google reported as empty (a measured zero).
+   */
   hasData: boolean;
-  /** Something was synced for the previous window, so deltas mean something. */
+  /**
+   * The current window was measured: a row in it, or a synced day in it.
+   * False with hasData true is a sync that stopped: the previous window has
+   * numbers and the current one has none, which is missing data, not a zero.
+   */
+  currentMeasured: boolean;
+  /** Every day of the previous window is inside the synced history. */
   previousMeasured: boolean;
+  /** Every day of the current window is inside the synced history. */
+  currentComplete: boolean;
+  /** Both windows whole, so a change between them means something. Otherwise every changePct is null. */
+  comparable: boolean;
   /** A click in either window. False with hasData true is a measured zero. */
   hasClicks: boolean;
 };
@@ -261,24 +342,52 @@ export function periodTotals(gsc: GscShapes<CountedRow, "total" | "query">, w: D
 }
 
 /**
- * Reads totals and query rows for the series; `windowMeasured` looks at every
- * shape, so it takes them all.
+ * Whether the previous window, the current one, and the pair can be stated:
+ * the one rule `searchPerformance` and `topPages` share.
+ *
+ * A window is whole when the synced history covers every day of it. Stored
+ * history used to be taken as covering the previous window as soon as one row
+ * fell inside it, but a new connection's history starts a week before the
+ * connect, so for its first month a full current window was compared with
+ * one to twenty-seven days of the window before, and the dashboard, the agent
+ * API and the CLI said "+2,700% vs previous 28 days".
+ *
+ * `coverage` is the site's synced range (lib/gsc/queries.ts `coverageOf`);
+ * without one, the rows' own first and last day stand in for it.
  */
-export function searchPerformance(gsc: GscShapes<CountedRow>, today: Date, days = WINDOW_DAYS): SearchPerformance {
+export function windowState(gsc: Partial<GscShapes<Pick<GscRow, "metric_date">>>, w: { current: DateWindow; previous: DateWindow }, coverage?: GscCoverage) {
+  const c = coverage ?? rowsCoverage(gsc);
+  const previousMeasured = coversWindow(c, w.previous);
+  const currentComplete = coversWindow(c, w.current);
+  return { coverage: c, previousMeasured, currentComplete, comparable: previousMeasured && currentComplete };
+}
+
+/**
+ * Reads totals and query rows for the series; `windowMeasured` looks at every
+ * shape, so it takes them all. `today` is the day the windows end before:
+ * pass `windowAnchor(now, coverage.through)` so they end on the newest synced
+ * day.
+ */
+export function searchPerformance(gsc: GscShapes<CountedRow>, today: Date, days = WINDOW_DAYS, coverage?: GscCoverage): SearchPerformance {
   const w = windows(today, days);
   const current = seriesFor(gsc, w.current);
   const previous = seriesFor(gsc, w.previous);
-  const previousMeasured = windowMeasured(gsc, w.previous);
-  const clicks = compare(sumPoints(current, "clicks"), previousMeasured ? sumPoints(previous, "clicks") : null);
-  const impressions = compare(sumPoints(current, "impressions"), previousMeasured ? sumPoints(previous, "impressions") : null);
+  const state = windowState(gsc, w, coverage);
+  const { previousMeasured, comparable } = state;
+  const clicks = compare(sumPoints(current, "clicks"), previousMeasured ? sumPoints(previous, "clicks") : null, comparable);
+  const impressions = compare(sumPoints(current, "impressions"), previousMeasured ? sumPoints(previous, "impressions") : null, comparable);
+  const measured = (x: DateWindow) => windowMeasured(gsc, x) || touchesWindow(state.coverage, x);
   return {
     days,
     current,
     previous,
     clicks,
     impressions,
-    hasData: windowMeasured(gsc, w.current) || previousMeasured,
+    hasData: measured(w.current) || measured(w.previous),
+    currentMeasured: measured(w.current),
     previousMeasured,
+    currentComplete: state.currentComplete,
+    comparable,
     hasClicks: clicks.current > 0 || (clicks.previous ?? 0) > 0,
   };
 }
@@ -323,8 +432,9 @@ export type PageStat = {
   impressions: number;
   ctr: number | null;
   position: number | null;
-  /** Null when the previous window was never synced. */
+  /** Null when the previous window is not wholly synced. */
   prevClicks: number | null;
+  /** Null unless both windows are whole (see `windowState`). */
   clicksDelta: number | null;
 };
 
@@ -333,9 +443,9 @@ export type PageStat = {
  * each. Reads page rows; takes every shape only because "was the previous
  * window synced" is asked of all of them.
  */
-export function topPages(gsc: GscShapes, today: Date, days = WINDOW_DAYS, limit = 8): PageStat[] {
+export function topPages(gsc: GscShapes, today: Date, days = WINDOW_DAYS, limit = 8, coverage?: GscCoverage): PageStat[] {
   const w = windows(today, days);
-  const previousMeasured = windowMeasured(gsc, w.previous);
+  const { previousMeasured, comparable } = windowState(gsc, w, coverage);
   const cur = new Map<string, Agg & { url: string; articleId: string | null }>();
   const prev = new Map<string, number>();
   for (const r of gsc.page) {
@@ -360,7 +470,7 @@ export function topPages(gsc: GscShapes, today: Date, days = WINDOW_DAYS, limit 
         ctr: ctr(a),
         position: position(a),
         prevClicks,
-        clicksDelta: prevClicks === null ? null : a.clicks - prevClicks,
+        clicksDelta: prevClicks === null || !comparable ? null : a.clicks - prevClicks,
       };
     })
     .sort((x, y) => y.clicks - x.clicks || y.impressions - x.impressions)
@@ -508,7 +618,17 @@ export function shortUrl(u: string): string {
 export type CoverageBucket = "indexed" | "not_indexed" | "unknown";
 
 /** What a URL Inspection call said; lib/google/inspection.ts builds these. */
-export type InspectionVerdictLike = { verdict: string | null } | null | undefined;
+export type InspectionVerdictLike = { verdict: string | null; checkedAt?: string | null } | null | undefined;
+
+/**
+ * Whether Google served the page in search on a day after the stored
+ * inspection was taken: newer evidence than the verdict. Compared by day,
+ * because Search Console dates are days.
+ */
+export function inspectionSuperseded(inspection: InspectionVerdictLike, lastServed: string | null | undefined): boolean {
+  const checked = inspection?.checkedAt?.slice(0, 10);
+  return Boolean(lastServed && checked && lastServed > checked);
+}
 
 /**
  * Where a page stands, from the two things we can actually know: what Google
@@ -517,16 +637,22 @@ export type InspectionVerdictLike = { verdict: string | null } | null | undefine
  * definition). A URL we merely fetched with a 200 is not indexed for having
  * responded, so `site_pages.status` never promotes a page here.
  *
- * Inspection wins when present: it is Google's direct answer about this URL.
+ * Inspection wins when present - it is Google's direct answer about this
+ * URL - unless the page was served in search on a later day than the verdict
+ * (`lastServed`). Inspections run only when a person clicks, so a "Discovered
+ * - currently not indexed" taken the day after publishing would otherwise
+ * outlive every impression the page has had since.
  */
-export function coverageBucket(inspection: InspectionVerdictLike, servedInSearch: boolean): CoverageBucket {
+export function coverageBucket(inspection: InspectionVerdictLike, servedInSearch: boolean, lastServed?: string | null): CoverageBucket {
   if (inspection?.verdict) {
     if (inspection.verdict === "PASS") return "indexed";
     // NEUTRAL is Google's "excluded" (noindex, canonical elsewhere, crawled
     // and not indexed); FAIL is an error. Neither URL is in the index.
     // PARTIAL and VERDICT_UNSPECIFIED say nothing about the index, so they
     // fall through to the search evidence.
-    if (inspection.verdict === "FAIL" || inspection.verdict === "NEUTRAL") return "not_indexed";
+    if (inspection.verdict === "FAIL" || inspection.verdict === "NEUTRAL") {
+      return servedInSearch && inspectionSuperseded(inspection, lastServed) ? "indexed" : "not_indexed";
+    }
   }
   return servedInSearch ? "indexed" : "unknown";
 }
@@ -547,18 +673,24 @@ export type IndexCoverage = {
   bySearch: number;
 };
 
-/** URLs Google served in the current window, normalised, from page rows. */
-export function servedUrls(gsc: GscShapes<GscRow, "page">, today: Date, days = WINDOW_DAYS): Set<string> {
+/**
+ * URLs Google served in the current window, normalised, from page rows, each
+ * with the newest day it was served (so a stored inspection can be weighed
+ * against it).
+ */
+export function servedUrls(gsc: GscShapes<GscRow, "page">, today: Date, days = WINDOW_DAYS): Map<string, string> {
   const w = windows(today, days);
-  const out = new Set<string>();
+  const out = new Map<string, string>();
   for (const r of gsc.page) {
     if (!inWindow(r.metric_date, w.current) || n(r.impressions) <= 0) continue;
-    out.add(normalizeUrl(r.page_url as string));
+    const key = normalizeUrl(r.page_url as string);
+    const seen = out.get(key);
+    if (!seen || r.metric_date > seen) out.set(key, r.metric_date);
   }
   return out;
 }
 
-export function indexCoverage(known: KnownPage[], served: Set<string>): IndexCoverage {
+export function indexCoverage(known: KnownPage[], served: ReadonlyMap<string, string>): IndexCoverage {
   const seen = new Set<string>();
   const out: IndexCoverage = { total: 0, indexed: 0, notIndexed: 0, unknown: 0, byInspection: 0, bySearch: 0 };
   for (const page of known) {
@@ -566,13 +698,17 @@ export function indexCoverage(known: KnownPage[], served: Set<string>): IndexCov
     if (seen.has(key)) continue;
     seen.add(key);
     out.total++;
-    const inSearch = served.has(key);
-    const bucket = coverageBucket(page.inspection, inSearch);
+    const lastServed = served.get(key) ?? null;
+    const bucket = coverageBucket(page.inspection, lastServed !== null, lastServed);
     if (bucket === "indexed") out.indexed++;
     else if (bucket === "not_indexed") out.notIndexed++;
     else out.unknown++;
     if (bucket !== "unknown") {
-      if (page.inspection?.verdict) out.byInspection++;
+      // Counted by what decided the bucket: a verdict that speaks to the
+      // index and was not overtaken, or else the search evidence.
+      const verdict = page.inspection?.verdict;
+      const decisive = verdict === "PASS" || verdict === "FAIL" || verdict === "NEUTRAL";
+      if (decisive && !inspectionSuperseded(page.inspection, lastServed)) out.byInspection++;
       else out.bySearch++;
     }
   }
