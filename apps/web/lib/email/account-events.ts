@@ -52,6 +52,8 @@ export async function announceApiKeyCreated(opts: {
   expiresAt: string | null;
   /** The OAuth client's name, when the key was issued to a connector. */
   connector?: string;
+  /** A blog key's site (its domain). */
+  blogSite?: string;
 }): Promise<void> {
   try {
     await notifyApiKeyCreated(
@@ -64,6 +66,7 @@ export async function announceApiKeyCreated(opts: {
         canWrite: opts.canWrite,
         expiresAt: opts.expiresAt,
         ...(opts.connector ? { connector: opts.connector } : {}),
+        ...(opts.blogSite ? { blogSite: opts.blogSite } : {}),
       },
       opts.keyId,
     );

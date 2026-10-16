@@ -36,3 +36,26 @@ export async function getImpersonation(): Promise<ActiveImpersonation | null> {
     startedAt: stash.startedAt,
   };
 }
+
+/**
+ * The sentence a paid action answers with while an operator is viewing as
+ * the account, or null when nobody is.
+ *
+ * "View as" is a real sign-in as the customer, so anything the operator
+ * presses is bought on the customer's account and counted in their limits:
+ * opening a stranded signup ran the setup wizard's site read and rival
+ * lookup on mount, and its auto-start would have spent their one setup run.
+ * Those doors refuse instead. Reading what is already there stays open.
+ */
+export async function refusedWhileViewingAs(what: string): Promise<string | null> {
+  let active: ActiveImpersonation | null = null;
+  try {
+    active = await getImpersonation();
+  } catch {
+    // No request to read a cookie from (a worker, a test): nobody is viewing.
+    return null;
+  }
+  return active
+    ? `${what} is not run while viewing as ${active.targetEmail}: it would be bought on their account. Stop viewing as them, or ask them to do it.`
+    : null;
+}

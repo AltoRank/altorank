@@ -70,3 +70,20 @@ describe("publicShareCard", () => {
     expect(pub.stats.find((s) => s.label === "Articles published")?.value).toBe("0");
   });
 });
+
+describe("share card caching", () => {
+  it("never lets a cache serve the card longer than the hour Revoke promises", async () => {
+    const { SHARE_CARD_CACHE_CONTROL, SHARE_CARD_MAX_AGE_S } = await import("../token");
+    expect(SHARE_CARD_MAX_AGE_S).toBeLessThanOrEqual(3600);
+    expect(SHARE_CARD_CACHE_CONTROL).not.toMatch(/stale-while-revalidate|stale-if-error/);
+    for (const m of SHARE_CARD_CACHE_CONTROL.matchAll(/(?:s-)?max-age=(\d+)/g)) expect(Number(m[1])).toBeLessThanOrEqual(3600);
+  });
+
+  it("the card route sends that header", async () => {
+    const { readFileSync } = await import("node:fs");
+    const path = await import("node:path");
+    const route = readFileSync(path.resolve(__dirname, "../../../app/api/og/share/[token]/route.tsx"), "utf8");
+    expect(route).toContain('"Cache-Control": SHARE_CARD_CACHE_CONTROL');
+    expect(route).not.toMatch(/stale-while-revalidate=\d/);
+  });
+});

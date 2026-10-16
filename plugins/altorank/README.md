@@ -9,8 +9,10 @@ keywords, move your content calendar, or write an SEO draft.
 Drafts go to a review queue in AltoRank. Every publish is attributed to a named
 person: an approval in the editor, or an automatic-publishing rule they set,
 which emails each draft and ships it after a hold window unless they hold it.
-The plugin has no publish, approve or delete tool, and the API behind it has
-no endpoint for one.
+No tool in the plugin approves, deletes or publishes a draft, and the API
+behind it has no endpoint for one. The one publish-side tool,
+`altorank_retry_publish`, re-runs a failed publish of an article a person
+already approved.
 
 ## What it contains
 

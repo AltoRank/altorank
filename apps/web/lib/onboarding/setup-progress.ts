@@ -20,31 +20,10 @@
 
 import { PHASE_ORDER, type OnboardingPhase, type OnboardingStep } from "./events";
 
-/**
- * When each phase usually ends, in seconds from the run's start. Measured on
- * the fast first look (2026-10-12): the site read 33-43s, the keyword work
- * 44s, the existing pages 28s alongside, planning 77-86s, the outline - the
- * gate - 84-100s. Rounded to what the median run does.
- */
-export const EXPECTED_END_S: Record<OnboardingPhase, number> = {
-  scanning: 40,
-  keywords: 45,
-  pages: 30,
-  planning: 80,
-  drafting: 92,
-};
-
-/** The gate: the end of the slowest phase. */
-export const EXPECTED_GATE_S = Math.max(...Object.values(EXPECTED_END_S));
-
-/**
- * After the gate, the body: the writer thinks before its first word (about
- * 45s, no text at all), writes (about 40s for 1,500 words), and the result is
- * checked, linked and saved (about 20s). Measured on the same two runs.
- */
-export const BODY_STAGE_S = { thinking: 45, writing: 40, finishing: 20 } as const;
-export type BodyStage = keyof typeof BODY_STAGE_S;
-export const BODY_ORDER: readonly BodyStage[] = ["thinking", "writing", "finishing"];
+// The measured timings live in ./run-timing so lib/onboarding/events.ts can
+// say how long a run takes without importing this module (which imports it).
+export { EXPECTED_END_S, EXPECTED_GATE_S, BODY_STAGE_S, BODY_ORDER, type BodyStage } from "./run-timing";
+import { EXPECTED_END_S, EXPECTED_GATE_S, BODY_STAGE_S, BODY_ORDER, type BodyStage } from "./run-timing";
 
 /** How close to a ceiling the bar may walk at the clock's pace before it starts to slow. */
 const SLACK_S = 8;

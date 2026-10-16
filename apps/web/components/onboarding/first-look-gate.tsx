@@ -231,7 +231,10 @@ export function GateTop({
             </div>
           )}
         </div>
-        <aside aria-label="Your trial" className="flex flex-col gap-4 lg:sticky lg:top-6 lg:w-[var(--gate-rail)] lg:shrink-0">
+        {/* Held in view, and scrolling on its own when taller than the screen:
+            Stripe's form opens here at about 820px, and a pinned rail that
+            tall hid its Start trial button until the article ran out. */}
+        <aside aria-label="Your trial" className="flex flex-col gap-4 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:w-[var(--gate-rail)] lg:shrink-0 lg:overflow-y-auto lg:overscroll-contain [&>*]:shrink-0">
           <div className="scroll-mt-6" id="start-trial">
             <SetupAsk
               ending={ending}

@@ -86,8 +86,9 @@ export function shopifyCredentialsOf(credential: ShopifyCredential): ShopifyCred
  * on any 401, and never more than once per request for a 401 (a second 401
  * with a fresh token is a scope or install problem, not a stale token).
  *
- * The cache is process memory, keyed so two stores or two apps on one store
- * never share a token. Neither the secret nor the token is ever logged; the
+ * The cache is process memory, keyed by store, app and a digest of the secret,
+ * so two stores or two apps on one store never share a token, and a caller
+ * without the secret never receives one. Neither the secret nor the token is ever logged; the
  * only thing that leaves this module is the token, inside a request header.
  * Concurrent callers waiting on the same exchange share one in-flight
  * request rather than each asking Shopify.
@@ -109,8 +110,18 @@ export function clearShopifyTokenCache(): void {
   inflight.clear();
 }
 
-function cacheKey(storeUrl: string, clientId: string): string {
-  return `${new URL(storeUrl).host}|${clientId}`;
+/**
+ * Store, app and a digest of the secret. The secret is part of the key so a
+ * cached token is only ever handed to a caller holding the credential that
+ * earned it: the client id is public, and a key of store + client id alone
+ * served the token to anyone who could name them.
+ */
+async function cacheKey(storeUrl: string, credential: Extract<ShopifyCredential, { kind: "client" }>): Promise<string> {
+  // Web Crypto rather than node:crypto: the connect form imports this module
+  // for its credential check, and a Node builtin cannot reach a client bundle.
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", new TextEncoder().encode(credential.clientSecret));
+  const secret = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  return `${new URL(storeUrl).host}|${credential.clientId}|${secret}`;
 }
 
 async function exchangeClientCredentials(
@@ -153,7 +164,7 @@ async function exchangeClientCredentials(
 async function resolveToken(storeUrl: string, credential: ShopifyCredential, forceRefresh = false): Promise<string> {
   if (credential.kind === "token") return credential.accessToken;
 
-  const key = cacheKey(storeUrl, credential.clientId);
+  const key = await cacheKey(storeUrl, credential);
   if (forceRefresh) tokenCache.delete(key);
 
   const cached = tokenCache.get(key);

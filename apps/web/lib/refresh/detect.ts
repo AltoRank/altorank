@@ -10,17 +10,22 @@
 //
 // The join between "a page" and "a query" is the page's target keyword: the
 // keyword an article was written for, or the term `site_pages` inferred for a
-// page the site already had. Search Console is stored per query and per page
-// but not per query-and-page, so this is the honest link available. It is
-// also why every candidate carries its evidence: the reviewer can see which
-// query the verdict rests on and disagree.
+// page the site already had. The numbers for it are the page's own: Search
+// Console is stored per query-and-page too (the `query_page` shape), so a
+// page's evidence is what that page earned for its keyword, not what the
+// whole site earned for it. Only a page with no per-page rows at all falls
+// back to the site's numbers for the query, and its evidence says so
+// (`scope: "site"`). Every candidate carries its evidence so the reviewer can
+// see which query the verdict rests on and disagree.
 //
 // Rule 5 throughout: a field that was not measured is null, never 0.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { tiptapToHtml } from "@/lib/cms/html";
-import type { GscShapes } from "@/lib/gsc/analysis";
+import { normalizeUrl, type GscShapes } from "@/lib/gsc/analysis";
 import { readGsc } from "@/lib/gsc/read";
+import { isMissingColumn } from "@/lib/supabase/missing-column";
+import { closeOpenTasks, readTasks } from "./tasks";
 import type { Detection, Evidence, Opportunity } from "./types";
 
 // ── Inputs ──────────────────────────────────────────────────────────────────
@@ -59,10 +64,17 @@ export interface PageInput {
 
 export interface DetectInput {
   page: PageInput;
-  /** Query totals for the last 28 days, keyed by lower-cased query. */
+  /** Site-wide query totals for the last 28 days, keyed by lower-cased query. */
   current: ReadonlyMap<string, QueryStats>;
-  /** Query totals for the 28 days before that. */
+  /** Site-wide query totals for the 28 days before that. */
   previous: ReadonlyMap<string, QueryStats>;
+  /**
+   * This page's own totals per query (from `query_page` rows), when Search
+   * Console has any rows for the page. Present means the page's numbers are
+   * used, and a keyword the page has no row for is a keyword it was not shown
+   * for - never the site's numbers under the page's name.
+   */
+  onPage?: { current: ReadonlyMap<string, QueryStats>; previous: ReadonlyMap<string, QueryStats> } | null;
 }
 
 // ── Thresholds ──────────────────────────────────────────────────────────────
@@ -146,10 +158,11 @@ export function headingMatchesQuery(headings: string[], query: string): boolean 
  * `content_gap`, and the candidate table keeps them apart so a reviewer can
  * dismiss one and act on the other.
  */
-export function detectOpportunities({ page, current, previous }: DetectInput): Detection[] {
+export function detectOpportunities({ page, current, previous, onPage }: DetectInput): Detection[] {
   const key = page.keyword?.trim().toLowerCase() ?? "";
-  const now = key ? current.get(key) ?? null : null;
-  const then = key ? previous.get(key) ?? null : null;
+  const source = onPage ?? { current, previous };
+  const now = key ? source.current.get(key) ?? null : null;
+  const then = key ? source.previous.get(key) ?? null : null;
 
   // Position: Search Console first, SERP checks as the fallback.
   const position = now?.position ?? page.serp?.position ?? null;
@@ -165,6 +178,7 @@ export function detectOpportunities({ page, current, previous }: DetectInput): D
     ctr: now ? round(now.ctr, 4) : null,
     expected_ctr: null,
     word_count: page.word_count ?? null,
+    scope: onPage ? "page" : "site",
   };
 
   const out: Detection[] = [];
@@ -237,8 +251,31 @@ export interface MetricRow {
  * no way in, so none needs filtering out here.
  */
 export function aggregateQueries(gsc: GscShapes<MetricRow, "query">): Map<string, QueryStats> {
+  return aggregate(gsc.query);
+}
+
+/**
+ * Total per-day query_page rows into one QueryStats per query, per page. Keyed
+ * by the page's normalised URL, then the lower-cased query. Takes the
+ * query_page partition and nothing else.
+ */
+export function aggregatePageQueries(gsc: GscShapes<MetricRow, "query_page">): Map<string, Map<string, QueryStats>> {
+  const byPage = new Map<string, MetricRow[]>();
+  for (const r of gsc.query_page) {
+    if (!r.page_url) continue;
+    // www-blind, like every other Search Console page join: Google reports the
+    // URL it serves, which can carry a www the stored page URL does not.
+    const key = normalizeUrl(r.page_url);
+    const list = byPage.get(key) ?? [];
+    list.push(r);
+    byPage.set(key, list);
+  }
+  return new Map([...byPage].map(([key, rows]) => [key, aggregate(rows)]));
+}
+
+function aggregate(rows: readonly MetricRow[]): Map<string, QueryStats> {
   const acc = new Map<string, { clicks: number; impressions: number; posWeight: number; weight: number }>();
-  for (const r of gsc.query) {
+  for (const r of rows) {
     if (!r.query) continue;
     const key = r.query.trim().toLowerCase();
     const a = acc.get(key) ?? { clicks: 0, impressions: 0, posWeight: 0, weight: 0 };
@@ -301,7 +338,8 @@ export function headingsOf(html: string): string[] {
 
 export type AnalyzeResult =
   | { reason: "gsc_not_connected" }
-  | { reason: "ok"; pages: number; created: number; refreshed: number };
+  /** `retired`: open candidates the numbers no longer support, closed by this pass. */
+  | { reason: "ok"; pages: number; created: number; refreshed: number; retired: number };
 
 const normUrl = (u: string) => {
   try {
@@ -319,6 +357,17 @@ const normUrl = (u: string) => {
  * is not dismissed gets its evidence refreshed and keeps its id, brief and
  * any task pointing at it. Dismissed rows are left alone; if the numbers still
  * say so next week, a new row is raised.
+ *
+ * An open candidate that does not fire again is retired: the page recovered,
+ * or is no longer one of the site's pages, and a rewrite scheduled on the old
+ * numbers would spend a model call on a page that no longer needs it. It is
+ * closed the way a dismissal is (`dismissed_at`, so a later pass may raise it
+ * again) with `resolved_at` saying the pass did it, and its open task is
+ * cancelled. Nothing is retired when the current window holds no Search
+ * Console rows or the page list could not be read: unmeasured is not
+ * recovered.
+ *
+ * Every candidate's evidence carries `as_of`, the day it was measured.
  *
  * Does nothing without Search Console. Every detector reads its rows, and a
  * page with no impressions data is not "getting no impressions", it is
@@ -357,17 +406,27 @@ export async function analyzeWorkspace(
   // query shape, the one partition the detectors use.
   const metrics = await readGsc(supabase, {
     workspaceId,
-    shapes: ["query"],
+    shapes: ["query", "query_page"],
     since,
     columns: ["article_id", "clicks", "impressions", "avg_position"],
   });
   const windows = splitWindows(metrics.query, now);
   const current = aggregateQueries({ query: windows.current });
   const previous = aggregateQueries({ query: windows.previous });
+  // Each page's own numbers per query, for the evidence. Never added to the
+  // site-wide query totals above: the same click is in both.
+  const pageWindows = splitWindows(metrics.query_page, now);
+  const pageCurrent = aggregatePageQueries({ query_page: pageWindows.current });
+  const pagePrevious = aggregatePageQueries({ query_page: pageWindows.previous });
+  const onPageFor = (url: string): DetectInput["onPage"] => {
+    const key = normalizeUrl(url);
+    if (!pageCurrent.has(key) && !pagePrevious.has(key)) return null;
+    return { current: pageCurrent.get(key) ?? new Map(), previous: pagePrevious.get(key) ?? new Map() };
+  };
 
   const serp = await loadSerpHistory(supabase, workspaceId, now);
 
-  const [{ data: articles, error: articlesError }, { data: sitePages }] = await Promise.all([
+  const [{ data: articles, error: articlesError }, { data: sitePages, error: sitePagesError }] = await Promise.all([
     supabase
       .from("articles")
       .select("id, keyword, word_count, published_url")
@@ -432,23 +491,30 @@ export async function analyzeWorkspace(
     });
   }
 
-  const { data: openRows } = await supabase
+  const { data: openRows, error: openError } = await supabase
     .from("refresh_candidates")
     .select("id, url, opportunity")
     .eq("workspace_id", workspaceId)
     .is("dismissed_at", null);
-  const open = new Map((openRows ?? []).map((r) => [`${normUrl(r.url as string)}|${r.opportunity}`, r.id as string]));
+  if (openError) throw new Error(`refresh: could not read this site's candidates (${openError.message})`);
+  const keyOf = (url: string, opportunity: string) => `${normUrl(url)}|${opportunity}`;
+  const open = new Map((openRows ?? []).map((r) => [keyOf(r.url as string, r.opportunity as string), r.id as string]));
 
+  const asOf = now.toISOString().slice(0, 10);
   let created = 0;
   let refreshed = 0;
+  const fired = new Set<string>();
   const inserts: Record<string, unknown>[] = [];
   for (const page of pages) {
-    for (const d of detectOpportunities({ page, current, previous })) {
-      const existing = open.get(`${normUrl(page.url)}|${d.opportunity}`);
+    for (const d of detectOpportunities({ page, current, previous, onPage: onPageFor(page.url) })) {
+      const key = keyOf(page.url, d.opportunity);
+      fired.add(key);
+      const evidence: Evidence = { ...d.evidence, as_of: asOf };
+      const existing = open.get(key);
       if (existing) {
         await supabase
           .from("refresh_candidates")
-          .update({ evidence: d.evidence, site_page_id: page.site_page_id, article_id: page.article_id })
+          .update({ evidence, site_page_id: page.site_page_id, article_id: page.article_id })
           .eq("id", existing);
         refreshed++;
       } else {
@@ -458,7 +524,7 @@ export async function analyzeWorkspace(
           article_id: page.article_id,
           url: page.url,
           opportunity: d.opportunity,
-          evidence: d.evidence,
+          evidence,
         });
       }
     }
@@ -469,12 +535,57 @@ export async function analyzeWorkspace(
     created += Math.min(50, inserts.length - i);
   }
 
+  const measured = windows.current.length > 0 && !sitePagesError;
+  const gone = measured
+    ? (openRows ?? []).filter((r) => !fired.has(keyOf(r.url as string, r.opportunity as string))).map((r) => r.id as string)
+    : [];
+  const retired = gone.length ? await retireCandidates(supabase, workspaceId, gone, now) : 0;
+
   await supabase
     .from("workspaces")
     .update({ refresh_last_analyzed_at: now.toISOString() })
     .eq("id", workspaceId);
 
-  return { reason: "ok", pages: pages.length, created, refreshed };
+  return { reason: "ok", pages: pages.length, created, refreshed, retired };
+}
+
+/**
+ * Close candidates the numbers no longer support, and cancel their open
+ * tasks (lib/refresh/tasks.ts). `resolved_at` arrives with migration 117;
+ * before it the row is closed with `dismissed_at` alone. Returns how many
+ * were closed.
+ */
+async function retireCandidates(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  ids: string[],
+  now: Date,
+): Promise<number> {
+  const at = now.toISOString();
+  let retired = 0;
+  for (let i = 0; i < ids.length; i += 100) {
+    const chunk = ids.slice(i, i + 100);
+    const close = (patch: Record<string, unknown>) =>
+      supabase
+        .from("refresh_candidates")
+        .update(patch)
+        .eq("workspace_id", workspaceId)
+        .in("id", chunk)
+        .is("dismissed_at", null)
+        .select("id");
+    let { data, error } = await close({ dismissed_at: at, resolved_at: at });
+    if (isMissingColumn(error)) ({ data, error } = await close({ dismissed_at: at }));
+    if (error) throw new Error(`refresh_candidates retire: ${error.message}`);
+    retired += (data ?? []).length;
+
+    const tasks = await readTasks(supabase, {
+      candidateIds: chunk,
+      workspaceId,
+      statuses: ["scheduled", "failed", "running"],
+    });
+    await closeOpenTasks(supabase, tasks, { status: "cancelled" }, now.getTime());
+  }
+  return retired;
 }
 
 /**

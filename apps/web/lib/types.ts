@@ -613,8 +613,10 @@ export type AuditIssue = {
 };
 
 // === Backlink Exchange ===
+// `matched` is still allowed by the table's check (008) but nothing writes it:
+// a host claims a request straight to `accepted`.
 export type BacklinkExchangeStatus =
-  | "requested" | "matched" | "accepted" | "placed"
+  | "requested" | "accepted" | "placed"
   | "verified" | "live" | "rejected" | "expired";
 
 export type BacklinkExchange = {
@@ -703,4 +705,6 @@ export type ApiKeyRow = {
   revoked_at: string | null;
   created_by: string | null;
   created_at: string;
+  /** A blog key's one site (migration 114); null on every agent key, absent before 114. */
+  workspace_id?: string | null;
 };

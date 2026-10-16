@@ -1,3 +1,4 @@
+import { businessEvidence, removeUnsupportedBusinessClaims, businessClaimsNote } from "@/lib/content/business-claims";
 import { assertAutonomousTopic, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { selectArticleQuestions } from "@/lib/ai/article-questions";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
@@ -43,7 +44,6 @@ import { faqPlan, faqReviewNote, fitTitle, givenTitleKept, removeTitleHeading, t
 import { buildTrust } from "@/lib/content/trust";
 import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
 import { GenerationTimedOutError, GenerationTruncatedError } from "@/lib/ai/errors";
-import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
 import { generateImage } from "@/lib/ai/image-generator";
 import { outputFromRow, resolveFeaturedImage, type OutputSettingsRow } from "@/lib/onboarding/output-settings";
 import { imageWriter, uploadImageBuffer } from "@/lib/storage/images";
@@ -64,6 +64,7 @@ import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { getLocale, LOCALES } from "@/lib/seo/locales";
 import { urlSlug, resolveLocale } from "@/lib/i18n/locale";
+import { uniqueSlug } from "@/lib/content/unique-slug";
 import type { ArticleBrief, RefreshContext, SiteContext, VoiceRules } from "@/lib/ai/types";
 import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
@@ -84,7 +85,6 @@ import {
   DRAFT_OUTLINE_MS,
   DRAFT_RECORD_MS,
   DRAFT_SAVE_MS,
-  DRAFT_VIDEO_MS,
   DRAFT_WRITER_MIN_MS,
   IMAGE_CALL_MS,
 } from "@/lib/onboarding/time-limits";
@@ -623,7 +623,8 @@ async function writeArticle(
   }
 
   const approvedTitle = title || topicBrief?.angle;
-  const slug = slugFor(approvedTitle || keyword);
+  // Only the insert path below uses it; an existing row keeps its slug.
+  const slug = articleId || refreshOf ? slugFor(approvedTitle || keyword) : await uniqueSlug(supabase, workspaceId, slugFor(approvedTitle || keyword));
 
   // The pre-trial draft is claimed here: after every check that refuses
   // without spending (the hold, the quota, the topic), before the row is
@@ -1254,7 +1255,7 @@ async function writeArticle(
      * Tiptap doc, and a stored article titled "Untitled" after 12,529 tokens
      * had been paid for. Observed on 2026-08-30.
      *
-     * These steps embed a video and resolve link placeholders. Neither can
+     * These steps resolve link placeholders and enrich the body. Neither can
      * legitimately shrink an article to nothing, so a much shorter result is
      * a bug in the step, not an edit.
      *
@@ -1281,12 +1282,13 @@ async function writeArticle(
       }
     }
 
-    // Not on a rewrite: the brief says preserve the page, and a video the
-    // original did not have is a new block for the reviewer to reject.
+    // The one video step is the enrichment's (lib/content/enrich/video.ts),
+    // which honours the workspace's video switch and channel and embeds from
+    // the privacy-enhanced host. An older step here embedded the keyword's
+    // top YouTube result on every draft first, whatever those settings said.
     // What an optional step may take: at most its own share, and never the
     // time the fact check and the save are kept.
     const optional = (cap: number) => deadline.signal(cap, DRAFT_SAVE_MS + DRAFT_FACT_CHECK_MS);
-    if (!refreshOf) await enhance("video embed", (html) => embedYouTubeVideos(html, keyword), optional(DRAFT_VIDEO_MS));
     await enhance("internal links", async (html) => resolveInternalLinks(html, linkTargets));
 
     // What the draft may point at on its own site: the pool it was offered
@@ -1396,6 +1398,27 @@ async function writeArticle(
       }
     }
 
+    // Business claims the business never made - a phone number, a town, "30
+    // years", a guarantee, its own about-page greeting - come out before the
+    // fact check reads the draft, and are listed for the reviewer
+    // (lib/content/business-claims.ts). Not on a rewrite: the page it keeps
+    // is the owner's own words.
+    if (!refreshOf) {
+      const evidence = businessEvidence({
+        domain: workspace.domain,
+        profile: workspace.business_profile,
+        facts: siteFacts?.facts,
+        instructions: keywordRow?.instructions ?? null,
+        answers: brief.answers,
+      });
+      const cleaned = removeUnsupportedBusinessClaims(processedHtml, evidence);
+      if (cleaned.removed.length) {
+        processedHtml = cleaned.html;
+        research.businessClaims = cleaned.removed;
+        console.warn(`[generate] removed ${cleaned.removed.length} unsupported business claim(s): ${cleaned.removed.map((r) => r.kind).join(", ")}`);
+      }
+    }
+
     // Two passes: the first asks whether each figure is attributed, the second
     // opens the pages the attributions point at. The second is what catches a
     // real citation carrying a wrong number, which the first cannot see.
@@ -1413,6 +1436,8 @@ async function writeArticle(
     const reviewNotes: string[] = [...(trust?.notes ?? []), ...sourceReviewNotes(research.sourceReview)];
     const figureNote = figureReviewNote(research.sourceFigures, processedHtml, workspace.language);
     if (figureNote) reviewNotes.push(figureNote);
+    const businessNote = businessClaimsNote(research.businessClaims ?? []);
+    if (businessNote) reviewNotes.push(businessNote);
     const linkNote = topicLinkNote(topicPages, processedHtml);
     if (linkNote) reviewNotes.push(linkNote);
     if (!refreshOf) {

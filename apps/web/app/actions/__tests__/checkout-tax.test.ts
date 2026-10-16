@@ -18,7 +18,7 @@ const created: Record<string, unknown>[] = [];
 let customerId: string | null = null;
 
 vi.mock("@/lib/auth/require-auth", () => ({
-  requireAuth: async () => ({ accountId: "account-1", userId: "user-1" }),
+  requireAuth: async () => ({ accountId: "account-1", userId: "user-1", user: { id: "user-1", email: "owner@acme.test" } }),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -80,6 +80,21 @@ beforeEach(() => {
   taxOn = true;
   taxBehavior = "exclusive";
   priceReadFails = false;
+});
+
+describe("createCheckoutSession: the address we already have", () => {
+  it("fills in the owner's email on a first purchase, so Checkout does not ask for it", async () => {
+    await createCheckoutSession("starter", "month");
+    expect(created[0].customer_email).toBe("owner@acme.test");
+    expect(created[0].customer).toBeUndefined();
+  });
+
+  it("sends the customer and no email once there is one: Stripe takes one or the other", async () => {
+    customerId = "cus_existing";
+    await createCheckoutSession("starter", "month");
+    expect(created[0].customer).toBe("cus_existing");
+    expect(created[0]).not.toHaveProperty("customer_email");
+  });
 });
 
 describe("createCheckoutSession: VAT, when STRIPE_TAX_ENABLED", () => {

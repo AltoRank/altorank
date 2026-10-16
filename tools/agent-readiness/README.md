@@ -2,8 +2,10 @@
 
 Answers one question per domain: **can an AI agent actually read this site?**
 
-Stdlib Python, no dependencies. Writes to SQLite, exports CSV, and renders a
-per-domain report in Italian ready to send.
+Stdlib Python, no dependencies. Writes to SQLite (`agent_readiness.db` in the
+current directory, or `--db <path>`), exports CSV, and renders a per-domain
+report in Italian ready to send. The shortlist runs need a lead CSV passed with
+`--shortlist`; `--domain` needs nothing else.
 
 ```bash
 cd tools/agent-readiness

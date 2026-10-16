@@ -1209,11 +1209,19 @@ export function ArticleEditor({
                 Approved. Publish it yourself and paste the URL, or connect a destination
                 above to have it go out from here.
               </div>
+              {/* A Next.js site reading the blog API (@altorank/next-blog)
+                  shows live articles only, and an article becomes live here:
+                  the page exists once this is marked, at the slug below. */}
+              <div className="text-[12px] text-ink-3 leading-relaxed">
+                On a site using the AltoRank blog API, marking it published is what puts it on
+                the site: enter the address it will have, <code className="font-mono text-[11.5px] break-all">https://{workspace.domain}/blog/{article.slug}</code>,
+                and it appears at the site&apos;s next refresh.
+              </div>
               {copyPair}
               <input
                 value={manualUrl}
                 onChange={(e) => setManualUrl(e.target.value)}
-                placeholder="https://yoursite.com/blog/the-post"
+                placeholder={`https://${workspace.domain}/blog/${article.slug}`}
                 aria-label="Published URL"
                 className="w-full px-2.5 py-1.5 bg-bg border border-line rounded-[6px] text-[12.5px]"
               />

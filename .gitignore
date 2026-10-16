@@ -53,6 +53,7 @@ OUTREACH_PLAYBOOK.md
 # Scan results naming third parties who did not ask to be scored.
 tools/**/results/
 *-agent-readiness-*.csv
+tools/**/*.db
 
 # ── Local tooling ─────────────────────────────────────────────────────────
 .DS_Store

@@ -1,12 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { fetchSite } from "@/lib/audit/lenient-fetch";
-import {
-  articleUrlsFromSitemap,
-  looksLikeSitemap,
-  sitemapsFromRobots,
-} from "@/lib/onboarding/site-discovery";
+import { sitemapsFromRobots } from "@/lib/onboarding/site-discovery";
 import { hrefsIn } from "@/lib/seo/links";
-import { keywordForPage, locsIn } from "@/lib/seo/site-crawl";
+import { keywordForPage } from "@/lib/seo/site-crawl";
+import { looksLikePost, nextPageOf, prioritiseSiteUrls, readSiteUrls, siteFileBody } from "@/lib/seo/site-urls";
 
 // ---------------------------------------------------------------------------
 // Link detection: read the sources, fill the pool
@@ -21,11 +17,13 @@ import { keywordForPage, locsIn } from "@/lib/seo/site-crawl";
 //
 // Three kinds of source, three ways of reading:
 //
-//   sitemap     the site's own list. One level of index nesting, which is all
-//               anyone uses. A URL that turns out not to be a sitemap falls
-//               back to whatever robots.txt declares on that origin.
-//   blog_root   the first page of a blog index, read for its links. Enough for
-//               a site with no sitemap; a paginated blog needs a sitemap.
+//   sitemap     the site's own list, walked by lib/seo/site-urls.ts (indexes
+//               of indexes, post sitemaps first, newest first) and, in an
+//               onboarding run, read once for every reader. A URL that turns
+//               out not to be a sitemap falls back to whatever robots.txt
+//               declares on that origin.
+//   blog_root   a blog index and its next two pages, read for their links.
+//               Enough for a site with no sitemap.
 //   manual_url  the URL is the page.
 //
 // What is stored beside the URL comes from `site_pages` when the crawl has
@@ -69,25 +67,16 @@ export interface DetectResult {
 /** A page fetcher, injectable so the parsing can be tested without a network. */
 export type Fetcher = (url: string) => Promise<string | null>;
 
-const UA = "AltoRankBot/1.0 (link detection)";
 const TIMEOUT_MS = 10_000;
 /** Enough for a large blog; past this a sitemap is the whole site, not the writing. */
 const MAX_URLS_PER_SOURCE = 2_000;
 /** Child sitemaps followed from an index. */
 const MAX_CHILD_SITEMAPS = 20;
+/** Pages of a blog index read past the first. */
+const BLOG_PAGES_PAST_FIRST = 2;
 
-async function fetchText(url: string): Promise<string | null> {
-  try {
-    const res = await fetchSite(url, {
-      headers: { "User-Agent": UA },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (!res.ok) return null;
-    return (await res.text()).slice(0, 2_000_000);
-  } catch {
-    return null;
-  }
-}
+/** A plain GET, shared with every other reader of the site's files inside an onboarding run. */
+const fetchText: Fetcher = (url) => siteFileBody(url, TIMEOUT_MS);
 
 // ── Reading one source ─────────────────────────────────────────────────────
 
@@ -100,27 +89,47 @@ export interface SourceRead {
 }
 
 /**
- * The page URLs a sitemap declares, following an index one level down. A
- * sitemap index lists nothing but other sitemaps, so "every loc is XML" is the
- * test for one - the same rule `discoverUrls` applies.
+ * The posts a sitemap declares, newest first, following indexes down
+ * (lib/seo/site-urls.ts). Only posts: a pricing page is a valid link but not
+ * what the pool is for, and the cap should bite the marketing pages. What
+ * counts as a post is `looksLikePost` - which, unlike the score it replaces,
+ * keeps a WordPress post at /my-post/ when its sitemap is the post sitemap,
+ * and a /magazine/ or Shopify /blogs/news/ post on its path alone.
  */
 async function readSitemap(url: string, get: Fetcher): Promise<string[] | null> {
-  const body = await get(url);
-  if (!body || !looksLikeSitemap(body)) return null;
+  const read = await readSiteUrls(url, {
+    sitemaps: [url],
+    maxChildren: MAX_CHILD_SITEMAPS,
+    fallback: false,
+    get: async (u) => {
+      const body = await get(u);
+      return { status: body === null ? 0 : 200, body, finalUrl: u };
+    },
+  });
+  if (!read.sitemapUrl) return null;
+  return prioritiseSiteUrls(read.urls, read.urls.length)
+    .filter((e) => looksLikePost(e.url, { fromPostList: e.fromPostList }))
+    .map((e) => e.url)
+    .slice(0, MAX_URLS_PER_SOURCE);
+}
 
-  const locs = locsIn(body);
-  const nested = locs.filter((u) => /\.xml(\.gz)?(\?|$)/i.test(u));
-  if (nested.length && nested.length === locs.length) {
-    const urls = new Set<string>();
-    for (const child of nested.slice(0, MAX_CHILD_SITEMAPS)) {
-      const childBody = await get(child);
-      if (!childBody || !looksLikeSitemap(childBody)) continue;
-      for (const u of articleUrlsFromSitemap(childBody, MAX_URLS_PER_SOURCE)) urls.add(u);
-      if (urls.size >= MAX_URLS_PER_SOURCE) break;
-    }
-    return [...urls].slice(0, MAX_URLS_PER_SOURCE);
-  }
-  return articleUrlsFromSitemap(body, MAX_URLS_PER_SOURCE);
+/**
+ * The posts a site lists for itself when no configured source does: its
+ * sitemap, else its feed, else its blog index (lib/seo/site-urls.ts). Newest
+ * first. Exported for tests.
+ */
+export async function sitePostsWithoutSources(domain: string, get: Fetcher = fetchText): Promise<string[]> {
+  const read = await readSiteUrls(domain, {
+    maxChildren: MAX_CHILD_SITEMAPS,
+    get: async (u) => {
+      const body = await get(u);
+      return { status: body === null ? 0 : 200, body, finalUrl: u };
+    },
+  });
+  return prioritiseSiteUrls(read.urls, read.urls.length)
+    .filter((e) => looksLikePost(e.url, { fromPostList: e.fromPostList }))
+    .map((e) => e.url)
+    .slice(0, MAX_URLS_PER_SOURCE);
 }
 
 /**
@@ -180,7 +189,18 @@ export async function readSource(
     case "blog_root": {
       const html = await get(source.url);
       if (!html) return { urls: [], error: "Could not fetch the blog index." };
-      const urls = pageLinksFromIndex(html, source.url);
+      const found = new Set(pageLinksFromIndex(html, source.url));
+      // The next two pages of a paginated index: a blog with no sitemap
+      // showed its ten newest posts and hid the rest. Shared with the page
+      // crawl's own read of them inside an onboarding run.
+      let next = nextPageOf(html, source.url);
+      for (let n = 0; next && n < BLOG_PAGES_PAST_FIRST; n++) {
+        const more = await get(next);
+        if (!more) break;
+        for (const u of pageLinksFromIndex(more, source.url)) found.add(u);
+        next = nextPageOf(more, next);
+      }
+      const urls = [...found];
       // A 200 with no links under its own path is usually a list drawn by
       // JavaScript after load, which a plain fetch never sees. Zero is the
       // honest count; the note says what to do about it.
@@ -304,6 +324,14 @@ export async function detectLinks(
       .update({ last_detected_at: now, pages_found: pagesFound, error })
       .eq("id", s.id)
       .eq("workspace_id", workspaceId);
+  }
+
+  // No source listed a post - none configured, or a site whose wizard found
+  // neither a sitemap nor a blog root - but the site may still say what it
+  // published: the feed its homepage declares, or its blog index. Read once
+  // per onboarding run, shared with the page crawl.
+  if (foundUrls.size === 0 && domain) {
+    for (const u of await sitePostsWithoutSources(domain, get)) foundUrls.add(u);
   }
 
   if (foundUrls.size === 0) {

@@ -10,13 +10,20 @@
 // second copy of the page.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { resolveCMSAdapter } from "@/lib/cms/adapter";
-import { canUpdate } from "@/lib/cms/types";
 import { htmlToTiptapJson } from "@/lib/ai/tiptap";
+import { factCheckArticle, approvalBlocker } from "@/lib/ai/fact-check";
 import { htmlToMarkdown } from "@/lib/audit/markdown";
-import { decryptConfig } from "@/lib/crypto";
-import { chooseDestination, toDestinations, type IntegrationRow } from "@/lib/publishing/destinations";
-import type { CMSConfig } from "@/lib/types";
+import { decodeEntities } from "@/lib/audit/html-utils";
+import { tiptapToHtml } from "@/lib/cms/html";
+import { readVisibleArticle } from "@/lib/articles/body-read";
+import { needsPlanToShip, CHOOSE_PLAN_MESSAGE } from "@/lib/billing/quota";
+import { workspaceTrialGate } from "@/lib/billing/body-lock";
+import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
+import { deliverArticle, PublishError, type DeliverableArticle } from "@/lib/publishing/core";
+import { recordPublish } from "@/lib/publishing/log";
+import { readWorkspaceLanguage } from "@/lib/i18n/workspace-language";
+import { createServiceClient } from "@/lib/supabase/server";
+import type { ArticleResearch } from "@/lib/seo/research";
 import { applyDecisions, readDecisions, summarizeDecisions } from "./hunks";
 import type { ExecutionSide, Hunk, RefreshCandidate, RefreshExecution } from "./types";
 
@@ -98,20 +105,99 @@ export interface PushResult {
   total: number;
 }
 
+/** Who pressed Push: the person the push is recorded under. */
+export interface Pusher {
+  id: string;
+  email?: string | null;
+}
+
+/**
+ * What a body says, for telling whether a page changed: its text, where its
+ * blocks and headings fall, and the addresses and alt text of what it links
+ * and shows, without the rest of the markup. Whitespace, attribute order,
+ * inline wrappers and entity spelling differ between renderer versions and do
+ * not count; an edit to a heading level, a paragraph split or an image's alt
+ * text does, because the push would otherwise quietly undo it.
+ */
+const BLOCK_TAG = /^(?:p|li|ul|ol|blockquote|pre|table|thead|tbody|tr|td|th|figure|figcaption|div|section|br|hr)$/;
+
+function attr(attrs: string, name: string): string | null {
+  const m = attrs.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i"));
+  return m ? decodeEntities(m[1] ?? m[2] ?? "").trim() : null;
+}
+
+function bodyFingerprint(html: string): string {
+  const body = html.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, " ");
+  const media = [...body.matchAll(/<(a|img|iframe)\b([^>]*)>/gi)].map(([, tag, attrs]) => {
+    const t = tag.toLowerCase();
+    const where = attr(attrs, t === "a" ? "href" : "src") ?? "";
+    return t === "img" ? `${where} ${attr(attrs, "alt") ?? ""}` : where;
+  });
+  const text = decodeEntities(
+    body.replace(/<(\/?)([a-z][a-z0-9]*)\b[^>]*>/gi, (_m, close: string, tag: string) => {
+      const t = tag.toLowerCase();
+      if (/^h[1-6]$/.test(t)) return close ? " \u0002 " : ` \u0001${t} `;
+      return BLOCK_TAG.test(t) ? " \u0002 " : "";
+    }),
+  )
+    .replace(/\s+/g, " ")
+    .replace(/(?:\u0002 ?)+/g, "\u0002 ")
+    .trim();
+  return JSON.stringify([text, media]);
+}
+
+/**
+ * Whether the article changed after the rewrite read it.
+ *
+ * The push sends the whole post: the blocks nobody kept are the text the
+ * rewrite read. When the article has changed since (an edit saved in the
+ * editor, or another rewrite of the same page pushed first), sending them
+ * would quietly put the old text back. The article row is the copy of the
+ * live post every publish and push writes, so it is what is compared.
+ */
+export function pageChangedSinceRewrite(
+  before: Pick<ExecutionSide, "html"> | null | undefined,
+  currentHtml: string,
+): boolean {
+  if (!before?.html) return true;
+  return bodyFingerprint(before.html) !== bodyFingerprint(currentHtml);
+}
+
+export const PAGE_CHANGED_MESSAGE =
+  "This page has changed since the rewrite was written (an edit in the editor, or another improvement pushed first). Pushing it now would put the old text of every block you did not keep back on the site. Reject this rewrite and schedule a new one from the current page.";
+
+type PushArticle = DeliverableArticle & { id: string; status?: string | null; research?: unknown };
+
+/** The plan and trial gates a publish has, asked of the account that owns the site. */
+async function refuseWithoutPlan(supabase: SupabaseClient, workspaceId: string, pusher: Pusher): Promise<void> {
+  const { data: site, error } = await supabase.from("workspaces").select("account_id").eq("id", workspaceId).maybeSingle();
+  if (error) throw new Error(`Could not read the site: ${error.message}`);
+  if (!site?.account_id) throw new Error("The site behind this rewrite no longer exists");
+  if (await needsPlanToShip(supabase, site.account_id as string, pusher.email)) throw new Error(CHOOSE_PLAN_MESSAGE);
+  if ((await workspaceTrialGate(supabase, workspaceId)) === "gated") throw new Error(BODY_LOCKED_MESSAGE);
+}
+
 /**
  * Push the reviewed rewrite to the site.
  *
- * Preconditions, each its own error so the UI can say which one failed:
- *   - the execution is awaiting review (not already pushed or rejected)
- *   - at least one hunk was kept (pushing nothing is not a push)
- *   - the page is one we published, with an external id to update
- *   - the workspace's CMS adapter can update in place
+ * The same gates and the same renderer as a publish, because a push is one:
+ *   - the execution is awaiting review, at least one hunk was kept, and the
+ *     page is one we published, with a post id to update in place
+ *   - the site's account has a plan (and its trial gate is open)
+ *   - the article has not changed since the rewrite read it
+ *   - the fact check passes on the body that goes out, as at Approve
+ *   - the body is rebuilt as the editor's document and published through
+ *     `deliverArticle`, so it gets the dateline, structured data, webhook
+ *     Markdown and the connection's publish mode a publish gets
+ *   - the pusher is recorded as the approval of the new text, on the article
+ *     and on the execution, written by the server
  */
 export async function pushExecution(
   supabase: SupabaseClient,
   executionId: string,
-  opts: { destinationId?: string | null } = {},
+  opts: { destinationId?: string | null; pusher: Pusher },
 ): Promise<PushResult> {
+  const { pusher } = opts;
   const { execution, candidate } = await loadExecution(supabase, executionId);
   if (execution.review_status !== "awaiting_review") {
     throw new Error(`This rewrite was already ${execution.review_status === "pushed" ? "pushed" : "rejected"}.`);
@@ -127,87 +213,120 @@ export async function pushExecution(
     );
   }
 
-  const { data: article } = await supabase
-    .from("articles")
-    .select("id, workspace_id, slug, cms, external_id, published_url, featured_image_url")
-    .eq("id", candidate.article_id)
-    .eq("workspace_id", execution.workspace_id)
-    .maybeSingle();
-  if (!article) throw new Error("The article behind this page no longer exists");
+  // Which row through the caller's client (RLS), its text from the server
+  // (migration 097).
+  const article = await readVisibleArticle<PushArticle>(supabase, candidate.article_id);
+  if (!article || article.workspace_id !== execution.workspace_id) {
+    throw new Error("The article behind this page no longer exists");
+  }
   if (!article.external_id) {
     throw new Error(
       "This article has no CMS post id on record (it was published by hand), so it cannot be updated automatically. Copy the HTML instead.",
     );
   }
 
-  const { data: wsIntegrations } = await supabase
-    .from("workspace_integrations")
-    .select("*, integration:integrations(*)")
-    .eq("workspace_id", execution.workspace_id);
-  const destination = chooseDestination(
-    toDestinations((wsIntegrations ?? []) as IntegrationRow[]),
-    article,
-    opts.destinationId,
-  );
-  const row = (wsIntegrations ?? []).find((wi) => wi.id === destination.id)!;
-  const config = decryptConfig(row.config as Record<string, unknown>) as CMSConfig;
-  const adapter = resolveCMSAdapter(config);
-  if (!canUpdate(adapter)) {
-    throw new Error(
-      `The ${destination.label} connection can publish new posts but cannot yet edit an existing one, and publishing a second copy of this page would be worse than not pushing. Copy the HTML and update the post in ${destination.label}.`,
-    );
-  }
+  await refuseWithoutPlan(supabase, execution.workspace_id, pusher);
 
-  const html = finalHtmlOf(execution);
-  const { title, metaDescription } = resolveFields(execution, html);
-
-  const result = await adapter.update(article.external_id as string, {
-    title,
-    html,
-    slug: article.slug as string,
-    metaDescription: metaDescription ?? undefined,
-    featuredImageUrl: (article.featured_image_url as string | null) ?? undefined,
-  });
+  const current = article.content ? tiptapToHtml(article.content as Record<string, unknown>) : "";
+  if (pageChangedSinceRewrite(execution.before, current)) throw new Error(PAGE_CHANGED_MESSAGE);
 
   const { data: ws } = await supabase
     .from("workspaces")
     .select("domain")
     .eq("id", execution.workspace_id)
     .single();
-  const wordCount = html.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
-  const publishedUrl = result.url || (article.published_url as string | null) || candidate.url;
+
+  // The reviewed body as the editor's document: what the article row will
+  // hold, and what the publish renderer reads. Rebuilding it drops anything
+  // the editor does not keep, the same as an imported draft.
+  const content = htmlToTiptapJson(finalHtmlOf(execution), { siteDomain: (ws?.domain as string | null) ?? null });
+  const body = tiptapToHtml(content as unknown as Record<string, unknown>);
+  const { title, metaDescription } = resolveFields(execution, body);
+
+  // The approve action's figure check, on the body that goes out. The
+  // rewrite's own report covered the whole rewrite, not what was kept.
+  const language = await readWorkspaceLanguage(supabase, execution.workspace_id, "push");
+  const report = factCheckArticle(body, (article.research as ArticleResearch | null) ?? undefined, language);
+  const blocker = approvalBlocker(report);
+  if (blocker) throw new Error(blocker.replace(/then approve\.$/, "then push."));
+
+  // A push edits a page that is on the site. On a draft-mode connection the
+  // adapters read "draft" as "unpublish" (WordPress, Ghost, Shopify, Webflow
+  // and others set the post back to draft), so the connection's mode would
+  // take a live, ranking page off the site to apply an edit to it. A live
+  // post stays live; a post still held as a draft in the CMS stays held.
+  const liveOnSite = article.status === "live" || Boolean(article.found_on_site_at);
+
+  let delivered;
+  try {
+    delivered = await deliverArticle(
+      supabase,
+      { ...article, title, meta_description: metaDescription, content },
+      article.id,
+      { destinationId: opts.destinationId, inPlaceOnly: true, ...(liveOnSite ? { publishMode: "publish" as const } : {}) },
+    );
+  } catch (err) {
+    const context = err instanceof PublishError ? err.context : null;
+    await recordPublish(supabase, {
+      articleId: article.id,
+      workspaceId: execution.workspace_id,
+      status: "error",
+      error: err instanceof Error ? err.message : String(err),
+      triggeredBy: "manual",
+      destinationId: context?.destinationId,
+      publishMode: context?.publishMode,
+    });
+    throw err;
+  }
+
+  const now = new Date().toISOString();
+  const wordCount = body.replace(/<[^>]*>/g, " ").split(/\s+/).filter(Boolean).length;
+  const publishedUrl = delivered.url || (article.published_url as string | null) || candidate.url;
 
   // The article row follows the site, so the next refresh diffs against what
-  // is actually live and the editor shows the same body.
-  const { error: articleErr } = await supabase
+  // is actually live and the editor shows the same body. The push is the
+  // sign-off on this text, so it is recorded where approvals are: by the
+  // server, under the person who pressed it (migration 109).
+  const admin = createServiceClient();
+  const { error: articleErr } = await admin
     .from("articles")
     .update({
-      content: htmlToTiptapJson(html, { siteDomain: (ws?.domain as string | null) ?? null }),
+      content,
       title,
       meta_description: metaDescription,
       word_count: wordCount,
-      published_url: publishedUrl,
-      updated_at: new Date().toISOString(),
+      // An update that reports no address (a webhook endpoint that answers
+      // without one) still leaves the page where it was: keep its URL rather
+      // than the null the publish bookkeeping writes for "no address yet".
+      ...(liveOnSite ? { published_url: publishedUrl } : {}),
+      fact_checks: report,
+      fact_check_verdict: report.verdict,
+      approved_by: pusher.id,
+      approved_at: now,
+      approval_kind: "human",
+      updated_at: now,
     })
     .eq("id", article.id);
   if (articleErr) throw new Error(`Pushed, but could not record it on the article: ${articleErr.message}`);
 
-  await supabase
+  const { error: execErr } = await admin
     .from("refresh_executions")
-    .update({
-      review_status: "pushed",
-      pushed_at: new Date().toISOString(),
-      published_url: publishedUrl,
-    })
+    .update({ review_status: "pushed", pushed_at: now, published_url: publishedUrl })
     .eq("id", executionId);
+  if (execErr) console.error("refresh_executions push record failed:", execErr.message);
+  // Who pushed, on the execution itself (migration 113). Its own write, so a
+  // database without the column still records the push above.
+  const { error: byErr } = await admin.from("refresh_executions").update({ pushed_by: pusher.id }).eq("id", executionId);
+  if (byErr) console.warn("refresh_executions.pushed_by not recorded:", byErr.message);
 
-  const { error: logErr } = await supabase.from("publish_log").insert({
-    article_id: article.id,
-    workspace_id: execution.workspace_id,
+  await recordPublish(supabase, {
+    articleId: article.id,
+    workspaceId: execution.workspace_id,
     status: "success",
-    triggered_by: "manual",
+    triggeredBy: "manual",
+    destinationId: delivered.destinationId,
+    publishMode: delivered.publishMode,
   });
-  if (logErr) console.error("publish_log insert failed:", logErr.message);
 
   return { url: publishedUrl, kept: summary.kept, total: summary.total };
 }

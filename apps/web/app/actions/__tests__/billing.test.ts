@@ -147,7 +147,7 @@ describe("plan switch on a live subscription", () => {
     });
     expect(result).toEqual({
       ok: true,
-      url: `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3100"}/settings/billing?status=switched`,
+      url: `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/settings/billing?status=switched`,
     });
   });
 

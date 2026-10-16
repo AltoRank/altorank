@@ -41,6 +41,7 @@ import type { CrawlResult } from "@/lib/audit/crawler";
 import { hasDataForSEOCredentials } from "./client";
 import { ALLOW_EVERYTHING, isAllowed, loadRobots, type RobotsRules } from "./robots";
 import { readWorkspaceLanguage } from "@/lib/i18n/workspace-language";
+import { getSiteFile, looksLikePost, prioritiseSiteUrls, readSiteUrls, type SiteUrl } from "./site-urls";
 import {
   canonicalOf,
   checkPage,
@@ -202,6 +203,14 @@ export interface CrawlSummary {
   tech: TechSummary | null;
   /** URLs robots.txt told us not to fetch. Not failures: we did not ask. */
   disallowed: number;
+  /**
+   * Of the allowed URLs, how many look like posts (./site-urls.ts
+   * looksLikePost). Read newest first, so when the cap bites the old posts
+   * are the ones left to the nightly pass.
+   */
+  postsDiscovered?: number;
+  /** Where the URL list came from: the sitemap, or the feed or blog index of a site without one. */
+  discoveredFrom?: "sitemap" | "feed" | "blog_index" | "none";
   /** True when the budget or the page cap stopped the crawl short. */
   truncated: boolean;
   /** Set when robots.txt itself refused us the site. */
@@ -209,19 +218,9 @@ export interface CrawlSummary {
 }
 
 // ── Discovery ───────────────────────────────────────────────────────────────
-
-async function bodyOf(url: string, timeoutMs: number): Promise<string | null> {
-  try {
-    const res = await fetchSite(url, {
-      headers: { "User-Agent": UA },
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) return null;
-    return await res.text();
-  } catch {
-    return null;
-  }
-}
+//
+// The walk itself lives in ./site-urls.ts, shared with every other reader of
+// the sitemap and, inside an onboarding run, sharing its fetches with them.
 
 export function locsIn(xml: string): string[] {
   return [...xml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/gi)].map((m) =>
@@ -231,7 +230,7 @@ export function locsIn(xml: string): string[] {
 
 /**
  * Every page URL the site declares, from robots.txt to sitemap to sitemap
- * index. One level of index nesting, which is all anyone uses.
+ * index (an index of indexes is followed too, post sitemaps first).
  *
  * `deadline` is a wall-clock stop, in `Date.now()` terms, and it is not
  * optional in practice: this walk is sequential and every fetch in it is
@@ -248,69 +247,38 @@ export function locsIn(xml: string): string[] {
  * partial sitemap is a partial crawl, which is the outcome the page loop's
  * own deadline already produces and which `truncated` already describes. The
  * nightly cron/site-pages picks up the rest.
+ *
+ * The sitemap only: a caller judging which pages are the site's own
+ * (domain-analysis) must not mistake a feed's ten newest posts for the site.
+ * `syncSitePages` reads the feed and blog index fallbacks through
+ * `readSiteUrls` itself.
  */
 export async function discoverUrls(
   domain: string,
   opts: { timeoutMs?: number; maxUrls?: number; declaredSitemaps?: string[]; bodies?: ReadonlyMap<string, string>; deadline?: number } = {},
 ): Promise<string[]> {
-  const timeoutMs = opts.timeoutMs ?? DEFAULTS.timeoutMs;
-  const maxUrls = opts.maxUrls ?? 5000;
-  const origin = domain.startsWith("http") ? domain : `https://${domain}`;
-  const outOfTime = () => opts.deadline !== undefined && Date.now() >= opts.deadline;
-
-  // The caller may already hold robots.txt (syncSitePages reads it for its
-  // Disallow rules), and its Sitemap lines come with it, so the file is not
-  // fetched a second time.
-  const declared: string[] = [...(opts.declaredSitemaps ?? [])];
-  if (!opts.declaredSitemaps) {
-    if (outOfTime()) return [];
-    // Served from what the caller already fetched, against hosts that count requests.
-    const robots = opts.bodies?.get(`${origin}/robots.txt`) ?? (await bodyOf(`${origin}/robots.txt`, timeoutMs));
-    for (const line of (robots ?? "").split("\n")) {
-      const m = /^\s*sitemap:\s*(\S+)/i.exec(line);
-      if (m) declared.push(m[1].trim());
-    }
-  }
-  const roots = declared.length
-    ? declared.slice(0, 3)
-    : [`${origin}/sitemap.xml`, `${origin}/sitemap-index.xml`, `${origin}/sitemap_index.xml`];
-
-  const urls = new Set<string>();
-  for (const root of roots) {
-    if (outOfTime()) break;
-    const body = opts.bodies?.get(root) ?? (await bodyOf(root, timeoutMs));
-    if (!body) continue;
-    const locs = locsIn(body);
-    const nested = locs.filter((u) => /\.xml(\.gz)?(\?|$)/i.test(u));
-    // An index lists sitemaps; a sitemap lists pages. All-XML means index.
-    if (nested.length && nested.length === locs.length) {
-      for (const child of nested.slice(0, 20)) {
-        // Checked before the fetch, not after: the point is not to start one.
-        if (outOfTime()) break;
-        const childBody = await bodyOf(child, timeoutMs);
-        if (childBody) for (const u of locsIn(childBody)) urls.add(u);
-        if (urls.size >= maxUrls) break;
-      }
-    } else {
-      for (const u of locs) urls.add(u);
-    }
-    if (urls.size >= maxUrls) break;
-  }
-
-  return [...urls].filter((u) => !NOT_CONTENT.test(u)).slice(0, maxUrls);
+  const read = await readSiteUrls(domain, {
+    timeoutMs: opts.timeoutMs ?? DEFAULTS.timeoutMs,
+    maxUrls: opts.maxUrls ?? 5000,
+    declaredSitemaps: opts.declaredSitemaps,
+    bodies: opts.bodies,
+    deadline: opts.deadline,
+    fallback: false,
+  });
+  return read.urls.map((u) => u.url).filter((u) => !NOT_CONTENT.test(u));
 }
 
 /**
- * Posts first, then everything else.
+ * Posts first, newest first, then everything else.
  *
  * A blog post is what a draft wants to link to and what the refresh queue is
  * about; a pricing page is a valid link target but rarely the interesting one.
- * When the cap bites, it should bite the marketing pages.
+ * When the cap bites, it should bite the marketing pages - and among the
+ * posts, the old ones: the newest say what the site writes about now.
  */
-export function prioritise(urls: string[], maxPages: number): string[] {
-  const posts = urls.filter((u) => POST_SEGMENTS.test(u));
-  const rest = urls.filter((u) => !POST_SEGMENTS.test(u));
-  return [...posts, ...rest].slice(0, maxPages);
+export function prioritise(urls: Array<string | SiteUrl>, maxPages: number): string[] {
+  const entries = urls.map((u) => (typeof u === "string" ? { url: u, lastmod: null, fromPostList: false } : u));
+  return prioritiseSiteUrls(entries, maxPages).map((e) => e.url);
 }
 
 // ── One page ────────────────────────────────────────────────────────────────
@@ -360,6 +328,28 @@ const STOPWORDS = new Set([
   "der", "die", "das", "und", "fur", "mit",
 ]);
 
+function brandWords(domain: string): Set<string> {
+  return new Set(domain.toLowerCase().replace(/^www\./, "").split(".")[0].split(/[-_]/));
+}
+
+function usableWords(words: string[], brand: Set<string>): string[] {
+  return words.filter((w) => w.length > 1 && !brand.has(w) && !STOPWORDS.has(w) && !/^\d+$/.test(w));
+}
+
+/**
+ * Every word of a page's slug that could be part of a search: function and
+ * framing words ("how", "best", "guida"), numbers and the brand dropped, in
+ * the slug's order. `keywordForPage` keeps the first three; the planner's
+ * "already covered" check (lib/seo/recommendations.ts) compares all of them.
+ */
+export function pageSlugWords(path: string, domain: string): string[] {
+  let last = path.split("/").filter(Boolean).pop() ?? "";
+  try {
+    last = decodeURIComponent(last);
+  } catch { /* keep it as written */ }
+  return usableWords(last.toLowerCase().replace(/\.(html?|php|aspx?)$/, "").split(/[-_+]+/), brandWords(domain));
+}
+
 /**
  * The term a page appears to target, when the SERP has not told us.
  *
@@ -384,20 +374,10 @@ export function keywordForPage(
   h1: string | null,
   domain: string,
 ): string | null {
-  const brand = new Set(
-    domain.toLowerCase().replace(/^www\./, "").split(".")[0].split(/[-_]/),
-  );
-  const usable = (words: string[]) =>
-    words
-      .filter((w) => w.length > 1 && !brand.has(w) && !STOPWORDS.has(w) && !/^\d+$/.test(w))
-      .slice(0, 3);
+  const brand = brandWords(domain);
+  const usable = (words: string[]) => usableWords(words, brand).slice(0, 3);
 
-  const slugWords = usable(
-    (path.split("/").filter(Boolean).pop() ?? "")
-      .toLowerCase()
-      .replace(/\.(html?|php|aspx?)$/, "")
-      .split(/[-_]+/),
-  );
+  const slugWords = pageSlugWords(path, domain).slice(0, 3);
   if (slugWords.length >= 2) return slugWords.join(" ");
 
   if (!h1) return slugWords.length ? slugWords.join(" ") : null;
@@ -804,35 +784,31 @@ export async function syncSitePages(
     opts.respectRobots === false
       ? ALLOW_EVERYTHING
       : await loadRobots(origin, CRAWLER_NAME, async (u) => {
-          const body = await bodyOf(u, timeoutMs);
-          // `bodyOf` swallows the status, which is exactly what the RFC's
-          // 4xx/5xx split needs to see. Re-read it here rather than widening
-          // `bodyOf`, whose other two callers do not care.
-          if (body !== null) return { status: 200, body };
-          try {
-            const res = await fetchSite(u, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(timeoutMs) });
-            return { status: res.status, body: null };
-          } catch {
-            return { status: 0, body: null };
-          }
+          // Status and body both: the RFC's 4xx/5xx split needs the status.
+          // Shared with every other reader of robots.txt in an onboarding run
+          // (./site-urls.ts withSiteReads).
+          const r = await getSiteFile(u, timeoutMs);
+          return { status: r.status, body: r.body };
         });
 
-  const all = await discoverUrls(domain, {
-    timeoutMs: opts.timeoutMs,
+  const read = await readSiteUrls(domain, {
+    timeoutMs,
     declaredSitemaps: robots.source === "fetched" ? robots.sitemaps : undefined,
     // The same budget the page loop below obeys. Discovery is the half that
     // runs first and used not to have it: see discoverUrls.
     deadline,
   });
+  const all = read.urls.filter((u) => !NOT_CONTENT.test(u.url));
   // Whether the sitemap walk gave up early. Recorded here rather than inferred
   // later, because a discovery that stopped at 8 of 400 URLs then fetches all
   // 8 and would otherwise report a complete crawl of an eight-page site.
   const discoveryTruncated = Date.now() >= deadline;
-  const filtered = opts.only ? all.filter((u) => u.includes(opts.only!)) : all;
-  const allowed = filtered.filter((u) => isAllowed(robots, u));
+  const filtered = opts.only ? all.filter((u) => u.url.includes(opts.only!)) : all;
+  const allowed = filtered.filter((u) => isAllowed(robots, u.url));
   const disallowed = filtered.length - allowed.length;
   // Everything refused, and there were URLs to refuse: the site said no.
   const robotsBlocked = filtered.length > 0 && allowed.length === 0;
+  const postsDiscovered = allowed.filter((u) => looksLikePost(u.url, { fromPostList: u.fromPostList })).length;
   const urls = prioritise(allowed, maxPages);
 
   // A `Crawl-delay` is the site asking for space between requests. Honour it
@@ -934,6 +910,8 @@ export async function syncSitePages(
 
   return {
     discovered: all.length,
+    postsDiscovered,
+    discoveredFrom: read.source,
     fetched: pages.filter((p) => p.status >= 200 && p.status < 400).length,
     failed: pages.filter((p) => p.status === 0 || p.status >= 400).length,
     skipped,

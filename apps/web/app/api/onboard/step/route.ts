@@ -3,6 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { recordOnboardingStep } from "@/lib/onboarding/step-events";
 import { isClientStep } from "@/lib/onboarding/step-names";
+import { getImpersonation } from "@/lib/auth/impersonation";
 
 // ---------------------------------------------------------------------------
 // POST /api/onboard/step — the browser says which onboarding step it reached
@@ -19,6 +20,12 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // An operator viewing as the account is not the customer reaching a step:
+  // each step is kept once per site, so an operator's visit filled slots the
+  // customer never reached (a site read that worked after theirs failed).
+  // Nothing is written; the browser does not wait for this answer anyway.
+  if (await getImpersonation().catch(() => null)) return new NextResponse(null, { status: 204 });
 
   let body: { step?: unknown; workspaceId?: unknown; ms?: unknown; count?: unknown };
   try {

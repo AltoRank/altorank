@@ -22,9 +22,11 @@ npm run e2e:ui                 # the same, in the Playwright UI
 
 For a fast loop keep the server up in one terminal - `npm run dev:e2e` - and
 run `npm run e2e` in another; the runner reuses a server already on 3110.
-**That server must have been started with `E2E_STUBS=1`** (which `dev:e2e`
-does). A plain `next dev` on that port would let the onboarding spec reach
-whatever providers your env has keys for.
+`dev:e2e` (`scripts/dev-e2e.ts`) starts it with exactly the environment the
+runner would use (`e2e/fixtures/server-env.ts`): `E2E_STUBS=1`, the paid keys
+blanked and `NEXT_PUBLIC_APP_URL` on 3110. **Start that server no other way.**
+A plain `next dev` on that port would let the onboarding spec reach whatever
+providers your env has keys for.
 
 The HTML report lands in `playwright-report/` (ignored by git); failures keep a
 trace you can open with `npx playwright show-report`.
@@ -43,9 +45,10 @@ trace you can open with `npx playwright show-report`.
   the password field with random bytes generated at runtime, because the form
   cannot be submitted without one; the server rejects the domain before it
   reads the field, and nothing is stored.
-- **No spend.** The dev server is started with `E2E_STUBS=1` and with
+- **No spend.** The dev server, whether the runner starts it or
+  `npm run dev:e2e` does, is started with `E2E_STUBS=1` and with
   `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, the DataForSEO variables and
-  `STRIPE_SECRET_KEY` blanked. Under the switch, `lib/seo/client.ts` reports
+  `STRIPE_SECRET_KEY` blanked (`e2e/fixtures/server-env.ts`, shared by both). Under the switch, `lib/seo/client.ts` reports
   credentials as present (so the keyword phase runs) and throws on any actual
   request, so a call that escapes the stubs fails loudly rather than quietly.
 - **Unique accounts, cleaned up.** Every test gets its own
@@ -81,21 +84,30 @@ So:
 
 ## The `E2E_STUBS` switch
 
-One module, `lib/e2e/stubs.ts`, holds the fixtures. Six production call sites
+One module, `lib/e2e/stubs.ts`, holds the fixtures. Eleven production files
 check `e2eStubsEnabled()` (`process.env.E2E_STUBS === "1"`, read at call
-time) and return the fixture instead:
+time) and return a fixture, or skip a fetch, instead. None of them sits in
+front of an auth check: the switch replaces what a call reaches, never who
+may make it.
 
 | Entry point | Under the switch |
 | --- | --- |
+| `app/actions/onboarding-wizard.ts` `suggestCompetitors` / `resolveCompetitor` | fixture rivals; a typed name becomes `<name>.example`. After `requireAuth`, before the spend gate |
 | `lib/onboarding/business-profile.ts` `inferBusinessProfileDetailed` | a profile for the domain (Italian / Italy) - or `unreadable` when the domain starts with `unreadable.` |
+| `lib/onboarding/observed-facts.ts` `inferVerifiedBusinessProfile` | the fixture profile as is; no URL in it is fetched to verify it |
 | `lib/onboarding/site-text.ts` `readSiteText` | fixture text, no fetch |
 | `lib/onboarding/site-discovery.ts` `discoverSite` | a sitemap and a blog on the domain, `found: true` (or nothing for `unreadable.*`) |
+| `lib/onboarding/site-assessment.ts` | fixture pages for reserved test domains only; a real domain gets the real (free) crawl |
 | `lib/seo/client.ts` `hasDataForSEOCredentials` / `post` / `get` | `true`; every request throws |
 | `lib/audit/domain-analysis.ts` `analyseDomain` | eight keywords inserted for the workspace; nothing else measured |
+| `lib/keyword-research/opportunity.ts` | fixture "qualified" opportunities, only for a reserved test domain AND a loopback Supabase URL |
+| `lib/voice/examples.ts` `readExampleArticles` | `""`; example articles are not fetched |
 | `lib/content/generate.ts` `generateArticle` | a short fixture draft, written through the same rows (`articles`, `generation_jobs`) and the same `review` gate |
 
-The switch is off by default, is not set in any deployment, and must stay
-that small: add a stub only for a call that leaves the machine or costs money.
+The switch is off by default and is not set in any deployment. Add a stub
+only for a call that leaves the machine or costs money, and add its row here:
+`lib/__tests__/e2e-stubs-readme.test.ts` fails when a file checks the switch
+and the table does not name it.
 
 ## Specs
 
@@ -106,6 +118,10 @@ that small: add a stub only for a call that leaves the machine or costs money.
 | `approval-gate.spec.ts` | a draft in review has no publish control; approving moves it to `approved`; no `publish_log` row is written |
 | `scope.spec.ts` | two workspaces on one account; keywords and calendar show only the switched-to workspace |
 | `signup.spec.ts` | an invalid domain is refused inline and creates neither an account nor a user |
+| `wizard-ux.spec.ts` | "Check what we found": competitors never block the button, sections stay open while typing, answers resume after a reload, the phone layout |
+| `first-look-gate.spec.ts` | the first look's wait and trial gate (forced on with the dev simulation cookie): the price box, the exits, auto-start, reconnecting, a provider outage |
+| `email-settings.spec.ts` | Settings > Emails: a switch writes the person's own preference row, required categories are named, all-off and its undo |
+| `wave.spec.ts` | planner card actions, the Articles-plan pace, the research drawer, /improvements blockers, API keys shown once, /linking, the theme toggle |
 
 ## CI
 

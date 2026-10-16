@@ -94,6 +94,9 @@ const MULTI_SHAPE: Record<string, string> = {
   "lib/gsc/queries.ts:ROW_SHAPES":
     "the dashboard's one read of every shape; each partition goes to the analysis function that reads it " +
     "(lib/gsc/analysis.ts), and windowMeasured counts days, not clicks, across them",
+  "lib/refresh/detect.ts:query+query_page":
+    "the refresh detectors: query rows are the site-wide totals per query, query_page rows are each page's own " +
+    "numbers for its keyword (the evidence); each is aggregated on its own and never added to the other",
   "lib/reports/metrics.ts:total+query":
     "the client report: periodTotals reads totals with the query-row fallback for days before totals existed, " +
     "and the organic value prices the query rows alone",

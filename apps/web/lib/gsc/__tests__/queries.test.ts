@@ -96,7 +96,39 @@ describe("syncHealthFor", () => {
     seed.workspace_integrations = [];
     const { syncHealthFor } = await import("../queries");
     const h = await syncHealthFor(WORKSPACE_A);
-    expect(h).toEqual({ connected: false, connectedAt: null, siteUrl: null, lastSyncAt: null, latestMetricDate: null, needsReconnect: false, lastSyncError: null });
+    expect(h).toEqual({
+      connected: false,
+      connectedAt: null,
+      siteUrl: null,
+      lastSyncAt: null,
+      latestMetricDate: null,
+      earliestMetricDate: null,
+      syncedFrom: null,
+      syncedThrough: null,
+      needsReconnect: false,
+      lastSyncError: null,
+    });
+  });
+  it("reads the recorded sync outcome, and takes the later of it and the newest row write", async () => {
+    seed.workspace_integrations = seed.workspace_integrations.map((r) =>
+      r.workspace_id === WORKSPACE_A ? { ...r, last_synced_at: "2026-09-20T04:00:00Z", synced_from: "2026-08-25", synced_through: "2026-09-17" } : r,
+    );
+    const { syncHealthFor, coverageOf } = await import("../queries");
+    const h = await syncHealthFor(WORKSPACE_A);
+    expect(h.lastSyncAt).toBe("2026-09-20T04:00:00Z");
+    expect(h.syncedFrom).toBe("2026-08-25");
+    expect(h.syncedThrough).toBe("2026-09-17");
+    expect(h.earliestMetricDate).not.toBeNull();
+    const c = coverageOf(h);
+    expect(c.through).toBe("2026-09-17");
+    expect(c.from).toBe("2026-08-25");
+  });
+  it("takes the recorded start over older rows, which may sit before a hole the sync never filled", async () => {
+    const { coverageOf } = await import("../queries");
+    const recorded = { syncedFrom: "2026-09-10", syncedThrough: "2026-09-17", earliestMetricDate: "2026-06-01", latestMetricDate: "2026-09-17" };
+    expect(coverageOf(recorded)).toEqual({ from: "2026-09-10", through: "2026-09-17" });
+    // Without migration 115, the rows are all there is.
+    expect(coverageOf({ ...recorded, syncedFrom: null, syncedThrough: null })).toEqual({ from: "2026-06-01", through: "2026-09-17" });
   });
   it("carries the refused-token flag and its reason off the connection row", async () => {
     seed.workspace_integrations = seed.workspace_integrations.map((r) =>

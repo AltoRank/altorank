@@ -61,7 +61,7 @@ export function looksLikeApiKey(value: string | null | undefined): value is stri
 // The key's state and the expiry choices are in ./api-key-state, which imports
 // nothing: the API keys panel is a client component and needs them, and this
 // file imports node:crypto. Re-exported so server callers keep one import.
-export { apiKeyState, EXPIRY_OPTIONS, type ApiKeyState } from "./api-key-state";
+export { apiKeyState, BLOG_SCOPE, EXPIRY_OPTIONS, isBlogKey, type ApiKeyState } from "./api-key-state";
 
 export function expiryFromDays(days: number | null, now: Date = new Date()): string | null {
   if (days === null) return null;
@@ -77,6 +77,9 @@ export function expiryFromDays(days: number | null, now: Date = new Date()): str
  *             in a draft, retry a failed publish, pause/resume a site
  *
  * None of them approves or publishes a draft; there is no scope for that.
+ *
+ * A blog key (BLOG_SCOPE, migration 114) is not listed: it is a different
+ * credential, bound to one site, that the agent API refuses outright.
  */
 export const ALL_SCOPES = ["read", "generate", "write"] as const;
 export type ApiKeyScope = (typeof ALL_SCOPES)[number];

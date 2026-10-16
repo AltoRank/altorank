@@ -238,6 +238,12 @@ export async function canSpend(
   // attempting a draft (nothing worth writing, a refused site, an unreadable
   // crawl) leaves `used` at zero, and the site read and the research were
   // bought again each time the previous run finished (round-4 review).
+  //
+  // The wizard's own reads before a run (the site read, the rival lookup, a
+  // typed rival) ask here as "keyword-research" and pass while `used` is
+  // zero; they are bounded by their callers instead, which count each press
+  // and keep what it bought (app/actions/onboarding-wizard.ts,
+  // lib/billing/spend-doors.ts).
   if (trialGateApplies(quota)) {
     if (quota.used >= PRE_TRIAL_DRAFTS) {
       // Setup gets its own sentence: the draft was attempted, which is not

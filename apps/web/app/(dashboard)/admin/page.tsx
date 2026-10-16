@@ -10,11 +10,13 @@ import { getOperatorPreview } from "@/lib/auth/preview";
 import { ScheduledWork } from "./scheduled-work";
 import {
   forecastAll,
-  jobForOperation,
-  measuredRates,
+  jobForSpend,
+  measuredRatesFromGroups,
   type JobKey,
   type WorkspaceDrivers,
 } from "@/lib/billing/forecast";
+import { readSpendSummary, sumBy } from "@/lib/admin/spend-summary";
+import { readAllPages, type PageResult } from "@/lib/supabase/read-all";
 
 export const metadata: Metadata = { title: "Operations" };
 
@@ -34,61 +36,73 @@ export default async function AdminPage() {
 
   const supabase = createServiceClient();
 
-  const [{ data: spend }, { data: workspaces }, { data: articles }, { data: trackedKw }, { data: prompts }] =
-    await Promise.all([
-      supabase
-        .from("provider_spend")
-        .select("provider, operation, cost_usd, workspace_id, article_id, created_at")
-        .order("created_at", { ascending: false })
-        .limit(2000),
-      supabase
-        .from("workspaces")
-        .select("id, domain, status, detected_platform, first_analysed_at, auto_generate, auto_generate_weekly_limit, geo_tracking"),
-      supabase.from("articles").select("workspace_id, status, keyword"),
-      // What cron/serp will track: the same status filter it uses.
-      supabase.from("keywords").select("workspace_id, term").in("status", ["planned", "shipped"]),
-      supabase.from("geo_prompts").select("workspace_id").eq("enabled", true),
-    ]);
+  // Async Server Component: one render per request, so the read is stable for
+  // the render's lifetime. The rule guards client re-renders, which this
+  // page never has.
+  // eslint-disable-next-line react-hooks/purity
+  const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000);
+
+  // Every row, not the first thousand: PostgREST stops at max_rows without a
+  // word, and these are summed and counted (lib/supabase/read-all.ts). Spend
+  // is summed in the database (lib/admin/spend-summary.ts).
+  type WorkspaceRow = {
+    id: string;
+    domain: string | null;
+    status: string | null;
+    detected_platform: string | null;
+    first_analysed_at: string | null;
+    auto_generate: boolean | null;
+    auto_generate_weekly_limit: number | null;
+    geo_tracking: boolean | null;
+  };
+  // The builder narrowed to what these reads use: the select strings are
+  // built here, and supabase-js cannot type a string it does not see.
+  type Page<T> = PromiseLike<PageResult<T>>;
+  interface Query<T> {
+    in(column: string, values: unknown[]): Query<T>;
+    eq(column: string, value: unknown): Query<T>;
+    order(column: string): Query<T>;
+    range(from: number, to: number): Page<T>;
+  }
+  const all = <T,>(table: string, columns: string, filter?: (q: Query<T>) => Query<T>) =>
+    readAllPages<T>(table, (from, to, count) => {
+      const q = supabase.from(table).select(`id, ${columns}`, { count }) as unknown as Query<T>;
+      return (filter ? filter(q) : q).order("id").range(from, to);
+    });
+  const [summary, { data: recentCalls }, workspaces, articles, trackedKw, prompts] = await Promise.all([
+    readSpendSummary(supabase, cutoff),
+    supabase
+      .from("provider_spend")
+      .select("provider, operation, cost_usd, workspace_id, created_at")
+      .order("created_at", { ascending: false })
+      .limit(40),
+    all<WorkspaceRow>("workspaces", "domain, status, detected_platform, first_analysed_at, auto_generate, auto_generate_weekly_limit, geo_tracking"),
+    all<{ workspace_id: string; status: string; keyword: string | null }>("articles", "workspace_id, status, keyword"),
+    // What cron/serp will track: the same status filter it uses.
+    all<{ workspace_id: string; term: string }>("keywords", "workspace_id, term", (q) => q.in("status", ["planned", "shipped"])),
+    all<{ workspace_id: string }>("geo_prompts", "workspace_id", (q) => q.eq("enabled", true)),
+  ]);
 
   // Null whenever the preview is off, and also for a non-operator, though
   // this page 404s for those before we get here.
   const previewActive = (await getOperatorPreview()) !== null;
 
-  const rows = spend ?? [];
-  const wsById = new Map((workspaces ?? []).map((w) => [w.id, w]));
+  const groups = summary.groups;
+  const wsById = new Map(workspaces.map((w) => [w.id, w]));
 
-  const total = rows.reduce((s, r) => s + Number(r.cost_usd ?? 0), 0);
-  const since = rows.length ? rows[rows.length - 1].created_at : null;
+  const total = groups.reduce((s, g) => s + g.usd, 0);
+  const since = summary.firstAt;
 
-  // By provider
-  const byProvider = new Map<string, { calls: number; usd: number }>();
-  for (const r of rows) {
-    const e = byProvider.get(r.provider) ?? { calls: 0, usd: 0 };
-    e.calls += 1;
-    e.usd += Number(r.cost_usd ?? 0);
-    byProvider.set(r.provider, e);
-  }
-
-  // By operation, which is where a spike is actually traceable
-  const byOperation = new Map<string, { calls: number; usd: number }>();
-  for (const r of rows) {
-    const key = `${r.provider} · ${r.operation}`;
-    const e = byOperation.get(key) ?? { calls: 0, usd: 0 };
-    e.calls += 1;
-    e.usd += Number(r.cost_usd ?? 0);
-    byOperation.set(key, e);
-  }
+  // By provider, and by operation, which is where a spike is actually traceable
+  const byProvider = sumBy(groups, (g) => g.provider);
+  const byOperation = sumBy(groups, (g) => `${g.provider} · ${g.operation}`);
 
   // By workspace, with article counts, so cost per article is visible
   const articleCount = new Map<string, number>();
-  for (const a of articles ?? []) {
+  for (const a of articles) {
     articleCount.set(a.workspace_id, (articleCount.get(a.workspace_id) ?? 0) + 1);
   }
-  const byWorkspace = new Map<string, number>();
-  for (const r of rows) {
-    if (!r.workspace_id) continue;
-    byWorkspace.set(r.workspace_id, (byWorkspace.get(r.workspace_id) ?? 0) + Number(r.cost_usd ?? 0));
-  }
+  const byWorkspace = new Map([...sumBy(groups, (g) => g.workspaceId)].map(([k, v]) => [k, v.usd]));
 
   const usd = (n: number) => `$${n.toFixed(4)}`;
 
@@ -96,7 +110,7 @@ export default async function AdminPage() {
   // Mirrors cron/serp's tracking rule: planned + shipped keywords, plus any
   // article keyword not already among them, capped in the forecast.
   const trackedByWs = new Map<string, Set<string>>();
-  for (const k of trackedKw ?? []) {
+  for (const k of trackedKw) {
     const set = trackedByWs.get(k.workspace_id) ?? new Set<string>();
     set.add((k.term as string).toLowerCase());
     trackedByWs.set(k.workspace_id, set);
@@ -108,9 +122,9 @@ export default async function AdminPage() {
     trackedByWs.set(a.workspace_id, set);
   }
   const promptsByWs = new Map<string, number>();
-  for (const p of prompts ?? []) promptsByWs.set(p.workspace_id, (promptsByWs.get(p.workspace_id) ?? 0) + 1);
+  for (const p of prompts) promptsByWs.set(p.workspace_id, (promptsByWs.get(p.workspace_id) ?? 0) + 1);
 
-  const drivers: WorkspaceDrivers[] = (workspaces ?? []).map((w) => ({
+  const drivers: WorkspaceDrivers[] = workspaces.map((w) => ({
     id: w.id,
     domain: w.domain ?? "—",
     trackedKeywords: trackedByWs.get(w.id)?.size ?? 0,
@@ -121,27 +135,15 @@ export default async function AdminPage() {
     needsFirstLook: !w.first_analysed_at,
   }));
 
-  const { rates, measured } = measuredRates(
-    rows.map((r) => ({
-      provider: r.provider,
-      operation: r.operation,
-      costUsd: r.cost_usd === null ? null : Number(r.cost_usd),
-      articleId: r.article_id,
-    })),
-  );
+  const { rates, measured } = measuredRatesFromGroups(groups, summary.modelArticles);
   const forecast = forecastAll(drivers, rates);
   const expectedByWs = new Map(forecast.perWorkspace.map((f) => [f.id, f.total]));
 
-  // Async Server Component: one render per request, so the read is stable for
-  // the render's lifetime. The rule guards client re-renders, which this
-  // page never has.
-  // eslint-disable-next-line react-hooks/purity
-  const cutoff = Date.now() - 30 * 24 * 3600 * 1000;
-  const actual30d: Record<JobKey, number> = { serp: 0, backlinks: 0, generate: 0, geo: 0, analyze: 0 };
-  for (const r of rows) {
-    if (new Date(r.created_at).getTime() < cutoff) continue;
-    const job = jobForOperation(r.provider, r.operation);
-    if (job) actual30d[job] += Number(r.cost_usd ?? 0);
+  const actual30d: Record<JobKey, number> = { serp: 0, backlinks: 0, generate: 0, geo: 0, analyze: 0, refresh: 0 };
+  for (const g of groups) {
+    if (!g.recent) continue;
+    const job = jobForSpend(g);
+    if (job) actual30d[job] += g.usd;
   }
 
   return (
@@ -150,7 +152,7 @@ export default async function AdminPage() {
         title="Operations"
         subtitle={
           <span>
-            {rows.length.toLocaleString()} recorded provider calls
+            {summary.calls.toLocaleString()} recorded provider calls
             {since ? ` since ${new Date(since).toLocaleDateString()}` : ""}
           </span>
         }
@@ -163,18 +165,18 @@ export default async function AdminPage() {
           { label: "Total spend", value: usd(total), delta: "as reported by providers" },
           {
             label: "Workspaces",
-            value: String((workspaces ?? []).length),
-            delta: `${(workspaces ?? []).filter((w) => w.first_analysed_at).length} analysed`,
+            value: String(workspaces.length),
+            delta: `${workspaces.filter((w) => w.first_analysed_at).length} analysed`,
           },
           {
             label: "Articles",
-            value: String((articles ?? []).length),
-            delta: `${(articles ?? []).filter((a) => a.status === "review").length} awaiting review`,
+            value: String(articles.length),
+            delta: `${articles.filter((a) => a.status === "review").length} awaiting review`,
           },
           {
             label: "Cost per article",
-            value: (articles ?? []).length ? usd(total / (articles ?? []).length) : "—",
-            delta: (articles ?? []).length ? "all spend ÷ all articles" : "no articles yet",
+            value: articles.length ? usd(total / articles.length) : "—",
+            delta: articles.length ? "all spend ÷ all articles" : "no articles yet",
           },
         ]}
       />
@@ -225,7 +227,7 @@ export default async function AdminPage() {
         <Card className="shrink-0" title="Accounts" flush>
           <Table
             head={["Domain", "Status", "Platform", "Analysed", "Auto", "Tracked", "Articles", "Spend", "Expected / mo"]}
-            rows={(workspaces ?? []).map((w) => [
+            rows={workspaces.map((w) => [
               w.domain ?? "—",
               w.status ?? "—",
               w.detected_platform ?? "—",
@@ -242,7 +244,7 @@ export default async function AdminPage() {
         <Card className="shrink-0" title="Recent calls" flush>
           <Table
             head={["When", "Provider", "Operation", "Workspace", "USD"]}
-            rows={rows.slice(0, 40).map((r) => [
+            rows={(recentCalls ?? []).map((r) => [
               new Date(r.created_at).toLocaleString(),
               r.provider,
               r.operation,

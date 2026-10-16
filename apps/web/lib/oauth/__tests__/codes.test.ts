@@ -25,6 +25,8 @@ describe("parseScopes", () => {
     expect(parseScopes("")).toEqual({ scopes: ["read", "generate"], unknown: [] });
     expect(parseScopes("write")).toEqual({ scopes: ["read", "generate", "write"], unknown: [] });
     expect(parseScopes("read openid publish")).toEqual({ scopes: ["read", "generate"], unknown: ["openid", "publish"] });
+    // A blog key is made in Settings for one site; a connector cannot ask for one.
+    expect(parseScopes("blog")).toEqual({ scopes: ["read", "generate"], unknown: ["blog"] });
   });
 });
 

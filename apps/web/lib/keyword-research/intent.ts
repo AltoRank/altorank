@@ -147,6 +147,41 @@ export function intentKey(term: string, language: string): string {
   return keyIn(term, resolveLocale(language));
 }
 
+/** The words `intentKey` compares, as a list: connective words out, inflections folded, each once. */
+export function intentWords(term: string, language: string): string[] {
+  return intentKey(term, language).split(/ > | /).filter(Boolean);
+}
+
+/**
+ * The share of a page's own words a search must make up for the page to
+ * count as targeting it. A slug is the keyword, written by whoever published
+ * the page, plus a word or two of framing: "how-to-choose-gym-management-
+ * software" targets "gym management software" (3 of 4 words once "how to" is
+ * dropped) and not "gym software" (2 of 4), a broader search the page only
+ * touches; "website-design-account-pricing-for-dentists" (3 of 5) is a
+ * narrower page than "website design account".
+ */
+export const PAGE_COVER_SHARE = 2 / 3;
+
+/**
+ * Does a page whose own words are `page` (its slug, its target term, from
+ * `intentWords`) already target the search whose words are `term`?
+ *
+ * `intentKey` equality was the only test, so a page's guessed three-word
+ * keyword had to be the search's exact words: "app personal trainer gratis"
+ * against "app-personal-trainer" matched, "personal trainer app" against
+ * "migliori-app-per-personal-trainer-2026" did not, and the plan wrote a
+ * second article for a query the site already had a post on. Every word of
+ * the search on the page, making up most of the page's words; a one-word
+ * search is never covered this way (a word is a subject, not a query).
+ */
+export function wordsCover(term: readonly string[], page: readonly string[]): boolean {
+  if (term.length < 2 || page.length === 0) return false;
+  const have = new Set(page);
+  for (const w of term) if (!have.has(w)) return false;
+  return term.length / have.size >= PAGE_COVER_SHARE;
+}
+
 function keyIn(term: string, locale: Locale): string {
   const rules = searchWords(locale);
   const all = tokens(term, locale);

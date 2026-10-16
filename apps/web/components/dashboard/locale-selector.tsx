@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Card } from "@/components/ui";
 import { updateWorkspace } from "@/app/actions/workspaces";
 import { getLocaleOptions, getLocale } from "@/lib/seo/locales";
+import { languageCoverageHint } from "@/lib/i18n/locale";
 
 type LocaleSelectorProps = {
   workspaceId: string;
@@ -90,6 +91,7 @@ export function LocaleSelector({ workspaceId, currentLanguage }: LocaleSelectorP
       <div className="text-[11px] text-ink-3 mt-2">
         Currently: {current.label} — {current.country} (location code {current.locationCode})
       </div>
+      <p className="text-[11px] text-ink-3 mt-1">{languageCoverageHint(language)}</p>
     </Card>
   );
 }

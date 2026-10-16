@@ -64,6 +64,12 @@ describe("deterministicBrief", () => {
 });
 
 describe("describeEvidence", () => {
+  it("labels site-wide numbers as the site's, and the page's own as nothing more", () => {
+    expect(describeEvidence({ ...evidence, scope: "site" }).join("\n")).toMatch(/whole site on this query/);
+    expect(describeEvidence({ ...evidence }).join("\n")).toMatch(/whole site on this query/); // stored before the distinction
+    expect(describeEvidence({ ...evidence, scope: "page" }).join("\n")).not.toMatch(/whole site/);
+  });
+
   it("omits what was not measured rather than printing zeros", () => {
     const lines = describeEvidence({ ...evidence, clicks: null, ctr: null });
     expect(lines.join("\n")).not.toMatch(/Clicks/);

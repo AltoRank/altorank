@@ -7,6 +7,10 @@ import {
   hasPreviewCookie,
   type OperatorPreview,
 } from "@/lib/auth/preview-cookie";
+import type { PlanTier } from "@/lib/stripe";
+
+/** The tiers the preview control offers. */
+const PREVIEW_PLANS: readonly PlanTier[] = ["starter", "growth", "scale"];
 
 export { PREVIEW_COOKIE, hasPreviewCookie };
 export type { OperatorPreview };
@@ -85,5 +89,25 @@ export async function inCustomerPreview(): Promise<boolean> {
     // `cookies()` throws outside a request scope - the cron, a build-time
     // render. Nobody is previewing there.
     return false;
+  }
+}
+
+/**
+ * The plan a customer preview renders the gates for, read from the cookie.
+ *
+ * `undefined`: no preview here. `null`: the "No plan" choice. Callers must
+ * check the caller is an operator first, because a plan is a GRANT and the
+ * cookie is not signed (see the header above): `getQuota` asks only for an
+ * operator's own session, where every write is refused at the edge anyway.
+ * A value that is not a known tier reads as "No plan".
+ */
+export async function customerPreviewPlan(): Promise<PlanTier | null | undefined> {
+  try {
+    const jar = await cookies();
+    const preview = parsePreview(jar.get(PREVIEW_COOKIE)?.value);
+    if (!preview) return undefined;
+    return preview.plan && (PREVIEW_PLANS as readonly string[]).includes(preview.plan) ? preview.plan : null;
+  } catch {
+    return undefined;
   }
 }

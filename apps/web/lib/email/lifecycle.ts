@@ -42,6 +42,7 @@ import { TRIAL_DAYS } from "@/lib/stripe";
 import { formatTrialDate } from "@/lib/billing/trial";
 import { wizardStepPath } from "@/lib/onboarding/steps";
 import { sendOnce, type RenderedEmail, type SendOnceOutcome } from "./send-once";
+import type { RewriteFactCheck } from "@/lib/refresh/types";
 import { operatorRecipients } from "@/lib/auth/operators";
 import type { EmptyPool } from "@/lib/onboarding/events";
 import { beforeTrialLine, trialGateUrl } from "./article-emails";
@@ -332,21 +333,46 @@ export type RefreshReadyEmail = {
   /** Blocks the model changed, out of the blocks it looked at. */
   changed: number;
   hunks: number;
-  /** Checks the fact-checker flagged on the proposed text. */
-  issues: number;
+  /** Structural checks flagged on the proposed text: headings, links, images, length (lib/refresh/validate.ts). */
+  checks: number;
+  /** The fact check of the proposed text: its verdict and the claims it asks a person to act on. */
+  factCheck: RewriteFactCheck | null;
 };
+
+/** The fact check's result in one sentence that says what was and was not checked. */
+function refreshFactCheckSentence(fc: RewriteFactCheck | null): string {
+  if (!fc) return "No fact check result was stored for this rewrite, so check its figures on the review page.";
+  const n = fc.flagged;
+  switch (fc.verdict) {
+    case "high_risk":
+      return `The fact check found ${n} ${n === 1 ? "claim" : "claims"} to correct or remove before this can go live; ${n === 1 ? "it is" : "they are"} listed on the review page.`;
+    case "review":
+      return `The fact check found ${n} ${n === 1 ? "claim" : "claims"} to verify against ${n === 1 ? "its source" : "their sources"}; ${n === 1 ? "it is" : "they are"} listed on the review page.`;
+    case "clean":
+      return "The fact check verified every claim in the proposed text against the page it cites.";
+    case "unchecked":
+      return fc.unchecked === "nothing_to_check"
+        ? "The proposed text states no figure and names no regulator or insurer, so the fact check had nothing to check."
+        : "The fact check does not read this site's language, so nothing in the proposed text was checked. Check its figures by hand.";
+  }
+}
 
 /**
  * A refresh proposal is a diff waiting for a person. Nothing reaches the CMS
  * until somebody accepts hunks and presses push, which is why this says
  * "proposed" everywhere and never "updated".
+ *
+ * The fact check and the structural checks are two different things and are
+ * worded as such: the count the cron has is the structural lint, and it used
+ * to be reported as "flagged by the fact check".
  */
 export function renderRefreshReady(a: RefreshReadyEmail): RenderedEmail {
   const site = a.domain ?? "your site";
-  const issues =
-    a.issues > 0
-      ? `${a.issues} ${a.issues === 1 ? "claim was" : "claims were"} flagged by the fact check and are marked in the diff.`
-      : `The fact check flagged nothing in the proposed text.`;
+  const checks =
+    a.checks > 0
+      ? `${a.checks} structural ${a.checks === 1 ? "check was" : "checks were"} flagged (headings, links, images, length).`
+      : "The structural checks (headings, links, images, length) flagged nothing.";
+  const issues = `${refreshFactCheckSentence(a.factCheck)} ${checks}`;
   return {
     subject: `Improvement proposed for ${site}: "${a.pageTitle}"`,
     preheader: `${a.changed} of ${a.hunks} blocks rewritten, waiting for review.`,
@@ -801,6 +827,8 @@ export type ApiKeyCreatedEmail = {
    * not what happened.
    */
   connector?: string;
+  /** Set for a blog key (migration 114): the one site whose published articles it reads. */
+  blogSite?: string;
 };
 
 /**
@@ -813,9 +841,11 @@ export type ApiKeyCreatedEmail = {
  * that created it.
  */
 export function renderApiKeyCreated(a: ApiKeyCreatedEmail): RenderedEmail {
-  const scope = a.canWrite
-    ? `It can read <em>and change</em> things: drafts, keywords, the plan.`
-    : `It can read only. It cannot change drafts, keywords or the plan.`;
+  const scope = a.blogSite
+    ? `It is a blog key for <strong>${esc(a.blogSite)}</strong>: it reads that site's published articles and nothing else.`
+    : a.canWrite
+      ? `It can read <em>and change</em> things: drafts, keywords, the plan.`
+      : `It can read only. It cannot change drafts, keywords or the plan.`;
   const expiry = a.expiresAt ? `It expires on ${dateLabel(a.expiresAt)}.` : `It does not expire.`;
   const created = a.connector
     ? `<strong>${esc(a.createdBy)}</strong> gave <strong>${esc(a.connector)}</strong> access to the account, which created an API key for it called <strong>${esc(a.keyName)}</strong>, starting <code>${esc(a.prefix)}</code>.`
@@ -1123,12 +1153,12 @@ export function renderSetupFailed(a: SetupFailedEmail): RenderedEmail {
       emailParagraph(`${esc(line)}.`) +
       (a.transient
         ? emailParagraph(
-            `The next look is already scheduled and needs nothing from you. If you would rather not wait, try again now: it takes about a minute and nothing publishes without your approval.`,
+            `The next look is already scheduled and needs nothing from you. If you would rather not wait, try again now: it takes a few minutes and nothing publishes without your approval.`,
           )
         : emailParagraph(
             a.beforeTrial
-              ? `Trying again takes about a minute. If the site still cannot be read, connect Search Console from Integrations, and the plan can be built from there.`
-              : `Trying again takes about a minute. If the site still cannot be read, add a keyword by hand from Keywords or connect Search Console, and the plan can be built from there.`,
+              ? `Trying again takes a few minutes. If the site still cannot be read, connect Search Console from Integrations, and the plan can be built from there.`
+              : `Trying again takes a few minutes. If the site still cannot be read, add a keyword by hand from Keywords or connect Search Console, and the plan can be built from there.`,
           )) +
       emailButton(appLink("/onboarding"), a.transient ? "Try again now" : "Try again") +
       emailParagraph(`Nothing has been written or published, and nothing is wrong with your account.`),

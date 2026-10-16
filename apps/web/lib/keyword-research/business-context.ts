@@ -50,6 +50,7 @@ const MISSING: Record<Exclude<InferenceReason, "ok">, string> = {
   unreadable: "no business profile, and the site could not be read to build one",
   model_failed: "no business profile, and reading the site for one failed",
   needs_plan: "no business profile, and the account cannot spend on building one",
+  limited: "no business profile, and the site has been read as often as allowed for now",
 };
 
 /**

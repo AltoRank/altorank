@@ -14,11 +14,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { inspectionFrom, type UrlInspection } from "@/lib/google/inspection";
-import { ROW_SHAPES, WINDOW_DAYS, windows, type GscShapes, type KnownPage } from "./analysis";
-import { lastGscWriteAt, latestGscDate, readGsc, type ReadRow } from "./read";
+import { ANCHOR_MAX_LAG_DAYS, isoDaysAgo, ROW_SHAPES, WINDOW_DAYS, type GscCoverage, type GscShapes, type KnownPage } from "./analysis";
+import { earliestGscDate, lastGscWriteAt, latestGscDate, readGsc, type ReadRow } from "./read";
 
 /** What the dashboard blocks read: every shape, with the columns the analysis uses. */
-export type DashboardGscRows = GscShapes<ReadRow<"clicks" | "impressions" | "avg_position" | "article_id">>;
+export type DashboardGscRows = GscShapes<ReadRow<"clicks" | "impressions" | "avg_position" | "article_id" | "workspace_id">>;
 
 /**
  * Every Search Console row for the two windows, by shape. Optional workspace
@@ -41,12 +41,16 @@ export async function loadGscRowsFrom(
   today: Date = new Date(),
   days = WINDOW_DAYS,
 ): Promise<DashboardGscRows> {
-  const { since } = windows(today, days);
+  // A week further back than the two windows: the windows end on the newest
+  // synced day (analysis.ts `windowAnchor`), which can be up to that many
+  // days before `today`, and a caller may only learn it from these rows.
+  const since = isoDaysAgo(today, days * 2 + ANCHOR_MAX_LAG_DAYS);
   return readGsc(supabase, {
     workspaceId: workspaceId ?? null,
     shapes: ROW_SHAPES,
     since,
-    columns: ["clicks", "impressions", "avg_position", "article_id"],
+    // workspace_id: the all-sites view tells each site's history apart (`rowsCoverage`).
+    columns: ["clicks", "impressions", "avg_position", "article_id", "workspace_id"],
   });
 }
 
@@ -56,10 +60,22 @@ export type SyncHealth = {
   connectedAt: string | null;
   /** The property the sync resolved, once it has. */
   siteUrl: string | null;
-  /** When the newest Search Console row was written. Null is "never". */
+  /**
+   * When a sync last completed: the recorded outcome (migration 115), or
+   * else when the newest Search Console row was written. Null is "never".
+   */
   lastSyncAt: string | null;
-  /** The newest day Google has reported. */
+  /** The newest day Google has reported rows for. */
   latestMetricDate: string | null;
+  /** The oldest day stored rows exist for. */
+  earliestMetricDate: string | null;
+  /**
+   * The days the sync has an answer for, rows or not (migration 115): a day
+   * Google reported as empty is inside it. Null without 115, or before the
+   * first sync after it.
+   */
+  syncedFrom: string | null;
+  syncedThrough: string | null;
   /** Google refused the stored token (migration 070); only a reconnect clears it. */
   needsReconnect: boolean;
   /** The provider error that set needsReconnect, or the last failed sync's. */
@@ -70,8 +86,24 @@ export async function syncHealthFor(workspaceId: string): Promise<SyncHealth> {
   return syncHealthFrom(await createClient(), workspaceId);
 }
 
+/** The columns migration 115 adds, read on their own so a database without it still answers the rest. */
+type SyncOutcome = { last_synced_at: string | null; synced_from: string | null; synced_through: string | null };
+
+async function syncOutcome(supabase: SupabaseClient, workspaceId: string): Promise<SyncOutcome | null> {
+  const { data, error } = await supabase
+    .from("workspace_integrations")
+    .select("last_synced_at, synced_from, synced_through")
+    .eq("workspace_id", workspaceId)
+    .eq("integration_id", "gsc")
+    .maybeSingle();
+  if (error || !data) return null;
+  return data as SyncOutcome;
+}
+
+const later = (a: string | null, b: string | null) => (a && b ? (a > b ? a : b) : (a ?? b));
+
 export async function syncHealthFrom(supabase: SupabaseClient, workspaceId: string): Promise<SyncHealth> {
-  const [conn, lastSyncAt, latestMetricDate] = await Promise.all([
+  const [conn, lastWrite, latestMetricDate, earliestMetricDate, outcome] = await Promise.all([
     supabase
       .from("workspace_integrations")
       .select("connected_at, config, needs_reconnect, last_sync_error")
@@ -80,17 +112,40 @@ export async function syncHealthFrom(supabase: SupabaseClient, workspaceId: stri
       .maybeSingle(),
     lastGscWriteAt(supabase, workspaceId),
     latestGscDate(supabase, workspaceId),
+    earliestGscDate(supabase, workspaceId),
+    syncOutcome(supabase, workspaceId),
   ]);
   const config = (conn.data?.config as { gscSiteUrl?: string } | null) ?? null;
   return {
     connected: Boolean(conn.data),
     connectedAt: (conn.data?.connected_at as string | null) ?? null,
     siteUrl: config?.gscSiteUrl ?? null,
-    lastSyncAt,
+    lastSyncAt: later(outcome?.last_synced_at ?? null, lastWrite),
     latestMetricDate,
+    earliestMetricDate,
+    syncedFrom: outcome?.synced_from ?? null,
+    syncedThrough: outcome?.synced_through ?? null,
     needsReconnect: Boolean(conn.data?.needs_reconnect),
     lastSyncError: (conn.data?.last_sync_error as string | null | undefined) ?? null,
   };
+}
+
+/**
+ * The days this site's Search Console history covers: the recorded sync
+ * range (migration 115), or else the stored rows' own first and last day.
+ * lib/gsc/analysis.ts reads it to decide whether a window is whole.
+ *
+ * The recorded start wins over older rows: the sync restarts the range after
+ * a run of days it never asked Google for (lib/google/sync.ts
+ * `nextSyncedRange`), and rows from before that hole would otherwise make a
+ * window with weeks missing read as whole. The first recorded range starts
+ * from the stored history, so rows stored before 115 still count.
+ */
+export function coverageOf(health: Pick<SyncHealth, "syncedFrom" | "syncedThrough" | "earliestMetricDate" | "latestMetricDate">): GscCoverage {
+  if (health.syncedFrom && health.syncedThrough) {
+    return { from: health.syncedFrom, through: later(health.syncedThrough, health.latestMetricDate) };
+  }
+  return { from: health.earliestMetricDate, through: health.latestMetricDate };
 }
 
 export type KnownPageRow = KnownPage & {

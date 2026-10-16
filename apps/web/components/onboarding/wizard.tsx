@@ -635,7 +635,7 @@ export function OnboardingWizard({
             {readFailure && (
               <div className="mb-4 flex flex-col items-start gap-3 rounded-[8px] border border-line bg-bg p-4 sm:flex-row sm:justify-between sm:gap-4">
                 <p className="m-0 text-[12.5px] leading-[1.6] text-ink-2">{readFailureMessage ?? FAILURE_COPY[readFailure]}</p>
-                {readFailure !== "no_model" && readFailure !== "needs_plan" && (
+                {readFailure !== "no_model" && readFailure !== "needs_plan" && readFailure !== "limited" && (
                   <Button
                     size="sm"
                     onClick={() => {
@@ -874,6 +874,9 @@ const FAILURE_COPY: Record<InferenceReason, string> = {
   // Never rendered: `needs_plan` always carries its own sentence, because the
   // reason depends on the account (out of free drafts, paused, card declined).
   needs_plan: "",
+  // Always carries its own sentence (which limit, or that an operator is
+  // viewing); this is only the fallback.
+  limited: "This site has been read as many times as setup allows for now. Fill this in by hand.",
 };
 
 /** "Sep 7" from a YYYY-MM-DD, in UTC so the day the planner wrote is the day shown. */

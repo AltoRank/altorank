@@ -89,6 +89,8 @@ export interface ArticleResearch {
    * it, and on rewrites, which get no site facts.
    */
   siteStatements?: Array<{ text: string; source: string }>;
+  /** Sentences taken out of the draft for stating something about the business it never said (lib/content/business-claims.ts). */
+  businessClaims?: import("@/lib/content/business-claims").RemovedBusinessClaim[];
   /**
    * Sentences from the ranking pages research fetched that state a figure,
    * with their URLs: what the writer may cite (lib/seo/source-figures.ts).
