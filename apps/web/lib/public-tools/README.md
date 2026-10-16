@@ -16,7 +16,7 @@ err  { ok: false, error: "<sentence for a visitor>", code }
 |---|---|---|
 | `invalid_input` | 400 | body is not JSON, fails the schema, or names a private/local address |
 | `not_found` | 404 | no tool with that slug |
-| `rate_limited` | 429 | per-IP window for this tool is used up (`Retry-After` is set) |
+| `rate_limited` | 429 | per-IP window for this tool is used up (`Retry-After` is set; CORS exposes it and the `X-RateLimit-*` headers, so a widget on altorank.co can read the real wait) |
 | `daily_cap` | 429 | paid tools only: today's shared budget is spent, or the spend guard could not be reached |
 | `upstream` | 502 | the site or a provider failed or timed out |
 | `unknown` | 500 | our bug (logged; the caller sees a generic sentence) |

@@ -36,11 +36,21 @@ describe("social-media-post-generator", () => {
     expect(xLength("日本")).toBe(4);
   });
 
-  it("Instagram: flags more than 30 hashtags", async () => {
-    const tags = Array.from({ length: 31 }, (_, i) => `#t${i}`).join(" ");
-    create.mockResolvedValue(answer({ posts: [{ text: `Caption ${tags}` }] }));
+  it("Instagram: passes 5 hashtags and fails 6, the cap since December 2025", async () => {
+    const tags = (n: number) => ["#soil", "#compost", "#garden", "#seeds", "#herbs", "#roots"].slice(0, n).join(" ");
+    create.mockResolvedValue(answer({ posts: [{ text: `Caption ${tags(5)}` }, { text: `Caption ${tags(6)}` }] }));
     const blocks = await tool.run(tool.input.parse({ topic_or_text: "gardening", platform: "instagram" }), ctx());
-    expect(item(kvOf(blocks), "Post 1")).toMatchObject({ status: "fail" });
+    expect(item(kvOf(blocks), "Post 1")).toMatchObject({ status: "pass" });
+    expect(item(kvOf(blocks), "Post 2")).toMatchObject({ status: "fail" });
+    expect(item(kvOf(blocks), "Post 2")?.value).toMatch(/6 hashtags; Instagram allows 5/);
+  });
+
+  it("Instagram: asks the model for no more tags than the check allows", async () => {
+    create.mockResolvedValue(answer({ posts: [{ text: "Caption" }] }));
+    await tool.run(tool.input.parse({ topic_or_text: "gardening", platform: "instagram" }), ctx());
+    const system = (create.mock.calls[0][0] as { system: string }).system;
+    expect(system).toMatch(/At most 5 relevant hashtags/);
+    expect(system).not.toMatch(/3 to 8/);
   });
 
   it("defaults to LinkedIn", () => {
