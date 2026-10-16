@@ -29,6 +29,7 @@
 import type { RankedKeyword } from "@/lib/seo/ranked-keywords";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readSiteText } from "./site-text";
+import { lockedStoreContent } from "@/lib/shopify/store-content";
 import { withSiteReads } from "@/lib/seo/site-urls";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { trainVoiceProfile } from "@/lib/voice/train";
@@ -213,6 +214,13 @@ async function runPhases(
   // after the other - twenty-two seconds of a production first look's
   // critical path (2026-10-09) before any keyword work began. Awaited before
   // the plan, so its outcome is on the row before anything reads it.
+  // A Shopify store behind its password page answers every crawl with
+  // /password, and the whole look would skip. When the store installed the
+  // app, its own pages and articles are read through the Admin API instead
+  // and stand in for the crawl (lib/shopify/store-content.ts). Null for every
+  // other site, and for a store whose storefront is open.
+  const storeContent = domain ? await timed("store_content", () => lockedStoreContent(supabase, workspace.id, domain)) : null;
+
   emit({ phase: "scanning", status: "active" });
   const scanning = (async () => {
   if (!domain) {
@@ -229,7 +237,9 @@ async function runPhases(
         // Two of the site's newest posts, for the voice: without them the
         // sample was the pricing, features and about copy whenever those
         // read well, and a blog's voice was learned from its sales pages.
-        timed("site_read", () => withStage("voice", () => readSiteText(domain, undefined, { articles: 2 }))),
+        storeContent
+          ? Promise.resolve({ text: storeContent.text, articleText: storeContent.articleText, source: "shopify" as const })
+          : timed("site_read", () => withStage("voice", () => readSiteText(domain, undefined, { articles: 2 }))),
         readExampleUrls(supabase, workspace.id).then((urls) => readExampleArticles(urls)).catch(() => ""),
       ]);
       // Chosen articles first, then the site's own newest, then the rest.
@@ -241,7 +251,9 @@ async function runPhases(
           status: "done",
           detail: chosen
             ? "Learned how your site writes, starting from the articles you chose."
-            : read.articleText || read.source === "sitemap" ? "Learned how your site writes, from its articles." : "Learned how your site writes.",
+            : read.source === "shopify"
+              ? "Learned how your store writes, from its own pages and articles (its storefront is password-protected)."
+              : read.articleText || read.source === "sitemap" ? "Learned how your site writes, from its articles." : "Learned how your site writes.",
         });
       } else {
         // Phrased so it still reads correctly when `onboardingOutcome` quotes
@@ -321,6 +333,8 @@ async function runPhases(
         // The speed test lands on the audit when it answers; nothing here
         // waits for it (it was a minute of a production first look).
         deferPageSpeed: true,
+        // The store's own pages, when its storefront could not be crawled.
+        ...(storeContent ? { pages: storeContent.pages } : {}),
       }))));
       keywordsFound = analysis.keywordsFound;
       screened = analysis.screened;

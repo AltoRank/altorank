@@ -35,6 +35,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const TIMED_STAGES = [
   "reach",
   "site_read",
+  // A locked Shopify storefront's pages, read through the Admin API (lib/shopify/store-content.ts).
+  "store_content",
   "voice",
   "analysis",
   "readiness",
