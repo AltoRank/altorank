@@ -103,4 +103,16 @@ describe("createApiKey for an agent key", () => {
     expect(created.workspace_id).toBeNull();
     expect(service.tables.api_keys[0]).not.toHaveProperty("workspace_id");
   });
+
+  it("ignores a site sent with it: only a blog key is bound to one", async () => {
+    const created = await createApiKey(form({ workspace_id: SITE, allow_write: "on" }));
+    expect(created.scopes).toEqual(["read", "generate", "write"]);
+    expect(created.workspace_id).toBeNull();
+    expect(service.tables.api_keys[0]).not.toHaveProperty("workspace_id");
+  });
+
+  it("refuses a kind it does not know, before writing", async () => {
+    await expect(createApiKey(form({ kind: "admin", workspace_id: SITE }))).rejects.toThrow();
+    expect(service.tables.api_keys).toHaveLength(0);
+  });
 });

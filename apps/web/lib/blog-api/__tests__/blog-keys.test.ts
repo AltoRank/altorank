@@ -17,8 +17,11 @@ const blogKey = generateApiKey();
 const agentKey = generateApiKey();
 const writeOnlyKey = generateApiKey();
 const revokedBlogKey = generateApiKey();
+const expiredBlogKey = generateApiKey();
+const siteLessBlogKey = generateApiKey();
+const movedSiteBlogKey = generateApiKey();
 
-const SITE_A = "11111111-1111-4111-8111-111111111111";
+const SITE_A = "aaaaaaaa-1111-4111-8111-11111111111b";
 const SITE_B = "22222222-2222-4222-8222-222222222222";
 const OTHER_ACCOUNT_SITE = "33333333-3333-4333-8333-333333333333";
 
@@ -29,6 +32,11 @@ function seed() {
       { id: "k-agent", account_id: "acc-1", key_hash: agentKey.hash, scopes: ["read", "generate"], workspace_id: null, revoked_at: null, expires_at: null, last_used_at: new Date().toISOString() },
       { id: "k-write", account_id: "acc-1", key_hash: writeOnlyKey.hash, scopes: ["write"], workspace_id: null, revoked_at: null, expires_at: null, last_used_at: null },
       { id: "k-revoked", account_id: "acc-1", key_hash: revokedBlogKey.hash, scopes: ["blog"], workspace_id: SITE_A, revoked_at: "2026-10-01T00:00:00Z", expires_at: null, last_used_at: null },
+      { id: "k-expired", account_id: "acc-1", key_hash: expiredBlogKey.hash, scopes: ["blog"], workspace_id: SITE_A, revoked_at: null, expires_at: "2026-01-01T00:00:00Z", last_used_at: null },
+      // Shapes migration 114's check refuses, in case a row predates it.
+      { id: "k-siteless", account_id: "acc-1", key_hash: siteLessBlogKey.hash, scopes: ["blog", "read"], workspace_id: null, revoked_at: null, expires_at: null, last_used_at: null },
+      // Bound to a site that is no longer on the key's account.
+      { id: "k-moved", account_id: "acc-1", key_hash: movedSiteBlogKey.hash, scopes: ["blog"], workspace_id: OTHER_ACCOUNT_SITE, revoked_at: null, expires_at: null, last_used_at: null },
     ],
     accounts: [{ id: "acc-1", api_key: "legacy-plaintext-key" }, { id: "acc-2", api_key: null }],
     workspaces: [
@@ -79,6 +87,25 @@ describe("blog keys", () => {
 
   it("stop working once revoked", async () => {
     expect((await denial(await authenticateBlogRequest(req(revokedBlogKey.key, SITE_A)))).status).toBe(401);
+  });
+
+  it("match their site whatever the case of workspace_id", async () => {
+    const auth = await authenticateBlogRequest(req(blogKey.key, SITE_A.toUpperCase()));
+    expect(auth).toMatchObject({ ok: true, workspaceId: SITE_A });
+  });
+
+  it("stop working once expired", async () => {
+    expect((await denial(await authenticateBlogRequest(req(expiredBlogKey.key, SITE_A)))).status).toBe(401);
+  });
+
+  it("without a site are refused, even with read alongside, rather than read the account", async () => {
+    expect((await denial(await authenticateBlogRequest(req(siteLessBlogKey.key, SITE_A)))).status).toBe(401);
+    expect((await denial(await authenticateBlogRequest(req(siteLessBlogKey.key, SITE_B)))).status).toBe(401);
+  });
+
+  it("cannot read their site once it belongs to another account", async () => {
+    expect((await denial(await authenticateBlogRequest(req(movedSiteBlogKey.key)))).status).toBe(403);
+    expect((await denial(await authenticateBlogRequest(req(movedSiteBlogKey.key, SITE_A)))).status).toBe(403);
   });
 
   it("record that they were used, so Settings does not show them as unused", async () => {

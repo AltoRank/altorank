@@ -87,7 +87,8 @@ export async function authenticateBlogRequest(request: Request): Promise<BlogAut
   const key = bearerToken(request);
   if (!key) return deny(401, "Missing Authorization: Bearer <api key>");
 
-  const requested = new URL(request.url).searchParams.get("workspace_id");
+  // A uuid, compared as Postgres compares it: case does not matter.
+  const requested = new URL(request.url).searchParams.get("workspace_id")?.trim().toLowerCase() || null;
 
   const supabase = createServiceClient();
 
@@ -143,7 +144,7 @@ export async function authenticateBlogRequest(request: Request): Promise<BlogAut
   // another site is refused, not answered as "no articles".
   const workspaceId = requested ?? boundSite;
   if (!workspaceId) return deny(400, "workspace_id is required");
-  if (boundSite && workspaceId !== boundSite) return deny(403, "This blog key is for a different site (workspace_id)");
+  if (boundSite && workspaceId !== boundSite.toLowerCase()) return deny(403, "This blog key is for a different site (workspace_id)");
 
   // The detail endpoint hands out the article rendered to HTML, read with the
   // service role, so the trial gate is asked here: `status = 'live'` is not
