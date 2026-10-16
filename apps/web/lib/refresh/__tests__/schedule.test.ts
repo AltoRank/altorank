@@ -53,6 +53,13 @@ describe("rewriteSlot", () => {
     expect(rewriteSlot({ days: [1], now: WED, due: [task()], runs: [] })).toMatchObject({ kind: "catch_up" });
   });
 
+  it("makes up a capped Monday even when last week's catch-up ran a minute under seven days ago", () => {
+    // Last Tuesday's catch-up at 07:31; this Tuesday's run at 07:30 is
+    // 6 days 23 hours 59 minutes later. It belongs to last week, not this one.
+    const lastWeek = run("2026-10-06T07:31:00Z");
+    expect(rewriteSlot({ days: [1], now: TUE, due: [task()], runs: [lastWeek] })).toMatchObject({ kind: "catch_up" });
+  });
+
   it("does not make up a day that produced its rewrite", () => {
     expect(rewriteSlot({ days: [1], now: TUE, due: [task({ id: "next" })], runs: [run("2026-10-12T07:32:00Z")] })).toMatchObject({
       kind: "none",

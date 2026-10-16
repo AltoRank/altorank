@@ -83,8 +83,13 @@ export function rewriteSlot(input: {
 
   const missed = lastEnabledDayBefore(days, now);
   if (!missed) return { kind: "none", reason: "not a scheduled day" };
-  // The missed day's slot was used, or the week's count is: nothing to make up.
-  if (ranSince(missed) || runs.length >= days.length) return { kind: "none", reason: "not a scheduled day" };
+  // The missed day's slot was used, or the week's count is: nothing to make
+  // up. The week is today and the six calendar days before it, not the last
+  // 168 hours: last week's catch-up at 07:31 is a minute inside those when
+  // this one starts at 07:30, and would hold this week's for another week.
+  const weekStart = startOf(isoDay(now.getTime() - 6 * DAY_MS));
+  const thisWeek = runs.filter((r) => Date.parse(r.created_at) >= weekStart).length;
+  if (ranSince(missed) || thisWeek >= days.length) return { kind: "none", reason: "not a scheduled day" };
   // Only a task that was waiting when that day began. One scheduled for a
   // later date, or added after the day started, keeps its promise of the
   // next enabled day on or after its date.
