@@ -92,15 +92,28 @@ export const ANTHROPIC_RATES: Record<string, { input: number; output: number }> 
   "claude-opus-5": { input: 5, output: 25 },
 };
 
-/** Cost of a call in USD, or null when the model's rate is not known here. */
+/**
+ * What a cached prompt prefix is billed at, as a share of the input rate:
+ * written to the cache (5-minute entry) at 1.25, read back at 0.1.
+ */
+export const CACHE_WRITE_SHARE = 1.25;
+export const CACHE_READ_SHARE = 0.1;
+
+/**
+ * Cost of a call in USD, or null when the model's rate is not known here.
+ * `inputTokens` is the uncached input, as the API reports it; a cached
+ * prefix comes separately, as tokens written to or read from the cache.
+ */
 export function anthropicCost(
   model: string,
   inputTokens: number,
   outputTokens: number,
+  cache: { writeTokens?: number; readTokens?: number } = {},
 ): number | null {
   const rate = ANTHROPIC_RATES[model];
   if (!rate) return null;
-  return (inputTokens * rate.input + outputTokens * rate.output) / 1_000_000;
+  const cachedInput = (cache.writeTokens ?? 0) * CACHE_WRITE_SHARE + (cache.readTokens ?? 0) * CACHE_READ_SHARE;
+  return ((inputTokens + cachedInput) * rate.input + outputTokens * rate.output) / 1_000_000;
 }
 
 /** The dearest rate in the table: what an estimate assumes for a model it does not know. */

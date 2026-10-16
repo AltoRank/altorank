@@ -35,8 +35,10 @@ vi.mock("@/lib/content/generate", () => ({ generateArticle: async () => { throw 
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
     messages = {
-      create: async (p: { messages: Array<{ content: string }> }) => {
-        const prompt = p.messages[0].content;
+      create: async (p: { messages: Array<{ content: string | Array<{ text: string }> }> }) => {
+        // The results judge sends its cached instructions and its data as two blocks.
+        const content = p.messages[0].content;
+        const prompt = typeof content === "string" ? content : content.map((b) => b.text).join("");
         await new Promise((r) => setTimeout(r, 50 + h.rnd() * 400));
         const at = prompt.lastIndexOf("PHRASES\n");
         if (at !== -1) {

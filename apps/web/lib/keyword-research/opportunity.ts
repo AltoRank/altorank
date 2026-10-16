@@ -789,6 +789,16 @@ export function existingPageIn(organic: ReadonlyArray<{ url: string }>, sourceUr
 }
 
 /**
+ * Where the judge's instructions end: everything before the last line, the
+ * one JSON line of business, query and results. The instructions differ only
+ * by the market's language and the date, so every read of a first look sends
+ * the same ~2,000 tokens ahead of its data, and they are cached.
+ */
+export function judgeCachePrefix(prompt: string): number {
+  return prompt.lastIndexOf("\n") + 1;
+}
+
+/**
  * The results judge's raw answer for a results page (`judgedResults`), asked
  * exactly as qualification asks it, so the decision evals replay the same
  * stored answer (lib/evals, the `page-type` decision).
@@ -797,7 +807,8 @@ export function askResultsJudge(
   input: { term: string; context: OpportunityContext; verdict: Extract<FitVerdict, { keep: true }>; organic: ReadonlyArray<ResultsPageEntry> },
   options: { spend?: SpendSink | null; ask?: AskModel; today?: string } = {},
 ): Promise<string | null> {
-  return (options.ask ?? askStructured)("keyword-research/opportunity", opportunityPrompt({ ...input, today: options.today }), { maxTokens: OPPORTUNITY_MAX_TOKENS, minTokens: OPPORTUNITY_MIN_TOKENS, spend: options.spend ?? null, tier: "decision", schema: opportunitySchema() });
+  const prompt = opportunityPrompt({ ...input, today: options.today });
+  return (options.ask ?? askStructured)("keyword-research/opportunity", prompt, { maxTokens: OPPORTUNITY_MAX_TOKENS, minTokens: OPPORTUNITY_MIN_TOKENS, spend: options.spend ?? null, tier: "decision", schema: opportunitySchema(), cachePrefix: judgeCachePrefix(prompt) });
 }
 
 /**

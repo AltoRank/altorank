@@ -28,6 +28,17 @@ export const WRITER_MAX_TOKENS = 64_000;
 export { WRITER_MIN_OUTPUT_TOKENS };
 
 /**
+ * How hard the writer thinks when the article's outline is already planned
+ * (lib/content/outline.ts): the sections, their order and their sources are
+ * decided, and the body only writes them. With no effort set, Sonnet 5 runs
+ * adaptive thinking at its default `high` and spent 6,210 and ~19,000 tokens
+ * thinking on two measured briefs (notes on `max_tokens` below), at the
+ * output price. `medium` held the draft's quality on the 2026-10-15
+ * ten-site A/B (PR notes). A brief with no outline keeps the default.
+ */
+export const WRITER_OUTLINE_EFFORT = "medium" as const;
+
+/**
  * An error the API answered with a status before the stream started: the
  * request was refused, not run, and nothing was billed. A connection that
  * failed without an answer is not this - it may have been run - and keeps
@@ -115,6 +126,7 @@ export class ClaudeProvider implements AIProvider {
          * first look's budget it is lowered to what the budget granted.
          */
         max_tokens: maxTokens,
+        ...(prompt.outline ? { output_config: { effort: WRITER_OUTLINE_EFFORT } } : {}),
         system: systemPrompt,
         messages: [
           {
