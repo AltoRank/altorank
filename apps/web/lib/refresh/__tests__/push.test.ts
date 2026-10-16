@@ -233,6 +233,24 @@ describe("pageChangedSinceRewrite", () => {
     expect(pageChangedSinceRewrite({ html: '<p><a href="/x">a</a></p>' }, '<p><a href="/y">a</a></p>')).toBe(true);
   });
 
+  it("sees edits that change no word: a heading level, a split paragraph, an image's alt text", () => {
+    expect(pageChangedSinceRewrite({ html: "<h2>Steps</h2><p>a</p>" }, "<h3>Steps</h3><p>a</p>")).toBe(true);
+    expect(pageChangedSinceRewrite({ html: "<p>one two</p>" }, "<p>one</p><p>two</p>")).toBe(true);
+    expect(
+      pageChangedSinceRewrite({ html: '<p><img src="/a.png" alt=""></p>' }, '<p><img src="/a.png" alt="Knee brace on a table"></p>'),
+    ).toBe(true);
+  });
+
+  it("ignores inline wrappers and attribute order the renderer may change", () => {
+    expect(
+      pageChangedSinceRewrite(
+        { html: '<p>Go <a href="/x" rel="noopener">here</a></p>' },
+        '<p>Go <a rel="noopener" href="/x"><span>here</span></a></p>',
+      ),
+    ).toBe(false);
+    expect(pageChangedSinceRewrite({ html: "<ul><li><p>a</p></li></ul>" }, "<ul>\n<li>a</li>\n</ul>")).toBe(false);
+  });
+
   it("treats a rewrite with no recorded before as changed", () => {
     expect(pageChangedSinceRewrite(null, "<p>a</p>")).toBe(true);
   });

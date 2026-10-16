@@ -112,17 +112,38 @@ export interface Pusher {
 }
 
 /**
- * What a body says, for telling whether a page changed: its text and the
- * addresses it links and shows, without markup. Whitespace, attribute order
- * and entity spelling differ between renderer versions and do not count.
+ * What a body says, for telling whether a page changed: its text, where its
+ * blocks and headings fall, and the addresses and alt text of what it links
+ * and shows, without the rest of the markup. Whitespace, attribute order,
+ * inline wrappers and entity spelling differ between renderer versions and do
+ * not count; an edit to a heading level, a paragraph split or an image's alt
+ * text does, because the push would otherwise quietly undo it.
  */
+const BLOCK_TAG = /^(?:p|li|ul|ol|blockquote|pre|table|thead|tbody|tr|td|th|figure|figcaption|div|section|br|hr)$/;
+
+function attr(attrs: string, name: string): string | null {
+  const m = attrs.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i"));
+  return m ? decodeEntities(m[1] ?? m[2] ?? "").trim() : null;
+}
+
 function bodyFingerprint(html: string): string {
   const body = html.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, " ");
-  const addresses = [...body.matchAll(/<(?:a|img|iframe)\b[^>]*?\s(?:href|src)\s*=\s*["']([^"']*)["']/gi)].map((m) =>
-    decodeEntities(m[1]).trim(),
-  );
-  const text = decodeEntities(body.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
-  return JSON.stringify([text, addresses]);
+  const media = [...body.matchAll(/<(a|img|iframe)\b([^>]*)>/gi)].map(([, tag, attrs]) => {
+    const t = tag.toLowerCase();
+    const where = attr(attrs, t === "a" ? "href" : "src") ?? "";
+    return t === "img" ? `${where} ${attr(attrs, "alt") ?? ""}` : where;
+  });
+  const text = decodeEntities(
+    body.replace(/<(\/?)([a-z][a-z0-9]*)\b[^>]*>/gi, (_m, close: string, tag: string) => {
+      const t = tag.toLowerCase();
+      if (/^h[1-6]$/.test(t)) return close ? " \u0002 " : ` \u0001${t} `;
+      return BLOCK_TAG.test(t) ? " \u0002 " : "";
+    }),
+  )
+    .replace(/\s+/g, " ")
+    .replace(/(?:\u0002 ?)+/g, "\u0002 ")
+    .trim();
+  return JSON.stringify([text, media]);
 }
 
 /**
