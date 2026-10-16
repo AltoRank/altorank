@@ -79,6 +79,8 @@ export interface RefreshTask {
   status: TaskStatus;
   error: string | null;
   created_at: string;
+  /** When the rewrite was claimed; migration 117. Absent before it, null on rows never run. */
+  started_at?: string | null;
 }
 
 export type HunkKind = "unchanged" | "changed" | "added" | "removed";

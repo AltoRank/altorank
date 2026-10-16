@@ -5,6 +5,7 @@ import { entitledToScheduledWork, getQuota } from "@/lib/billing/quota";
 import { draftHoldReason } from "@/lib/billing/trial-hold";
 import { analyzeWorkspace } from "@/lib/refresh/detect";
 import { runRefreshTask } from "@/lib/refresh/rewrite";
+import { reapStoppedTasks } from "@/lib/refresh/tasks";
 import { readArticlesWhole } from "@/lib/articles/body-read";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { notifyRefreshReady } from "@/lib/email/lifecycle";
@@ -77,6 +78,17 @@ async function run(request: Request) {
   // whether it lands.
   const weekday = now.getUTCDay();
   const today = now.toISOString().slice(0, 10);
+
+  // A rewrite the platform cut off before it could record an outcome is
+  // still `running`, and nothing else ever moves it: it read "Rewriting
+  // now…" and held a calendar slot for good. Before this run starts any of
+  // its own, mark those failed with a sentence that says what happened.
+  let stopped = 0;
+  try {
+    stopped = await reapStoppedTasks(supabase, now.getTime());
+  } catch (err) {
+    console.error("[cron/refresh] could not mark stopped rewrites:", err instanceof Error ? err.message : err);
+  }
 
   const { data: workspaces, error } = await supabase
     .from("workspaces")
@@ -230,6 +242,7 @@ async function run(request: Request) {
   return NextResponse.json({
     checked: workspaces?.length ?? 0,
     rewrites,
+    stopped,
     errors: results.filter((r) => r.status === "error").length,
     results,
   });

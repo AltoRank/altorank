@@ -10,6 +10,7 @@ import { sanitizeHtml } from "@/lib/html/sanitize";
 import { loadPageBody } from "@/lib/refresh/rewrite";
 import { readArticlesWhole } from "@/lib/articles/body-read";
 import { pushExecution, exportExecution, type PushResult } from "@/lib/refresh/push";
+import { closeOpenTasks, isOpenTask, isStaleRunning, readTasks } from "@/lib/refresh/tasks";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
 import { needsPlanToShip, SCHEDULED_REWRITES_NEED_PLAN } from "@/lib/billing/quota";
 import { canSpend } from "@/lib/billing/spend-gate";
@@ -50,34 +51,52 @@ async function ownCandidate(candidateId: string): Promise<RefreshCandidate> {
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date");
 
 /**
+ * What scheduling answered. A refusal arrives as data, not as a throw: a
+ * thrown server-action message is a digest in production, and these say
+ * what to do next.
+ */
+export type ScheduleOutcome = { ok: true; id: string } | { ok: false; error: string };
+
+/**
  * Decide to act on a candidate, from a date. The cron runs it on the first
  * enabled weekday on or after that date, one per site per day.
  */
-export async function scheduleCandidate(candidateId: string, scheduledFor: string): Promise<string> {
+export async function scheduleCandidate(candidateId: string, scheduledFor: string): Promise<ScheduleOutcome> {
   await requireAuth();
-  const date = dateSchema.parse(scheduledFor);
+  const parsedDate = dateSchema.safeParse(scheduledFor);
+  if (!parsedDate.success) return { ok: false, error: "Pick a date" };
+  const date = parsedDate.data;
   const candidate = await ownCandidate(candidateId);
-  if (candidate.dismissed_at) throw new Error("This candidate was dismissed");
+  if (candidate.dismissed_at) return { ok: false, error: "This candidate was dismissed" };
   const supabase = await createClient();
 
   // One open task per candidate: rescheduling moves it rather than stacking.
-  const { data: existing } = await supabase
-    .from("refresh_tasks")
-    .select("id")
-    .eq("candidate_id", candidateId)
-    .eq("workspace_id", candidate.workspace_id)
-    .in("status", ["scheduled", "failed"])
-    .limit(1)
-    .maybeSingle();
+  // A rewrite that was cut off mid-run is open too (lib/refresh/tasks.ts);
+  // one genuinely running is not, and is left to finish.
+  const now = Date.now();
+  const tasks = await readTasks(supabase, {
+    candidateIds: [candidateId],
+    workspaceId: candidate.workspace_id,
+    statuses: ["scheduled", "failed", "running"],
+  });
+  if (tasks.some((t) => t.status === "running" && !isStaleRunning(t, now))) {
+    return { ok: false, error: "This page is being rewritten right now. Its result appears under Rewrites when it finishes." };
+  }
+  const existing = tasks.find((t) => isOpenTask(t, now)) ?? null;
 
   let id: string;
   if (existing) {
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("refresh_tasks")
       .update({ scheduled_for: date, status: "scheduled", error: null })
-      .eq("id", existing.id);
+      .eq("id", existing.id)
+      // Only from the state it was read in: a rewrite that started meanwhile
+      // is not pulled back to `scheduled` under the cron.
+      .eq("status", existing.status)
+      .select("id");
     if (error) throw new Error(error.message);
-    id = existing.id as string;
+    if (!data?.length) return { ok: false, error: "This task changed while you were looking at it; reload and try again." };
+    id = existing.id;
   } else {
     const { data, error } = await supabase
       .from("refresh_tasks")
@@ -88,18 +107,15 @@ export async function scheduleCandidate(candidateId: string, scheduledFor: strin
     id = data.id as string;
   }
   revalidatePath(IMPROVEMENTS);
-  return id;
+  return { ok: true, id };
 }
 
+/** Withdraw a task that has not run: waiting, failed, or cut off mid-rewrite. */
 export async function cancelTask(taskId: string): Promise<void> {
   await requireAuth();
   const supabase = await createClient();
-  const { error } = await supabase
-    .from("refresh_tasks")
-    .update({ status: "cancelled" })
-    .eq("id", taskId)
-    .in("status", ["scheduled", "failed"]);
-  if (error) throw new Error(error.message);
+  const tasks = await readTasks(supabase, { id: taskId, statuses: ["scheduled", "failed", "running"] });
+  await closeOpenTasks(supabase, tasks, { status: "cancelled" });
   revalidatePath(IMPROVEMENTS);
 }
 
@@ -114,12 +130,12 @@ export async function dismissCandidate(candidateId: string): Promise<void> {
     .eq("id", candidateId)
     .eq("workspace_id", candidate.workspace_id);
   if (error) throw new Error(error.message);
-  await supabase
-    .from("refresh_tasks")
-    .update({ status: "cancelled" })
-    .eq("candidate_id", candidateId)
-    .eq("workspace_id", candidate.workspace_id)
-    .eq("status", "scheduled");
+  const tasks = await readTasks(supabase, {
+    candidateIds: [candidateId],
+    workspaceId: candidate.workspace_id,
+    statuses: ["scheduled", "failed", "running"],
+  });
+  await closeOpenTasks(supabase, tasks, { status: "cancelled" });
   revalidatePath(IMPROVEMENTS);
 }
 

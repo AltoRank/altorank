@@ -177,7 +177,11 @@ export function PlannerGrid({
         }),
       );
       pendingMove.current = true;
-      const move = item.improvement ? scheduleCandidate(item.improvement.candidateId, to) : reschedulePlannedEntry(entryId, to);
+      const move: Promise<unknown> = item.improvement
+        ? scheduleCandidate(item.improvement.candidateId, to).then((res) => {
+            if (!res.ok) throw new Error(res.error);
+          })
+        : reschedulePlannedEntry(entryId, to);
       move
         .then(() => { pendingMove.current = false; router.refresh(); })
         .catch((err: unknown) => {

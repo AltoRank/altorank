@@ -28,7 +28,11 @@ import {
   type ReviewStatus,
 } from "@/lib/refresh/types";
 
-export type CandidateRow = RefreshCandidate & { title: string; task: RefreshTask | null };
+export type CandidateRow = RefreshCandidate & {
+  title: string;
+  /** `stale`: running for longer than any run lasts, so it was cut off (lib/refresh/tasks.ts). */
+  task: (RefreshTask & { stale?: boolean }) | null;
+};
 
 export type ExecutionRow = {
   id: string;
@@ -338,9 +342,10 @@ function CandidateItem({ candidate: c }: { candidate: CandidateRow }) {
             <div className="mt-1.5 text-[12px] text-ink-3">{evidence.join(" · ")}</div>
           )}
           {c.task && (
-            <div className={cn("mt-1.5 text-[12px]", c.task.status === "failed" ? "text-err-ink" : "text-ink-2")}>
+            <div className={cn("mt-1.5 text-[12px]", c.task.status === "failed" || c.task.stale ? "text-err-ink" : "text-ink-2")}>
               {c.task.status === "scheduled" && `Scheduled for ${c.task.scheduled_for}; runs on the next enabled day on or after that.`}
-              {c.task.status === "running" && "Rewriting now…"}
+              {c.task.status === "running" && !c.task.stale && "Rewriting now…"}
+              {c.task.status === "running" && c.task.stale && "The rewrite stopped before it finished. Nothing was changed; reschedule it to try again."}
               {c.task.status === "failed" && `Last run failed: ${c.task.error ?? "unknown error"}. Reschedule to try again.`}
             </div>
           )}
@@ -350,22 +355,33 @@ function CandidateItem({ candidate: c }: { candidate: CandidateRow }) {
             <Icons.edit size={12} />
             Brief{c.brief_status === "ready" ? "" : c.brief_status === "failed" ? " (failed)" : " (none)"}
           </Button>
-          {c.task && c.task.status !== "running" ? (
-            <Button size="sm" variant="ghost" disabled={pending} onClick={() => act("Unscheduled", () => cancelTask(c.task!.id))}>
-              Cancel
-            </Button>
-          ) : (
+          {/* A waiting task can be withdrawn; one that failed or was cut off
+              can be withdrawn or put back on a date (scheduleCandidate moves
+              the same task); one running now is left to finish. */}
+          {c.task && c.task.status === "running" && !c.task.stale ? null : (
             <>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                aria-label="Run on or after"
-                className="bg-bg border border-line rounded-[6px] px-2 py-1 text-[12px] font-mono"
-              />
-              <Button size="sm" disabled={pending || !date} onClick={() => act("Scheduled", () => scheduleCandidate(c.id, date))}>
-                Schedule
-              </Button>
+              {(!c.task || c.task.status !== "scheduled") && (
+                <>
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    aria-label="Run on or after"
+                    className="bg-bg border border-line rounded-[6px] px-2 py-1 text-[12px] font-mono"
+                  />
+                  <Button size="sm" disabled={pending || !date} onClick={() => act("Scheduled", async () => {
+                      const res = await scheduleCandidate(c.id, date);
+                      if (!res.ok) throw new Error(res.error);
+                    })}>
+                    {c.task ? "Reschedule" : "Schedule"}
+                  </Button>
+                </>
+              )}
+              {c.task && (
+                <Button size="sm" variant="ghost" disabled={pending} onClick={() => act("Unscheduled", () => cancelTask(c.task!.id))}>
+                  Cancel
+                </Button>
+              )}
             </>
           )}
           <Button size="sm" variant="ghost" disabled={pending} onClick={() => act("Dismissed", () => dismissCandidate(c.id))}>

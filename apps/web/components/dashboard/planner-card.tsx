@@ -209,7 +209,12 @@ export function PlannerCard({
   // Move and Remove go through whichever door owns the row: the plan's
   // actions for a keyword, the Improvements page's for a rewrite. Same
   // behaviour as those screens, because it is the same code.
-  const move = (to: string) => (improvement ? scheduleCandidate(improvement.candidateId, to) : reschedulePlannedEntry(entry.id, to));
+  const move = async (to: string) => {
+    if (!improvement) return reschedulePlannedEntry(entry.id, to);
+    // A refusal is data (see ScheduleOutcome); `act` shows a throw.
+    const res = await scheduleCandidate(improvement.candidateId, to);
+    if (!res.ok) throw new Error(res.error);
+  };
   const remove = () =>
     improvement
       ? cancelTask(improvement.taskId)

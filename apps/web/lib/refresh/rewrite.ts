@@ -23,6 +23,7 @@ import { writeBrief } from "./brief";
 import { diffBlocks } from "./hunks";
 import { validateRewrite } from "./validate";
 import { rewriteFactCheck } from "./fact-check";
+import { claimTask } from "./tasks";
 import type { Evidence, ExecutionSide, Opportunity, RefreshCandidate, RewriteFactCheck } from "./types";
 
 const UA = "Mozilla/5.0 (compatible; AltoRank/1.0; +https://altorank.co; content refresh)";
@@ -191,7 +192,9 @@ export interface RunTaskResult {
 /**
  * Run one scheduled task end to end. Marks the task `running`, then `done`
  * with an execution or `failed` with the error. Never throws past the task
- * row: the cron reports the outcome, it does not crash on it.
+ * row: the cron reports the outcome, it does not crash on it. A run the
+ * platform kills before either write leaves the task `running`; the next
+ * cron run marks it failed (reapStoppedTasks in lib/refresh/tasks.ts).
  */
 export async function runRefreshTask(
   supabase: SupabaseClient,
@@ -211,7 +214,15 @@ export async function runRefreshTask(
     return { ok: false, error: "candidate was dismissed" };
   }
 
-  await supabase.from("refresh_tasks").update({ status: "running" }).eq("id", taskId);
+  // Claimed on the status it was read in, and stamped, so a task cut off
+  // mid-rewrite can be told from one still running (lib/refresh/tasks.ts).
+  let claimed: boolean;
+  try {
+    claimed = await claimTask(supabase, taskId);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "could not start the task" };
+  }
+  if (!claimed) return { ok: false, error: "task is no longer scheduled" };
 
   try {
     const { data: ws } = await supabase
