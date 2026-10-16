@@ -472,6 +472,11 @@ export const CHOOSE_PLAN_MESSAGE =
  * cron/refresh gates on entitledToScheduledWork, so a switch flipped on
  * without a plan is a promise the product does not keep - the settings page
  * would read "Rewrites on Tue and Thu" and nothing would ever be written.
+ *
+ * The last sentence says only what holds without a plan: `analyzeNow` and
+ * `saveBrief` have no spend gate; `generateBrief` asks canSpend("refresh"),
+ * which refuses a trial-gated account after its first draft and a no-plan
+ * account whose free drafts are spent.
  */
 export const SCHEDULED_REWRITES_NEED_PLAN =
-  "Scheduled rewrites need a plan: each one is a model call on a schedule, so they run for paid accounts only. Nothing has been charged yet; choose a plan on the Billing page and this switch works. Candidates and briefs on the Improvements page stay available either way.";
+  "Scheduled rewrites need a plan: each one is a model call on a schedule, so they run for paid accounts only. Nothing has been charged yet; choose a plan on the Billing page and this switch works. Without one, Analyze now still finds candidates on the Improvements page and you can write a brief by hand; generating one with AI needs free drafts left or a plan.";

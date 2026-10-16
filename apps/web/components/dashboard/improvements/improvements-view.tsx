@@ -28,7 +28,11 @@ import {
   type ReviewStatus,
 } from "@/lib/refresh/types";
 
-export type CandidateRow = RefreshCandidate & { title: string; task: RefreshTask | null };
+export type CandidateRow = RefreshCandidate & {
+  title: string;
+  /** `stale`: running for longer than any run lasts, so it was cut off (lib/refresh/tasks.ts). */
+  task: (RefreshTask & { stale?: boolean }) | null;
+};
 
 export type ExecutionRow = {
   id: string;
@@ -71,6 +75,10 @@ const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const fmtDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
+
+/** A YYYY-MM-DD day, read at noon UTC so no timezone moves it to a neighbour. */
+const fmtDay = (day: string) =>
+  new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
 export function OpportunityBadge({ opportunity }: { opportunity: Opportunity }) {
   const tone: Record<Opportunity, string> = {
@@ -133,7 +141,8 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
           toast.error("Search Console is not connected, so there is nothing to analyse.");
         } else {
           toast.success(
-            `${plural(r.pages, "page")} checked: ${plural(r.created, "new candidate")}, ${r.refreshed} refreshed`,
+            `${plural(r.pages, "page")} checked: ${plural(r.created, "new candidate")}, ${r.refreshed} refreshed` +
+              (r.retired ? `, ${r.retired} no longer flagged` : ""),
           );
           router.refresh();
         }
@@ -202,7 +211,7 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
             {!refresh.enabled && (
               <Blocker
                 title="Scheduled rewrites are off for this workspace"
-                body="Candidates can be found and scheduled, but nothing runs until the schedule is switched on."
+                body="Analyze now still finds candidates. Scheduling a rewrite, and the weekly re-check of candidates, wait until the schedule is switched on."
                 href="/settings/refresh"
                 cta="Open settings"
               />
@@ -286,14 +295,19 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
                   Repeating the CTA here made the same request twice on one
                   screen; what this list owes the reader is why it in
                   particular is empty. */}
+              {/* The weekly pass is cron/refresh, which visits only sites with
+                  scheduled rewrites on and a plan; say so rather than promise
+                  a re-check that a default site never gets. */}
               {gscConnected
-                ? "Nothing flagged. Analyze now reads the last 28 days of Search Console against your pages; the weekly pass does the same."
+                ? refresh.enabled
+                  ? "Nothing flagged. Analyze now reads the last 28 days of Search Console against your pages; while scheduled rewrites run on this site, a weekly pass does the same."
+                  : "Nothing flagged. Analyze now reads the last 28 days of Search Console against your pages. With scheduled rewrites off, nothing re-reads them on its own; press it again after new data comes in."
                 : "No candidates: pages are ranked for rewriting by their Search Console impressions, and there are none."}
             </div>
           ) : (
             <ul className="m-0 p-0 list-none divide-y divide-line-soft">
               {candidates.map((c) => (
-                <CandidateItem key={c.id} candidate={c} />
+                <CandidateItem key={c.id} candidate={c} scheduleRuns={refresh.enabled && refresh.days.length > 0} />
               ))}
             </ul>
           )}
@@ -303,7 +317,12 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
   );
 }
 
-function CandidateItem({ candidate: c }: { candidate: CandidateRow }) {
+/**
+ * `scheduleRuns`: the site's switch is on and a weekday is picked, so the
+ * cron will pick a scheduled task up. Scheduling is refused otherwise; a task
+ * scheduled before the switch went off says that it is waiting on it.
+ */
+function CandidateItem({ candidate: c, scheduleRuns }: { candidate: CandidateRow; scheduleRuns: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [brief, setBrief] = useState(c.brief ?? "");
@@ -335,12 +354,24 @@ function CandidateItem({ candidate: c }: { candidate: CandidateRow }) {
             {c.url.replace(/^https?:\/\//, "")}
           </a>
           {evidence.length > 0 && (
-            <div className="mt-1.5 text-[12px] text-ink-3">{evidence.join(" · ")}</div>
+            <div className="mt-1.5 text-[12px] text-ink-3">
+              {evidence.join(" · ")}
+              {/* When these numbers were read: a candidate's evidence is
+                  refreshed by each pass, and one from before the date was
+                  recorded can only say when it was first raised. */}
+              <span className="ml-1.5 text-ink-4">
+                · {c.evidence.as_of ? `measured ${fmtDay(c.evidence.as_of)}` : `first flagged ${fmtDate(c.created_at)}`}
+              </span>
+            </div>
           )}
           {c.task && (
-            <div className={cn("mt-1.5 text-[12px]", c.task.status === "failed" ? "text-err-ink" : "text-ink-2")}>
-              {c.task.status === "scheduled" && `Scheduled for ${c.task.scheduled_for}; runs on the next enabled day on or after that.`}
-              {c.task.status === "running" && "Rewriting now…"}
+            <div className={cn("mt-1.5 text-[12px]", c.task.status === "failed" || c.task.stale ? "text-err-ink" : "text-ink-2")}>
+              {c.task.status === "scheduled" &&
+                (scheduleRuns
+                  ? `Scheduled for ${c.task.scheduled_for}; runs on the next enabled day on or after that.`
+                  : `Scheduled for ${c.task.scheduled_for}, but this site has no rewrite day switched on (Settings → Improvements), so it waits until one is.`)}
+              {c.task.status === "running" && !c.task.stale && "Rewriting now…"}
+              {c.task.status === "running" && c.task.stale && "The rewrite stopped before it finished. Nothing was changed; reschedule it to try again."}
               {c.task.status === "failed" && `Last run failed: ${c.task.error ?? "unknown error"}. Reschedule to try again.`}
             </div>
           )}
@@ -350,22 +381,33 @@ function CandidateItem({ candidate: c }: { candidate: CandidateRow }) {
             <Icons.edit size={12} />
             Brief{c.brief_status === "ready" ? "" : c.brief_status === "failed" ? " (failed)" : " (none)"}
           </Button>
-          {c.task && c.task.status !== "running" ? (
-            <Button size="sm" variant="ghost" disabled={pending} onClick={() => act("Unscheduled", () => cancelTask(c.task!.id))}>
-              Cancel
-            </Button>
-          ) : (
+          {/* A waiting task can be withdrawn; one that failed or was cut off
+              can be withdrawn or put back on a date (scheduleCandidate moves
+              the same task); one running now is left to finish. */}
+          {c.task && c.task.status === "running" && !c.task.stale ? null : (
             <>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                aria-label="Run on or after"
-                className="bg-bg border border-line rounded-[6px] px-2 py-1 text-[12px] font-mono"
-              />
-              <Button size="sm" disabled={pending || !date} onClick={() => act("Scheduled", () => scheduleCandidate(c.id, date))}>
-                Schedule
-              </Button>
+              {(!c.task || c.task.status !== "scheduled") && (
+                <>
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(e) => setDate(e.target.value)}
+                    aria-label="Run on or after"
+                    className="bg-bg border border-line rounded-[6px] px-2 py-1 text-[12px] font-mono"
+                  />
+                  <Button size="sm" disabled={pending || !date} onClick={() => act("Scheduled", async () => {
+                      const res = await scheduleCandidate(c.id, date);
+                      if (!res.ok) throw new Error(res.error);
+                    })}>
+                    {c.task ? "Reschedule" : "Schedule"}
+                  </Button>
+                </>
+              )}
+              {c.task && (
+                <Button size="sm" variant="ghost" disabled={pending} onClick={() => act("Unscheduled", () => cancelTask(c.task!.id))}>
+                  Cancel
+                </Button>
+              )}
             </>
           )}
           <Button size="sm" variant="ghost" disabled={pending} onClick={() => act("Dismissed", () => dismissCandidate(c.id))}>
