@@ -11,8 +11,9 @@ import { storefrontLocked } from "./first-look";
  * A store behind Shopify's password page - one still being built, and every
  * development store, the kind App Store reviewers install on - answers every
  * page with /password, so the crawl reads nothing and the whole first look
- * skips. The store installed AltoRank with read_content, which covers its
- * pages and blog articles: the same text the storefront would show. That is
+ * skips. The app's scopes cover the store's pages and blog articles
+ * (read_content) and its products (read_products): the same text the
+ * storefront would show. That is
  * read here and shaped like crawled pages, so the topical profile, keyword
  * research and voice work as they do for any site.
  *
@@ -36,9 +37,21 @@ const STORE_CONTENT = `query AltoRankStoreContent {
   articles(first: 40, sortKey: PUBLISHED_AT, reverse: true) { nodes { title handle body summary blog { handle } } }
 }`;
 
+/**
+ * Asked apart from the rest: a store that installed before the app asked for
+ * read_products answers this with ACCESS_DENIED until it approves the new
+ * scope, and that must cost the products, not the pages and articles.
+ */
+const STORE_PRODUCTS = `query AltoRankStoreProducts {
+  products(first: 50, query: "status:active") { nodes { title handle description productType vendor tags } }
+}`;
+
 interface StoreContentResponse {
   shop?: { name?: string | null; description?: string | null };
   pages?: { nodes?: Array<{ title?: string; handle?: string; body?: string | null; bodySummary?: string | null }> };
+  products?: {
+    nodes?: Array<{ title?: string; handle?: string; description?: string | null; productType?: string | null; vendor?: string | null; tags?: string[] | null }>;
+  };
   articles?: {
     nodes?: Array<{ title?: string; handle?: string; body?: string | null; summary?: string | null; blog?: { handle?: string } | null }>;
   };
@@ -118,6 +131,19 @@ export function storeContentFrom(domain: string, data: StoreContentResponse): St
     const t = htmlToText(p.body);
     if (t) texts.push(`${p.title}\n${t}`);
   }
+  // What the store sells, in its own words: for most stores this is nearly
+  // all the copy there is. The type and tags carry the category vocabulary a
+  // buyer searches with, so they go in the headings the profile weighs.
+  for (const p of data.products?.nodes ?? []) {
+    if (!p.title) continue;
+    const description = (p.description ?? "").trim();
+    pages.push({
+      ...page(`${base}/products/${p.handle ?? ""}`, p.title, null),
+      metaDescription: lead(description),
+      h2: [p.productType, ...(p.tags ?? [])].filter((t): t is string => Boolean(t && t.trim())),
+    });
+    if (description) texts.push(`${p.title}\n${description}`);
+  }
   // Newest first, so the voice sample is the store's current writing.
   for (const a of data.articles?.nodes ?? []) {
     if (!a.title) continue;
@@ -168,8 +194,14 @@ async function readLockedStoreContent(
   if (!(await storefrontLocked(domain, deps.fetchImpl))) return null;
 
   try {
-    const data = await queryShopify<StoreContentResponse>(storeUrl, { installationId }, STORE_CONTENT);
-    const content = storeContentFrom(domain, data);
+    const [data, products] = await Promise.all([
+      queryShopify<StoreContentResponse>(storeUrl, { installationId }, STORE_CONTENT),
+      queryShopify<Pick<StoreContentResponse, "products">>(storeUrl, { installationId }, STORE_PRODUCTS).catch((err) => {
+        console.warn(`[first-look] products not readable (read_products not approved yet?): ${err instanceof Error ? err.message : err}`);
+        return {};
+      }),
+    ]);
+    const content = storeContentFrom(domain, { ...data, ...products });
     return content.pages.length ? content : null;
   } catch (err) {
     console.warn(`[first-look] could not read the store's content through Shopify: ${err instanceof Error ? err.message : err}`);

@@ -60,6 +60,27 @@ describe("storeContentFrom", () => {
   });
 });
 
+describe("products", () => {
+  it("reads what the store sells, with its type and tags as headings", () => {
+    const c = storeContentFrom("fern.myshopify.com", {
+      shop: { name: "Fern", description: null },
+      pages: { nodes: [] },
+      products: {
+        nodes: [
+          { title: "Speckled planter, 20cm", handle: "speckled-planter", description: "Hand-thrown stoneware with a drainage hole.", productType: "Planters", vendor: "Fern", tags: ["ceramic", "indoor"] },
+          { title: "", handle: "untitled", description: "skipped" },
+        ],
+      },
+      articles: { nodes: [] },
+    });
+    const product = c.pages.find((p) => p.url.endsWith("/products/speckled-planter"))!;
+    expect(product).toMatchObject({ title: "Speckled planter, 20cm", h2: ["Planters", "ceramic", "indoor"] });
+    expect(product.metaDescription).toContain("Hand-thrown stoneware");
+    expect(c.text).toContain("Hand-thrown stoneware with a drainage hole.");
+    expect(c.pages).toHaveLength(2);
+  });
+});
+
 describe("boilerplate", () => {
   it("leaves out the pages every store has and none is about", () => {
     const c = storeContentFrom("fern.myshopify.com", {
@@ -81,10 +102,25 @@ describe("boilerplate", () => {
 
 describe("lockedStoreContent", () => {
   it("reads the store through Shopify when the storefront is locked", async () => {
-    m.queryShopify.mockResolvedValue(answer);
+    m.queryShopify.mockImplementation(async (_u: string, _c: unknown, q: string) =>
+      q.includes("AltoRankStoreProducts")
+        ? { products: { nodes: [{ title: "Planter", handle: "planter", description: "Stoneware.", productType: "Planters", tags: [] }] } }
+        : answer,
+    );
+    const c = await lockedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked });
+    expect(c?.pages.length).toBe(6);
+    expect(m.queryShopify).toHaveBeenCalledWith("https://fern.myshopify.com", { installationId: "inst-1" }, expect.any(String));
+    m.queryShopify.mockReset();
+  });
+
+  it("still reads pages and articles when products are not approved yet", async () => {
+    m.queryShopify.mockImplementation(async (_u: string, _c: unknown, q: string) => {
+      if (q.includes("AltoRankStoreProducts")) throw new Error("Shopify: Access denied for products field.");
+      return answer;
+    });
     const c = await lockedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked });
     expect(c?.pages.length).toBe(5);
-    expect(m.queryShopify).toHaveBeenCalledWith("https://fern.myshopify.com", { installationId: "inst-1" }, expect.any(String));
+    m.queryShopify.mockReset();
   });
 
   it("leaves an open storefront to the crawl", async () => {
