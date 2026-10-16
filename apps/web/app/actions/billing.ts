@@ -70,7 +70,7 @@ async function openCheckout(
   returnTo: string | undefined,
   surface: "hosted" | "embedded",
 ): Promise<EmbeddedCheckoutStart> {
-  const { accountId } = await requireAuth(["owner"]);
+  const { accountId, user } = await requireAuth(["owner"]);
   const supabase = await createClient();
 
   const priceId = PLAN_PRICE_IDS[plan][interval];
@@ -129,6 +129,9 @@ async function openCheckout(
       mode: "subscription",
       line_items: [{ price: priceId, quantity: 1 }],
       customer: account?.stripe_customer_id ?? undefined,
+      // The address we already have, so Checkout does not ask for it again.
+      // Stripe takes one or the other: a known customer carries its own.
+      ...(!account?.stripe_customer_id && user.email ? { customer_email: user.email } : {}),
       client_reference_id: accountId,
       ...(withTrial ? { payment_method_collection: "always" as const } : {}),
       // metadata on both the session and the subscription so the webhook can map

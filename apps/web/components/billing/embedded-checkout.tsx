@@ -90,7 +90,12 @@ export function EmbeddedCheckoutForm({
           return;
         }
         current = mine;
-        if (host.current) mine.mount(host.current);
+        if (host.current) {
+          mine.mount(host.current);
+          // Bring the form's top into view inside whatever scrolls around it
+          // (the gate's rail, the sheet): it opens where the button was.
+          host.current.scrollIntoView({ block: "nearest" });
+        }
         setReady(true);
       } catch (e) {
         if (cancelled) return;
