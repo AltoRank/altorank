@@ -10,10 +10,13 @@
 //
 // The join between "a page" and "a query" is the page's target keyword: the
 // keyword an article was written for, or the term `site_pages` inferred for a
-// page the site already had. Search Console is stored per query and per page
-// but not per query-and-page, so this is the honest link available. It is
-// also why every candidate carries its evidence: the reviewer can see which
-// query the verdict rests on and disagree.
+// page the site already had. The numbers for it are the page's own: Search
+// Console is stored per query-and-page too (the `query_page` shape), so a
+// page's evidence is what that page earned for its keyword, not what the
+// whole site earned for it. Only a page with no per-page rows at all falls
+// back to the site's numbers for the query, and its evidence says so
+// (`scope: "site"`). Every candidate carries its evidence so the reviewer can
+// see which query the verdict rests on and disagree.
 //
 // Rule 5 throughout: a field that was not measured is null, never 0.
 
@@ -59,10 +62,17 @@ export interface PageInput {
 
 export interface DetectInput {
   page: PageInput;
-  /** Query totals for the last 28 days, keyed by lower-cased query. */
+  /** Site-wide query totals for the last 28 days, keyed by lower-cased query. */
   current: ReadonlyMap<string, QueryStats>;
-  /** Query totals for the 28 days before that. */
+  /** Site-wide query totals for the 28 days before that. */
   previous: ReadonlyMap<string, QueryStats>;
+  /**
+   * This page's own totals per query (from `query_page` rows), when Search
+   * Console has any rows for the page. Present means the page's numbers are
+   * used, and a keyword the page has no row for is a keyword it was not shown
+   * for - never the site's numbers under the page's name.
+   */
+  onPage?: { current: ReadonlyMap<string, QueryStats>; previous: ReadonlyMap<string, QueryStats> } | null;
 }
 
 // ── Thresholds ──────────────────────────────────────────────────────────────
@@ -146,10 +156,11 @@ export function headingMatchesQuery(headings: string[], query: string): boolean 
  * `content_gap`, and the candidate table keeps them apart so a reviewer can
  * dismiss one and act on the other.
  */
-export function detectOpportunities({ page, current, previous }: DetectInput): Detection[] {
+export function detectOpportunities({ page, current, previous, onPage }: DetectInput): Detection[] {
   const key = page.keyword?.trim().toLowerCase() ?? "";
-  const now = key ? current.get(key) ?? null : null;
-  const then = key ? previous.get(key) ?? null : null;
+  const source = onPage ?? { current, previous };
+  const now = key ? source.current.get(key) ?? null : null;
+  const then = key ? source.previous.get(key) ?? null : null;
 
   // Position: Search Console first, SERP checks as the fallback.
   const position = now?.position ?? page.serp?.position ?? null;
@@ -165,6 +176,7 @@ export function detectOpportunities({ page, current, previous }: DetectInput): D
     ctr: now ? round(now.ctr, 4) : null,
     expected_ctr: null,
     word_count: page.word_count ?? null,
+    scope: onPage ? "page" : "site",
   };
 
   const out: Detection[] = [];
@@ -237,8 +249,29 @@ export interface MetricRow {
  * no way in, so none needs filtering out here.
  */
 export function aggregateQueries(gsc: GscShapes<MetricRow, "query">): Map<string, QueryStats> {
+  return aggregate(gsc.query);
+}
+
+/**
+ * Total per-day query_page rows into one QueryStats per query, per page. Keyed
+ * by the page's normalised URL, then the lower-cased query. Takes the
+ * query_page partition and nothing else.
+ */
+export function aggregatePageQueries(gsc: GscShapes<MetricRow, "query_page">): Map<string, Map<string, QueryStats>> {
+  const byPage = new Map<string, MetricRow[]>();
+  for (const r of gsc.query_page) {
+    if (!r.page_url) continue;
+    const key = normUrl(r.page_url);
+    const list = byPage.get(key) ?? [];
+    list.push(r);
+    byPage.set(key, list);
+  }
+  return new Map([...byPage].map(([key, rows]) => [key, aggregate(rows)]));
+}
+
+function aggregate(rows: readonly MetricRow[]): Map<string, QueryStats> {
   const acc = new Map<string, { clicks: number; impressions: number; posWeight: number; weight: number }>();
-  for (const r of gsc.query) {
+  for (const r of rows) {
     if (!r.query) continue;
     const key = r.query.trim().toLowerCase();
     const a = acc.get(key) ?? { clicks: 0, impressions: 0, posWeight: 0, weight: 0 };
@@ -357,13 +390,23 @@ export async function analyzeWorkspace(
   // query shape, the one partition the detectors use.
   const metrics = await readGsc(supabase, {
     workspaceId,
-    shapes: ["query"],
+    shapes: ["query", "query_page"],
     since,
     columns: ["article_id", "clicks", "impressions", "avg_position"],
   });
   const windows = splitWindows(metrics.query, now);
   const current = aggregateQueries({ query: windows.current });
   const previous = aggregateQueries({ query: windows.previous });
+  // Each page's own numbers per query, for the evidence. Never added to the
+  // site-wide query totals above: the same click is in both.
+  const pageWindows = splitWindows(metrics.query_page, now);
+  const pageCurrent = aggregatePageQueries({ query_page: pageWindows.current });
+  const pagePrevious = aggregatePageQueries({ query_page: pageWindows.previous });
+  const onPageFor = (url: string): DetectInput["onPage"] => {
+    const key = normUrl(url);
+    if (!pageCurrent.has(key) && !pagePrevious.has(key)) return null;
+    return { current: pageCurrent.get(key) ?? new Map(), previous: pagePrevious.get(key) ?? new Map() };
+  };
 
   const serp = await loadSerpHistory(supabase, workspaceId, now);
 
@@ -443,7 +486,7 @@ export async function analyzeWorkspace(
   let refreshed = 0;
   const inserts: Record<string, unknown>[] = [];
   for (const page of pages) {
-    for (const d of detectOpportunities({ page, current, previous })) {
+    for (const d of detectOpportunities({ page, current, previous, onPage: onPageFor(page.url) })) {
       const existing = open.get(`${normUrl(page.url)}|${d.opportunity}`);
       if (existing) {
         await supabase
