@@ -557,7 +557,7 @@ async function writeArticle(
 
   const { data: voiceProfile } = await supabase
     .from("voice_profiles")
-    .select("rules")
+    .select("rules, sample_text")
     .eq("workspace_id", workspaceId)
     .single();
 
@@ -1410,6 +1410,10 @@ async function writeArticle(
         facts: siteFacts?.facts,
         instructions: keywordRow?.instructions ?? null,
         answers: brief.answers,
+        // The site's own text the voice was learned from: a guarantee or a
+        // certification its pages state is the business's claim even when the
+        // site facts did not pick it up (draft A/B round 2, 2026-10-16).
+        siteText: (voiceProfile as { sample_text?: string | null } | null)?.sample_text ?? null,
       });
       const cleaned = removeUnsupportedBusinessClaims(processedHtml, evidence);
       if (cleaned.removed.length) {
