@@ -291,6 +291,12 @@ export type SearchPerformance = {
    * Google reported as empty (a measured zero).
    */
   hasData: boolean;
+  /**
+   * The current window was measured: a row in it, or a synced day in it.
+   * False with hasData true is a sync that stopped: the previous window has
+   * numbers and the current one has none, which is missing data, not a zero.
+   */
+  currentMeasured: boolean;
   /** Every day of the previous window is inside the synced history. */
   previousMeasured: boolean;
   /** Every day of the current window is inside the synced history. */
@@ -378,6 +384,7 @@ export function searchPerformance(gsc: GscShapes<CountedRow>, today: Date, days 
     clicks,
     impressions,
     hasData: measured(w.current) || measured(w.previous),
+    currentMeasured: measured(w.current),
     previousMeasured,
     currentComplete: state.currentComplete,
     comparable,

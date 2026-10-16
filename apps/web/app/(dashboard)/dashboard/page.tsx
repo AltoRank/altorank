@@ -269,7 +269,9 @@ export default async function DashboardPage() {
           { label: "Articles published", value: `${totalLive}`, unit: ` / ${totalArticles}`, delta: `${totalLive} live`, deltaType: "pos" },
           {
             label: "Organic traffic",
-            value: traffic.hasData ? traffic.clicks.current.toLocaleString() : "—",
+            // A dash, not 0, when only the window before has numbers: the
+            // sync stopped, and nothing was measured for this one.
+            value: traffic.currentMeasured ? traffic.clicks.current.toLocaleString() : "—",
             unit: " clicks",
             hint: `Clicks Google reported for the ${traffic.days} days ending ${gscWindowEnd}. Search Console publishes two to three days late, so the window ends on its newest day. Nothing here is estimated.`,
             // A synced zero keeps its "0", because nobody clicking IS the

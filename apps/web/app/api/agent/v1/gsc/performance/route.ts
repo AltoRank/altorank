@@ -43,7 +43,9 @@ export const GET = withAgent(async (request, ctx) => {
     opportunities,
   };
 
-  if (!hasData) return ok(data, notSyncedGuidance(scope.health, scope.now));
+  // Nothing for the current window is missing data even when the window
+  // before has numbers (a sync that stopped): never a measured zero.
+  if (!hasData || !performance.currentMeasured) return ok(data, notSyncedGuidance(scope.health, scope.now) + staleNote(scope.health));
   if (performance.impressions.current === 0) {
     return ok(
       data,

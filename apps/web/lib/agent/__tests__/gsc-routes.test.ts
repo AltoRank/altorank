@@ -142,6 +142,23 @@ describe("connected, nothing stored", () => {
   });
 });
 
+describe("a sync that stopped a month ago", () => {
+  it("does not call an empty current window a measured zero when only the window before has numbers", async () => {
+    const rows: Row[] = [];
+    for (let ago = 60; ago >= 35; ago--) rows.push(metric(iso(ago)));
+    setup({
+      integration: { connected_at: new Date(Date.now() - 90 * DAY).toISOString(), last_sync_error: "GSC API error (503): backend error", synced_from: iso(60), synced_through: iso(35) },
+      metrics: rows,
+    });
+    const { env } = await call("performance");
+    expect(env.ok).toBe(true);
+    expect(env.data.clicks.current).toBe(0);
+    expect(env.agent_guidance).not.toMatch(/measured zero/);
+    expect(env.agent_guidance).not.toMatch(/not being shown/);
+    expect(env.agent_guidance).toMatch(/missing data|do not report zero/i);
+  });
+});
+
 describe("a sync that failed after earlier ones stored data", () => {
   it("serves the numbers and says they may be behind", async () => {
     setup({ integration: { last_sync_error: "GSC API error (503): backend error" }, metrics: [metric(iso(5))] });
