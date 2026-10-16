@@ -222,11 +222,20 @@ describe("runOnboarding", () => {
     chosenText.mockResolvedValueOnce("SOURCE https://example.com/blog/best\nchosen article text");
     const c = client(0);
     const events: OnboardingEvent[] = [];
-    await runOnboarding(c, WS, (e) => events.push(e));
+    await runOnboarding(c, { ...WS, business_profile: { name: "Example", confirmedAt: "2026-10-16T10:00:00Z" } }, (e) => events.push(e));
     expect(chosenText).toHaveBeenCalledWith(["https://example.com/blog/best"]);
     const sample = voice.mock.calls[0][2] as string;
     expect(sample.startsWith("SOURCE https://example.com/blog/best\nchosen article text\n\nword")).toBe(true);
     expect(events).toContainEqual(expect.objectContaining({ phase: "scanning", status: "done", detail: "Learned how your site writes, starting from the articles you chose." }));
+  });
+
+  it("does not say the person chose the articles when the wizard started the run by itself", async () => {
+    // An auto-started run saves the profile unconfirmed and the blog's own
+    // articles as examples; nobody chose them.
+    chosenText.mockResolvedValueOnce("SOURCE https://example.com/blog/best\nchosen article text");
+    const events: OnboardingEvent[] = [];
+    await runOnboarding(client(0), { ...WS, business_profile: { name: "Example", confirmedAt: null } }, (e) => events.push(e));
+    expect(events).toContainEqual(expect.objectContaining({ phase: "scanning", status: "done", detail: "Learned how your site writes, from its articles." }));
   });
 
   it("emits every boundary of a full run, in order, ending in ready", async () => {
