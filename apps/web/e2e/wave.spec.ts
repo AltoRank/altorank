@@ -236,8 +236,8 @@ test("/improvements names the three things that block it for a site without Sear
 
   await expect(page.getByText("Search Console is not connected", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Connect Search Console" })).toBeVisible();
-  await expect(page.getByText("No CMS connected", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Connect a CMS" })).toBeVisible();
+  await expect(page.getByText("Publishing is not set up yet", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Set up publishing" })).toBeVisible();
   await expect(page.getByText("Scheduled rewrites are off for this workspace", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Open settings" })).toBeVisible();
 
