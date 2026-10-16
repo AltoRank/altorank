@@ -80,7 +80,7 @@ export function decrypt(encoded: string): string {
  *       token sat in the clear in workspace_integrations.config.
  *   v2  adds `token` (git, wordpress-plugin).
  *   v3  adds `clientSecret` (shopify client-credentials apps). `clientId` is
- *       not listed: Shopify treats it as public, and it is the cache key.
+ *       not listed: Shopify treats it as public.
  */
 const SENSITIVE_CONFIG_FIELDS_V1 = new Set([
   "applicationPassword",
