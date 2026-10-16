@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui";
 import { listShopifyBlogsAction } from "@/app/actions/integrations";
-import { SHOPIFY_REQUIRED_SCOPES, type ShopifyBlog } from "@/lib/cms/shopify";
+import { SHOPIFY_REQUIRED_SCOPES, type ShopifyBlog } from "@/lib/cms/shopify-scopes";
 import type { ShopifyCredentials } from "@/lib/types";
 
 const inputClass =

@@ -17,7 +17,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicModel, replyText } from "@/lib/ai/models";
 import { createMetered } from "@/lib/ai/metered";
-import { readSiteText, type ObservedSite, type SiteTextSource, MIN_CHARS } from "./site-text";
+import { readSiteText, type ObservedSite, type SiteText, type SiteTextSource, MIN_CHARS } from "./site-text";
 import { e2eStubsEnabled, stubInferProfile } from "@/lib/e2e/stubs";
 
 // The profile's shape, its empty value and the autocomplete merge are in
@@ -111,14 +111,17 @@ export interface InferenceResult {
  * yield too little text to describe a business from. The wizard tells the
  * person that and asks; the earlier version showed empty fields under the
  * words "we've filled this in".
+ *
+ * `read`: text the caller already holds, read some other way than fetching
+ * the site (a locked Shopify store's own catalogue). Used instead of a read.
  */
-export async function inferBusinessProfileDetailed(domain: string): Promise<InferenceResult> {
+export async function inferBusinessProfileDetailed(domain: string, opts: { read?: SiteText } = {}): Promise<InferenceResult> {
   // E2E_STUBS: a fixture instead of a site read and a model call (lib/e2e/stubs.ts).
   if (e2eStubsEnabled()) return stubInferProfile(domain);
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return { profile: null, reason: "no_model", source: "none" };
 
-  const read = await readSiteText(domain, MAX_CHARS);
+  const read = opts.read ? { ...opts.read, text: opts.read.text.slice(0, MAX_CHARS) } : await readSiteText(domain, MAX_CHARS);
   if (read.source === "none" || read.text.length < Math.min(MIN_CHARS, 250)) {
     return { profile: null, reason: "unreadable", source: read.source, observed: read.observed, htmlLang: read.htmlLang };
   }

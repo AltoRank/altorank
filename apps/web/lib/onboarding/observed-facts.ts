@@ -29,7 +29,7 @@ import { classifyHref, normaliseSiteUrl } from "@/lib/seo/links";
 import { CRAWLER_UA } from "@/lib/audit/crawler";
 import { refusing } from "@/lib/audit/host-circuit";
 import { e2eStubsEnabled } from "@/lib/e2e/stubs";
-import type { ObservedSite } from "./site-text";
+import type { ObservedSite, SiteText } from "./site-text";
 import {
   inferBusinessProfileDetailed,
   OBSERVED_URL_FIELDS,
@@ -224,8 +224,11 @@ export async function verifyObservedFacts(
  * the scheduled path's repair (lib/keyword-research/business-context.ts) both
  * call this, so neither can store a URL the site does not have.
  */
-export async function inferVerifiedBusinessProfile(domain: string, opts: CheckOptions = {}): Promise<InferenceResult> {
-  const result = await inferBusinessProfileDetailed(domain);
+export async function inferVerifiedBusinessProfile(
+  domain: string,
+  opts: CheckOptions & { read?: SiteText } = {},
+): Promise<InferenceResult> {
+  const result = await inferBusinessProfileDetailed(domain, { read: opts.read });
   if (!result.profile) return result;
   // E2E_STUBS: the fixture profile names no URL and the fixture domains do
   // not resolve; nothing here may touch the network under test.

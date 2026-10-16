@@ -27,7 +27,19 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 const h = vi.hoisted(() => {
   const state = {
     phrases: [] as string[],
-    rnd: (): number => 0.5,
+    /**
+     * The run's seed. Each stand-in draws its latency from the seed and its
+     * own input (\`h.draw(key)\`), never from a shared sequence: with one
+     * sequence, whichever call arrived first took the next number, so a few
+     * milliseconds of database jitter reassigned every later delay and the
+     * replay judged 8 to 11 results pages from the same seed.
+     */
+    seed: 7,
+    /** How many times each key has drawn, so a term's second judge read gets its own delay. */
+    draws: {
+      counts: new Map<string, number>(),
+      next(key: string): number { const n = this.counts.get(key) ?? 0; this.counts.set(key, n + 1); return n; },
+    },
     /** Real-time multiplier on every stand-in's latency (1 = production). */
     latency: Number(process.env.STALL_LATENCY ?? "0.05"),
     /**
@@ -72,16 +84,33 @@ const h = vi.hoisted(() => {
     }
     return realFetch(input, init);
   }) as typeof fetch;
-  return { ...state, restoreFetch: () => { globalThis.fetch = realFetch; }, never };
+  const api = { ...state, restoreFetch: () => { globalThis.fetch = realFetch; }, never,
+    /** A number in [0, 1) fixed by the run's seed and the key, whatever order calls arrive in. */
+    draw: (key: string): number => {
+      let x = (api.seed ^ 0x9e3779b9) >>> 0;
+      for (let i = 0; i < key.length; i++) x = Math.imul(x ^ key.charCodeAt(i), 0x01000193) >>> 0;
+      x ^= x >>> 16; x = Math.imul(x, 0x85ebca6b) >>> 0; x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35) >>> 0; x ^= x >>> 16;
+      return x / 4294967296;
+    },
+  };
+  return api;
 });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms * h.latency));
 
-vi.mock("@/lib/onboarding/time-limits", () => ({
-  BUDGET_RPC_TIMEOUT_MS: 1_000,
-  STRUCTURED_CALL_DEADLINE_MS: 2_000,
-  METERED_CALL_DEADLINE_MS: 2_000,
-  // STALL_QUALIFY_MS: production's 150000, for a run at STALL_LATENCY=1.
-  FIRST_LOOK_QUALIFY_MS: Number(process.env.STALL_QUALIFY_MS ?? 15_000),
+// Every bound scales with the stand-ins' latency, so a slower replay (a higher
+// STALL_LATENCY) keeps the same proportions instead of tripping a deadline the
+// fast one never reaches. At the default latency these are the values the
+// cases were written against: 1s, 2s, 2s and 15s.
+vi.mock("@/lib/onboarding/time-limits", async (original) => ({
+  ...(await original<typeof import("@/lib/onboarding/time-limits")>()),
+  // The budget RPCs go to a real local database, whose latency does not
+  // shrink with the stand-ins': a loaded machine took over 1s for a claim,
+  // which the replay then counted as a dropped call. 3s is a floor in real time.
+  BUDGET_RPC_TIMEOUT_MS: Math.max(3_000, 20_000 * h.latency),
+  STRUCTURED_CALL_DEADLINE_MS: 40_000 * h.latency,
+  METERED_CALL_DEADLINE_MS: 40_000 * h.latency,
+  // 15s at the default latency; STALL_QUALIFY_MS overrides it (production's is 150000).
+  FIRST_LOOK_QUALIFY_MS: Number(process.env.STALL_QUALIFY_MS ?? 300_000 * h.latency),
 }));
 vi.mock("@/lib/domain/reachable", () => ({ checkDomainReachable: async () => ({ ok: true, verdict: "live", url: "https://acme.example" }) }));
 vi.mock("../site-text", () => ({ readSiteText: async () => ({ text: "word ".repeat(200), source: "static", chars: 1000 }) }));
@@ -110,15 +139,15 @@ vi.mock("@anthropic-ai/sdk", () => ({
         }
         const at = prompt.lastIndexOf("PHRASES\n");
         if (at !== -1) {
-          await sleep(12_000 + h.rnd() * 12_000);
+          await sleep(12_000 + h.draw(`buyer:${prompt.slice(at, at + 200)}`) * 12_000);
           const asked = JSON.parse(prompt.slice(at + "PHRASES\n".length)) as string[];
           // About two in three phrases are a served searcher.
           const text = JSON.stringify({ verdicts: asked.map((t, i) => ({ t, s: i % 3 === 2 ? "unrelated" : "solution", r: "a modeller choosing a kit" })) });
           return { content: [{ type: "text", text }], usage: { input_tokens: 2000, output_tokens: 51 * asked.length } };
         }
         if (prompt.includes('"results"')) {
-          await sleep(4_000 + h.rnd() * 5_000);
           const data = JSON.parse(prompt.slice(prompt.lastIndexOf("\n") + 1)) as { query: string; results: unknown[] };
+          await sleep(4_000 + h.draw(`judge:${data.query}:${h.draws.next(`judge:${data.query}`)}`) * 5_000);
           // Most pages are articles; some are service pages; a few searchers are not served.
           const n = Number(data.query.match(/(\d+)$/)?.[1] ?? 0);
           const stage = n % 7 === 3 ? "elsewhere" : "solution";
@@ -144,7 +173,7 @@ vi.mock("@/lib/seo/client", async (original) => {
     post: async (endpoint: string, body: Array<{ keyword?: string }>) => {
       const estimate = estimateDataForSEOUsd(endpoint, body);
       const claim = await claimSpend(real.spendOperation(endpoint), estimate);
-      await sleep(3_000 + h.rnd() * 7_000);
+      await sleep(3_000 + h.draw(`dfs:${endpoint}:${body[0]?.keyword ?? ""}:${h.draws.next(`dfs:${endpoint}:${body[0]?.keyword ?? ""}`)}`) * 7_000);
       await claim.settle(estimate / 2);
       if (!endpoint.includes("/live/advanced")) return { cost: estimate / 2, tasks: [] };
       const keyword = body[0]?.keyword ?? "";
@@ -161,9 +190,9 @@ vi.mock("@/lib/audit/domain-analysis", async () => {
   const { judgeBuyerFit } = await import("@/lib/keyword-research/buyer-fit");
   return {
     analyseDomain: async (o: { supabase: import("@supabase/supabase-js").SupabaseClient; workspaceId: string; profile: Record<string, unknown> }) => {
-      await Promise.all(Array.from({ length: 16 }, async () => {
+      await Promise.all(Array.from({ length: 16 }, async (_, i) => {
         const c = await claimSpend("/dataforseo_labs/google/ranked_keywords/live", 0.022);
-        await sleep(2_000 + h.rnd() * 4_000);
+        await sleep(2_000 + h.draw(`discovery:${i}`) * 4_000);
         await c.settle(0.338 / 16);
       }));
       // The buyer test's claims as they reach the research budget, to show
@@ -186,7 +215,8 @@ vi.mock("@/lib/audit/domain-analysis", async () => {
 import { createServiceClient } from "@/lib/supabase/server";
 import { connectLocalStack } from "@/lib/__tests__/support/local-db";
 import { runOnboarding } from "../pipeline";
-import { FIRST_LOOK_DRAFT_RESERVE_USD, readRunBudget } from "@/lib/billing/run-budget";
+import { FIRST_LOOK_DRAFT_RESERVE_USD, firstLookReserves, readRunBudget } from "@/lib/billing/run-budget";
+import { firstLookTermUsd } from "@/lib/keyword-research/opportunity";
 import type { OnboardingEvent } from "../events";
 
 const STACK = await connectLocalStack();
@@ -194,6 +224,8 @@ const TAG = `b21-stall-${randomUUID().slice(0, 8)}`;
 const BUSINESS = { name: "Acme Studio", description: "Acme Studio sells model railway kits and scenery to hobbyists.", offerings: ["model railway kits"], audiences: ["railway modellers"] };
 /** Far past the shortened qualification deadline (15s): a run still going here never ends. */
 const BOUND_MS = Math.max(60_000, 600_000 * h.latency);
+/** Qualification's deadline as mocked above: 15s at the default latency. */
+const QUALIFY_MS = Number(process.env.STALL_QUALIFY_MS ?? 300_000 * h.latency);
 
 describe.skipIf(!STACK)("the 2026-10-15 first-look stall, replayed", () => {
   let db: ReturnType<typeof createServiceClient>;
@@ -202,8 +234,8 @@ describe.skipIf(!STACK)("the 2026-10-15 first-look stall, replayed", () => {
 
   /** A fresh site each time: its own pool, its own run, its own budget row. */
   async function firstLook(seed: number) {
-    let s = seed;
-    h.rnd = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+    h.seed = seed;
+    h.draws.counts.clear();
     const domain = `acme-${TAG}-${++n}.example`;
     const ws = await db.from("workspaces").insert({ account_id: accountId, name: domain, domain, initials: "AC", color: "av-c1", business_profile: BUSINESS, language: "en", location_code: 2840 }).select("id").single();
     if (ws.error || !ws.data) throw new Error(`workspaces: ${ws.error?.message}`);
@@ -265,7 +297,14 @@ describe.skipIf(!STACK)("the 2026-10-15 first-look stall, replayed", () => {
     expect(full.length).toBeGreaterThan(0);
     for (const c of full) expect(c.minUsd).toBeLessThan(c.wantUsd - 0.02);
     // Qualification judged with the room the research left, and planned.
-    expect(budget.stages.results_pages?.calls ?? 0).toBeGreaterThanOrEqual(9);
+    // How many terms that buys is not fixed: terms run side by side and a
+    // term's second judge read claims when it lands, so the same seed reads
+    // 8 to 11 results pages depending on when those reads arrive (production
+    // read 9). What the start rule guarantees is that judging stops only
+    // when the room left cannot start another term's whole chain.
+    expect(budget.stages.results_pages?.calls ?? 0).toBeGreaterThanOrEqual(3);
+    const reserved = Object.values(firstLookReserves(budget.ceilingUsd)).reduce((sum, usd) => sum + (usd ?? 0), 0);
+    expect(budget.ceilingUsd - reserved - budget.committedUsd).toBeLessThan(firstLookTermUsd(true));
     expect(last(events, "planning")?.status).toBe("done");
     expect(last(events, "planning")?.planned?.length ?? 0).toBeGreaterThanOrEqual(3);
     expect(outcome !== "hung" && outcome.pendingDraft?.term).toBeTruthy();
@@ -282,7 +321,7 @@ describe.skipIf(!STACK)("the 2026-10-15 first-look stall, replayed", () => {
     settledEveryPhase(events);
     // Each dropped call ended at its own bound, well inside the stage's.
     const planning = first(events, "planning", "active")!.at;
-    expect(last(events, "planning")!.at - planning).toBeLessThan(15_000);
+    expect(last(events, "planning")!.at - planning).toBeLessThan(QUALIFY_MS);
     expect(ms).toBeLessThan(BOUND_MS);
     expect(last(events, "planning")?.status).toBe("done");
     expect(last(events, "planning")?.planned?.length ?? 0).toBeGreaterThanOrEqual(1);
@@ -300,9 +339,9 @@ describe.skipIf(!STACK)("the 2026-10-15 first-look stall, replayed", () => {
     settledEveryPhase(events);
     const planning = first(events, "planning", "active")!.at;
     const planned = last(events, "planning")!;
-    // The stage's deadline (15s here), not the stuck call, decided when it ended.
-    expect(planned.at - planning).toBeGreaterThanOrEqual(14_000);
-    expect(planned.at - planning).toBeLessThan(25_000);
+    // The stage's deadline (15s at the default latency), not the stuck call, decided when it ended.
+    expect(planned.at - planning).toBeGreaterThanOrEqual(QUALIFY_MS - 20_000 * h.latency);
+    expect(planned.at - planning).toBeLessThan(QUALIFY_MS + 200_000 * h.latency);
     expect(ms).toBeLessThan(BOUND_MS);
     expect(planned.status).toBe("done");
     expect(planned.planned?.length ?? 0).toBeGreaterThanOrEqual(1);
