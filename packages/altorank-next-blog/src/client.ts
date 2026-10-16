@@ -13,6 +13,11 @@
 //
 // Both return only articles with status "live": approved in the dashboard and
 // published. Drafts and articles awaiting review never come through here.
+//
+// Any failure throws, including a key that cannot read the workspace. That is
+// on purpose: under ISR a thrown error keeps the pages Next already has, where
+// an empty answer would replace a working blog with "No articles yet". Only
+// get() of a slug the API says is not live returns null.
 
 export type BlogArticleSummary = {
   id: string;
@@ -53,7 +58,13 @@ export type BlogClientOptions = {
   revalidate?: number;
   /** For tests. Defaults to the global fetch. */
   fetch?: typeof fetch;
+  /** For tests. How a 429's Retry-After is waited out. */
+  sleep?: (ms: number) => Promise<void>;
 };
+
+/** How many times a rate-limited request is retried, and the longest wait honoured. */
+const RATE_LIMIT_RETRIES = 3;
+const MAX_RETRY_WAIT_MS = 60_000;
 
 export class BlogClientError extends Error {
   constructor(
@@ -71,6 +82,7 @@ export class BlogClient {
   private baseUrl: string;
   private revalidate: number;
   private fetchImpl: typeof fetch;
+  private sleep: (ms: number) => Promise<void>;
 
   constructor(options: BlogClientOptions = {}) {
     const env = typeof process !== "undefined" ? process.env : ({} as Record<string, string | undefined>);
@@ -79,12 +91,23 @@ export class BlogClient {
     this.baseUrl = (options.baseUrl ?? env.ALTORANK_API_URL ?? "https://app.altorank.co").replace(/\/+$/, "");
     this.revalidate = options.revalidate ?? 86400;
     this.fetchImpl = options.fetch ?? fetch;
+    this.sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
 
     if (!this.apiKey) throw new Error("BlogClient: apiKey is required (or set ALTORANK_BLOG_API_KEY)");
     if (!this.workspaceId) throw new Error("BlogClient: workspaceId is required (or set ALTORANK_WORKSPACE_ID)");
   }
 
-  private async request<T>(path: string, params: Record<string, string> = {}): Promise<T | null> {
+  /**
+   * GET a blog route. Resolves with the JSON body, or with null only when
+   * `allowNotFound` is set and the API answered that no live article has that
+   * slug. Every other non-2xx throws, a 404 from anywhere else included (a
+   * wrong base URL, a dashboard without the blog API).
+   */
+  private async request<T>(
+    path: string,
+    params: Record<string, string> = {},
+    allowNotFound = false,
+  ): Promise<T | null> {
     const url = new URL(`${this.baseUrl}/api/blog/v1/${path}`);
     url.searchParams.set("workspace_id", this.workspaceId);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
@@ -94,28 +117,41 @@ export class BlogClient {
       next: { revalidate: this.revalidate },
     };
 
-    const res = await this.fetchImpl(url.toString(), init);
-    if (res.status === 404) return null;
+    let res = await this.fetchImpl(url.toString(), init);
+    // A build fetches every article at once and can meet the per-key limit;
+    // wait out the window the API names instead of failing the build.
+    for (let attempt = 0; res.status === 429 && attempt < RATE_LIMIT_RETRIES; attempt++) {
+      const seconds = Number(res.headers.get("Retry-After"));
+      await this.sleep(Math.min(MAX_RETRY_WAIT_MS, (Number.isFinite(seconds) && seconds > 0 ? seconds : 1) * 1000));
+      res = await this.fetchImpl(url.toString(), init);
+    }
+
     if (!res.ok) {
-      let message = `AltoRank blog API returned ${res.status}`;
+      let body: { error?: string; code?: string } = {};
       try {
-        const body = (await res.json()) as { error?: string };
-        if (body.error) message = `${message}: ${body.error}`;
+        body = (await res.json()) as { error?: string; code?: string };
       } catch {
         // no JSON body
       }
+      if (allowNotFound && res.status === 404 && (body.code === "article_not_found" || body.error === "Article not found")) {
+        return null;
+      }
+      const message = body.error
+        ? `AltoRank blog API returned ${res.status}: ${body.error}`
+        : `AltoRank blog API returned ${res.status}`;
       throw new BlogClientError(res.status, message);
     }
     return (await res.json()) as T;
   }
 
-  /** One page of live articles, newest first. */
+  /** One page of live articles, newest first. Throws on any failure. */
   async list(opts: { page?: number; perPage?: number } = {}): Promise<BlogArticleList> {
     const result = await this.request<BlogArticleList>("articles", {
       page: String(opts.page ?? 1),
       per_page: String(opts.perPage ?? 20),
     });
-    return result ?? { articles: [], page: opts.page ?? 1, per_page: opts.perPage ?? 20, total: 0 };
+    if (!result) throw new BlogClientError(500, "AltoRank blog API returned no body");
+    return result;
   }
 
   /** Every live article, walking the pages. For generateStaticParams. */
@@ -131,7 +167,7 @@ export class BlogClient {
 
   /** One article with its HTML body, or null when no live article has that slug. */
   async get(slug: string): Promise<BlogArticle | null> {
-    const result = await this.request<{ article: BlogArticle }>(`articles/${encodeURIComponent(slug)}`);
+    const result = await this.request<{ article: BlogArticle }>(`articles/${encodeURIComponent(slug)}`, {}, true);
     return result?.article ?? null;
   }
 }
