@@ -44,7 +44,7 @@ export async function GET(request: Request) {
       .order("updated_at", { ascending: false })
       .limit(25),
     getQuota(supabase, accountId, null),
-    firstLookView(supabase, workspaceId),
+    firstLookView(supabase, workspaceId, { domain: shop }),
     accountOwner(supabase, accountId),
   ]);
 

@@ -43,6 +43,12 @@ export function renderFirstLook(firstLook) {
       <s-button slot="secondary-actions" data-action="retry-first-look">Try again</s-button>
     </s-banner>`;
   }
+  if (firstLook.state === "empty") {
+    return `<s-banner tone="warning" heading="${firstLook.storefrontLocked ? "Your storefront is locked" : "Nothing to plan yet"}">
+      <s-paragraph>${esc(firstLook.message)}</s-paragraph>
+      <s-button slot="secondary-actions" data-action="retry-first-look">Try again</s-button>
+    </s-banner>`;
+  }
   return `<s-banner tone="info" heading="Reading your store">
     <s-stack gap="small-200">
       <s-paragraph>${esc(firstLook.message)}</s-paragraph>
