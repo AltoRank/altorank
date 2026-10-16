@@ -12,7 +12,7 @@ import { AdminTabs } from "../admin-tabs";
 import { Table } from "../table";
 import { ImpersonateButton } from "./impersonate-button";
 import { tallyArticles } from "@/lib/found-on-site/state";
-import { readAllPages } from "@/lib/supabase/read-all";
+import { readAllPages, type PageResult } from "@/lib/supabase/read-all";
 import { customerLastSeen, type CustomerLastSeen, type ViewRecord } from "@/lib/auth/last-seen";
 
 export const metadata: Metadata = { title: "Users" };
@@ -108,13 +108,19 @@ export default async function AdminUsersPage({
   const needle = q.trim().toLowerCase();
 
   const admin = createServiceClient();
-  const [users, { data: members }, { data: accounts }, { data: workspaces }, { data: articles }, { data: log }, views] =
+  // Every row, not the first thousand: PostgREST stops at max_rows without a
+  // word, and these are counted (lib/supabase/read-all.ts).
+  const all = <T,>(table: string, columns: string) =>
+    readAllPages<T>(table, (from, to, count) =>
+      admin.from(table).select(`id, ${columns}`, { count }).order("id").range(from, to) as unknown as PromiseLike<PageResult<T>>,
+    );
+  const [users, members, accounts, workspaces, articles, { data: log }, views] =
     await Promise.all([
       listAllUsers(admin),
-      admin.from("account_members").select("user_id, account_id, role"),
-      admin.from("accounts").select("id, name, plan, plan_status"),
-      admin.from("workspaces").select("id, account_id, domain"),
-      admin.from("articles").select("workspace_id, status, found_on_site_at"),
+      all<MemberRow>("account_members", "user_id, account_id, role"),
+      all<AccountRow>("accounts", "name, plan, plan_status"),
+      all<WorkspaceRow>("workspaces", "account_id, domain"),
+      all<{ workspace_id: string; status: string; found_on_site_at: string | null }>("articles", "workspace_id, status, found_on_site_at"),
       admin
         .from("admin_impersonations")
         .select("*")

@@ -139,6 +139,18 @@ export function jobForOperation(provider: string, operation: string): JobKey | n
   return null;
 }
 
+/** Calls summed by provider and operation: what the rate card is measured from. */
+export interface PricedGroup {
+  provider: string;
+  operation: string;
+  /** Bought for an article. */
+  hasArticle: boolean;
+  /** Calls that reported a price. */
+  priced: number;
+  /** What those calls cost. */
+  usd: number;
+}
+
 /**
  * A rate card with any unit we have measured enough times swapped in for its
  * default. Three observations is the floor: one call is an anecdote.
@@ -147,9 +159,32 @@ export function measuredRates(
   observed: Array<{ provider: string; operation: string; costUsd: number | null; articleId?: string | null }>,
   base: RateCard = DEFAULT_RATES,
 ): { rates: RateCard; measured: Array<keyof RateCard> } {
-  const avg = (pred: (o: (typeof observed)[number]) => boolean): number | null => {
-    const xs = observed.filter((o) => pred(o) && o.costUsd !== null).map((o) => o.costUsd as number);
-    return xs.length >= 3 ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+  const priced = observed.filter((o) => o.costUsd !== null);
+  const groups: PricedGroup[] = priced.map((o) => ({ provider: o.provider, operation: o.operation, hasArticle: Boolean(o.articleId), priced: 1, usd: o.costUsd as number }));
+  const articles = new Set(priced.filter((o) => o.provider === "anthropic" && o.articleId).map((o) => o.articleId));
+  return measuredRatesFromGroups(groups, articles.size, base);
+}
+
+/**
+ * The same from sums (lib/admin/spend-summary.ts), so the card is measured on
+ * every recorded call rather than on the rows one read returned.
+ * `modelArticles` is the number of distinct articles priced model calls were
+ * bought for.
+ */
+export function measuredRatesFromGroups(
+  groups: readonly PricedGroup[],
+  modelArticles: number,
+  base: RateCard = DEFAULT_RATES,
+): { rates: RateCard; measured: Array<keyof RateCard> } {
+  const avg = (pred: (g: PricedGroup) => boolean): number | null => {
+    let n = 0;
+    let usd = 0;
+    for (const g of groups) {
+      if (!pred(g)) continue;
+      n += g.priced;
+      usd += g.usd;
+    }
+    return n >= 3 ? usd / n : null;
   };
   const rates: RateCard = { ...base };
   const measured: Array<keyof RateCard> = [];
@@ -164,10 +199,9 @@ export function measuredRates(
   if (serpAdv !== null && kfk !== null) set("dfsPerArticle", serpAdv + kfk);
 
   // Model cost per article: total anthropic spend over distinct articles.
-  const model = observed.filter((o) => o.provider === "anthropic" && o.articleId && o.costUsd !== null);
-  const articles = new Set(model.map((o) => o.articleId));
-  if (articles.size >= 3) {
-    set("modelPerArticle", model.reduce((a, o) => a + (o.costUsd as number), 0) / articles.size);
+  if (modelArticles >= 3) {
+    const model = groups.filter((g) => g.provider === "anthropic" && g.hasArticle).reduce((a, g) => a + g.usd, 0);
+    set("modelPerArticle", model / modelArticles);
   }
   return { rates, measured };
 }
