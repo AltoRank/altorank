@@ -1,7 +1,7 @@
 import { withAgent, appBaseUrl } from "@/lib/agent/http";
 import { fail, ok } from "@/lib/agent/envelope";
-import { gscRows, gscScope, syncBlock } from "@/lib/agent/gsc";
-import { coverageBucket, inspectionSuperseded, normalizeUrl, servedUrls } from "@/lib/gsc/analysis";
+import { gscRows, gscScope, measuredIn, syncBlock } from "@/lib/agent/gsc";
+import { coverageBucket, inspectionSuperseded, normalizeUrl, servedUrls, windows } from "@/lib/gsc/analysis";
 import { inspectionFrom } from "@/lib/google/inspection";
 
 /**
@@ -41,11 +41,18 @@ export const GET = withAgent(async (request, ctx) => {
   // A stored "not indexed" that Google's own search results have overtaken.
   const superseded = bucket === "indexed" && (inspection?.verdict === "FAIL" || inspection?.verdict === "NEUTRAL") && inspectionSuperseded(inspection, lastServed);
   const base = appBaseUrl(request);
+  // Whether "not served in search" is a measurement: false when nothing was
+  // synced for the window, and then absence from the rows says nothing.
+  const measured = measuredIn(scope, gsc, windows(scope.today, scope.days).current);
+  const notServed = measured
+    ? "was not served in search during the window"
+    : "may or may not have been served in search: no Search Console data is synced for the window";
 
   const data = {
     workspace_id: scope.workspace.id,
     url,
     sync: syncBlock(scope.health),
+    has_data: measured,
     article: article ? { id: article.id, title: article.title, status: article.status, editor_url: `${base}/content/${article.id}` } : null,
     served_in_search: inSearch,
     /** The newest day in the window Google served this URL in search. */
@@ -61,7 +68,7 @@ export const GET = withAgent(async (request, ctx) => {
       data,
       inSearch
         ? "This URL is not one of AltoRank's articles, but Google served it in search during the window, so it is indexed. No inspection detail is stored for pages we did not write."
-        : "This URL is not one of AltoRank's articles and was not served in search during the window. Its index state is unknown; only a human can run URL Inspection in Search Console for it.",
+        : `This URL is not one of AltoRank's articles and ${notServed}. Its index state is unknown; only a human can run URL Inspection in Search Console for it.`,
     );
   }
   if (!inspection) {
@@ -69,7 +76,7 @@ export const GET = withAgent(async (request, ctx) => {
       data,
       inSearch
         ? "Indexed: Google served this page in search during the window. No URL Inspection has been run; a human can request one with 'Check indexing' at editor_url if they want Google's own verdict."
-        : "Unknown: no URL Inspection stored and not served in search during the window. Ask the human to press 'Check indexing' at editor_url; you cannot run the inspection from here.",
+        : `Unknown: no URL Inspection is stored and the page ${notServed}. Ask the human to press 'Check indexing' at editor_url; you cannot run the inspection from here.`,
     );
   }
   const verdict = `Google's verdict on ${inspection.checkedAt.slice(0, 10)}: ${inspection.coverageState ?? inspection.verdict ?? "unspecified"}. `;
@@ -92,7 +99,7 @@ export const GET = withAgent(async (request, ctx) => {
     return ok(
       data,
       verdict +
-        "That verdict does not say whether the page is indexed, and Google did not serve the page in search during the window, so its index state is unknown - not \"not indexed\". " +
+        `That verdict does not say whether the page is indexed, and the page ${notServed}, so its index state is unknown - not "not indexed". ` +
         "Ask the human to press 'Check indexing' at editor_url for a fresh verdict; you cannot run it from here.",
     );
   }

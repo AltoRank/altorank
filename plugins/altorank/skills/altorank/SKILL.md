@@ -76,13 +76,20 @@ Always inspect, propose, confirm, then write.
 
 `altorank_gsc_performance`, `altorank_gsc_cannibalization`,
 `altorank_gsc_coverage` and `altorank_gsc_url_inspection` read stored data;
-nothing calls Google. Keep two states apart:
+nothing calls Google. Keep these states apart:
 
-- `not_available`: Search Console is not connected. Do not say "no traffic".
-- `has_data: false`: connected, numbers not synced yet.
+- `not_available`: Search Console is not connected, Google refused the stored
+  token (a person reconnects), or no sync has succeeded (relay the error in
+  `agent_guidance`). No data; do not say "no traffic".
+- `has_data: false`: connected, nothing synced for the window. Never report 0.
+- `has_data: true` with zeros: Google measured nothing. The site is not being
+  shown in search.
 
-`changePct: null` means no baseline. Coverage `bucket: "unknown"` means
-nobody asked Google, not "not indexed".
+`changePct: null` means no comparison: it is given only when both windows are
+wholly synced (`comparable: true`). Coverage `bucket: "unknown"` means nobody
+asked Google and the page was not seen in search, not "not indexed".
+`inspection_superseded: true` means Google served the page after an old
+"not indexed" verdict, so it is indexed now.
 
 ## Rules
 

@@ -113,17 +113,33 @@ Mutations share a second limit of 30 a minute per key on top of the 120/min.
 `GET /gsc/performance`, `/gsc/cannibalization`, `/gsc/coverage` and
 `/gsc/url-inspection?url=` (all `?workspace_id=`, optional `&days=`) serve the
 rows the nightly sync already stored - the same numbers the dashboard shows.
-Nothing calls Google. Two states you must keep apart:
+Nothing calls Google. Every one of them returns `has_data` and a `sync` block.
+States you must keep apart:
 
 - **Not connected** → `ok: false`, `not_available`. There is no data. Do not
   say "no traffic"; say Search Console is not connected and a human connects it
   on the Integrations page.
-- **Connected, nothing synced yet** → `ok: true` with `has_data: false`. Say the
-  numbers are not in yet.
+- **Google refused the token** → `ok: false`, `not_available`. Syncing has
+  stopped; a human reconnects Google. Report no numbers or trends.
+- **No sync has succeeded** → `ok: false`, `not_available`, with the stored
+  error in `agent_guidance` (most often: the Google account has no Search
+  Console property for the domain). Relay it.
+- **Connected, nothing synced for the window** → `ok: true` with
+  `has_data: false`. On a new connection the numbers are not in yet; on an old
+  one something is wrong. Never report zero.
+- **Synced, Google reported nothing** → `ok: true`, `has_data: true`, zeros.
+  That is a measured zero: the site is not being shown in search.
 
-`changePct: null` means no baseline, not no change. `bucket: "unknown"` on
-coverage means nobody asked Google, not "not indexed". A fresh URL inspection is
-the human's click ("Check indexing") in the editor.
+The windows end on the newest day Google has published (`window` on
+performance), not yesterday. `changePct: null` means no comparison, not no
+change: it is stated only when both windows are wholly synced
+(`comparable: true`), so a new connection shows none for its first two months.
+`bucket: "unknown"` on coverage means nobody asked Google and the page was not
+seen in search, not "not indexed"; with `has_data: false` it says nothing about
+search at all. A stored "not indexed" verdict that Google has since overtaken by
+serving the page in search comes back `indexed` with
+`inspection_superseded: true`. A fresh URL inspection is the human's click
+("Check indexing") in the editor.
 
 ## Rules you never break
 

@@ -230,3 +230,39 @@ describe("url-inspection and coverage against the stored verdict", () => {
     expect(env.agent_guidance).not.toMatch(/Indexed\. If/);
   });
 });
+
+describe("has_data on coverage and url-inspection", () => {
+  const URL = "https://acme.com/post";
+  const live: Row = { id: ART, workspace_id: WS, title: "Post", status: "live", published_url: URL, indexing_status: null };
+
+  it("says nothing was synced instead of saying Google did not serve the pages", async () => {
+    setup({ articles: [live] });
+    const cov = await call("coverage");
+    expect(cov.env.ok).toBe(true);
+    expect(cov.env.data.has_data).toBe(false);
+    expect(cov.env.data.summary.unknown).toBe(1);
+    expect(cov.env.agent_guidance).toMatch(/not in yet|no data has been synced/);
+    expect(cov.env.agent_guidance).not.toMatch(/did not serve/);
+
+    const ins = await call("url-inspection", `&url=${encodeURIComponent(URL)}`);
+    expect(ins.env.data.has_data).toBe(false);
+    expect(ins.env.agent_guidance).toMatch(/no Search Console data is synced/);
+    expect(ins.env.agent_guidance).not.toMatch(/was not served in search/);
+  });
+
+  it("reports has_data true, and absence from search as measured, once the window is synced", async () => {
+    setup({ articles: [live], metrics: [metric(iso(4))] });
+    const cov = await call("coverage");
+    expect(cov.env.data.has_data).toBe(true);
+    expect(cov.env.agent_guidance).toMatch(/did not serve the page/);
+    const ins = await call("url-inspection", `&url=${encodeURIComponent(URL)}`);
+    expect(ins.env.data.has_data).toBe(true);
+    expect(ins.env.agent_guidance).toMatch(/was not served in search during the window/);
+  });
+
+  it("counts a window the sync answered with no rows as measured", async () => {
+    setup({ articles: [live], integration: { synced_from: iso(40), synced_through: iso(3) } });
+    expect((await call("coverage")).env.data.has_data).toBe(true);
+    expect((await call("url-inspection", `&url=${encodeURIComponent(URL)}`)).env.data.has_data).toBe(true);
+  });
+});
