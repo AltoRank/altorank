@@ -32,7 +32,7 @@ export async function GET(request: Request) {
     .order("published_at", { ascending: false, nullsFirst: false })
     .range(from, from + perPage - 1);
 
-  if (error) return json({ error: error.message }, { status: 500 });
+  if (error) return json({ error: "Could not list the articles" }, { status: 500 });
 
   return json({
     articles: data ?? [],

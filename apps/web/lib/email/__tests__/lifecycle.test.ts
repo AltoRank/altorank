@@ -377,6 +377,20 @@ describe("account emails", () => {
     expect(e.html).toContain("January 1, 2027");
   });
 
+  it("names a blog key's site and says it reads nothing else", () => {
+    const e = renderApiKeyCreated({
+      keyName: "Client blog",
+      prefix: "alto_ef56",
+      createdBy: "Sam",
+      canWrite: false,
+      expiresAt: null,
+      blogSite: "client-a.example",
+    });
+    expect(e.html).toContain("blog key for <strong>client-a.example</strong>");
+    expect(e.html).toContain("nothing else");
+    expect(e.html).not.toContain("read only");
+  });
+
   /** An OAuth key goes straight to the client: nobody was shown it once. */
   it("names the member who granted a connector, and does not say its key was shown once", () => {
     const e = renderApiKeyCreated({

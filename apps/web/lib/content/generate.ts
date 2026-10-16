@@ -64,6 +64,7 @@ import { fetchKeywordFacts } from "@/lib/seo/keywords";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { getLocale, LOCALES } from "@/lib/seo/locales";
 import { urlSlug, resolveLocale } from "@/lib/i18n/locale";
+import { uniqueSlug } from "@/lib/content/unique-slug";
 import type { ArticleBrief, RefreshContext, SiteContext, VoiceRules } from "@/lib/ai/types";
 import { classifyKeyword, targetWordCountFor } from "@/lib/keywords/taxonomy";
 import { parseStoredQuestions } from "@/lib/keywords/questions";
@@ -574,7 +575,8 @@ async function writeArticle(
   }
 
   const approvedTitle = title || topicBrief?.angle;
-  const slug = slugFor(approvedTitle || keyword);
+  // Only the insert path below uses it; an existing row keeps its slug.
+  const slug = articleId || refreshOf ? slugFor(approvedTitle || keyword) : await uniqueSlug(supabase, workspaceId, slugFor(approvedTitle || keyword));
 
   // The pre-trial draft is claimed here: after every check that refuses
   // without spending (the hold, the quota, the topic), before the row is
