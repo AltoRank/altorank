@@ -19,6 +19,22 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
+// The site's schedule: Mon, Wed, Fri at 10:00 in Rome, read on Wed 21 Oct
+// 08:00 Rome, or none. shipDateFor itself stays real.
+const sched = vi.hoisted(() => ({ on: true }));
+vi.mock("@/lib/publishing/ship-date", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/publishing/ship-date")>()),
+  readShipSchedule: async () =>
+    sched.on
+      ? {
+          cadence: { timezone: "Europe/Rome", days_of_week: [1, 3, 5], publish_time: "10:00" },
+          queue: [],
+          lastLocalDate: null,
+          now: new Date("2026-10-21T06:00:00Z"),
+        }
+      : null,
+}));
+
 import { getCalendarEntries } from "../calendar";
 
 const article = (o: Partial<Record<string, unknown>> = {}) => ({
@@ -27,7 +43,7 @@ const article = (o: Partial<Record<string, unknown>> = {}) => ({
   created_at: "2026-09-10T09:00:00Z", ...o,
 });
 
-beforeEach(() => { rows.length = 0; });
+beforeEach(() => { rows.length = 0; sched.on = true; });
 
 describe("calendar entries, derived from articles", () => {
   it("dates a live article by when it published", async () => {
@@ -48,6 +64,19 @@ describe("calendar entries, derived from articles", () => {
     rows.push(article({ status: "scheduled", scheduled_at: "2026-09-20T07:00:00Z" }));
     const [e] = await getCalendarEntries();
     expect(e).toMatchObject({ status: "scheduled", scheduled_date: "2026-09-20T07:00:00Z" });
+  });
+
+  it("puts a queued article (scheduled, no date) on the day its slot comes round", async () => {
+    rows.push(article({ status: "scheduled", scheduled_at: null }));
+    const [e] = await getCalendarEntries();
+    expect(e).toMatchObject({ status: "scheduled", scheduled_date: "2026-10-21T08:00:00.000Z" });
+  });
+
+  it("keeps a queued article on the planner as queued when the schedule is off", async () => {
+    sched.on = false;
+    rows.push(article({ status: "scheduled", scheduled_at: null }));
+    const [e] = await getCalendarEntries();
+    expect(e).toMatchObject({ status: "queue", scheduled_date: "2026-09-10T09:00:00Z" });
   });
 
   it("shows what is being written now as running", async () => {

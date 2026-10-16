@@ -102,6 +102,11 @@ describe("cardStatusPill", () => {
     expect(cardStatusPill("unknown").label).toBe("—");
   });
 
+  it("says when a scheduled article ships, when the queue gave it a slot", () => {
+    expect(cardStatusPill("scheduled", { status: "scheduled", ships: "Fri 10:00" })).toEqual({ status: "scheduled", label: "Ships Fri 10:00" });
+    expect(cardStatusPill("scheduled", { status: "scheduled", ships: null }).label).toBe("Scheduled");
+  });
+
   it("names each state in the words the product uses", () => {
     expect(cardStatusPill("planned").label).toBe("Planned");
     expect(cardStatusPill("writing").label).toBe("Writing…");

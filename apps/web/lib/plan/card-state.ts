@@ -57,6 +57,8 @@ export type ArticleFacts = {
   published_url?: string | null;
   /** Set when the nightly check found it live on the customer's own site (migration 094). */
   found_on_site_at?: string | null;
+  /** When a scheduled article ships, in the site's timezone ("Fri 10:00"); lib/publishing/ship-date.ts. */
+  ships?: string | null;
 } | null;
 
 /** The slice of a `refresh_tasks` row the mapping reads, for an improvement square. */
@@ -217,7 +219,7 @@ export function cardStatusPill(state: PlannerCardState, article?: ArticleFacts):
     case "approved":
       return { status: "scheduled", label: "Approved" };
     case "scheduled":
-      return { status: "scheduled", label: "Scheduled" };
+      return { status: "scheduled", label: article?.ships ? `Ships ${article.ships}` : "Scheduled" };
     case "live":
       return { status: "live", label: "Live" };
     case "failed":

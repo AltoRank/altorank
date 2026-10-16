@@ -115,11 +115,13 @@ async function runAndLog(
 }
 
 /**
- * Approve an article for publishing (review → approved). The publish gate in
- * publishArticleCore refuses anything not approved, so this is the editorial
- * checkpoint. Records who approved + when (the sign-off).
+ * Approve an article for publishing. The publish gate in publishArticleCore
+ * refuses anything not approved, so this is the editorial checkpoint. Records
+ * who approved + when (the sign-off). On a site with a publishing schedule
+ * the article also takes the next slot (review → scheduled, see
+ * writeApproval); without one it is review → approved, for Publish now.
  */
-export async function approveArticle(articleId: string) {
+export async function approveArticle(articleId: string): Promise<{ status: "approved" | "scheduled" }> {
   const { user } = await requireAuth();
   const supabase = await createClient();
   // The free draft can be read, edited and rewritten; it cannot ship without
@@ -135,8 +137,8 @@ export async function approveArticle(articleId: string) {
   // The approval itself is the server's write (migration 109): a signed-in
   // user's client may not set `approved` or `approved_by`, so the only way to
   // an approval is this action, after its checks, naming who pressed it.
-  const moved = await writeApproval([articleId], user.id);
-  if (!moved.length) throw new Error("Article must be in review to approve");
+  const [moved] = await writeApproval([articleId], user.id);
+  if (!moved) throw new Error("Article must be in review to approve");
 
   // The sign-off is the one editorial moment somebody else needs to hear
   // about: after it the article can be scheduled or published, and a
@@ -146,7 +148,9 @@ export async function approveArticle(articleId: string) {
   await announceDraftApproved(articleId, user);
 
   revalidatePath("/articles");
+  revalidatePath("/content");
   revalidatePath(`/content/${articleId}`);
+  return { status: moved.status };
 }
 
 /**
@@ -218,7 +222,7 @@ export async function approveArticles(articleIds: string[]): Promise<string[]> {
   }
   if (!ids.length) return [];
 
-  const moved = await writeApproval(ids, user.id);
+  const moved = (await writeApproval(ids, user.id)).map((r) => r.id);
   // One email per article, not one per click: the recipient cares about the
   // article, and `sent_emails` is keyed by it either way.
   for (const id of moved) await announceDraftApproved(id, user);

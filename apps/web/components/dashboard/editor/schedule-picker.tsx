@@ -15,9 +15,15 @@ import type { Article, PublishingCadence } from "@/lib/types";
 type Props = {
   article: Article;
   cadence: PublishingCadence | null;
+  /**
+   * The queue slot a scheduled article holds, in the site's timezone
+   * ("Tue 10:00"), from lib/publishing/ship-date.ts. Approve puts an article
+   * there, so for a scheduled article this picker is "Change date".
+   */
+  shipsAt?: string | null;
 };
 
-export function SchedulePicker({ article, cadence }: Props) {
+export function SchedulePicker({ article, cadence, shipsAt = null }: Props) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [date, setDate] = useState("");
@@ -28,7 +34,9 @@ export function SchedulePicker({ article, cadence }: Props) {
   if (article.status === "scheduled") {
     const label = article.scheduled_at
       ? `Scheduled for ${new Date(article.scheduled_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })} at ${new Date(article.scheduled_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`
-      : "In publish queue";
+      : shipsAt
+        ? `Ships ${shipsAt}, the next free slot`
+        : "In publish queue";
 
     return (
       <div className="mt-3 space-y-2">
@@ -45,7 +53,7 @@ export function SchedulePicker({ article, cadence }: Props) {
             }}
             disabled={isPending}
           >
-            Reschedule
+            Change date
           </Button>
           <Button
             size="sm"
@@ -82,11 +90,11 @@ export function SchedulePicker({ article, cadence }: Props) {
                 try {
                   const scheduledAt = new Date(`${date}T${time}`).toISOString();
                   await scheduleArticle(article.id, scheduledAt);
-                  toast.success("Rescheduled");
+                  toast.success("Date changed");
                   router.refresh();
                 } catch (err) {
                   toast.error(
-                    err instanceof Error ? err.message : "Failed to reschedule",
+                    err instanceof Error ? err.message : "Could not change the date",
                   );
                 }
               });
