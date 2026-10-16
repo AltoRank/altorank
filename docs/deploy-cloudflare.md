@@ -16,7 +16,7 @@ application that matters is not quite there yet.
   Supabase remain (see "Recommendation").
 - **Postgres, auth and file storage** stay on Supabase. Cloudflare has no
   Postgres and no authentication service for end users. D1 is SQLite and
-  cannot run a single one of the 109 migrations; Hyperdrive pools a Postgres you
+  cannot run a single one of the 110 migrations; Hyperdrive pools a Postgres you
   host somewhere else. Supabase runs either hosted or as its own Docker stack
   on a VM. Replacing it is sized honestly below, and the size is "a rewrite of
   the data layer", not "a weekend".
@@ -355,7 +355,7 @@ Counted in `apps/web` on 2026-09-05; the migration, policy, trigger and `.rpc()`
 over HTTP. There is no `pg`, no Drizzle, no Prisma and no realtime channel.
 Five `.rpc()` calls in three modules (`lib/public-tools/spend.ts`,
 `lib/billing/run-budget.ts`, `lib/billing/checkout-attempt.ts`) reserve spend
-atomically in SQL functions. 109 migrations in
+atomically in SQL functions. 110 migrations in
 `apps/web/supabase/migrations/`, which between them:
 
 - `create policy` 95 times and `enable row level security` on 53 tables. The
@@ -413,7 +413,7 @@ What it would take, honestly:
 
 | Supabase piece | Nearest Cloudflare thing | Gap |
 |---|---|---|
-| Postgres | **D1** (SQLite; 10 GB max on Paid, 500 MB on Free) | Not Postgres. No `auth.uid()`, no RLS, no `storage`/`auth` schemas, no `jsonb`, no `gen_random_uuid()`, no `security definer`. All 109 migrations rewritten by hand, the triggers included; the 95 policies become application code in every query module. |
+| Postgres | **D1** (SQLite; 10 GB max on Paid, 500 MB on Free) | Not Postgres. No `auth.uid()`, no RLS, no `storage`/`auth` schemas, no `jsonb`, no `gen_random_uuid()`, no `security definer`. All 110 migrations rewritten by hand, the triggers included; the 95 policies become application code in every query module. |
 | Postgres | **Hyperdrive** | "Turn your existing regional database into a globally distributed database." It pools and caches connections to a Postgres you still host. And the app speaks PostgREST over HTTP, not the Postgres wire protocol, so Hyperdrive would only matter after a rewrite to a SQL client. |
 | GoTrue | nothing | Cloudflare Access is for a workforce, not for a product's customers. An auth library (Better Auth, Lucia, Auth.js) plus your own user, session and token tables, plus re-implementing the admin-generated link flow the auth emails rely on. |
 | Storage | **R2** | The easy part: two modules, `upload` and a public URL. R2 has no row-level policies; public reads are per bucket. |
