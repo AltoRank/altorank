@@ -28,5 +28,9 @@ Approval is theirs. Rules:
 - A timeout is not a failure. Repeat the call with the **same** idempotency
   key; you get the draft that already started, not a second one.
 - One draft per keyword. Do not queue several to compare.
-- `quota_exceeded` means the month's drafts are used: tell the human. Send
-  `--allow-overage` only after they said yes.
+- `quota_exceeded` has two meanings; read the message. With no plan yet, the
+  one-time free drafts are used: they do not reset and no overage can be
+  bought, so tell the human to choose a plan on the Billing page and do not
+  retry. On a plan, this month's included drafts are used: ask the human
+  whether to pay overage for this one, and send `--allow-overage` only after
+  they said yes.
