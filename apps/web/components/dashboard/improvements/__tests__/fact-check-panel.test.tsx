@@ -40,6 +40,26 @@ describe("FactCheckPanel", () => {
     expect(html).toContain("Push checks the figures again");
   });
 
+  it("lists a corroborated claim under a 'claims to verify' verdict, as the verdict and the email count it", () => {
+    const html = renderToStaticMarkup(
+      <FactCheckPanel
+        factCheck={{
+          verdict: "review",
+          report: {
+            verdict: "review",
+            summary: "1 claim to verify before publishing.",
+            counts: { high: 0, medium: 1, low: 0, total: 1 },
+            claims: [
+              { id: "c1", kind: "statistic", status: "corroborated", severity: "medium", text: "40%", figures: ["40%"], sentence: "40% of runners stretch too little.", attribution: null, sourceUrl: null, note: "" },
+            ],
+          },
+        }}
+      />,
+    );
+    expect(html).toContain("claims to verify");
+    expect(html).toContain("40% of runners stretch too little.");
+  });
+
   it("says when only the verdict was stored, and renders nothing without one", () => {
     expect(renderToStaticMarkup(<FactCheckPanel factCheck={{ verdict: "review", report: null }} />)).toContain(
       "Only the verdict was stored",

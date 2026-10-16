@@ -381,7 +381,10 @@ const VERDICT_LABEL: Record<FactCheckReport["verdict"], string> = {
 export function FactCheckPanel({ factCheck }: { factCheck: Props["factCheck"] }) {
   if (!factCheck) return null;
   const { report, verdict } = factCheck;
-  const flagged = (report?.claims ?? []).filter((c) => c.status !== "verified" && c.status !== "corroborated");
+  // Every claim the verdict counts: anything not verified against its cited
+  // page, corroborated ones included, so a "claims to verify" verdict never
+  // comes with an empty list (lib/ai/fact-check.ts, lib/refresh/fact-check.ts).
+  const flagged = (report?.claims ?? []).filter((c) => c.status !== "verified");
   return (
     <div className="rounded-[9px] border border-line bg-panel px-4 py-3 text-[13px]">
       <div className="font-medium mb-0.5">
