@@ -78,7 +78,7 @@ export function expiryFromDays(days: number | null, now: Date = new Date()): str
  *
  * None of them approves or publishes a draft; there is no scope for that.
  *
- * A blog key (BLOG_SCOPE, migration 114) is not listed: it is a different
+ * A blog key (BLOG_SCOPE, migration 118) is not listed: it is a different
  * credential, bound to one site, that the agent API refuses outright.
  */
 export const ALL_SCOPES = ["read", "generate", "write"] as const;

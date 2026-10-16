@@ -8,6 +8,10 @@ import { provisionShop } from "@/lib/shopify/provision";
 import { startShopFirstLook } from "@/lib/shopify/first-look";
 import { retryWithFreshToken } from "@/lib/shopify/request-auth";
 import { dispatchWorker } from "@/lib/onboarding/run-dispatch";
+import { syncShopifyBilling } from "@/lib/shopify/billing";
+import { dispatchResume } from "@/lib/plan/resume-dispatch";
+import { recordEvent } from "@/lib/observability/record";
+import { describe as describeError } from "@/lib/observability/event";
 
 // The first look's inline fallback runs in after() on an install that cannot
 // self-invoke; give it the budget /api/onboard/start has.
@@ -67,6 +71,26 @@ export async function POST(request: Request) {
       const runId = started.runId;
       after(() => dispatchWorker(runId));
     }
+  }
+
+  // 3. The plan: Shopify sends no webhook when a store subscribes or cancels,
+  //    so each open reads it (lib/shopify/billing.ts). Coming back from the
+  //    plan picker is an open too. A Partner API failure must not lock the
+  //    merchant out of their own app; the daily sweep catches up.
+  try {
+    const { data: inst } = await supabase.from("shopify_installations").select("shop_gid").eq("id", installationId).single();
+    const { resume } = await syncShopifyBilling(supabase, {
+      id: installationId,
+      shop,
+      accountId: site.accountId,
+      shopGid: (inst?.shop_gid as string | null) ?? null,
+    });
+    if (resume) after(() => dispatchResume(resume));
+  } catch (err) {
+    await recordEvent(
+      { level: "warn", source: "shopify.billing", message: `Could not read ${shop}'s plan: ${describeError(err)}`, accountId: site.accountId },
+      supabase,
+    );
   }
 
   return NextResponse.json({ shop, installationId, created: site.created });

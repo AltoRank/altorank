@@ -107,9 +107,14 @@ export function renderAccount(state) {
     ? `<s-button data-action="sign-in-link">Email me a sign-in link</s-button>
        <s-paragraph tone="subdued">Keywords, Search Console and every setting are in the full AltoRank dashboard. The link goes to ${esc(state.account.ownerEmail)}.</s-paragraph>`
     : `<s-paragraph tone="subdued">Keywords, Search Console and every setting are in the full AltoRank dashboard at app.altorank.co.</s-paragraph>`;
+  // Shopify hosts the plan picker (App Pricing); it opens over the admin, outside this frame.
+  const choose = plan.selectUrl
+    ? `<s-button ${plan.needsPlan ? 'variant="primary"' : ""} data-action="choose-plan" data-url="${esc(plan.selectUrl)}">${plan.needsPlan ? "Choose a plan" : "Change plan"}</s-button>`
+    : "";
   return `<s-section heading="Your plan">
     <s-stack gap="base">
       <s-paragraph><s-text type="strong">${esc(plan.label)}</s-text> · ${esc(plan.line)}</s-paragraph>
+      ${choose}
       ${signIn}
     </s-stack>
   </s-section>`;
@@ -227,6 +232,10 @@ async function onAction(target) {
       toast(`Sign-in link sent to ${sentTo}`);
       return;
     }
+    case "choose-plan":
+      // _top: the plan page is part of the Shopify admin, not of this app.
+      window.open(target.dataset.url, "_top");
+      return;
     case "retry-first-look":
       await api("/api/shopify/first-look", { method: "POST" });
       return showHome();

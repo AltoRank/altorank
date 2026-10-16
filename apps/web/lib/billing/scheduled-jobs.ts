@@ -65,4 +65,9 @@ export const SCHEDULED_JOBS: Record<string, ScheduledJob> = {
     does: "Emails the operators what went wrong yesterday. No provider spend.",
     drivers: "—",
   },
+  "/api/cron/shopify-billing": {
+    key: null,
+    does: "Reads each installed Shopify store's plan from the Partner API and records it on the account. No provider spend.",
+    drivers: "—",
+  },
 };

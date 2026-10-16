@@ -8,6 +8,7 @@ import { authenticateLinkedShop } from "@/lib/shopify/request-auth";
 import { shopAdminBase } from "@/lib/shopify/shop-domain";
 import { firstLookView } from "@/lib/shopify/first-look";
 import { accountOwner } from "@/lib/shopify/owner";
+import { planSelectionUrl } from "@/lib/shopify/billing";
 import type { Article } from "@/lib/types";
 
 /** The statuses the embedded queue lists: what is waiting, and what just went out. */
@@ -66,7 +67,8 @@ export async function GET(request: Request) {
   return NextResponse.json({
     shop: { domain: shop, name: installation.shopName },
     site: { domain: (site?.domain as string | undefined) ?? shop },
-    plan: planView(quota),
+    // The store picks and changes its plan on Shopify's own page (App Pricing).
+    plan: { ...planView(quota), selectUrl: planSelectionUrl(shop) },
     firstLook,
     connection: {
       blogs: blogs.map((b) => ({ id: b.id, title: b.title })),

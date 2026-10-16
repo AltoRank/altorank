@@ -170,6 +170,7 @@ export async function markShopUninstalled(client: SupabaseClient, shop: string):
   const { data } = await client
     .from("shopify_installations")
     .update({
+      plan_handle: null,
       uninstalled_at: new Date().toISOString(),
       access_token: null,
       access_expires_at: null,
@@ -179,8 +180,18 @@ export async function markShopUninstalled(client: SupabaseClient, shop: string):
       updated_at: new Date().toISOString(),
     })
     .eq("shop_domain", shop)
-    .select("id");
+    .select("id, account_id");
   for (const row of data ?? []) {
+    // Shopify cancels a store's app subscription when the app is removed, so
+    // an account it was billing has no plan from now on. An account Stripe
+    // bills is not touched (billing_provider, migration 118).
+    if (row.account_id) {
+      await client
+        .from("accounts")
+        .update({ plan_status: "canceled", cancels_at: null })
+        .eq("id", row.account_id as string)
+        .eq("billing_provider", "shopify");
+    }
     await client
       .from("workspace_integrations")
       .update({ needs_reconnect: true, last_sync_error: "The AltoRank app was uninstalled from this Shopify store." })
