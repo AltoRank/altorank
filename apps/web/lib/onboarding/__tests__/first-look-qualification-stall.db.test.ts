@@ -101,7 +101,8 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms * h.latency));
 // STALL_LATENCY) keeps the same proportions instead of tripping a deadline the
 // fast one never reaches. At the default latency these are the values the
 // cases were written against: 1s, 2s, 2s and 15s.
-vi.mock("@/lib/onboarding/time-limits", () => ({
+vi.mock("@/lib/onboarding/time-limits", async (original) => ({
+  ...(await original<typeof import("@/lib/onboarding/time-limits")>()),
   BUDGET_RPC_TIMEOUT_MS: 20_000 * h.latency,
   STRUCTURED_CALL_DEADLINE_MS: 40_000 * h.latency,
   METERED_CALL_DEADLINE_MS: 40_000 * h.latency,
