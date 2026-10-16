@@ -57,11 +57,7 @@ const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date");
  * gates cron/refresh applies before it runs one: the switch, a weekday, and
  * an account entitled to scheduled work and not held by its trial.
  */
-async function scheduleRefusal(
-  supabase: SupabaseClient,
-  workspaceId: string,
-  userEmail: string | undefined,
-): Promise<string | null> {
+async function scheduleRefusal(supabase: SupabaseClient, workspaceId: string): Promise<string | null> {
   const { data: ws, error } = await supabase
     .from("workspaces")
     .select("account_id, refresh_enabled, refresh_days")
@@ -75,7 +71,9 @@ async function scheduleRefusal(
   if (!((ws.refresh_days as number[] | null) ?? []).length) {
     return "No weekday is picked for rewrites on this site, so nothing scheduled would run. Pick one in Settings → Improvements, then schedule it.";
   }
-  const quota = await getQuota(supabase, ws.account_id as string, userEmail);
+  // Asked as the cron asks (no session): the rewrite runs there, so a
+  // signed-in operator's bypass must not accept a task the cron would skip.
+  const quota = await getQuota(supabase, ws.account_id as string, null);
   const held = draftHoldReason(quota);
   if (held) return held;
   if (!entitledToScheduledWork(quota)) {
@@ -96,7 +94,7 @@ export type ScheduleOutcome = { ok: true; id: string } | { ok: false; error: str
  * enabled weekday on or after that date, one per site per day.
  */
 export async function scheduleCandidate(candidateId: string, scheduledFor: string): Promise<ScheduleOutcome> {
-  const { user } = await requireAuth();
+  await requireAuth();
   const parsedDate = dateSchema.safeParse(scheduledFor);
   if (!parsedDate.success) return { ok: false, error: "Pick a date" };
   const date = parsedDate.data;
@@ -106,7 +104,7 @@ export async function scheduleCandidate(candidateId: string, scheduledFor: strin
 
   // A task the cron will never pick up is worse than none: it sat on the
   // calendar and in the plan's capacity, and the card promised a run.
-  const refusal = await scheduleRefusal(supabase, candidate.workspace_id, user.email ?? undefined);
+  const refusal = await scheduleRefusal(supabase, candidate.workspace_id);
   if (refusal) return { ok: false, error: refusal };
 
   // One open task per candidate: rescheduling moves it rather than stacking.

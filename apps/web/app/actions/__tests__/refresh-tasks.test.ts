@@ -129,6 +129,9 @@ describe("scheduleCandidate on a site whose rewrites cannot run", () => {
     fresh({});
     const out = await scheduleCandidate("c1", "2026-10-20");
     expect(out.ok).toBe(true);
+    // Asked as the cron asks, with no session: a signed-in operator's
+    // bypass would accept a task the cron then skips for "no plan".
+    expect(getQuota).toHaveBeenCalledWith(expect.anything(), "acc1", null);
     expect(f.tables.refresh_tasks).toEqual([expect.objectContaining({ candidate_id: "c1", scheduled_for: "2026-10-20" })]);
   });
 
