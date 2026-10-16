@@ -418,7 +418,8 @@ server.registerTool(
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
     description:
       "Clicks and impressions over the window vs the window before, daily series, top pages and queries in positions 4-15 " +
-      "(opportunities). From the stored nightly sync. Returns ok:false when Search Console is not connected - that is no data, not zero.",
+      "(opportunities). From the stored nightly sync. Returns ok:false when Search Console is not connected, when Google refused the stored token, " +
+      "or when no sync has succeeded yet - each is no data, not zero.",
     inputSchema: { ...workspaceArg, ...daysArg },
   },
   async ({ workspace_id, days }) => asEnvelope(await call("/gsc/performance", { query: { workspace_id, days } })),

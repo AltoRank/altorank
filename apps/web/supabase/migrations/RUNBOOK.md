@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server) and **114** (blog keys), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113 and 114 go in AFTER**; **112 goes in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server), **114** (blog keys) and **115** (Search Console sync outcome), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113, 114 and 115 go in AFTER**; **112 goes in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both go to 085, then 091. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -163,7 +163,8 @@ m(file, applied) as (values
   ('111_member_scope_guards',                exists (select 1 from pg_trigger where tgname = 'api_keys_creator_sees_every_site') and exists (select 1 from pg_trigger where tgname = 'workspaces_domain_needs_every_site') and exists (select 1 from pg_trigger where tgname = 'workspace_integrations_google_server_written') and not has_column_privilege('authenticated', 'public.account_integrations', 'tokens', 'SELECT') and pg_get_functiondef('public.account_members_guard_roles'::regproc) like '%actor_sites%'),
   ('112_article_images_private',             not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Article images are readable by anyone')),
   ('113_push_record',                        exists (select 1 from col where t='refresh_executions' and c='pushed_by') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'refresh_executions_guard_push' and c.relname = 'refresh_executions')),
-  ('114_blog_keys',                          exists (select 1 from col where t='api_keys' and c='workspace_id') and exists (select 1 from pg_constraint where conname = 'api_keys_blog_key_shape') and exists (select 1 from pg_trigger where tgname = 'api_keys_site_in_account'))
+  ('114_blog_keys',                          exists (select 1 from col where t='api_keys' and c='workspace_id') and exists (select 1 from pg_constraint where conname = 'api_keys_blog_key_shape') and exists (select 1 from pg_trigger where tgname = 'api_keys_site_in_account')),
+  ('115_gsc_sync_outcome',                   exists (select 1 from col where t='workspace_integrations' and c='last_synced_at') and exists (select 1 from col where t='workspace_integrations' and c='synced_from') and exists (select 1 from col where t='workspace_integrations' and c='synced_through'))
 )
 select file, applied from m order by file;
 ```
@@ -307,6 +308,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 111_member_scope_guards.sql   # AF
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 112_article_images_private.sql   # any time; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 113_push_record.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 114_blog_keys.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 115_gsc_sync_outcome.sql   # AFTER its code is live; see its section
 ```
 
 Re-running a file that is already applied is safe for 048, 049 (after 053),
@@ -389,6 +391,7 @@ no code in the repo references either).
 | 112_article_images_private.sql | `fix/tighten-site-scope` | 045; any time | yes | yes, see its section (the bucket can be listed again) |
 | 113_push_record.sql | `fix/approval-around-push` | 052, `auth.users`; **its code deployed first** | yes | yes, see its section (loses who pushed each rewrite; a member can again mark a rewrite pushed over PostgREST) |
 | 114_blog_keys.sql | `fix/blog-api-key-scope` | 051, 085, 099; **its code deployed first** | yes | yes, see its section (blog keys are revoked; agent keys are untouched) |
+| 115_gsc_sync_outcome.sql | `fix/search-console-truth` | 001, 070; **its code deployed first** | yes | yes, see its section (loses only the recorded sync range) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1877,4 +1880,56 @@ alter table public.api_keys drop constraint if exists api_keys_blog_key_shape;
 update public.api_keys set revoked_at = now() where 'blog' = any (scopes) and revoked_at is null;
 drop index if exists public.api_keys_workspace;
 alter table public.api_keys drop column if exists workspace_id;
+
+## 115 — a Search Console connection records what its syncs answered
+
+`115_gsc_sync_outcome.sql` adds three nullable columns to
+`workspace_integrations`: `last_synced_at`, `synced_from` and
+`synced_through`. The sync (`lib/google/sync.ts`) writes them on a site's
+`gsc` row after each completed Search Console day: the range grows to cover
+every day Google answered with rows, or answered empty once the day is past
+`SYNC_LAG_DAYS`. It is one unbroken run: after days that were never synced
+(the cron did not run, or a refused token was reconnected weeks later) it
+starts again at the new day. Readers (`lib/gsc/queries.ts` `syncHealthFrom`, the
+dashboard, the agent API) use the range for two things: a window inside it
+with no rows is a measured zero rather than "not synced yet", and a
+"vs the previous N days" figure is shown only when both windows lie inside
+it.
+
+**Apply AFTER its code is live.** The code selects the new columns in a
+query of their own and writes them only when the row it read has them, so
+without 115 it falls back to the stored rows (earliest and latest day) and
+behaves as before apart from that. Once applied, the range starts filling
+on the next nightly run; until a connection's first sync after 115, its
+columns are null and the stored rows still answer. Re-running is a no-op
+(`add column if not exists`). Depends on 001 and 070.
+
+No data is backfilled by the migration. A connection's first recorded range
+starts from its stored rows when they reach to within a few days of the day
+synced, so history stored before 115 still counts; from then on the recorded
+start is what readers use.
+
+Post-flight (expect `3`):
+
+```sql
+select count(*) from information_schema.columns
+ where table_schema = 'public' and table_name = 'workspace_integrations'
+   and column_name in ('last_synced_at', 'synced_from', 'synced_through');
+```
+
+Then, the morning after the first nightly run, at least one connected site
+has a range:
+
+```sql
+select count(*) from workspace_integrations
+ where integration_id = 'gsc' and synced_through is not null;
+```
+
+Rollback (the code keeps working without the columns):
+
+```sql
+alter table public.workspace_integrations
+  drop column if exists last_synced_at,
+  drop column if exists synced_from,
+  drop column if exists synced_through;
 ```

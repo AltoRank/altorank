@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   detectOpportunities,
   aggregateQueries,
+  aggregatePageQueries,
   splitWindows,
   expectedCtr,
   headingMatchesQuery,
@@ -197,5 +198,51 @@ describe("splitWindows", () => {
     );
     expect(current.map((r) => r.metric_date)).toEqual(["2026-09-03", "2026-08-08"]);
     expect(previous.map((r) => r.metric_date)).toEqual(["2026-08-06"]);
+  });
+});
+
+describe("evidence is the page's own numbers when Search Console has them", () => {
+  const siteWide = [stats("booking software", { position: 3, impressions: 5000, clicks: 600, ctr: 0.12 })];
+
+  it("uses the page's query_page totals, not the site's, and says whose they are", () => {
+    const onPage = { current: new Map([stats("booking software", { position: 9, impressions: 300, clicks: 4, ctr: 4 / 300 })]), previous: new Map() };
+    const out = detectOpportunities({ page: page(), current: new Map(siteWide), previous: new Map(), onPage });
+    const hit = out.find((d) => d.opportunity === "almost_there");
+    expect(hit).toBeDefined();
+    expect(hit!.evidence).toMatchObject({ position: 9, impressions: 300, clicks: 4, scope: "page" });
+  });
+
+  it("gives two pages on one keyword their own evidence", () => {
+    const a = { current: new Map([stats("booking software", { position: 2, impressions: 4000, clicks: 590, ctr: 0.1475 })]), previous: new Map() };
+    const b = { current: new Map([stats("booking software", { position: 12, impressions: 1000, clicks: 10, ctr: 0.01 })]), previous: new Map() };
+    const evA = detectOpportunities({ page: page({ word_count: 500 }), current: new Map(siteWide), previous: new Map(), onPage: a })[0].evidence;
+    const evB = detectOpportunities({ page: page({ url: "https://example.com/other", word_count: 500 }), current: new Map(siteWide), previous: new Map(), onPage: b })[0].evidence;
+    expect(evA.impressions).toBe(4000);
+    expect(evB.impressions).toBe(1000);
+  });
+
+  it("does not call a page 'still seen' because another page has impressions for its keyword", () => {
+    // The page has per-page rows, none for its keyword: it was not shown for it.
+    const onPage = { current: new Map([stats("something else", { position: 20, impressions: 10 })]), previous: new Map() };
+    const out = detectOpportunities({ page: page({ word_count: 300 }), current: new Map(siteWide), previous: new Map(), onPage });
+    expect(out.find((d) => d.opportunity === "thin")).toBeUndefined();
+    expect(out).toHaveLength(0);
+  });
+
+  it("falls back to the site's numbers only for a page with no per-page rows, labelled as such", () => {
+    const out = detectOpportunities({ page: page({ word_count: 300 }), current: new Map(siteWide), previous: new Map(), onPage: null });
+    expect(out.length).toBeGreaterThan(0);
+    expect(out[0].evidence.scope).toBe("site");
+  });
+
+  it("aggregates query_page rows per page, spellings of one URL together", () => {
+    const rows = [
+      { metric_date: "2026-10-01", query: "Booking Software", page_url: "https://example.com/a/", article_id: null, clicks: 2, impressions: 100, avg_position: 8 },
+      { metric_date: "2026-10-02", query: "booking software", page_url: "https://example.com/a", article_id: null, clicks: 1, impressions: 100, avg_position: 10 },
+      { metric_date: "2026-10-02", query: "booking software", page_url: "https://example.com/b", article_id: null, clicks: 9, impressions: 50, avg_position: 3 },
+    ];
+    const byPage = aggregatePageQueries({ query_page: rows });
+    expect(byPage.get("example.com/a")!.get("booking software")).toMatchObject({ clicks: 3, impressions: 200, position: 9 });
+    expect(byPage.get("example.com/b")!.get("booking software")).toMatchObject({ clicks: 9, impressions: 50 });
   });
 });
