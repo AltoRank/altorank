@@ -92,6 +92,13 @@ function page(url: string, title: string, bodyHtml: string | null | undefined, s
   };
 }
 
+/**
+ * Pages every store has and none is about: the policies Shopify generates and
+ * the contact form. A dev store has nothing else, and a topical profile of
+ * "privacy, personal information, cookies" plans articles on privacy law.
+ */
+const BOILERPLATE = /(^|-)(privacy|contact|terms|refund|return|shipping|policy|policies|cookie|legal|data-sharing|opt-out|your-privacy-choices)(-|$)/;
+
 /** Shape an Admin API answer into pages and text. Pure, for tests. */
 export function storeContentFrom(domain: string, data: StoreContentResponse): StoreContent {
   const base = `https://${domain}`;
@@ -106,7 +113,7 @@ export function storeContentFrom(domain: string, data: StoreContentResponse): St
     if (description) texts.push(description);
   }
   for (const p of data.pages?.nodes ?? []) {
-    if (!p.title) continue;
+    if (!p.title || BOILERPLATE.test((p.handle ?? "").toLowerCase())) continue;
     pages.push(page(`${base}/pages/${p.handle ?? ""}`, p.title, p.body, p.bodySummary));
     const t = htmlToText(p.body);
     if (t) texts.push(`${p.title}\n${t}`);

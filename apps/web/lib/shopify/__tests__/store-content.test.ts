@@ -60,6 +60,25 @@ describe("storeContentFrom", () => {
   });
 });
 
+describe("boilerplate", () => {
+  it("leaves out the pages every store has and none is about", () => {
+    const c = storeContentFrom("fern.myshopify.com", {
+      shop: { name: "Fern", description: null },
+      pages: {
+        nodes: [
+          { title: "Your Privacy Choices", handle: "your-privacy-choices", body: "<p>We collect personal information</p>" },
+          { title: "Contact", handle: "contact", body: "" },
+          { title: "Refund policy", handle: "refund-policy", body: "<p>30 days</p>" },
+          { title: "Our story", handle: "our-story", body: "<p>Ceramics since 2010.</p>" },
+        ],
+      },
+      articles: { nodes: [] },
+    });
+    expect(c.pages.map((p) => p.title)).toEqual(["Fern", "Our story"]);
+    expect(c.text).not.toContain("personal information");
+  });
+});
+
 describe("lockedStoreContent", () => {
   it("reads the store through Shopify when the storefront is locked", async () => {
     m.queryShopify.mockResolvedValue(answer);
