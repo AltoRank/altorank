@@ -1257,10 +1257,10 @@ async function writeArticle(
      * These steps embed a video and resolve link placeholders. Neither can
      * legitimately shrink an article to nothing, so a much shorter result is
      * a bug in the step, not an edit.
+     *
+     * `bound`: when the step must be done. Out of time is a step that failed:
+     * the original is kept, and the step's calls are aborted.
      */
-    //
-    // `bound`: when the step must be done. Out of time is a step that failed:
-    // the original is kept, and the step's calls are aborted.
     async function enhance(
       label: string,
       step: (html: string) => Promise<string>,
