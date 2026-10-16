@@ -68,6 +68,43 @@ describe("what the wrapper records", () => {
     ]);
   });
 
+  /** The analytics sync reports Bing in its own list, beside `results`. */
+  it("writes a warning when the only failures are in a list other than results", async () => {
+    const handler = observedCron("cron.analytics", async () =>
+      Response.json({
+        success: true,
+        synced: 2,
+        results: [{ workspaceId: "ws-1", ga4: 3, gsc: 4 }],
+        bing: [{ workspaceId: "ws-2", rows: 0, from: null, error: "Bing refused the key" }],
+      }),
+    );
+    await handler(request());
+    expect(written().level).toBe("warn");
+    expect(written().message).toContain("1 failed item(s)");
+    expect(written().context.failures).toEqual(["ws-2: Bing refused the key"]);
+  });
+
+  /** A report made but not mailed is a failure the customer notices. */
+  it("writes a warning when reports were made but could not be emailed", async () => {
+    const handler = observedCron("cron.reports", async () =>
+      Response.json({
+        success: true,
+        generated: 2,
+        emailed: 1,
+        emailErrors: 1,
+        errors: 0,
+        results: [
+          { workspaceId: "ws-1", reportId: "r1", emailed: true },
+          { workspaceId: "ws-2", reportId: "r2", emailed: false, emailError: "domain not verified" },
+        ],
+      }),
+    );
+    await handler(request());
+    expect(written().level).toBe("warn");
+    expect(written().message).toContain("1 failed item(s)");
+    expect(written().context.failures).toEqual(["ws-2: domain not verified"]);
+  });
+
   it("writes an error when the whole run failed", async () => {
     const handler = observedCron("cron.geo", async () =>
       Response.json({ error: "column does not exist" }, { status: 500 }),

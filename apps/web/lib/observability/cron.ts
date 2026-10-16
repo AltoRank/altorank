@@ -16,8 +16,9 @@
 // invocation:
 //
 //   error  the handler threw, or answered 5xx — nothing ran
-//   warn   it ran and reported per-item failures (`errors: 3`, or results
-//          carrying `status: "error"`)
+//   warn   it ran and reported per-item failures (`errors: 3`,
+//          `emailErrors: 1`, or any top-level list carrying an item with
+//          `status: "error"` or an `error`)
 //   info   it ran clean; the counts are in `context`, so "when did publish
 //          last run, and what did it do" is a query
 //
@@ -63,13 +64,21 @@ function summarize(body: CronBody): Record<string, unknown> {
   return out;
 }
 
-/** The per-item failures a run reported, capped so one bad night is one row. */
+/**
+ * The per-item failures a run reported, capped so one bad night is one row.
+ *
+ * Every top-level list is read, not only `results`: the analytics sync reports
+ * Bing in its own `bing` list, and a run whose only failures were there was
+ * recorded as a clean "Ran.", so the operations digest never heard of them.
+ */
 function failures(body: CronBody): { count: number; first: string[] } {
-  const rows = Array.isArray(body.results) ? (body.results as Record<string, unknown>[]) : [];
-  const bad = rows.filter((r) => r && typeof r === "object" && (r.status === "error" || r.error));
+  const rows = Object.values(body)
+    .filter(Array.isArray)
+    .flat() as Record<string, unknown>[];
+  const bad = rows.filter((r) => r && typeof r === "object" && (r.status === "error" || r.error || r.emailError));
   const first = bad.slice(0, 5).map((r) => {
     const where = r.workspaceId ?? r.articleId ?? r.domain ?? "";
-    const why = r.error ?? r.detail ?? "unknown";
+    const why = r.error ?? r.emailError ?? r.detail ?? "unknown";
     return where ? `${String(where)}: ${String(why)}` : String(why);
   });
   return { count: bad.length, first };
@@ -136,7 +145,11 @@ export function observedCron(source: string, handler: CronHandler): CronHandler 
       }
 
       const { count, first } = failures(body);
-      const reported = typeof body.errors === "number" ? body.errors : 0;
+      // `errors` is the usual count. `emailErrors` is the reports job's count
+      // of reports that were made but could not be mailed: the run did its
+      // main work, and the customer still did not get what they were promised.
+      const counted = (v: unknown) => (typeof v === "number" && v > 0 ? v : 0);
+      const reported = counted(body.errors) + counted(body.emailErrors);
       if (count > 0 || reported > 0) {
         await recordEvent({
           level: "warn",
