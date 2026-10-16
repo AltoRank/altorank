@@ -77,8 +77,11 @@ its text is already on the customer's own site. That records something done
 outside AltoRank, sends nothing to a CMS, carries no approval, and can be
 undone from the editor.
 
-What cannot write an approval: an agent. The **MCP server and the agent API
-expose no publish or approve tool** - not disabled, absent. The MCP tools are
+What cannot write an approval: an agent. **No MCP tool or agent API call
+approves an article or publishes a draft** - not disabled, absent. The one
+publish-side call, `altorank_retry_publish` (`POST
+/articles/{id}/retry-publish`), re-runs a failed publish of an article a
+person already approved, and is refused for anything else. The MCP tools are
 all registered in `apps/web/lib/mcp/server.ts`, and its server instructions
 say so to the agent.
 
@@ -147,7 +150,9 @@ Windsurf, Gemini CLI, Cline and the other agents the
 skill teaches an agent to drive the agent API (`/api/agent/v1`): preflight the
 key, check a site's readiness, list or suggest keywords, generate a draft into
 a human's review queue, edit a draft by find-and-replace, move the content
-plan. It never publishes, approves or deletes; the API has no such calls.
+plan. It never approves, deletes or publishes a draft; the API has no such
+calls. Its one publish-side call retries a failed publish of an article a
+person already approved.
 
 It needs an API key, created at `/settings/api-keys` in the dashboard and
 exported as `ALTORANK_API_KEY`. Self-hosted installs also set

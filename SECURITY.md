@@ -43,8 +43,10 @@ anything the defaults get wrong.
   publish is attributable to a person: a click in the editor, or the
   automatic-publishing rule a named member turned on for that workspace
   (`auto_approve`, migration 079), which runs the button's checks and more
-  and can be held per draft. The MCP server and agent API expose no publish
-  or approve tool, and a signed-in user's database client cannot write an
+  and can be held per draft. No MCP tool or agent API call approves an
+  article or publishes a draft (the one publish-side call, `retry-publish`,
+  re-runs a failed publish of an already approved article and is refused for
+  anything else), and a signed-in user's database client cannot write an
   approval or the statuses that need one (migration 109). Any path that
   publishes to a connected CMS without one of those two decisions behind it -
   an agent route, a status flip that skips `approved_by`, text changed after
