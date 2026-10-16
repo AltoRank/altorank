@@ -11,7 +11,29 @@ import { fakeSupabase, type FakeSupabase } from "@/lib/agent/__tests__/fake-supa
 // order (by last analysis) let the same sites win every week.
 
 let f: FakeSupabase;
-vi.mock("@/lib/supabase/server", () => ({ createServiceClient: () => f }));
+/** Answer like a database without migration 117: any read naming started_at fails. */
+let without117 = false;
+const db = () => {
+  if (!without117) return f;
+  const from = (table: string) => {
+    const b = f.from(table) as Record<string, unknown>;
+    const select = b.select as (...a: unknown[]) => unknown;
+    const then = b.then as (...a: unknown[]) => unknown;
+    let missing = false;
+    b.select = (cols?: string, ...rest: unknown[]) => {
+      if (cols?.includes("started_at")) missing = true;
+      select(cols, ...rest);
+      return b;
+    };
+    b.then = (resolve: (v: unknown) => unknown, reject?: (e: unknown) => unknown) =>
+      missing
+        ? Promise.resolve({ data: null, error: { code: "42703", message: "column does not exist" } }).then(resolve, reject)
+        : then(resolve, reject);
+    return b;
+  };
+  return { ...f, from };
+};
+vi.mock("@/lib/supabase/server", () => ({ createServiceClient: () => db() }));
 vi.mock("@/lib/observability/cron", () => ({ observedCron: (_n: string, fn: unknown) => fn }));
 vi.mock("@/lib/billing/quota", async (orig) => ({
   ...(await orig<typeof import("@/lib/billing/quota")>()),
@@ -67,6 +89,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
   runRefreshTask.mockClear();
   analyzeWorkspace.mockClear();
+  without117 = false;
   f = fakeSupabase({
     workspaces: [site("a"), site("b"), site("c")],
     refresh_tasks: ["a", "b", "c"].map((w) => due(w, "2026-10-12", "2026-10-10T09:00:00Z")),
@@ -147,5 +170,17 @@ describe("cron/refresh after its own analysis and after a failed attempt", () =>
     const tue = await call();
     expect(tue.rewrites).toBe(0);
     expect(runRefreshTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("still rotates before migration 117, counting rewrites from executions", async () => {
+    without117 = true;
+    at("2026-10-12T07:30:00Z");
+    const mon = await call();
+    expect(mon.rewrites).toBe(2);
+    const capped = mon.results.find((r) => r.rewrite?.startsWith("run limit reached"))!.workspaceId;
+    at("2026-10-13T07:30:00Z");
+    const tue = await call();
+    expect(tue.rewrites).toBe(1);
+    expect(runRefreshTask).toHaveBeenLastCalledWith(expect.anything(), `${capped}-2026-10-12`);
   });
 });
