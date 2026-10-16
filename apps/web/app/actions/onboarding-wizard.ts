@@ -19,6 +19,10 @@ import { trainVoiceProfile } from "@/lib/voice/train";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { canSpend } from "@/lib/billing/spend-gate";
+import { inputKey, keepDoorResult, readDoorCache, takeDoor, type SpendDoor } from "@/lib/billing/spend-doors";
+import { withSpendScope } from "@/lib/billing/spend-scope";
+import { trialGateApplies } from "@/lib/billing/trial";
+import { refusedWhileViewingAs } from "@/lib/auth/impersonation";
 import { type BusinessProfile, type InferenceResult } from "@/lib/onboarding/business-profile";
 import { inferVerifiedBusinessProfile } from "@/lib/onboarding/observed-facts";
 import { looksLikeDomain, resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
@@ -54,41 +58,95 @@ async function assertWorkspace(workspaceId: string) {
 }
 
 /**
+ * May this account buy a wizard read now, and is the press counted.
+ *
+ * The site read, the rival lookup and a typed rival each cost provider calls,
+ * and all three used to be bought again on every load of the wizard: they
+ * fire on mount, and nothing is saved before Finish. So each is asked here in
+ * three steps:
+ *
+ *   1. the spend gate, as before ("keyword-research": a lapsed account that
+ *      comes back to add a site is refused with its own sentence);
+ *   2. the door (lib/billing/spend-doors.ts): per site and per account a day,
+ *      and before the trial for the account's whole life, so a signup that
+ *      never finishes cannot buy the read in a loop. Self-host and the
+ *      operator account are not counted;
+ *   3. the work runs under a spend scope for the site, so its rows say whose
+ *      they are.
+ *
+ * What a read bought is kept and handed back to the next load (readDoorCache
+ * in each action below), which is what makes a reload free.
+ */
+async function wizardDoor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  workspaceId: string,
+  door: SpendDoor,
+): Promise<{ refusal: null; reason: null; useId: string | null } | { refusal: string; reason: "needs_plan" | "limited"; useId: null }> {
+  // An operator viewing as the account would buy this on theirs, and use up
+  // their count (lib/auth/impersonation.ts). What is already kept is still
+  // handed back by the callers, before they get here.
+  const viewing = await refusedWhileViewingAs(door === "wizard-site-read" ? "Reading the site" : "Looking up competitors");
+  if (viewing) return { refusal: viewing, reason: "limited", useId: null };
+  const { accountId, user } = await requireAuth(undefined, { workspaceId });
+  const gate = await canSpend(supabase, accountId, { userEmail: user.email ?? undefined, workspaceId, action: "keyword-research" });
+  if (!gate.allowed) return { refusal: gate.message, reason: "needs_plan", useId: null };
+  if (gate.reason === "self-host" || gate.reason === "operator") return { refusal: null, reason: null, useId: null };
+  const taken = await takeDoor(door, { accountId, workspaceId }, { preTrial: trialGateApplies(gate.quota) });
+  return taken.allowed ? { refusal: null, reason: null, useId: taken.useId } : { refusal: taken.message, reason: "limited", useId: null };
+}
+
+/**
  * Read the site and propose a profile, with the reason when it cannot.
  * The wizard renders the reason; it never renders blanks as a success.
  */
 export async function proposeProfile(workspaceId: string): Promise<InferenceResult> {
   const { supabase, workspace } = await assertWorkspace(workspaceId);
   if (!workspace.domain) return { profile: null, reason: "unreadable", source: "none" };
+  // A read this site already paid for, handed back: reloading the wizard
+  // used to buy the crawl and the model call again every time.
+  const key = inputKey({ domain: workspace.domain });
+  const kept = await readDoorCache<InferenceResult>("wizard-site-read", workspaceId, key);
+  if (kept?.profile) return kept;
   // One model call per press, and "Try again" is right there on the screen.
-  // A new account is inside its free allowance and never sees this; a lapsed
-  // one that comes back to add a site does.
-  const { accountId, user } = await requireAuth(undefined, { workspaceId });
-  const gate = await canSpend(supabase, accountId, {
-    userEmail: user.email ?? undefined,
-    workspaceId,
-    action: "keyword-research",
-  });
-  if (!gate.allowed) {
-    return { profile: null, reason: "needs_plan", source: "none", message: gate.message, localeGuess: guessLocale({ domain: workspace.domain }) };
+  // A new account is inside its free allowance and never sees the gate; a
+  // lapsed one that comes back to add a site does.
+  const { refusal, reason, useId } = await wizardDoor(supabase, workspaceId, "wizard-site-read");
+  if (refusal) {
+    return {
+      profile: null,
+      reason,
+      source: "none",
+      message: refusal,
+      localeGuess: guessLocale({ domain: workspace.domain }),
+    };
   }
   // Checked: a conversion page the site does not have comes back empty with
   // the reason, never as the guess (lib/onboarding/observed-facts.ts).
-  const result = await inferVerifiedBusinessProfile(workspace.domain);
+  const domain = workspace.domain;
+  const result = await withSpendScope({ workspaceId, job: "onboarding" }, () => inferVerifiedBusinessProfile(domain));
   // A failed read still says which language the page is in and which
   // country's domain it is on: the wizard starts from that, not English /
-  // Global (lib/onboarding/locale-guess.ts).
-  if (!result.profile) return { ...result, localeGuess: guessLocale({ htmlLang: result.htmlLang, domain: workspace.domain }) };
+  // Global (lib/onboarding/locale-guess.ts). A failure is not kept: "Try
+  // again" is for a site that would not load the first time.
+  if (!result.profile) return { ...result, localeGuess: guessLocale({ htmlLang: result.htmlLang, domain }) };
   // The model names rivals ("trainerize"); keyword research reads domains.
   // Resolved here, not in business-profile.ts, because the client wizard
   // imports that file and the resolver needs node:dns. A name nothing can
   // place is dropped, so no chip is shown that research cannot read.
   if (result.profile?.competitors.length) {
-    const own = workspace.domain.replace(/^www\./, "").toLowerCase();
+    const own = domain.replace(/^www\./, "").toLowerCase();
     const { domains } = await resolveCompetitorDomains(result.profile.competitors);
     result.profile.competitors = domains.filter((d) => d !== own);
   }
+  await keepDoorResult("wizard-site-read", workspaceId, key, useId, result);
   return result;
+}
+
+/** The profile as a cache key: everything the lookup reads, never the confirmation stamp. */
+function profileKey(domain: string, profile: BusinessProfile): string {
+  const { confirmedAt: _stamp, ...read } = profile;
+  void _stamp;
+  return inputKey({ domain, profile: read });
 }
 
 /**
@@ -97,25 +155,45 @@ export async function proposeProfile(workspaceId: string): Promise<InferenceResu
  * Takes the profile from the screen rather than the row: nothing is saved
  * before the one button. Costs a few provider calls (seed proposal, up to six
  * results pages, one vetting call, one bulk-rank call), so it sits behind the
- * same spend gate as the profile read.
+ * same spend gate as the profile read, is counted like it, and is kept for
+ * the same profile: the reload that is handed the kept read asks with that
+ * same profile, and is handed the kept rivals too.
  */
 export async function suggestCompetitors(workspaceId: string, profile: BusinessProfile): Promise<CompetitorSuggestions> {
   const { supabase, workspace } = await assertWorkspace(workspaceId);
   if (!workspace.domain) return { own: null, suggestions: [], searchRivals: [] };
-  const { accountId, user } = await requireAuth(undefined, { workspaceId });
   // E2E_STUBS: a fixture, no provider (lib/e2e/stubs.ts). After the auth
-  // check, like every other stub, so the switch never skips who may ask.
-  if (e2eStubsEnabled()) return stubSuggestCompetitors(workspace.domain, profile);
-  const gate = await canSpend(supabase, accountId, { userEmail: user.email ?? undefined, workspaceId, action: "keyword-research" });
-  if (!gate.allowed) return { own: null, suggestions: [], searchRivals: [] };
+  // check, like every other stub, so the switch never skips who may ask
+  // (the paid path checks it in wizardDoor).
+  if (e2eStubsEnabled()) {
+    await requireAuth(undefined, { workspaceId });
+    return stubSuggestCompetitors(workspace.domain, profile);
+  }
+  const key = profileKey(workspace.domain, profile);
+  const kept = await readDoorCache<CompetitorSuggestions>("wizard-rivals", workspaceId, key);
+  if (kept) return kept;
+  const { refusal, reason, useId } = await wizardDoor(supabase, workspaceId, "wizard-rivals");
+  if (reason === "needs_plan") return { own: null, suggestions: [], searchRivals: [] };
+  // Past the limit, or not bought while viewing as the account: said as a
+  // lookup that could not look, which the step words as "name one if you
+  // know it".
+  if (refusal) return { own: null, suggestions: [], searchRivals: [], lookupFailed: true };
   const locale = resolveLocale(profile.language, profile.country);
-  return findCompetitorSuggestions({
-    domain: workspace.domain,
-    business: profile,
-    languageCode: languageCodeOf(locale.language),
-    locationCode: locale.locationCode,
-    spend: { supabase, workspaceId },
-  });
+  const domain = workspace.domain;
+  // The scope writes the model and results-page rows with the operator's
+  // client and this site on them. The sink this passed before was the
+  // person's own client, which provider_spend refuses to write through
+  // (lib/billing/default-spend.ts), so those rows were lost.
+  const found = await withSpendScope({ workspaceId, job: "onboarding" }, () =>
+    findCompetitorSuggestions({
+      domain,
+      business: profile,
+      languageCode: languageCodeOf(locale.language),
+      locationCode: locale.locationCode,
+    }),
+  );
+  if (!found.lookupFailed) await keepDoorResult("wizard-rivals", workspaceId, key, useId, found);
+  return found;
 }
 
 /**
@@ -129,24 +207,36 @@ export async function resolveCompetitor(
   own: number | null,
 ): Promise<{ domain: string; authority: number | null; size: RivalSize | null } | null> {
   const { supabase, workspace } = await assertWorkspace(workspaceId);
-  const { accountId, user } = await requireAuth(undefined, { workspaceId });
+  // E2E_STUBS: after the auth check, like every other stub (the paid path
+  // checks it in wizardDoor).
   if (e2eStubsEnabled()) {
+    await requireAuth(undefined, { workspaceId });
     const domain = entry.trim().toLowerCase().replace(/\s+/g, "-");
     return domain ? { domain: domain.includes(".") ? domain : `${domain}.example`, authority: null, size: null } : null;
   }
-  // A results page and a bulk-rank read per press (~$0.024): gated like the
-  // suggestion lookup above. A refused account gets the entry as typed when
-  // it already is a domain, and nothing invented when it is not.
-  const gate = await canSpend(supabase, accountId, { userEmail: user.email ?? undefined, workspaceId, action: "keyword-research" });
-  if (!gate.allowed) {
+  type Resolved = { domain: string; authority: number | null; size: RivalSize | null };
+  const key = inputKey({ entry: entry.trim().toLowerCase(), own, site: workspace.domain ?? "" });
+  const kept = await readDoorCache<{ found: Resolved | null }>("wizard-rival-resolve", workspaceId, key);
+  if (kept?.found) return kept.found;
+  // A results page and a bulk-rank read per press (~$0.024): gated and
+  // counted like the suggestion lookup above. A refused account gets the
+  // entry as typed when it already is a domain, and nothing invented when
+  // it is not.
+  const { refusal, useId } = await wizardDoor(supabase, workspaceId, "wizard-rival-resolve");
+  if (refusal) {
     const typed = entry.trim().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "").toLowerCase();
     return looksLikeDomain(typed) ? { domain: typed, authority: null, size: null } : null;
   }
-  const { domains } = await resolveCompetitorDomains([entry]);
-  const domain = domains.find((d) => d !== (workspace.domain ?? "").replace(/^www\./, "").toLowerCase());
-  if (!domain) return null;
-  const authority = own === null ? null : (await fetchBulkAuthority([domain]).catch(() => new Map<string, number | null>())).get(domain) ?? null;
-  return { domain, authority, size: classifyRivalSize(own, authority) };
+  const found = await withSpendScope({ workspaceId, job: "onboarding" }, async (): Promise<Resolved | null> => {
+    const { domains } = await resolveCompetitorDomains([entry]);
+    const domain = domains.find((d) => d !== (workspace.domain ?? "").replace(/^www\./, "").toLowerCase());
+    if (!domain) return null;
+    const authority = own === null ? null : (await fetchBulkAuthority([domain]).catch(() => new Map<string, number | null>())).get(domain) ?? null;
+    return { domain, authority, size: classifyRivalSize(own, authority) };
+  });
+  // A name nothing could place is not kept: the lookup may answer next time.
+  if (found) await keepDoorResult("wizard-rival-resolve", workspaceId, key, useId, { found });
+  return found;
 }
 
 /** Save the profile the person confirmed. Labels stay in the profile; codes go in the columns. */

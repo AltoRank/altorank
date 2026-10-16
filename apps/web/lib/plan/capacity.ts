@@ -36,7 +36,7 @@ export interface PlanCapacity {
   scheduled: number;
   /** The keyword half of `scheduled`. */
   articles: number;
-  /** The improvement half of `scheduled`: rewrites scheduled or running. */
+  /** The improvement half of `scheduled`: rewrites scheduled or running, while scheduled rewrites are on. */
   improvements: number;
   /** cap - scheduled, never negative. */
   available: number;
@@ -91,7 +91,7 @@ export async function getPlanCapacity(
   const [{ data: ws }, { count }, { count: improvements }] = await Promise.all([
     supabase
       .from("workspaces")
-      .select("auto_generate_weekly_limit")
+      .select("auto_generate_weekly_limit, refresh_enabled, refresh_days")
       .eq("id", workspaceId)
       .maybeSingle(),
     supabase
@@ -109,9 +109,14 @@ export async function getPlanCapacity(
       // its slot was spent the day it ran.
       .in("status", ["scheduled", "running"]),
   ]);
+  // Only a rewrite that can run holds a slot. With scheduled rewrites off,
+  // or no weekday picked, cron/refresh never picks a task up, so counting it
+  // took room from the article plan for work that would not happen - the
+  // same rule lib/plan/pace-budget.ts applies to its reserve.
+  const runnable = Boolean(ws?.refresh_enabled) && ((ws?.refresh_days as number[] | null) ?? []).length > 0;
   return computeCapacity({
     scheduled: count ?? 0,
-    improvements: improvements ?? 0,
+    improvements: runnable ? improvements ?? 0 : 0,
     weeklyLimit: (ws?.auto_generate_weekly_limit as number | null | undefined) ?? null,
   });
 }

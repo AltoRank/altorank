@@ -1,49 +1,17 @@
 import vercel from "@/vercel.json";
 import { Table } from "./table";
 import type { Forecast, JobKey, RateCard } from "@/lib/billing/forecast";
+import { SCHEDULED_JOBS } from "@/lib/billing/scheduled-jobs";
 
 /**
  * The schedule, what each job spends on, and what it is expected to cost -
  * expected from the users' own settings, actual from provider_spend.
  *
- * The schedule is read from vercel.json rather than restated, so this table
- * cannot drift from what Vercel actually runs. Times are UTC because that is
- * what Vercel runs them in.
+ * The times are read from vercel.json rather than restated. What each job
+ * does and what it is filed under are kept in lib/billing/scheduled-jobs.ts,
+ * and a test fails when vercel.json names a cron that file does not.
+ * Times are UTC because that is what Vercel runs them in.
  */
-
-const JOBS: Record<string, { key: JobKey | null; does: string; drivers: string }> = {
-  "/api/cron/analyze": {
-    key: "analyze",
-    does: "First look at a workspace: crawl, profile, discovery, authority. One-off, batches of 3.",
-    drivers: "workspaces never analysed",
-  },
-  "/api/cron/serp": {
-    key: "serp",
-    does: "Posts one standard-queue SERP per tracked keyword; weekly backlink sync when due.",
-    drivers: "planned + shipped + article keywords, cap 200",
-  },
-  "/api/cron/serp-collect": {
-    // Its cost is the serp row's: the queue charges on collection, and
-    // showing the forecast twice read as double the spend.
-    key: null,
-    does: "Collects the SERPs posted at 03:00 and writes rankings. Counted under serp.",
-    drivers: "same tasks",
-  },
-  "/api/cron/analytics": { key: null, does: "GSC / GA4 pull for connected workspaces. Google APIs, no provider spend.", drivers: "—" },
-  "/api/cron/exchange": { key: null, does: "Backlink-exchange janitor: expires unclaimed requests past their date and releases claims whose draft never arrived. No provider spend.", drivers: "—" },
-  "/api/cron/generate": {
-    key: "generate",
-    does: "Writes the day's drafts: advanced SERP + related keywords, then the model.",
-    drivers: "auto-generate on × weekly limit (default 2)",
-  },
-  "/api/cron/publish": { key: null, does: "Pushes approved articles to their CMS. No provider spend.", drivers: "—" },
-  "/api/cron/reports": { key: null, does: "Monthly PDF from stored data. No provider spend.", drivers: "—" },
-  "/api/cron/geo": {
-    key: "geo",
-    does: "AI-visibility probes: every enabled prompt across 4 engines, with web search.",
-    drivers: "opt-in workspaces × prompts × 4, max 3 workspaces/run",
-  },
-};
 
 const RATE_LABEL: Record<keyof RateCard, string> = {
   serpQueued: "queued SERP",
@@ -91,11 +59,14 @@ export function ScheduledWork({
   const expected = (key: JobKey | null): string => {
     if (!key) return "—";
     if (key === "analyze") return forecast.oneOff ? `${usd(forecast.oneOff)} once` : "—";
+    // Rewrites follow each site's own refresh schedule and pace; there is no
+    // forecast of them yet, which is not the same as costing nothing.
+    if (key === "refresh") return "not forecast";
     return usd(forecast.byJob[key]);
   };
 
   const rows = crons.map((c) => {
-    const job = JOBS[c.path] ?? { key: null, does: c.path, drivers: "—" };
+    const job = SCHEDULED_JOBS[c.path] ?? { key: null, does: c.path, drivers: "—" };
     return [
       `${cron(c.schedule)} UTC`,
       c.path.replace("/api/cron/", ""),

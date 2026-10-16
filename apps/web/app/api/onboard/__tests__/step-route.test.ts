@@ -28,6 +28,8 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/workspace-scope", () => ({ getScopedWorkspaceId: async () => scoped.value }));
 vi.mock("@/lib/onboarding/step-events", () => ({ recordOnboardingStep: (...a: unknown[]) => record(...(a as [])) }));
+const impersonation = vi.hoisted(() => ({ value: null as null | { targetEmail: string } }));
+vi.mock("@/lib/auth/impersonation", () => ({ getImpersonation: async () => impersonation.value }));
 
 import { POST } from "../step/route";
 
@@ -40,6 +42,7 @@ beforeEach(() => {
   member.value = { id: "m1" };
   scoped.value = "ws1";
   run.value = { status: "done" };
+  impersonation.value = null;
   record.mockClear();
 });
 
@@ -88,5 +91,11 @@ describe("POST /api/onboard/step", () => {
     const input = (record.mock.calls[0] as unknown as [unknown, Record<string, unknown>])[1];
     expect(input).toMatchObject({ step: "site_read_finished", ms: 4200, secondsSinceSignup: null });
     expect(JSON.stringify(input)).not.toContain("someone@");
+  });
+
+  it("writes nothing while an operator is viewing as the account: the step is the customer's to reach", async () => {
+    impersonation.value = { targetEmail: "owner@acme-agency.example" };
+    expect((await post({ step: "site_read_finished" })).status).toBe(204);
+    expect(record).not.toHaveBeenCalled();
   });
 });

@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { getDestinations } from "@/lib/publishing/destinations";
 import { UPDATABLE_CMS } from "@/lib/refresh/push";
+import { isStaleRunning } from "@/lib/refresh/tasks";
 import { plural } from "@/lib/utils";
 import {
   ImprovementsView,
@@ -143,8 +144,10 @@ export default async function ImprovementsPage() {
     url.replace(/^https?:\/\/[^/]+/, "") ||
     url;
 
-  const taskByCandidate = new Map<string, RefreshTask>();
-  for (const t of (tasks ?? []) as RefreshTask[]) taskByCandidate.set(t.candidate_id, t);
+  // A task still `running` long after any run could last was cut off; the
+  // card offers it back to the person instead of "Rewriting now…".
+  const taskByCandidate = new Map<string, CandidateRow["task"]>();
+  for (const t of (tasks ?? []) as RefreshTask[]) taskByCandidate.set(t.candidate_id, { ...t, stale: isStaleRunning(t) });
 
   const candidateRows: CandidateRow[] = ((candidates ?? []) as RefreshCandidate[]).map((c) => ({
     ...c,

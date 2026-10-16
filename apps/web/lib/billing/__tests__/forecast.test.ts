@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   forecastWorkspace,
   forecastAll,
-  jobForOperation,
+  jobForSpend,
   measuredRates,
   DEFAULT_RATES,
   TRACK_CAP,
@@ -55,20 +55,48 @@ describe("forecastAll", () => {
   });
 });
 
-describe("jobForOperation", () => {
-  it("routes the queued SERP flow, including its free GETs, to serp", () => {
-    expect(jobForOperation("dataforseo", "/serp/google/organic/task_post")).toBe("serp");
-    expect(jobForOperation("dataforseo", "/serp/google/organic/tasks_ready")).toBe("serp");
-    expect(jobForOperation("dataforseo", "/serp/google/organic/task_get/regular/{id}")).toBe("serp");
+describe("jobForSpend", () => {
+  const op = (provider: string, operation: string) => jobForSpend({ provider, operation });
+
+  it("files a row under the cron that bought it, when the row says", () => {
+    expect(jobForSpend({ provider: "anthropic", operation: "claude-sonnet-5", job: "cron.refresh", hasArticle: true })).toBe("refresh");
+    expect(jobForSpend({ provider: "anthropic", operation: "claude-sonnet-5", job: "cron.generate", hasArticle: true })).toBe("generate");
+    expect(jobForSpend({ provider: "dataforseo", operation: "/serp/google/organic/task_post", job: "cron.serp" })).toBe("serp");
+    expect(jobForSpend({ provider: "dataforseo", operation: "/backlinks/backlinks/live", job: "cron.serp" })).toBe("backlinks");
+    expect(jobForSpend({ provider: "dataforseo", operation: "/dataforseo_labs/google/ranked_keywords/live", job: "cron.analyze" })).toBe("analyze");
   });
-  it("routes article research and the model to generate, probes to geo", () => {
-    expect(jobForOperation("dataforseo", "/serp/google/organic/live/advanced")).toBe("generate");
-    expect(jobForOperation("anthropic", "claude-sonnet-5")).toBe("generate");
-    expect(jobForOperation("dataforseo", "/ai_optimization/chat_gpt/llm_responses/live")).toBe("geo");
+
+  it("files setup's spend under the first look, never under the writer", () => {
+    expect(jobForSpend({ provider: "anthropic", operation: "onboarding/business-profile", job: "onboarding" })).toBe("analyze");
+    expect(jobForSpend({ provider: "dataforseo", operation: "/serp/google/organic/live/advanced", job: "onboarding" })).toBe("analyze");
+    // A row from before `job`, made under a first look's budget.
+    expect(jobForSpend({ provider: "anthropic", operation: "claude-sonnet-5", stage: "draft", hasArticle: true })).toBe("analyze");
   });
-  it("leaves discovery and on-demand calls unassigned", () => {
-    expect(jobForOperation("dataforseo", "/dataforseo_labs/google/ranked_keywords/live")).toBeNull();
-    expect(jobForOperation("dataforseo", "/serp/google/organic/live/regular")).toBeNull();
+
+  it("files the editor and other unscheduled work under no cron", () => {
+    expect(jobForSpend({ provider: "anthropic", operation: "editor/rewrite", job: "editor", hasArticle: true })).toBeNull();
+    expect(jobForSpend({ provider: "anthropic", operation: "editor/rewrite", hasArticle: true })).toBeNull();
+    expect(jobForSpend({ provider: "anthropic", operation: "claude-sonnet-5", job: "cron.publish" })).toBeNull();
+  });
+
+  describe("a row from before the job was recorded", () => {
+    it("routes the queued SERP flow, including its free GETs, to serp", () => {
+      expect(op("dataforseo", "/serp/google/organic/task_post")).toBe("serp");
+      expect(op("dataforseo", "/serp/google/organic/tasks_ready")).toBe("serp");
+      expect(op("dataforseo", "/serp/google/organic/task_get/regular/{id}")).toBe("serp");
+    });
+    it("routes article research and an article's model calls to generate, probes to geo", () => {
+      expect(op("dataforseo", "/serp/google/organic/live/advanced")).toBe("generate");
+      expect(jobForSpend({ provider: "anthropic", operation: "claude-sonnet-5", hasArticle: true })).toBe("generate");
+      expect(op("dataforseo", "/ai_optimization/chat_gpt/llm_responses/live")).toBe("geo");
+    });
+    it("leaves a model call bought for no article unassigned: it was not the writer's", () => {
+      expect(op("anthropic", "claude-sonnet-5")).toBeNull();
+    });
+    it("leaves discovery and on-demand calls unassigned", () => {
+      expect(op("dataforseo", "/dataforseo_labs/google/ranked_keywords/live")).toBeNull();
+      expect(op("dataforseo", "/serp/google/organic/live/regular")).toBeNull();
+    });
   });
 });
 
@@ -87,5 +115,18 @@ describe("measuredRates", () => {
     const r = measuredRates(rows);
     // 0.4 over three articles.
     expect(r.rates.modelPerArticle).toBeCloseTo(0.4 / 3, 9);
+  });
+
+  it("leaves the editor's rewrites and the scheduled refresh out of the model cost per article", () => {
+    const written = ["a", "b", "c"].map((id) => ({ provider: "anthropic", operation: "claude-sonnet-5", costUsd: 0.3, articleId: id }));
+    // Twenty whole-article rewrites pressed on those drafts, quick rewrites,
+    // a refresh rewrite, and a fourth article only the editor ever touched.
+    const after = [
+      ...Array.from({ length: 20 }, () => ({ provider: "anthropic", operation: "editor/rewrite", costUsd: 0.6, articleId: "a", job: "editor" })),
+      { provider: "anthropic", operation: "editor/micro", costUsd: 0.01, articleId: "d", job: "editor" },
+      { provider: "anthropic", operation: "claude-sonnet-5", costUsd: 0.5, articleId: "b", job: "cron.refresh" },
+    ];
+    const r = measuredRates([...written, ...after]);
+    expect(r.rates.modelPerArticle).toBeCloseTo(0.3, 9);
   });
 });

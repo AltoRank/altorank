@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **102** (rows stay put, and the member-role guard), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server), **114** (blog keys) and **115** (Search Console sync outcome), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113, 114 and 115 go in AFTER**; **102 and 112 go in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **102** (rows stay put, and the member-role guard), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server), **114** (blog keys), **115** (Search Console sync outcome), **116** (how often a paid door may be pressed, the Operations totals, and the customer's own last sign-in across "View as") and **117** (refresh engine bookkeeping), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113, 114, 115, 116 and 117 go in AFTER**; **102 and 112 go in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both run to the head; `lib/__tests__/migration-runbook.test.ts` fails when a file is missing from either. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -165,7 +165,9 @@ m(file, applied) as (values
   ('112_article_images_private',             not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Article images are readable by anyone')),
   ('113_push_record',                        exists (select 1 from col where t='refresh_executions' and c='pushed_by') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'refresh_executions_guard_push' and c.relname = 'refresh_executions')),
   ('114_blog_keys',                          exists (select 1 from col where t='api_keys' and c='workspace_id') and exists (select 1 from pg_constraint where conname = 'api_keys_blog_key_shape') and exists (select 1 from pg_trigger where tgname = 'api_keys_site_in_account')),
-  ('115_gsc_sync_outcome',                   exists (select 1 from col where t='workspace_integrations' and c='last_synced_at') and exists (select 1 from col where t='workspace_integrations' and c='synced_from') and exists (select 1 from col where t='workspace_integrations' and c='synced_through'))
+  ('115_gsc_sync_outcome',                   exists (select 1 from col where t='workspace_integrations' and c='last_synced_at') and exists (select 1 from col where t='workspace_integrations' and c='synced_from') and exists (select 1 from col where t='workspace_integrations' and c='synced_through')),
+  ('116_spend_doors',                        to_regclass('public.spend_door_uses') is not null and to_regprocedure('public.take_spend_door(uuid,uuid,text,jsonb)') is not null and to_regprocedure('public.provider_spend_summary(timestamptz)') is not null and exists (select 1 from col where t='admin_impersonations' and c='target_last_sign_in_at') and exists (select 1 from col where t='provider_spend' and c='job')),
+  ('117_refresh_engine',                     exists (select 1 from col where t='refresh_tasks' and c='started_at') and exists (select 1 from col where t='refresh_candidates' and c='resolved_at'))
 )
 select file, applied from m order by file;
 ```
@@ -316,6 +318,8 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 112_article_images_private.sql   #
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 113_push_record.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 114_blog_keys.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 115_gsc_sync_outcome.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 116_spend_doors.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 117_refresh_engine.sql   # AFTER its code is live; see its section
 ```
 
 Re-running a file that is already applied is safe from 048 on, with one
@@ -400,6 +404,8 @@ no code in the repo references either).
 | 113_push_record.sql | `fix/approval-around-push` | 052, `auth.users`; **its code deployed first** | yes | yes, see its section (loses who pushed each rewrite; a member can again mark a rewrite pushed over PostgREST) |
 | 114_blog_keys.sql | `fix/blog-api-key-scope` | 051, 085, 099; **its code deployed first** | yes | yes, see its section (blog keys are revoked; agent keys are untouched) |
 | 115_gsc_sync_outcome.sql | `fix/search-console-truth` | 001, 070; **its code deployed first** | yes | yes, see its section (loses only the recorded sync range) |
+| 116_spend_doors.sql | `fix/spend-doors` | 025, 030, 085, 106; **its code deployed first** | yes | yes, see its section (presses are counted per instance again, the Operations page pages through provider_spend, and the kept last sign-ins are lost) |
+| 117_refresh_engine.sql | `fix/refresh-engine` | 052; **its code deployed first** | yes | yes, see its section (loses the start times and which candidates a pass retired; the code works without both) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1818,6 +1824,7 @@ Rollback (the code keeps working; it logs that `pushed_by` was not recorded):
 drop trigger if exists refresh_executions_guard_push on public.refresh_executions;
 drop function if exists public.refresh_executions_guard_push();
 alter table public.refresh_executions drop column if exists pushed_by;
+```
 
 ## 114 — blog keys read one site's published articles, nothing else
 
@@ -1888,6 +1895,7 @@ alter table public.api_keys drop constraint if exists api_keys_blog_key_shape;
 update public.api_keys set revoked_at = now() where 'blog' = any (scopes) and revoked_at is null;
 drop index if exists public.api_keys_workspace;
 alter table public.api_keys drop column if exists workspace_id;
+```
 
 ## 115 — a Search Console connection records what its syncs answered
 
@@ -1940,4 +1948,142 @@ alter table public.workspace_integrations
   drop column if exists last_synced_at,
   drop column if exists synced_from,
   drop column if exists synced_through;
+```
+
+## 116 — how often a paid door may be pressed, the Operations totals, and last sign-in across "View as"
+
+`116_spend_doors.sql` adds three things, all written and read by the server
+only.
+
+- `spend_door_uses` and `take_spend_door(account, workspace, door, limits)`.
+  A few paid doors are pressed by a person and cost a model call or a crawl
+  each time: the editor's whole-article rewrite and its quick rewrites, and
+  the setup wizard's site read, rival lookup and typed-rival lookup. Each
+  press is counted here against the limits the app passes (per account, per
+  site, in a window or for the account's whole life; the numbers live in
+  `apps/web/lib/billing/spend-doors.ts`). The function counts and inserts
+  under one advisory lock per account and door, so two presses at once
+  cannot both get under a limit, and a refused press writes nothing. The
+  wizard's reads keep what they bought on the row (`cache_key`, `result`), so
+  a reload of the wizard is handed the read it already paid for. A row
+  outlives its site (`on delete set null`), so deleting a site and adding it
+  again does not hand the count back. RLS on with no policies, no client
+  grants, and the function checks the request's role before anything else.
+- `provider_spend.job`: which work bought the row - the cron's own name
+  (`cron.generate`, `cron.refresh`, ...; written for every call a cron run
+  makes, `lib/observability/cron.ts`), `onboarding` for setup, `editor` for
+  the editor's rewrites. The schedule's "Actual" files each row under the job
+  that spent it (`jobForSpend`, `lib/billing/forecast.ts`); before, every
+  model call was filed under the nightly writer. Null for older rows, which
+  are filed the old way, by endpoint.
+- `provider_spend_summary(since)`: every provider_spend row summed in the
+  groups the Operations page reports by (provider, operation, site, stage,
+  job, whether an article was bought for, before or after `since`), plus the total
+  call count, the first row's date and the number of distinct articles priced
+  model calls were bought for. The page read the newest 2,000 rows, and
+  PostgREST answers at most 1,000, so its totals covered the newest thousand
+  calls. Service role only, same role check.
+- `admin_impersonations.target_last_sign_in_at`: the customer's own last
+  sign-in, read before "View as" signs in as them. The Users page shows it
+  instead of the sign-in "View as" made.
+
+**Apply AFTER its code is live.** Nothing from before 116 names any of these.
+The code that ships with it works without it: presses are counted in the
+instance's memory (`lib/billing/spend-doors.ts` falls back on any error from
+the function), a spend row the database refuses for its `job` is written
+again without it (`lib/billing/spend.ts`, as for 106's `stage`), the
+Operations page pages through provider_spend
+(`lib/admin/spend-summary.ts`), and "View as" writes its log row again
+without the new column when the insert is refused for it. Applying first is
+harmless too, but the order keeps the rule simple. Re-running is a no-op (`if
+not exists`, `create or replace`, grants and revokes re-stated). Depends on
+025 (and 106's `stage`), 030 and 085.
+
+Test: `supabase/tests/116_spend_doors.rls.sql` (self-contained, rolls back).
+Green 2026-10-16 on a throwaway Postgres 17 (supabase/postgres 17.11 image)
+holding a stub of `accounts`, `workspaces`, `articles`, `provider_spend`
+(025's columns plus 106's `stage`) and `admin_impersonations` (030), with 116
+applied twice: two presses per site and three per account in a day, the third
+on one site refused on the site limit and the fourth on the account limit; a
+refused press is not counted; doors are counted apart; a press older than the
+window frees the count while a lifetime limit still holds; deleting a site
+keeps its uses on the account; the summary sums 1,500 rows of $0.001 to
+$1.50 and groups them by job; a client token is refused the two functions and the table (42501).
+Also checked by hand on the same database: with EXECUTE granted to
+`authenticated` on purpose, the function's own role check still refuses a
+client token, and the service role is answered. The rollback below was run
+on the same database, 116 re-applied, and the post-flight read as expected.
+Not yet run on a copy built from 001-116. (The supabase/postgres 17.6.1.106 image crashed on any
+permission-denied function call, ours or not, so use 17.11 or later for the
+throwaway.)
+
+Post-flight (expect `t`, `t`, `t`, `t`, `t`, `f`, `f`):
+
+```sql
+select to_regclass('public.spend_door_uses') is not null,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'provider_spend' and column_name = 'job'),
+       to_regprocedure('public.take_spend_door(uuid,uuid,text,jsonb)') is not null,
+       to_regprocedure('public.provider_spend_summary(timestamptz)') is not null,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'admin_impersonations' and column_name = 'target_last_sign_in_at'),
+       has_function_privilege('authenticated', 'public.take_spend_door(uuid,uuid,text,jsonb)', 'EXECUTE'),
+       has_table_privilege('authenticated', 'public.spend_door_uses', 'SELECT');
+```
+
+Rollback (the code keeps working: it counts in memory, pages through
+provider_spend, and writes spend rows and the log row without the columns):
+
+```sql
+drop function if exists public.provider_spend_summary(timestamptz);
+alter table public.provider_spend drop column if exists job;
+drop function if exists public.take_spend_door(uuid, uuid, text, jsonb);
+drop table if exists public.spend_door_uses;
+alter table public.admin_impersonations drop column if exists target_last_sign_in_at;
+
+## 117 — refresh engine bookkeeping
+
+`117_refresh_engine.sql` adds two nullable timestamptz columns:
+
+- `refresh_tasks.started_at`: when cron/refresh claimed a task and set it
+  `running`. A rewrite runs inside one cron invocation (300 s); a task still
+  `running` fifteen minutes after it started was cut off before it could
+  record an outcome. The cron marks those `failed` with a sentence saying so
+  at the start of each run, and cancel, reschedule and dismiss on
+  Improvements treat them as open (`lib/refresh/tasks.ts`). The claim is
+  conditional on `status = 'scheduled'`, so two invocations cannot both run
+  one task.
+- `refresh_candidates.resolved_at`: set together with `dismissed_at` when an
+  analysis pass retires an open candidate whose numbers no longer fire
+  (`lib/refresh/detect.ts`), and its open task is cancelled. `dismissed_at`
+  alone stays a person's dismissal. Closing through `dismissed_at` keeps
+  052's one-open-candidate index as it is and lets a later pass raise the
+  page again.
+
+**Apply AFTER its code is live.** The new code writes and reads both columns
+when they are there and, on 42703/PGRST204, works without them: a running
+task is judged by its `created_at` (never later than the start), and a pass
+retires a candidate with `dismissed_at` alone. Code from before 117 never
+names either column, so applying first is harmless too. Re-running is a
+no-op (`add column if not exists`). Depends on 052.
+
+Test: `lib/refresh/__tests__/tasks.test.ts` and
+`lib/refresh/__tests__/analyze-retire.test.ts` cover both sides of each
+column. No database test: the file adds two nullable columns and no policy.
+
+Post-flight (expect `t`, `t`):
+
+```sql
+select exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'refresh_tasks' and column_name = 'started_at'),
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'refresh_candidates' and column_name = 'resolved_at');
+```
+
+Rollback (the code keeps working without both; retired candidates stay
+closed and read as dismissed):
+
+```sql
+alter table public.refresh_tasks drop column if exists started_at;
+alter table public.refresh_candidates drop column if exists resolved_at;
 ```

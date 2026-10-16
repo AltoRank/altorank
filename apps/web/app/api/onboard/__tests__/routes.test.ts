@@ -44,6 +44,10 @@ vi.mock("@/lib/billing/spend-gate", async () => ({
   canSpend: (...args: unknown[]) => canSpend(...args),
 }));
 
+// "View as": an operator signed in as the customer. Null unless a test sets it.
+const viewing = vi.hoisted(() => ({ value: null as string | null }));
+vi.mock("@/lib/auth/impersonation", () => ({ refusedWhileViewingAs: async () => viewing.value }));
+
 import { POST as start } from "../start/route";
 import { POST as run } from "../run/route";
 import { GET as state } from "../state/route";
@@ -59,6 +63,7 @@ beforeEach(() => {
   runClaimed.mockReset();
   canSpend.mockReset();
   canSpend.mockResolvedValue({ allowed: true, reason: "plan", message: null });
+  viewing.value = null;
   user = { id: "u1" };
   db = fakeDb({
     workspaces: [
@@ -105,6 +110,24 @@ describe("POST /api/onboard/start", () => {
     expect(db.tables.onboarding_runs ?? []).toHaveLength(0);
     await Promise.all(deferred);
     expect(dispatchWorker).not.toHaveBeenCalled();
+  });
+
+  it("starts no new run while an operator is viewing as the account: it would be theirs, and use their setup run", async () => {
+    viewing.value = "Setting up the site is not run while viewing as owner@acme-agency.example.";
+    const res = await start(post("/api/onboard/start", { workspaceId: "ws1" }));
+    expect(res.status).toBe(402);
+    expect(await res.json()).toEqual({ error: viewing.value });
+    expect(canSpend).not.toHaveBeenCalled();
+    expect(db.tables.onboarding_runs ?? []).toHaveLength(0);
+    await Promise.all(deferred);
+    expect(dispatchWorker).not.toHaveBeenCalled();
+  });
+
+  it("still hands back a run already going while an operator is viewing", async () => {
+    const first = await (await start(post("/api/onboard/start", { workspaceId: "ws1" }))).json();
+    viewing.value = "not while viewing";
+    const again = await start(post("/api/onboard/start", { workspaceId: "ws1" }));
+    expect(await again.json()).toEqual({ runId: first.runId, existing: true });
   });
 
   it("hands back the live run without asking the gate: returning it buys nothing", async () => {
