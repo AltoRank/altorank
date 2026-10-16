@@ -7,7 +7,9 @@ import { stubArticleHtml } from "@/lib/e2e/stubs";
  * The one promise the product makes to every draft: a machine may write, a
  * person decides whether it ships. A draft in review has no publish control;
  * approving moves it to `approved`; and nothing along the way writes a
- * publish_log row.
+ * publish_log row. The site here has no CMS connected, so Approve takes no
+ * publishing slot (writeApproval in lib/articles/approve.ts) and reads
+ * "Approve for publishing" rather than "Approve · ships <day> <time>".
  */
 test.use({ accountShape: { workspaces: [{ domain: "gate.e2e.altorank.test", onboarded: true }] } });
 

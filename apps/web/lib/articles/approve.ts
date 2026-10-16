@@ -10,6 +10,7 @@ import { accountTrialGate } from "@/lib/billing/body-lock";
 import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { readArticlesWhole } from "@/lib/articles/body-read";
 import { announceDraftApproved } from "@/lib/email/approval-events";
+import { getDestinations } from "@/lib/publishing/destinations";
 
 /**
  * The approval, without a session.
@@ -56,29 +57,84 @@ export async function refuseUnsourcedFiguresIn(db: SupabaseClient, article: Fact
 }
 
 /**
+ * Sites where an approval takes the next publishing slot: an enabled cadence
+ * and somewhere to publish. Both, because cron/publish phase 2 ships a queued
+ * article to the site's CMS at the cadence slot; with no destination it would
+ * only turn the approval into a failed publish. The destination test is the
+ * one the auto-approve rule asks (getDestinations), so the two agree.
+ */
+export async function sitesThatTakeTheSlot(db: SupabaseClient, workspaceIds: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  const ids = [...new Set(workspaceIds)];
+  if (!ids.length) return out;
+  const { data, error } = await db
+    .from("publishing_cadences")
+    .select("workspace_id")
+    .in("workspace_id", ids)
+    .eq("enabled", true);
+  if (error) throw new Error(`Could not read the publishing schedule: ${error.message}`);
+  for (const row of (data ?? []) as Array<{ workspace_id: string }>) {
+    if ((await getDestinations(db, row.workspace_id)).length > 0) out.add(row.workspace_id);
+  }
+  return out;
+}
+
+/** What an approval writes. With a slot, the row auto-approve and addToQueue write. */
+export function approvalPatch(approvedBy: string, now: string, takesSlot: boolean) {
+  return {
+    ...(takesSlot ? { status: "scheduled" as const, scheduled_at: null } : { status: "approved" as const }),
+    approved_by: approvedBy,
+    approved_at: now,
+    approval_kind: "human",
+    auto_approve_hold_reason: null,
+    updated_at: now,
+  };
+}
+
+export interface ApprovalWritten {
+  id: string;
+  /** `scheduled` when the site has a publishing schedule: it ships at the next free slot. */
+  status: "approved" | "scheduled";
+}
+
+/**
  * The sign-off itself, written by the server (migration 109: no client token
  * may set `approved` or `approved_by`). Guarded on `status = 'review'`, so a
  * draft edited or approved under the caller does not move twice. Returns the
- * ids that moved.
+ * rows that moved.
+ *
+ * On a site with a publishing schedule the approval also takes the next slot:
+ * `scheduled` with no `scheduled_at`, which cron/publish phase 2 ships in
+ * queue order. That is what auto-approve writes, so a person's approval and
+ * the rule's end in the same place, and approving no longer needs a second
+ * click (Add to queue) to mean "ship it". Without a schedule it stays
+ * `approved`, for Publish now.
  */
-export async function writeApproval(ids: string[], approvedBy: string): Promise<string[]> {
+export async function writeApproval(ids: string[], approvedBy: string): Promise<ApprovalWritten[]> {
   if (!ids.length) return [];
+  const db = createServiceClient();
   const now = new Date().toISOString();
-  const { data, error } = await createServiceClient()
-    .from("articles")
-    .update({
-      status: "approved",
-      approved_by: approvedBy,
-      approved_at: now,
-      approval_kind: "human",
-      auto_approve_hold_reason: null,
-      updated_at: now,
-    })
-    .in("id", ids)
-    .eq("status", "review")
-    .select("id");
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => r.id as string);
+
+  const { data: rows, error: readError } = await db.from("articles").select("id, workspace_id").in("id", ids).eq("status", "review");
+  if (readError) throw new Error(readError.message);
+  const inReview = (rows ?? []) as Array<{ id: string; workspace_id: string }>;
+  if (!inReview.length) return [];
+  const slotted = await sitesThatTakeTheSlot(db, inReview.map((r) => r.workspace_id));
+
+  const out: ApprovalWritten[] = [];
+  for (const takesSlot of [true, false]) {
+    const group = inReview.filter((r) => slotted.has(r.workspace_id) === takesSlot).map((r) => r.id);
+    if (!group.length) continue;
+    const { data, error } = await db
+      .from("articles")
+      .update(approvalPatch(approvedBy, now, takesSlot))
+      .in("id", group)
+      .eq("status", "review")
+      .select("id");
+    if (error) throw new Error(error.message);
+    for (const r of data ?? []) out.push({ id: r.id as string, status: takesSlot ? "scheduled" : "approved" });
+  }
+  return out;
 }
 
 export interface ServerApprover {

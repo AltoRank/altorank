@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { isCadenceDue, cadenceDueState, cadenceLocalDate, withoutPaused } from "../cadence";
+import { isCadenceDue, cadenceDueState, cadenceLocalDate, withoutPaused, cadenceSlots, shipLabel } from "../cadence";
+import { shipDateFor, shipLabelFor } from "../ship-date";
 
 // These tests replace the isCadenceSlotNow suite. That function matched a
 // 15-minute window starting at publish_time, which required a cron every 15
@@ -125,5 +126,96 @@ describe("withoutPaused", () => {
   it("changes nothing when nothing is paused", () => {
     const rows = [{ id: "a", workspace_id: "w1" }];
     expect(withoutPaused(rows, new Set())).toEqual(rows);
+  });
+});
+
+describe("cadenceSlots", () => {
+  // Mon, Wed, Fri at 10:00 in Rome. 2026-10-21 is a Wednesday.
+  const cadence = { timezone: "Europe/Rome", days_of_week: [1, 3, 5], publish_time: "10:00" };
+  const iso = (d: Date[]) => d.map((x) => x.toISOString());
+
+  it("starts with today's slot before publish_time", () => {
+    const now = new Date("2026-10-21T06:00:00Z"); // Wed 08:00 Rome
+    expect(iso(cadenceSlots(cadence, now, null, 3))).toEqual([
+      "2026-10-21T08:00:00.000Z", // Wed 10:00
+      "2026-10-23T08:00:00.000Z", // Fri 10:00
+      "2026-10-26T09:00:00.000Z", // Mon 10:00, after the clocks went back
+    ]);
+  });
+
+  it("keeps today's slot after publish_time when nothing went out yet: the next run takes it", () => {
+    const now = new Date("2026-10-21T12:00:00Z"); // Wed 14:00 Rome
+    expect(iso(cadenceSlots(cadence, now, null, 1))).toEqual(["2026-10-21T08:00:00.000Z"]);
+  });
+
+  it("skips today once the site has published today", () => {
+    const now = new Date("2026-10-21T06:00:00Z");
+    expect(iso(cadenceSlots(cadence, now, "2026-10-21", 1))).toEqual(["2026-10-23T08:00:00.000Z"]);
+  });
+
+  it("skips days that are not publishing days", () => {
+    const now = new Date("2026-10-22T06:00:00Z"); // Thu
+    expect(iso(cadenceSlots(cadence, now, null, 1))).toEqual(["2026-10-23T08:00:00.000Z"]);
+  });
+
+  it("reads a publish_time with seconds, as Postgres returns a time column", () => {
+    const now = new Date("2026-10-21T06:00:00Z");
+    expect(iso(cadenceSlots({ ...cadence, publish_time: "10:30:00" }, now, null, 1))).toEqual(["2026-10-21T08:30:00.000Z"]);
+  });
+
+  it("returns nothing for a cadence with no days", () => {
+    expect(cadenceSlots({ ...cadence, days_of_week: [] }, new Date(), null, 2)).toEqual([]);
+  });
+});
+
+describe("shipLabel", () => {
+  const tz = "Europe/Rome";
+  const now = new Date("2026-10-21T06:00:00Z"); // Wed 08:00 Rome
+
+  it("names today, tomorrow, a weekday, then a date", () => {
+    expect(shipLabel(new Date("2026-10-21T08:00:00Z"), tz, now)).toBe("today 10:00");
+    expect(shipLabel(new Date("2026-10-22T08:00:00Z"), tz, now)).toBe("tomorrow 10:00");
+    expect(shipLabel(new Date("2026-10-23T08:00:00Z"), tz, now)).toBe("Fri 10:00");
+    expect(shipLabel(new Date("2026-10-28T09:00:00Z"), tz, now)).toBe("Wed 28 Oct 10:00");
+  });
+
+  it("says today, with no time, for a slot already due", () => {
+    expect(shipLabel(new Date("2026-10-21T05:00:00Z"), tz, now)).toBe("today");
+  });
+
+  it("reads the day in the site's timezone, not the server's", () => {
+    // 23:30 UTC on Wed is already Thu 08:30 in Tokyo.
+    const late = new Date("2026-10-21T23:30:00Z");
+    expect(shipLabel(new Date("2026-10-22T01:00:00Z"), "Asia/Tokyo", late)).toBe("today 10:00");
+  });
+});
+
+describe("shipDateFor", () => {
+  // Mon, Wed, Fri at 10:00 in Rome; now is Wed 08:00 Rome, nothing out today.
+  const schedule = {
+    cadence: { timezone: "Europe/Rome", days_of_week: [1, 3, 5], publish_time: "10:00" },
+    queue: [
+      { id: "q1", created_at: "2026-10-10T00:00:00Z" },
+      { id: "q2", created_at: "2026-10-12T00:00:00Z" },
+    ],
+    lastLocalDate: null,
+    now: new Date("2026-10-21T06:00:00Z"),
+  };
+
+  it("gives the queue's oldest article the next slot", () => {
+    expect(shipDateFor(schedule, { id: "q1", status: "scheduled", created_at: "2026-10-10T00:00:00Z" })?.toISOString()).toBe("2026-10-21T08:00:00.000Z");
+    expect(shipDateFor(schedule, { id: "q2", status: "scheduled", created_at: "2026-10-12T00:00:00Z" })?.toISOString()).toBe("2026-10-23T08:00:00.000Z");
+  });
+
+  it("puts a draft in review behind the older queued ones, where phase 2 would take it", () => {
+    expect(shipDateFor(schedule, { id: "r", status: "review", created_at: "2026-10-15T00:00:00Z" })?.toISOString()).toBe("2026-10-26T09:00:00.000Z");
+    // Older than everything queued: it goes first once approved.
+    expect(shipDateFor(schedule, { id: "r", status: "review", created_at: "2026-10-01T00:00:00Z" })?.toISOString()).toBe("2026-10-21T08:00:00.000Z");
+  });
+
+  it("uses a picked date as it is, and has nothing for other states", () => {
+    expect(shipDateFor(schedule, { id: "s", status: "scheduled", created_at: "2026-10-01T00:00:00Z", scheduled_at: "2026-11-02T08:30:00.000Z" })?.toISOString()).toBe("2026-11-02T08:30:00.000Z");
+    expect(shipDateFor(schedule, { id: "a", status: "approved", created_at: "2026-10-01T00:00:00Z" })).toBeNull();
+    expect(shipLabelFor(schedule, { id: "q2", status: "scheduled", created_at: "2026-10-12T00:00:00Z" })).toBe("Fri 10:00");
   });
 });
