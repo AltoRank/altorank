@@ -5,6 +5,8 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { rewriteField, type MicroAction, type MicroField } from "@/lib/ai/micro";
 import { canSpend } from "@/lib/billing/spend-gate";
+import { takeDoor } from "@/lib/billing/spend-doors";
+import { withSpendScope } from "@/lib/billing/spend-scope";
 import { generateImage } from "@/lib/ai/image-generator";
 import { outputFromRow, resolveFeaturedImage, type OutputSettingsRow } from "@/lib/onboarding/output-settings";
 import { uploadImageBuffer } from "@/lib/storage/images";
@@ -59,7 +61,7 @@ async function loadArticle(articleId: string) {
   }>(articleId, "id, workspace_id, title, keyword, slug, meta_description, featured_image_url, published_at");
   const { data: workspace } = await supabase
     .from("workspaces")
-    .select("id, domain, brand_style")
+    .select("id, account_id, domain, brand_style")
     .eq("id", article.workspace_id)
     .single();
   if (!workspace) throw new Error("Workspace not found");
@@ -77,7 +79,7 @@ export async function rewriteFieldAction(input: {
   try {
     const { accountId, user } = await requireAuth();
     const parsed = microSchema.parse(input);
-    const { article, supabase } = await loadArticle(parsed.articleId);
+    const { article, workspace, supabase } = await loadArticle(parsed.articleId);
     // A model call per press of Rewrite, on any draft, forever.
     const gate = await canSpend(supabase, accountId, {
       userEmail: user.email ?? undefined,
@@ -85,13 +87,22 @@ export async function rewriteFieldAction(input: {
       action: "draft",
     });
     if (!gate.allowed) return { ok: false, error: gate.message };
-    const result = await rewriteField({
-      field: parsed.field,
-      action: parsed.action,
-      text: parsed.text,
-      prompt: parsed.prompt,
-      context: { keyword: article.keyword, title: article.title, outline: parsed.outline },
-    });
+    // Counted per account like the whole-article rewrite, at a pace a person
+    // pressing Rewrite never meets (lib/billing/spend-doors.ts).
+    if (gate.reason !== "self-host" && gate.reason !== "operator") {
+      const door = await takeDoor("editor-micro", { accountId: (workspace.account_id as string | null) ?? accountId, workspaceId: article.workspace_id as string });
+      if (!door.allowed) return { ok: false, error: door.message };
+    }
+    // Metered inside rewriteField; the scope puts the article and its site on the row.
+    const result = await withSpendScope({ workspaceId: article.workspace_id as string, articleId: article.id }, () =>
+      rewriteField({
+        field: parsed.field,
+        action: parsed.action,
+        text: parsed.text,
+        prompt: parsed.prompt,
+        context: { keyword: article.keyword, title: article.title, outline: parsed.outline },
+      }),
+    );
     return { ok: true, text: result.text };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Rewrite failed" };

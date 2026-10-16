@@ -11,9 +11,13 @@
 //
 // The prompt is small and the work is shaped and checkable, which is what the
 // `structured` tier exists for (see lib/ai/models.ts).
+//
+// Both calls are metered (lib/ai/metered.ts) as `editor/micro`: they wrote no
+// spend row until 2026-10-16, so Operations never saw them.
 
 import Anthropic from "@anthropic-ai/sdk";
 import { anthropicModel } from "./models";
+import { createMetered } from "./metered";
 import { stripAiTypography, stripDeadLinks } from "./utils";
 
 export type MicroField = "title" | "meta_description" | "selection";
@@ -166,6 +170,9 @@ export function keepsAssets(before: string, after: string): boolean {
   return a.hrefs.every((h) => b.hrefs.includes(h)) && a.srcs.every((s) => b.srcs.includes(s));
 }
 
+/** The spend row's operation for a field or selection rewrite. */
+export const MICRO_OPERATION = "editor/micro";
+
 export interface RewriteFieldResult {
   text: string;
   inputTokens: number;
@@ -180,13 +187,13 @@ export async function rewriteField(
   if (input.action === "ask" && !input.prompt?.trim()) throw new Error("Say what to change");
 
   const { system, user } = buildMicroPrompt(input);
-  const message = await client.messages.create({
+  const message = await createMetered(client, {
     model: anthropicModel("structured"),
     // A selection can be a few paragraphs; the fields are a line.
     max_tokens: input.field === "selection" ? 4096 : 400,
     system,
     messages: [{ role: "user", content: user }],
-  });
+  }, MICRO_OPERATION);
 
   const raw = message.content
     .filter((block): block is Anthropic.TextBlock => block.type === "text")
@@ -207,7 +214,7 @@ export async function rewriteField(
   // over, so the counter tells the truth rather than a loop burning tokens.
   const limit = input.field === "selection" ? null : FIELD_LIMITS[input.field];
   if (limit && text.length > limit) {
-    const retry = await client.messages.create({
+    const retry = await createMetered(client, {
       model: anthropicModel("structured"),
       max_tokens: 400,
       system,
@@ -216,7 +223,7 @@ export async function rewriteField(
         { role: "assistant", content: text },
         { role: "user", content: `That is ${text.length} characters; the limit is ${limit}. Return the same idea in at most ${limit} characters, plain text only.` },
       ],
-    });
+    }, MICRO_OPERATION);
     const retried = parseMicroResponse(
       retry.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join(""),
       input.field,
