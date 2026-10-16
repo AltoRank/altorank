@@ -74,6 +74,8 @@ export type Workspace = {
   /** Who turned the rule on; written as approved_by on every automatic approval. */
   auto_approve_set_by?: string | null;
   auto_approve_set_at?: string | null;
+  /** Exception rules this site turned off (migration 119; lib/publishing/auto-approve-exceptions.ts). */
+  auto_approve_exceptions?: Record<string, unknown> | null;
   id: string;
   account_id: string;
   name: string;
@@ -131,6 +133,8 @@ export type Article = {
   auto_approve_after?: string | null;
   /** Why the last automatic pass skipped it. Cleared on approval. */
   auto_approve_hold_reason?: string | null;
+  /** When a signed-in user last changed the body or title (migration 119). '-infinity' = not recorded. */
+  person_edited_at?: string | null;
   seo_score: number;
   /** Citation readiness 0-100. null when not scored: render —, never 0. */
   aeo_score: number | null;

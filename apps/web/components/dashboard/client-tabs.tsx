@@ -7,6 +7,7 @@ import { SetupWizard } from "@/components/dashboard/setup-wizard";
 import { PublishingCadenceForm } from "@/components/dashboard/publishing-cadence-form";
 import { GenerationPaceForm } from "@/components/dashboard/generation-pace-form";
 import { AutoApproveForm } from "@/components/dashboard/auto-approve-form";
+import { AutoApproveExceptionsForm } from "@/components/dashboard/auto-approve-exceptions-form";
 import { LocaleSelector } from "@/components/dashboard/locale-selector";
 import { FirstDraftLive } from "./first-draft-live";
 import { DeleteWorkspaceCard } from "./delete-workspace-card";
@@ -32,6 +33,8 @@ type ClientTabsProps = {
   hasDestination: boolean;
   /** Owners and admins may delete the workspace from its Settings tab. */
   canDelete?: boolean;
+  /** Human approvals that went live unedited (lib/publishing/auto-approve-exceptions.ts). */
+  cleanApprovals?: number;
 };
 
 const TABS = [
@@ -44,7 +47,7 @@ const TABS = [
   { id: "settings", label: "Settings", icon: <Icons.settings size={14} /> },
 ];
 
-export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, planIncluded, maxPace, now, hasDestination, canDelete = false }: ClientTabsProps) {
+export function ClientTabs({ workspace, articles, keywords, calendar, backlinks, voice, cadence, planIncluded, maxPace, now, hasDestination, canDelete = false, cleanApprovals = 0 }: ClientTabsProps) {
   const [activeTab, setActiveTab] = useState("overview");
 
   const tabs = TABS.map((t) => {
@@ -66,7 +69,7 @@ export function ClientTabs({ workspace, articles, keywords, calendar, backlinks,
         {activeTab === "voice" && <VoiceTab voice={voice} />}
         {activeTab === "backlinks" && <BacklinksTab backlinks={backlinks} />}
         {activeTab === "settings" && (
-          <SettingsTab workspace={workspace} cadence={cadence} planIncluded={planIncluded} maxPace={maxPace} hasDestination={hasDestination} canDelete={canDelete} />
+          <SettingsTab workspace={workspace} cadence={cadence} planIncluded={planIncluded} maxPace={maxPace} hasDestination={hasDestination} canDelete={canDelete} cleanApprovals={cleanApprovals} />
         )}
       </div>
     </>
@@ -493,6 +496,7 @@ function SettingsTab({
   maxPace,
   hasDestination,
   canDelete,
+  cleanApprovals,
 }: {
   workspace: Workspace;
   cadence: PublishingCadence | null;
@@ -500,6 +504,7 @@ function SettingsTab({
   maxPace: number;
   hasDestination: boolean;
   canDelete: boolean;
+  cleanApprovals: number;
 }) {
   return (
     <div className="max-w-lg space-y-4">
@@ -537,6 +542,7 @@ function SettingsTab({
         hasDestination={hasDestination}
       />
       <PublishingCadenceForm workspaceId={workspace.id} cadence={cadence} />
+      <AutoApproveExceptionsForm workspaceId={workspace.id} stored={workspace.auto_approve_exceptions} cleanApprovals={cleanApprovals} />
       {canDelete && <DeleteWorkspaceCard workspaceId={workspace.id} confirmText={deleteConfirmationText(workspace)} />}
     </div>
   );
