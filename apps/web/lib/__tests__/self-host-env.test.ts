@@ -28,6 +28,8 @@ const NOT_FORWARDED: Record<string, string> = {
   NEXT_DIST_DIR: "e2e runner only",
   ALLOW_INDEXING_SUBMISSIONS: "development only; production always submits",
   OPENAI_APPS_CHALLENGE_TOKEN: "the hosted app's OpenAI apps domain check",
+  SHOPIFY_API_KEY: "the hosted App Store app's client id; a self-hosted install connects a store with its own Dev Dashboard app",
+  SHOPIFY_API_SECRET: "the hosted App Store app's client secret; as SHOPIFY_API_KEY",
   VERCEL_PROJECT_PRODUCTION_URL: "set by Vercel itself; next.config.ts uses it to recognise the hosted build",
 };
 /** PostHog is read at build time and the Docker image is built without analytics. */
