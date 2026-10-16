@@ -22,9 +22,11 @@ npm run e2e:ui                 # the same, in the Playwright UI
 
 For a fast loop keep the server up in one terminal - `npm run dev:e2e` - and
 run `npm run e2e` in another; the runner reuses a server already on 3110.
-**That server must have been started with `E2E_STUBS=1`** (which `dev:e2e`
-does). A plain `next dev` on that port would let the onboarding spec reach
-whatever providers your env has keys for.
+`dev:e2e` (`scripts/dev-e2e.ts`) starts it with exactly the environment the
+runner would use (`e2e/fixtures/server-env.ts`): `E2E_STUBS=1`, the paid keys
+blanked and `NEXT_PUBLIC_APP_URL` on 3110. **Start that server no other way.**
+A plain `next dev` on that port would let the onboarding spec reach whatever
+providers your env has keys for.
 
 The HTML report lands in `playwright-report/` (ignored by git); failures keep a
 trace you can open with `npx playwright show-report`.
@@ -43,9 +45,10 @@ trace you can open with `npx playwright show-report`.
   the password field with random bytes generated at runtime, because the form
   cannot be submitted without one; the server rejects the domain before it
   reads the field, and nothing is stored.
-- **No spend.** The dev server is started with `E2E_STUBS=1` and with
+- **No spend.** The dev server, whether the runner starts it or
+  `npm run dev:e2e` does, is started with `E2E_STUBS=1` and with
   `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, the DataForSEO variables and
-  `STRIPE_SECRET_KEY` blanked. Under the switch, `lib/seo/client.ts` reports
+  `STRIPE_SECRET_KEY` blanked (`e2e/fixtures/server-env.ts`, shared by both). Under the switch, `lib/seo/client.ts` reports
   credentials as present (so the keyword phase runs) and throws on any actual
   request, so a call that escapes the stubs fails loudly rather than quietly.
 - **Unique accounts, cleaned up.** Every test gets its own
@@ -115,6 +118,10 @@ and the table does not name it.
 | `approval-gate.spec.ts` | a draft in review has no publish control; approving moves it to `approved`; no `publish_log` row is written |
 | `scope.spec.ts` | two workspaces on one account; keywords and calendar show only the switched-to workspace |
 | `signup.spec.ts` | an invalid domain is refused inline and creates neither an account nor a user |
+| `wizard-ux.spec.ts` | "Check what we found": competitors never block the button, sections stay open while typing, answers resume after a reload, the phone layout |
+| `first-look-gate.spec.ts` | the first look's wait and trial gate (forced on with the dev simulation cookie): the price box, the exits, auto-start, reconnecting, a provider outage |
+| `email-settings.spec.ts` | Settings > Emails: a switch writes the person's own preference row, required categories are named, all-off and its undo |
+| `wave.spec.ts` | planner card actions, the Articles-plan pace, the research drawer, /improvements blockers, API keys shown once, /linking, the theme toggle |
 
 ## CI
 
