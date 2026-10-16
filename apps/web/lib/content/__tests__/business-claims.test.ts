@@ -77,6 +77,16 @@ describe("unsupportedClaim", () => {
   });
 });
 
+describe("the site's own text is evidence", () => {
+  it("keeps a guarantee and a certification the site's pages state", () => {
+    const bare = businessEvidence({ domain: "fresco-clima.example", profile: { name: "Fresco Clima" }, facts: null });
+    const withText = businessEvidence({ domain: "fresco-clima.example", profile: { name: "Fresco Clima" }, facts: null, siteText: "Rilasciamo un rapporto certificato al termine di ogni intervento, con garanzia sia sul prodotto sia sull'installazione." });
+    const sentence = "Fresco Clima lavora con personale certificato e offre garanzia su prodotto e installazione.";
+    expect(unsupportedClaim(sentence, bare)).not.toBeNull();
+    expect(unsupportedClaim(sentence, withText)).toBeNull();
+  });
+});
+
 describe("removeUnsupportedBusinessClaims", () => {
   it("takes out only the sentence, keeps the rest, drops a block left empty", () => {
     const html = [
