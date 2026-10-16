@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { entitledToScheduledWork, getQuota } from "@/lib/billing/quota";
@@ -6,6 +7,7 @@ import { draftHoldReason } from "@/lib/billing/trial-hold";
 import { analyzeWorkspace } from "@/lib/refresh/detect";
 import { runRefreshTask } from "@/lib/refresh/rewrite";
 import { reapStoppedTasks } from "@/lib/refresh/tasks";
+import { rewriteSlot, runOrder, type DueTask, type RecentRun, type RewriteSlot } from "@/lib/refresh/schedule";
 import { readArticlesWhole } from "@/lib/articles/body-read";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
 import { notifyRefreshReady } from "@/lib/email/lifecycle";
@@ -23,8 +25,10 @@ import { observedCron } from "@/lib/observability/cron";
  *             the detectors over stored Search Console rows and raise or
  *             refresh candidates. Database only; costs nothing.
  *   rewrite   on the workspace's enabled weekdays: run the earliest due task,
- *             one per workspace per run. A model call, and one slot of the
- *             site's article pace.
+ *             one per workspace per day. A model call, and one slot of the
+ *             site's article pace. A site whose last rewrite day passed
+ *             without one (the run's cap, a short run) gets it the next
+ *             morning instead, within its weekly count.
  *
  * What comes out of a rewrite is an execution in `awaiting_review`. There is
  * no path from here to a CMS: the push is a button, and it applies a person's
@@ -37,7 +41,8 @@ import { observedCron } from "@/lib/observability/cron";
  * scheduler would buy nothing.
  *
  * Bounded like cron/generate: two rewrites per invocation across all
- * workspaces, stalest first, and no rewrite is started past the point where
+ * workspaces, least recently rewritten first (lib/refresh/schedule.ts), and
+ * no rewrite is started past the point where
  * it could not finish inside the function's budget. Those two slots are the
  * run's whole capacity, so they are spent only on accounts entitled to
  * scheduled work - see the gate at the top of the loop.
@@ -65,6 +70,47 @@ interface Outcome {
   status: "ok" | "skipped" | "error";
 }
 
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+/** Ids per `.in()` filter, so the request line stays short at any scale. */
+const ID_CHUNK = 100;
+
+/** The due tasks and the trailing week's rewrites of these sites, for lib/refresh/schedule.ts. */
+async function readRunInputs(
+  supabase: SupabaseClient,
+  ids: string[],
+  now: Date,
+  today: string,
+): Promise<{ due: DueTask[]; recent: RecentRun[] }> {
+  const due: DueTask[] = [];
+  const recent: RecentRun[] = [];
+  const since = new Date(now.getTime() - WEEK_MS).toISOString();
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const chunk = ids.slice(i, i + ID_CHUNK);
+    const [tasks, runs] = await Promise.all([
+      supabase
+        .from("refresh_tasks")
+        .select("id, workspace_id, scheduled_for, created_at")
+        .in("workspace_id", chunk)
+        .eq("status", "scheduled")
+        .lte("scheduled_for", today)
+        .order("scheduled_for", { ascending: true })
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("refresh_executions")
+        .select("workspace_id, created_at")
+        .in("workspace_id", chunk)
+        .gte("created_at", since),
+    ]);
+    if (tasks.error) throw new Error(`refresh_tasks: ${tasks.error.message}`);
+    if (runs.error) throw new Error(`refresh_executions: ${runs.error.message}`);
+    due.push(...((tasks.data ?? []) as DueTask[]));
+    recent.push(...((runs.data ?? []) as RecentRun[]));
+  }
+  // Earliest first across chunks too, which rewriteSlot relies on.
+  due.sort((a, b) => a.scheduled_for.localeCompare(b.scheduled_for) || a.created_at.localeCompare(b.created_at));
+  return { due, recent };
+}
+
 async function run(request: Request) {
   if (!isAuthorizedCron(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -76,7 +122,6 @@ async function run(request: Request) {
   // UTC weekday and date. The settings page says so; a timezone per site is a
   // refinement that changes which of two mornings a rewrite lands on, not
   // whether it lands.
-  const weekday = now.getUTCDay();
   const today = now.toISOString().slice(0, 10);
 
   // A rewrite the platform cut off before it could record an outcome is
@@ -90,19 +135,43 @@ async function run(request: Request) {
     console.error("[cron/refresh] could not mark stopped rewrites:", err instanceof Error ? err.message : err);
   }
 
-  const { data: workspaces, error } = await supabase
+  const { data: enabled, error } = await supabase
     .from("workspaces")
     .select("id, domain, account_id, refresh_days, refresh_last_analyzed_at, auto_generate_weekly_limit")
     .eq("refresh_enabled", true)
     .neq("status", "paused")
-    // Least recently analysed first, so a capped run rotates.
     .order("refresh_last_analyzed_at", { ascending: true, nullsFirst: true });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // What each site may run today, decided up front so the run's two slots go
+  // to the sites that waited longest (lib/refresh/schedule.ts): the tasks due
+  // by today, and every rewrite of the trailing week.
+  let due: DueTask[];
+  let recent: RecentRun[];
+  try {
+    ({ due, recent } = await readRunInputs(supabase, (enabled ?? []).map((w) => w.id as string), now, today));
+  } catch (err) {
+    return NextResponse.json({ error: err instanceof Error ? err.message : "could not read tasks" }, { status: 500 });
+  }
+  const slots = new Map<string, RewriteSlot>();
+  for (const ws of enabled ?? []) {
+    const id = ws.id as string;
+    slots.set(
+      id,
+      rewriteSlot({
+        days: (ws.refresh_days as number[] | null) ?? [],
+        now,
+        due: due.filter((t) => t.workspace_id === id),
+        runs: recent.filter((r) => r.workspace_id === id),
+      }),
+    );
+  }
+  const workspaces = runOrder(enabled ?? [], slots, recent);
 
   const results: Outcome[] = [];
   let rewrites = 0;
 
-  for (const ws of workspaces ?? []) {
+  for (const ws of workspaces) {
     const workspaceId = ws.id as string;
     const domain = (ws.domain as string | null) ?? null;
     const out: Outcome = { workspaceId, domain, status: "ok" };
@@ -153,83 +222,63 @@ async function run(request: Request) {
       }
 
       const days = (ws.refresh_days as number[] | null) ?? [];
-      const budget = days.includes(weekday)
-        ? await readPaceBudget(supabase, workspaceId, {
-            weeklyLimit: ws.auto_generate_weekly_limit as number | null,
-            refreshEnabled: true,
-            refreshDays: days,
-            now,
-          })
-        : null;
-      if (!days.includes(weekday)) {
-        out.rewrite = "not a scheduled day";
+      const slot = slots.get(workspaceId) ?? { kind: "none", reason: "not a scheduled day" };
+      const budget =
+        slot.kind === "none"
+          ? null
+          : await readPaceBudget(supabase, workspaceId, {
+              weeklyLimit: ws.auto_generate_weekly_limit as number | null,
+              refreshEnabled: true,
+              refreshDays: days,
+              now,
+            });
+      if (slot.kind === "none") {
+        out.rewrite = slot.reason;
       } else if (budget && budget.improvementsLeft <= 0) {
         out.rewrite = `weekly pace used: ${describePaceBudget(budget)}; the task waits for a day with room`;
       } else if (rewrites >= MAX_REWRITES_PER_RUN) {
-        out.rewrite = `run limit reached (${MAX_REWRITES_PER_RUN}); the next run starts here`;
+        // The next run picks it up as a catch-up (lib/refresh/schedule.ts).
+        out.rewrite = `run limit reached (${MAX_REWRITES_PER_RUN}); the next run picks it up`;
         out.status = "skipped";
       } else if ((Date.now() - startedAt) / 1000 > maxDuration - MIN_SECONDS_FOR_REWRITE) {
-        out.rewrite = "not enough time left in this run";
+        out.rewrite = "not enough time left in this run; the next run picks it up";
         out.status = "skipped";
       } else {
-        // One a day: a task already run today is this day's improvement.
-        const { count: doneToday } = await supabase
-          .from("refresh_executions")
-          .select("id", { count: "exact", head: true })
-          .eq("workspace_id", workspaceId)
-          .gte("created_at", `${today}T00:00:00Z`);
-        if ((doneToday ?? 0) > 0) {
-          out.rewrite = "already ran today";
-        } else {
-          const { data: task } = await supabase
-            .from("refresh_tasks")
-            .select("id, scheduled_for")
-            .eq("workspace_id", workspaceId)
-            .eq("status", "scheduled")
-            .lte("scheduled_for", today)
-            .order("scheduled_for", { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          if (!task) {
-            out.rewrite = "nothing scheduled";
-          } else {
-            const r = await runRefreshTask(supabase, task.id as string);
-            // The attempt, not the success: a rewrite that failed still spent
-            // the model call and the seconds this cap exists to bound. Only
-            // entitled accounts reach this line, so the slot is never taken
-            // from a paying customer by an account that could not use it.
-            rewrites += 1;
-            if (r.ok) {
-              out.rewrite = `execution ${r.result.executionId}: ${r.result.changed} of ${r.result.hunks} blocks changed, ${r.result.checks} structural checks flagged, fact check ${r.result.factCheck.verdict}, awaiting review`;
-              // A proposal nobody is told about is the same failure the
-              // draft-ready email exists for: work done into a queue that
-              // only shows itself to somebody who opens the dashboard.
-              // Nothing here reaches the CMS, so the email says "proposed".
-              // After the execution row is written, and never fatal.
-              try {
-                const sent = await notifyRefreshReady(
-                  supabase,
-                  { accountId: ws.account_id as string, workspaceId },
-                  {
-                    domain,
-                    pageTitle: r.result.pageTitle ?? r.result.pageUrl,
-                    pageUrl: r.result.pageUrl,
-                    executionId: r.result.executionId,
-                    changed: r.result.changed,
-                    hunks: r.result.hunks,
-                    checks: r.result.checks,
-                    factCheck: r.result.factCheck,
-                  },
-                );
-                out.rewrite += `, ${describeSendOutcome(sent)}`;
-              } catch (err) {
-                out.rewrite += `, email failed (${err instanceof Error ? err.message : "unknown"})`;
-              }
-            } else {
-              out.rewrite = `failed: ${r.error}`;
-              out.status = "error";
-            }
+        const r = await runRefreshTask(supabase, slot.task.id);
+        // The attempt, not the success: a rewrite that failed still spent
+        // the model call and the seconds this cap exists to bound. Only
+        // entitled accounts reach this line, so the slot is never taken
+        // from a paying customer by an account that could not use it.
+        rewrites += 1;
+        if (r.ok) {
+          out.rewrite = `${slot.kind === "catch_up" ? `catch-up for ${slot.missed}, ` : ""}execution ${r.result.executionId}: ${r.result.changed} of ${r.result.hunks} blocks changed, ${r.result.checks} structural checks flagged, fact check ${r.result.factCheck.verdict}, awaiting review`;
+          // A proposal nobody is told about is the same failure the
+          // draft-ready email exists for: work done into a queue that
+          // only shows itself to somebody who opens the dashboard.
+          // Nothing here reaches the CMS, so the email says "proposed".
+          // After the execution row is written, and never fatal.
+          try {
+            const sent = await notifyRefreshReady(
+              supabase,
+              { accountId: ws.account_id as string, workspaceId },
+              {
+                domain,
+                pageTitle: r.result.pageTitle ?? r.result.pageUrl,
+                pageUrl: r.result.pageUrl,
+                executionId: r.result.executionId,
+                changed: r.result.changed,
+                hunks: r.result.hunks,
+                checks: r.result.checks,
+                factCheck: r.result.factCheck,
+              },
+            );
+            out.rewrite += `, ${describeSendOutcome(sent)}`;
+          } catch (err) {
+            out.rewrite += `, email failed (${err instanceof Error ? err.message : "unknown"})`;
           }
+        } else {
+          out.rewrite = `failed: ${r.error}`;
+          out.status = "error";
         }
       }
     } catch (err) {

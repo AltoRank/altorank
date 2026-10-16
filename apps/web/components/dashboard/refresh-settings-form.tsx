@@ -87,8 +87,8 @@ export function RefreshSettingsForm({
       <h3 className="text-[13px] font-medium mb-1">Scheduled rewrites{domain ? ` for ${domain}` : ""}</h3>
       <p className="mb-4 text-[12.5px] leading-relaxed text-ink-3">
         One improvement per scheduled day, consuming one slot of your article pace. The rewrite is
-        produced on the morning of that day (about 07:30 UTC) and waits for your review; nothing
-        reaches your site until you push it.
+        produced on the morning of that day (about 07:30 UTC), or the next morning when that run is
+        full, and waits for your review; nothing reaches your site until you push it.
       </p>
 
       {planMessage ? (
