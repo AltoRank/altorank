@@ -3,9 +3,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // `deliverArticle` is the publish renderer after the gates, shared by Publish
 // and by the Improvements push. A push of a reviewed rewrite used to send the
 // CMS only a title and raw HTML: no dateline, no structured data, an empty
-// Markdown body to a webhook, and no publish mode, so a draft-mode
-// connection's post went live. These run the real renderer on a push-shaped
-// article (live, with a post id and a first-publish date).
+// Markdown body to a webhook. These run the real renderer on a push-shaped
+// article (with a post id and a first-publish date). The caller may override
+// the connection's publish mode: the push keeps an already-live post live.
 
 vi.mock("@/lib/cms/adapter", () => ({ resolveCMSAdapter: vi.fn() }));
 vi.mock("@/lib/seo/indexing", () => ({ submitForIndexing: vi.fn().mockResolvedValue({ indexnow: "submitted", google: "not-connected" }) }));
@@ -99,6 +99,17 @@ describe("deliverArticle for an in-place update", () => {
     expect(payload.html).not.toContain("<h1>");
     expect(payload.markdown).toContain("New paragraph.");
     expect(payload.structuredData?.length).toBeGreaterThan(0);
+  });
+
+  it("uses the caller's publish mode over the connection's, and logs that mode", async () => {
+    const c = fake({ type: "webhook", publishMode: "draft" });
+    const r = await deliverArticle(svc.client as never, { ...pushed }, "a1", { inPlaceOnly: true, publishMode: "publish" });
+    const [, payload] = update.mock.calls[0] as [string, PublishPayload];
+    expect(payload.publishMode).toBe("publish");
+    expect(r.publishMode).toBe("publish");
+    // Not held as a draft: the article stays live and is not marked held-in-cms.
+    expect(c.updates[0]).toMatchObject({ status: "live" });
+    expect(c.updates.some((u) => JSON.stringify(u).includes("held-in-cms"))).toBe(false);
   });
 
   it("refuses a destination that cannot edit the post, rather than publishing a second copy", async () => {

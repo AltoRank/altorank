@@ -117,12 +117,15 @@ export async function publishArticleCore(
  * `article.content`, after its own gates, so an updated post goes out exactly
  * as a published one does. `inPlaceOnly` refuses a destination that cannot
  * edit the existing post, where a publish would create a second copy.
+ * `publishMode` overrides the connection's mode: the push passes `publish`
+ * for a post that is already live, because a draft-mode connection's "draft"
+ * would take the live page off the site rather than stage the edit.
  */
 export async function deliverArticle(
   supabase: SupabaseClient,
   article: DeliverableArticle,
   articleId: string,
-  opts: { destinationId?: string | null; inPlaceOnly?: boolean } = {},
+  opts: { destinationId?: string | null; inPlaceOnly?: boolean; publishMode?: PublishMode } = {},
 ): Promise<PublishResult & PublishContext> {
   const { data: wsIntegrations } = await supabase
     .from("workspace_integrations")
@@ -139,7 +142,7 @@ export async function deliverArticle(
   const cmsIntegration = (wsIntegrations ?? []).find((wi) => wi.id === destination.id)!;
   const context: PublishContext = {
     destinationId: destination.id,
-    publishMode: destination.publishMode,
+    publishMode: opts.publishMode ?? destination.publishMode,
   };
 
   if (opts.inPlaceOnly) {

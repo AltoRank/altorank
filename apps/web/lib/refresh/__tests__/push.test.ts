@@ -191,6 +191,29 @@ describe("pushExecution on success", () => {
     ]);
   });
 
+  it("keeps a live post live on a draft-mode connection, and keeps its URL when the update names none", async () => {
+    gates.article = { ...articleWith(BEFORE), status: "live" };
+    deliver.mockResolvedValueOnce({ externalId: "post-9", url: "", destinationId: "wi1", publishMode: "publish" });
+    await pushExecution(client(execution()) as never, "e1", { pusher });
+    const [, , , opts] = deliver.mock.calls[0];
+    expect(opts).toEqual({ destinationId: undefined, inPlaceOnly: true, publishMode: "publish" });
+    const articleWrite = svc.writes.find((w) => w.table === "articles")!.row;
+    expect(articleWrite.published_url).toBe("https://clinic.example/blog/recovery-guide");
+  });
+
+  it("treats a post found live on the site as live", async () => {
+    gates.article = { ...articleWith(BEFORE), status: "approved", found_on_site_at: "2026-10-01T00:00:00.000Z" };
+    await pushExecution(client(execution()) as never, "e1", { pusher });
+    expect(deliver.mock.calls[0][3]).toMatchObject({ publishMode: "publish" });
+  });
+
+  it("leaves a post still held as a draft in the CMS to the connection's mode", async () => {
+    gates.article = { ...articleWith(BEFORE), status: "approved", indexing_status: { indexnow: "held-in-cms" } };
+    await pushExecution(client(execution()) as never, "e1", { pusher });
+    expect(deliver.mock.calls[0][3]).not.toHaveProperty("publishMode");
+    expect(svc.writes.find((w) => w.table === "articles")!.row).not.toHaveProperty("published_url");
+  });
+
   it("logs a failed delivery and records no push", async () => {
     deliver.mockRejectedValueOnce(new Error("CMS said no"));
     const c = client(execution());

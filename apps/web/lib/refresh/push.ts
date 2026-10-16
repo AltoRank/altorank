@@ -145,7 +145,7 @@ export function pageChangedSinceRewrite(
 export const PAGE_CHANGED_MESSAGE =
   "This page has changed since the rewrite was written (an edit in the editor, or another improvement pushed first). Pushing it now would put the old text of every block you did not keep back on the site. Reject this rewrite and schedule a new one from the current page.";
 
-type PushArticle = DeliverableArticle & { id: string; research?: unknown };
+type PushArticle = DeliverableArticle & { id: string; status?: string | null; research?: unknown };
 
 /** The plan and trial gates a publish has, asked of the account that owns the site. */
 async function refuseWithoutPlan(supabase: SupabaseClient, workspaceId: string, pusher: Pusher): Promise<void> {
@@ -229,13 +229,20 @@ export async function pushExecution(
   const blocker = approvalBlocker(report);
   if (blocker) throw new Error(blocker.replace(/then approve\.$/, "then push."));
 
+  // A push edits a page that is on the site. On a draft-mode connection the
+  // adapters read "draft" as "unpublish" (WordPress, Ghost, Shopify, Webflow
+  // and others set the post back to draft), so the connection's mode would
+  // take a live, ranking page off the site to apply an edit to it. A live
+  // post stays live; a post still held as a draft in the CMS stays held.
+  const liveOnSite = article.status === "live" || Boolean(article.found_on_site_at);
+
   let delivered;
   try {
     delivered = await deliverArticle(
       supabase,
       { ...article, title, meta_description: metaDescription, content },
       article.id,
-      { destinationId: opts.destinationId, inPlaceOnly: true },
+      { destinationId: opts.destinationId, inPlaceOnly: true, ...(liveOnSite ? { publishMode: "publish" as const } : {}) },
     );
   } catch (err) {
     const context = err instanceof PublishError ? err.context : null;
@@ -267,6 +274,10 @@ export async function pushExecution(
       title,
       meta_description: metaDescription,
       word_count: wordCount,
+      // An update that reports no address (a webhook endpoint that answers
+      // without one) still leaves the page where it was: keep its URL rather
+      // than the null the publish bookkeeping writes for "no address yet".
+      ...(liveOnSite ? { published_url: publishedUrl } : {}),
       fact_checks: report,
       fact_check_verdict: report.verdict,
       approved_by: pusher.id,
