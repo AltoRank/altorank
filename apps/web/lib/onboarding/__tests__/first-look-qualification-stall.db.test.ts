@@ -97,8 +97,10 @@ vi.mock("@/lib/content/generate", () => ({ generateArticle: async () => { throw 
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
     messages = {
-      create: async (p: { messages: Array<{ content: string }>; max_tokens: number }, options?: { signal?: AbortSignal }) => {
-        const prompt = p.messages[0].content;
+      create: async (p: { messages: Array<{ content: string | Array<{ text: string }> }>; max_tokens: number }, options?: { signal?: AbortSignal }) => {
+        // The results judge sends its cached instructions and its data as two blocks.
+        const content = p.messages[0].content;
+        const prompt = typeof content === "string" ? content : content.map((b) => b.text).join("");
         const b = h.blip;
         if (b.open && b.models > 0) {
           b.models -= 1;

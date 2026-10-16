@@ -50,6 +50,26 @@ export interface AskOptions {
    * the shape, so a replayed or schema-less answer parses the same way.
    */
   schema?: Record<string, unknown>;
+  /**
+   * How many leading characters of the prompt are the same on every call of
+   * this kind in a run (instructions, before the per-call data). Sent as
+   * their own block, marked for the prompt cache, so the calls after the
+   * first read them at a tenth of the price. The text the model reads is
+   * unchanged: the two blocks are the prompt, split in two.
+   */
+  cachePrefix?: number;
+}
+
+/**
+ * The user message for `prompt`: one string, or the cached prefix and the
+ * rest as two blocks when `cachePrefix` marks one.
+ */
+export function promptContent(prompt: string, cachePrefix?: number): string | Anthropic.TextBlockParam[] {
+  if (!cachePrefix || cachePrefix <= 0 || cachePrefix >= prompt.length) return prompt;
+  return [
+    { type: "text", text: prompt.slice(0, cachePrefix), cache_control: { type: "ephemeral" } },
+    { type: "text", text: prompt.slice(cachePrefix) },
+  ];
 }
 
 /**
@@ -148,12 +168,17 @@ export async function askStructured(
     const response = await client.messages.create({
       model,
       max_tokens: sized.maxTokensFor(claim.grantedUsd),
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "user", content: promptContent(prompt, options.cachePrefix) }],
       ...samplingFor(model, options.tier, options.schema),
     } as Anthropic.MessageCreateParamsNonStreaming, { signal: AbortSignal.timeout(STRUCTURED_CALL_DEADLINE_MS) });
-    const inputTokens = response.usage?.input_tokens ?? 0;
+    const uncached = response.usage?.input_tokens ?? 0;
+    const writeTokens = response.usage?.cache_creation_input_tokens ?? 0;
+    const readTokens = response.usage?.cache_read_input_tokens ?? 0;
     const outputTokens = response.usage?.output_tokens ?? 0;
-    cost = anthropicCost(model, inputTokens, outputTokens);
+    cost = anthropicCost(model, uncached, outputTokens, { writeTokens, readTokens });
+    // The row counts every input token the call read, cached or not; its
+    // cost is what the cache made of them.
+    const inputTokens = uncached + writeTokens + readTokens;
     const entry = { provider: "anthropic" as const, operation, costUsd: cost, inputTokens, outputTokens };
     // With no sink, a call inside a spend scope is still written (with the
     // operator's client); outside one, scripts and tests write nothing. The

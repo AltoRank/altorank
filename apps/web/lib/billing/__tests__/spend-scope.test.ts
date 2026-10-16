@@ -206,8 +206,10 @@ describe("a first look that runs out of budget", () => {
       const keyword = (JSON.parse(init.body) as Array<{ keyword: string }>)[0].keyword;
       return new Response(JSON.stringify(serpResponse(keyword)), { status: 200 });
     }));
-    create.mockImplementation(async (params: { messages: Array<{ content: string }> }) => {
-      const prompt = params.messages[0].content;
+    create.mockImplementation(async (params: { messages: Array<{ content: string | Array<{ text: string }> }> }) => {
+      // The judge sends its cached instructions and its data as two blocks.
+      const content = params.messages[0].content;
+      const prompt = typeof content === "string" ? content : content.map((b) => b.text).join("");
       if (prompt.startsWith("Who searches this phrase")) return reply(JSON.stringify({ ...approval, kinds: ["article", "article", "article", "article"] }));
       return reply(JSON.stringify(terms.map((t) => ({ t, s: "comparing", r: "clinic owners comparing" }))));
     });
