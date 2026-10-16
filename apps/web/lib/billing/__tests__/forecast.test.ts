@@ -116,4 +116,17 @@ describe("measuredRates", () => {
     // 0.4 over three articles.
     expect(r.rates.modelPerArticle).toBeCloseTo(0.4 / 3, 9);
   });
+
+  it("leaves the editor's rewrites and the scheduled refresh out of the model cost per article", () => {
+    const written = ["a", "b", "c"].map((id) => ({ provider: "anthropic", operation: "claude-sonnet-5", costUsd: 0.3, articleId: id }));
+    // Twenty whole-article rewrites pressed on those drafts, quick rewrites,
+    // a refresh rewrite, and a fourth article only the editor ever touched.
+    const after = [
+      ...Array.from({ length: 20 }, () => ({ provider: "anthropic", operation: "editor/rewrite", costUsd: 0.6, articleId: "a", job: "editor" })),
+      { provider: "anthropic", operation: "editor/micro", costUsd: 0.01, articleId: "d", job: "editor" },
+      { provider: "anthropic", operation: "claude-sonnet-5", costUsd: 0.5, articleId: "b", job: "cron.refresh" },
+    ];
+    const r = measuredRates([...written, ...after]);
+    expect(r.rates.modelPerArticle).toBeCloseTo(0.3, 9);
+  });
 });

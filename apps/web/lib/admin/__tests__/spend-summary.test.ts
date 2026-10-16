@@ -32,6 +32,19 @@ describe("summarizeSpendRows", () => {
     expect(s.groups.find((g) => !g.recent)).toMatchObject({ calls: 1, priced: 1 });
   });
 
+  it("does not count an article the editor or the refresh alone paid a model call for", () => {
+    const s = summarizeSpendRows(
+      [
+        row({ provider: "anthropic", operation: "claude-sonnet-5", article_id: "a", cost_usd: 0.1 }),
+        row({ provider: "anthropic", operation: "editor/rewrite", article_id: "b", cost_usd: 0.6, job: "editor" }),
+        row({ provider: "anthropic", operation: "editor/micro", article_id: "c", cost_usd: 0.01 }),
+        row({ provider: "anthropic", operation: "claude-sonnet-5", article_id: "d", cost_usd: 0.4, job: "cron.refresh" }),
+      ],
+      since,
+    );
+    expect(s.modelArticles).toBe(1);
+  });
+
   it("counts distinct articles that priced model calls were bought for", () => {
     const s = summarizeSpendRows(
       [

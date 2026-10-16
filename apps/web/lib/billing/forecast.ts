@@ -194,6 +194,19 @@ export interface PricedGroup {
   priced: number;
   /** What those calls cost. */
   usd: number;
+  /** provider_spend.job (migration 116), when the rows say. */
+  job?: string | null;
+}
+
+/**
+ * Whether a model call is part of writing an article, for "model cost per
+ * article". The editor's rewrites and the scheduled refresh are bought for an
+ * article that is already written: counted in, every rewrite pressed on a
+ * draft raised the forecast cost of every draft not yet written. The same
+ * rule is in migration 116's provider_spend_summary (`model_articles`).
+ */
+export function writesArticle(row: { provider: string; operation: string; job?: string | null }): boolean {
+  return row.provider === "anthropic" && !row.operation.startsWith("editor/") && row.job !== "editor" && row.job !== "cron.refresh";
 }
 
 /**
@@ -201,20 +214,20 @@ export interface PricedGroup {
  * default. Three observations is the floor: one call is an anecdote.
  */
 export function measuredRates(
-  observed: Array<{ provider: string; operation: string; costUsd: number | null; articleId?: string | null }>,
+  observed: Array<{ provider: string; operation: string; costUsd: number | null; articleId?: string | null; job?: string | null }>,
   base: RateCard = DEFAULT_RATES,
 ): { rates: RateCard; measured: Array<keyof RateCard> } {
   const priced = observed.filter((o) => o.costUsd !== null);
-  const groups: PricedGroup[] = priced.map((o) => ({ provider: o.provider, operation: o.operation, hasArticle: Boolean(o.articleId), priced: 1, usd: o.costUsd as number }));
-  const articles = new Set(priced.filter((o) => o.provider === "anthropic" && o.articleId).map((o) => o.articleId));
+  const groups: PricedGroup[] = priced.map((o) => ({ provider: o.provider, operation: o.operation, job: o.job ?? null, hasArticle: Boolean(o.articleId), priced: 1, usd: o.costUsd as number }));
+  const articles = new Set(priced.filter((o) => writesArticle(o) && o.articleId).map((o) => o.articleId));
   return measuredRatesFromGroups(groups, articles.size, base);
 }
 
 /**
  * The same from sums (lib/admin/spend-summary.ts), so the card is measured on
  * every recorded call rather than on the rows one read returned.
- * `modelArticles` is the number of distinct articles priced model calls were
- * bought for.
+ * `modelArticles` is the number of distinct articles priced model calls that
+ * write an article (writesArticle) were bought for.
  */
 export function measuredRatesFromGroups(
   groups: readonly PricedGroup[],
@@ -243,9 +256,9 @@ export function measuredRatesFromGroups(
   const kfk = avg((o) => o.operation.startsWith("/keywords_data/google_ads/keywords_for_keywords"));
   if (serpAdv !== null && kfk !== null) set("dfsPerArticle", serpAdv + kfk);
 
-  // Model cost per article: total anthropic spend over distinct articles.
+  // Model cost per article: the writing calls' spend over distinct articles.
   if (modelArticles >= 3) {
-    const model = groups.filter((g) => g.provider === "anthropic" && g.hasArticle).reduce((a, g) => a + g.usd, 0);
+    const model = groups.filter((g) => writesArticle(g) && g.hasArticle).reduce((a, g) => a + g.usd, 0);
     set("modelPerArticle", model / modelArticles);
   }
   return { rates, measured };

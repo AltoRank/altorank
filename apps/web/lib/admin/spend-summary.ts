@@ -15,6 +15,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readAllPages } from "@/lib/supabase/read-all";
+import { writesArticle } from "@/lib/billing/forecast";
 
 /** Every row sharing these values, summed. */
 export interface SpendGroup {
@@ -40,7 +41,7 @@ export interface SpendSummary {
   calls: number;
   /** The oldest row's date, or null when there is none. */
   firstAt: string | null;
-  /** Distinct articles that priced model calls were bought for. */
+  /** Distinct articles that priced model calls writing an article were bought for (writesArticle). */
   modelArticles: number;
   groups: SpendGroup[];
 }
@@ -79,7 +80,7 @@ export function summarizeSpendRows(rows: readonly SpendRow[], since: Date): Spen
     if (r.cost_usd !== null && r.cost_usd !== undefined) {
       into.priced += 1;
       into.usd += Number(r.cost_usd);
-      if (r.provider === "anthropic" && r.article_id) modelArticles.add(r.article_id);
+      if (r.article_id && writesArticle({ provider: r.provider, operation: r.operation, job: r.job ?? null })) modelArticles.add(r.article_id);
     }
     groups.set(key, into);
     if (!firstAt || Date.parse(r.created_at) < Date.parse(firstAt)) firstAt = r.created_at;

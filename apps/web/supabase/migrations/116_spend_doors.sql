@@ -140,7 +140,9 @@ comment on column public.provider_spend.job is
 -- Every provider_spend row, summed in groups the Operations page reports by.
 -- `recent` splits each group at p_since (the page's 30-day window).
 -- `model_articles` is the number of distinct articles anthropic rows with a
--- price were bought for: the denominator of the model cost per article.
+-- price were bought for: the denominator of the model cost per article. The
+-- editor's rewrites and the scheduled refresh are left out: they are bought
+-- for an article already written (lib/billing/forecast.ts, writesArticle).
 -- caller: service-role
 create or replace function public.provider_spend_summary(p_since timestamptz)
 returns jsonb
@@ -159,7 +161,9 @@ begin
     'calls', (select count(*) from public.provider_spend),
     'first_at', (select min(created_at) from public.provider_spend),
     'model_articles', (select count(distinct article_id) from public.provider_spend
-                        where provider = 'anthropic' and article_id is not null and cost_usd is not null),
+                        where provider = 'anthropic' and article_id is not null and cost_usd is not null
+                          and operation not like 'editor/%'
+                          and coalesce(job, '') not in ('editor', 'cron.refresh')),
     'groups', coalesce((
       select jsonb_agg(g) from (
         select provider,

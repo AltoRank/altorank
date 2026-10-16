@@ -85,6 +85,27 @@ begin
   raise notice 'ok   the summary groups by job';
 end $$;
 
+-- model_articles counts the articles a model call wrote, not ones the editor
+-- or the scheduled refresh alone paid for.
+create temp table before_116 as
+  select (public.provider_spend_summary(now())->>'model_articles')::integer as n;
+insert into articles (id, workspace_id, title, slug) values
+  ('00000000-0000-4000-8000-0000000116e1', '00000000-0000-4000-8000-0000000116c1', 'written', 'rls-116-written'),
+  ('00000000-0000-4000-8000-0000000116e2', '00000000-0000-4000-8000-0000000116c1', 'edited', 'rls-116-edited'),
+  ('00000000-0000-4000-8000-0000000116e3', '00000000-0000-4000-8000-0000000116c1', 'refreshed', 'rls-116-refreshed');
+insert into provider_spend (workspace_id, article_id, provider, operation, cost_usd, job) values
+  ('00000000-0000-4000-8000-0000000116c1', '00000000-0000-4000-8000-0000000116e1', 'anthropic', 'claude-sonnet-5', 0.3, 'cron.generate'),
+  ('00000000-0000-4000-8000-0000000116c1', '00000000-0000-4000-8000-0000000116e2', 'anthropic', 'editor/rewrite', 0.6, 'editor'),
+  ('00000000-0000-4000-8000-0000000116c1', '00000000-0000-4000-8000-0000000116e2', 'anthropic', 'editor/micro', 0.01, null),
+  ('00000000-0000-4000-8000-0000000116c1', '00000000-0000-4000-8000-0000000116e3', 'anthropic', 'claude-sonnet-5', 0.4, 'cron.refresh');
+do $$
+declare
+  added integer := (public.provider_spend_summary(now())->>'model_articles')::integer - (select n from before_116);
+begin
+  if added <> 1 then raise exception 'FAIL model_articles grew by % for one written article', added; end if;
+  raise notice 'ok   model_articles leaves out the editor and the refresh';
+end $$;
+
 -- --- A client token -----------------------------------------------------------
 
 set local request.jwt.claims = '{"role":"authenticated","sub":"00000000-0000-4000-8000-0000000116a1"}';
