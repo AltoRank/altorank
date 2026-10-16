@@ -250,22 +250,8 @@ describe.skipIf(!STACK)("the 2026-10-15 first-look stall, replayed", () => {
     if (accountId) await db.from("accounts").delete().eq("id", accountId);
   }, 30_000);
 
-  it("DEBUG replays with the judge's cache prefix off", async () => {
-    process.env.DEBUG_JUDGE_NO_CACHE = "1";
-    try {
-      const { ms, budget } = await firstLook(7);
-      console.error(`STALLDBG nocache pages=${budget.stages.results_pages?.calls} judge=${budget.stages.judge?.calls} ms=${ms} ${JSON.stringify(budget.stages)}`);
-    } finally { delete process.env.DEBUG_JUDGE_NO_CACHE; }
-  }, BOUND_MS + 30_000);
-
-  it("DEBUG replays with the judge's cache prefix on", async () => {
-    const { ms, budget } = await firstLook(7);
-    console.error(`STALLDBG cache pages=${budget.stages.results_pages?.calls} judge=${budget.stages.judge?.calls} ms=${ms} ${JSON.stringify(budget.stages)}`);
-  }, BOUND_MS + 30_000);
-
   it("replays the production row up to qualification, finishes, and plans what the room allows", async () => {
     const { outcome, events, budget } = await firstLook(7);
-    console.error(`STALLDBG main-test pages=${budget.stages.results_pages?.calls} judge=${budget.stages.judge?.calls}`);
     expect(outcome).not.toBe("hung");
     settledEveryPhase(events);
     // The research spent what production's did, and stopped where it did.
