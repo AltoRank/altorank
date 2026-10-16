@@ -27,7 +27,7 @@ The site pulls: nothing is pushed to it. It shows articles whose status is
 ```
 ALTORANK_BLOG_API_KEY=altorank_live_...
 ALTORANK_WORKSPACE_ID=<uuid>
-NEXT_PUBLIC_SITE_URL=https://www.example.com   # for absolute sitemap URLs
+NEXT_PUBLIC_SITE_URL=https://www.example.com   # for absolute sitemap and canonical URLs
 # ALTORANK_API_URL=https://app.altorank.co    # only when self-hosting the dashboard
 ```
 

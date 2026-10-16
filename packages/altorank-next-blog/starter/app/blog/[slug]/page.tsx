@@ -8,6 +8,11 @@ type Props = { params: Promise<{ slug: string }> };
 
 const client = () => new BlogClient();
 
+// Absolute, from NEXT_PUBLIC_SITE_URL. A relative canonical is resolved
+// against metadataBase, and without one Next falls back to localhost or the
+// deployment's own URL, which is worse than no canonical at all.
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "").replace(/\/+$/, "");
+
 export async function generateStaticParams() {
   const articles = await client().listAll();
   return articles.map((a) => ({ slug: a.slug }));
@@ -20,7 +25,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: article.title,
     description: article.meta_description ?? undefined,
-    alternates: { canonical: `/blog/${article.slug}` },
+    alternates: SITE_URL ? { canonical: `${SITE_URL}/blog/${article.slug}` } : undefined,
     openGraph: article.featured_image_url ? { images: [article.featured_image_url] } : undefined,
   };
 }

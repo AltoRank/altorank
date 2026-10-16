@@ -10,13 +10,16 @@ export const revalidate = 86400;
 
 const PER_PAGE = 20;
 
+// Absolute, for the same reason as the article page's canonical.
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "").replace(/\/+$/, "");
+
 type Props = { searchParams: Promise<{ page?: string }> };
 
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const page = pageNumber((await searchParams).page);
   return {
     title: page > 1 ? `Blog - page ${page}` : "Blog",
-    alternates: { canonical: page > 1 ? `/blog?page=${page}` : "/blog" },
+    alternates: SITE_URL ? { canonical: `${SITE_URL}${page > 1 ? `/blog?page=${page}` : "/blog"}` } : undefined,
   };
 }
 
