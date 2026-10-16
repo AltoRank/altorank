@@ -190,12 +190,36 @@ export function chartFromList(listHtml: string, language?: string | null): Chart
  * ("from", "to"; "da", "a") the bars take them; where the direction is in a
  * suffix ("%42'den %61'e") they take the contract's "before" and "after".
  */
+/**
+ * A before/after pair is a change only when the sentence says something
+ * changed. "Veneers cost anywhere from $800 to $2,000" is a range, and charted
+ * as two bars labelled "from" and "to" it read as nonsense (draft A/B,
+ * 2026-10-15). A language not listed here gets no before/after chart.
+ */
+const CHANGE: Partial<Record<string, RegExp>> = {
+  en: /\b(rose|risen|rising|increas\w*|grew|grown|growing|climb\w*|jump\w*|doubled|tripled|fell|fallen|falling|dropp\w*|declin\w*|decreas\w*|shrank|cut|reduc\w*|improv\w*|went (?:up|down)|gone (?:up|down)|moved|shifted|boost\w*|lift\w*|slash\w*)\b/i,
+  it: /\b(aument\w*|cresciut\w*|crescit\w*|salit\w*|passat\w*|pass(?:a|ano)|calat\w*|sces[oiae]|diminuit\w*|ridott\w*|migliorat\w*|raddoppiat\w*|dimezzat\w*)\b/i,
+  es: /\b(aument\w*|creci\w*|subi\w*|pas(?:ó|aron|a|an)|baj\w*|cay\w*|disminu\w*|reduj\w*|reducid\w*|mejor\w*|duplic\w*)\b/i,
+  fr: /\b(augment\w*|pass(?:é|ée|és|ées|e|ent)|mont\w*|grimp\w*|baiss\w*|chut\w*|diminu\w*|réduit\w*|amélior\w*|doublé\w*)\b/i,
+  de: /\b(stieg\w*|gestiegen|wuchs|gewachsen|erhöht\w*|sank\w*|gesunken|fiel\w*|gefallen|verringert\w*|reduziert\w*|verbessert\w*|verdoppelt\w*)\b/i,
+  tr: /(arttı|artmış|yükseldi|yükselmiş|çıktı|düştü|düşmüş|azaldı|azalmış|geriledi|indi|büyüdü)/i,
+};
+
+/** The clause the pair stands in, so the caption quotes the numbers it charts. */
+function clauseAround(sentence: string, start: number, end: number): string {
+  const before = sentence.slice(0, start);
+  const cut = Math.max(before.lastIndexOf(","), before.lastIndexOf(";"), before.lastIndexOf(":"));
+  const tail = sentence.slice(end).match(/^[^,;:.!?]*/)?.[0] ?? "";
+  return (sentence.slice(cut + 1, end) + tail).trim();
+}
+
 export function chartFromBeforeAfter(sentence: string, language?: string | null): ChartSpec | null {
   const locale = resolveLocale(language);
   if (!locale.supported) return null;
   const { normalise } = unitRules(locale);
   const m = sentence.match(locale.numbers.beforeAfter);
   if (!m?.groups) return null;
+  if (!CHANGE[locale.code]?.test(sentence)) return null;
   const g = m.groups;
   const unitA = normalise(g.ca ?? g.ua ?? "");
   const unitB = normalise(g.cb ?? g.ub ?? "");
@@ -214,7 +238,7 @@ export function chartFromBeforeAfter(sentence: string, language?: string | null)
       { label: g.from ?? locale.labels.before, value: before },
       { label: g.to ?? locale.labels.after, value: after },
     ],
-    source: sentence.trim(),
+    source: m.index === undefined ? sentence.trim() : clauseAround(sentence, m.index, m.index + m[0].length),
   };
 }
 
