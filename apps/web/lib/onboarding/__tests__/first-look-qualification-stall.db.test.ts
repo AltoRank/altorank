@@ -250,18 +250,18 @@ describe.skipIf(!STACK)("the 2026-10-15 first-look stall, replayed", () => {
     if (accountId) await db.from("accounts").delete().eq("id", accountId);
   }, 30_000);
 
-  it("DEBUG A/B: the replay with the judge's cache prefix off and on, interleaved", async () => {
-    const g = globalThis as { __debugJudgeNoCache?: boolean };
-    for (let i = 0; i < 5; i++) {
-      for (const off of [true, false]) {
-        g.__debugJudgeNoCache = off;
-        try {
-          const { ms, budget } = await firstLook(7);
-          console.error(`STALLDBG ${off ? "nocache" : "cache"} pages=${budget.stages.results_pages?.calls} judge=${budget.stages.judge?.calls} ms=${ms}`);
-        } finally { g.__debugJudgeNoCache = false; }
-      }
-    }
-  }, 10 * (BOUND_MS + 30_000));
+  it("DEBUG replays with the judge's cache prefix off", async () => {
+    process.env.DEBUG_JUDGE_NO_CACHE = "1";
+    try {
+      const { ms, budget } = await firstLook(7);
+      console.error(`STALLDBG nocache pages=${budget.stages.results_pages?.calls} judge=${budget.stages.judge?.calls} ms=${ms} ${JSON.stringify(budget.stages)}`);
+    } finally { delete process.env.DEBUG_JUDGE_NO_CACHE; }
+  }, BOUND_MS + 30_000);
+
+  it("DEBUG replays with the judge's cache prefix on", async () => {
+    const { ms, budget } = await firstLook(7);
+    console.error(`STALLDBG cache pages=${budget.stages.results_pages?.calls} judge=${budget.stages.judge?.calls} ms=${ms} ${JSON.stringify(budget.stages)}`);
+  }, BOUND_MS + 30_000);
 
   it("replays the production row up to qualification, finishes, and plans what the room allows", async () => {
     const { outcome, events, budget } = await firstLook(7);
