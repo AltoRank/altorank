@@ -97,6 +97,8 @@ import { runOnboarding } from "../pipeline";
 import { BudgetRefusedError, claimSpend, currentSpendScope, withStage } from "@/lib/billing/spend-scope";
 import { FIRST_DRAFT_MIN_USD, FIRST_LOOK_BUYER_TEST_ROOM_USD, FIRST_LOOK_QUALIFY_ROOM_USD, firstLookReserves } from "@/lib/billing/run-budget";
 import type { OnboardingEvent } from "../events";
+import type { FirstLook } from "@/lib/keyword-research/opportunity";
+import { FIRST_LOOK_QUALIFY_MS } from "../time-limits";
 
 const WS = { id: "ws1", domain: "example.com", account_id: "ag1", language: "en" };
 const NEXT = { term: "seo agent", reasons: ["27,100 searches/mo"], score: 35.5, difficulty: 19, volume: 27100 };
@@ -844,5 +846,26 @@ describe("the empty pool", () => {
     const events = await collect();
     expect(planningEvent(events)).toMatchObject({ status: "skipped" });
     expect(planningEvent(events)).not.toHaveProperty("emptyPool");
+  });
+});
+
+describe("runOnboarding: qualification's deadline", () => {
+  it("gives the plan's and the first topic's qualification one deadline, from the start of planning", async () => {
+    const started = Date.now();
+    await collectDispatch();
+    const look = (plan.mock.calls[0][3] as { firstLook: FirstLook }).firstLook;
+    expect(look.deadline).toBeGreaterThanOrEqual(started + FIRST_LOOK_QUALIFY_MS);
+    expect(look.deadline).toBeLessThanOrEqual(Date.now() + FIRST_LOOK_QUALIFY_MS);
+    expect((recommend.mock.calls[0][2] as { firstLook: FirstLook }).firstLook).toBe(look);
+  });
+  it("says it was the time, not the site, when the deadline ended qualification and nothing was planned", async () => {
+    plan.mockImplementation(async (...a: unknown[]) => {
+      (a[3] as { firstLook: FirstLook }).firstLook.timedOut = true;
+      return [];
+    });
+    const { events } = await collectDispatch();
+    const planning = events.filter((e) => e.phase === "planning").at(-1) as { status: string; detail?: string };
+    expect(planning.status).toBe("skipped");
+    expect(planning.detail).toBe("Checking the search results took longer than a first look allows, so nothing was planned yet: a problem on our side, not your site.");
   });
 });

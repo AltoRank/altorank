@@ -173,3 +173,18 @@ describe("countReady", () => {
     expect(await countReady(db, "ws", context)).toBe(1);
   });
 });
+
+describe("a first look's refill and its deadline", () => {
+  it("judges no further batch once the first look's qualification deadline has passed", async () => {
+    const pool = Array.from({ length: 40 }, (_, i) => row(`r${i}`));
+    // The first batch judges every term and qualifies none, so a second would follow.
+    let deadline = Date.now() + 60_000;
+    qualify.mockImplementation(async (_db: unknown, _ws: unknown, asked: Array<{ id: string }>) => {
+      deadline = Date.now() - 1;
+      return new Map(asked.map((c) => [c.id, verdict("rejected", "buyer_mismatch")]));
+    });
+    const firstLook = { runId: "run-1", get deadline() { return deadline; } };
+    await refillQualifiedQueue(db, "ws", pool, context, { target: 10, maxBatches: 4, firstLook });
+    expect(qualify).toHaveBeenCalledTimes(1);
+  });
+});
