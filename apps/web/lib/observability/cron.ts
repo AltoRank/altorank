@@ -27,6 +27,7 @@
 // and a log full of bot traffic is a log nobody reads.
 
 import { recordEvent } from "./record";
+import { withSpendJob } from "@/lib/billing/spend-scope";
 import { describe } from "./event";
 
 /** Fields a cron body might use for its own error/skip counts. */
@@ -104,7 +105,9 @@ export function observedCron(source: string, handler: CronHandler): CronHandler 
     const startedAt = Date.now();
     let response: Response;
     try {
-      response = await handler(request);
+      // Every paid call the run makes is filed under it in provider_spend.job,
+      // so Operations can say what each cron cost (lib/billing/forecast.ts).
+      response = await withSpendJob(source, () => handler(request));
     } catch (err) {
       await recordEvent({
         level: "error",

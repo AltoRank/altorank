@@ -22,10 +22,14 @@
 --    site (`on delete set null`), so deleting a site and adding it again does
 --    not hand its count back.
 --
--- 2. provider_spend_summary(). The Operations page read the newest 2,000
---    provider_spend rows, and PostgREST answers at most 1,000, so every total
---    on it covered the newest thousand calls. This sums the whole table in the
---    database, grouped the way the page reports it. Service role only.
+-- 2. provider_spend.job and provider_spend_summary(). The Operations page
+--    read the newest 2,000 provider_spend rows, and PostgREST answers at most
+--    1,000, so every total on it covered the newest thousand calls. This sums
+--    the whole table in the database, grouped the way the page reports it.
+--    Service role only. `job` says which work bought a row (a cron's name,
+--    `onboarding`, `editor`), so the schedule's "Actual" files each row under
+--    the job that spent it instead of guessing from the provider: every model
+--    call landed under the nightly writer, refresh and setup included.
 --
 -- 3. admin_impersonations.target_last_sign_in_at. "View as" signs in as the
 --    customer, which stamps their last sign-in. The customer's own value is
@@ -129,6 +133,10 @@ grant execute on function public.take_spend_door(uuid, uuid, text, jsonb) to ser
 
 -- 2 ---------------------------------------------------------------------------
 
+alter table public.provider_spend add column if not exists job text;
+comment on column public.provider_spend.job is
+  'Which work bought the row: the cron''s name (cron.generate, cron.refresh, ...), onboarding, or editor. Null for rows from before migration 116 and for work no job names.';
+
 -- Every provider_spend row, summed in groups the Operations page reports by.
 -- `recent` splits each group at p_since (the page's 30-day window).
 -- `model_articles` is the number of distinct articles anthropic rows with a
@@ -158,13 +166,14 @@ begin
                operation,
                workspace_id,
                stage,
+               job,
                article_id is not null as has_article,
                created_at >= p_since as recent,
                count(*) as calls,
                count(cost_usd) as priced,
                coalesce(sum(cost_usd), 0) as usd
           from public.provider_spend
-         group by 1, 2, 3, 4, 5, 6
+         group by 1, 2, 3, 4, 5, 6, 7
       ) g
     ), '[]'::jsonb)
   ) into out;

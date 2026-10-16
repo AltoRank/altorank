@@ -123,7 +123,7 @@ export async function proposeProfile(workspaceId: string): Promise<InferenceResu
   // Checked: a conversion page the site does not have comes back empty with
   // the reason, never as the guess (lib/onboarding/observed-facts.ts).
   const domain = workspace.domain;
-  const result = await withSpendScope({ workspaceId }, () => inferVerifiedBusinessProfile(domain));
+  const result = await withSpendScope({ workspaceId, job: "onboarding" }, () => inferVerifiedBusinessProfile(domain));
   // A failed read still says which language the page is in and which
   // country's domain it is on: the wizard starts from that, not English /
   // Global (lib/onboarding/locale-guess.ts). A failure is not kept: "Try
@@ -179,7 +179,7 @@ export async function suggestCompetitors(workspaceId: string, profile: BusinessP
   // client and this site on them. The sink this passed before was the
   // person's own client, which provider_spend refuses to write through
   // (lib/billing/default-spend.ts), so those rows were lost.
-  const found = await withSpendScope({ workspaceId }, () =>
+  const found = await withSpendScope({ workspaceId, job: "onboarding" }, () =>
     findCompetitorSuggestions({
       domain,
       business: profile,
@@ -219,7 +219,7 @@ export async function resolveCompetitor(
     const typed = entry.trim().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "").toLowerCase();
     return looksLikeDomain(typed) ? { domain: typed, authority: null, size: null } : null;
   }
-  const found = await withSpendScope({ workspaceId }, async (): Promise<Resolved | null> => {
+  const found = await withSpendScope({ workspaceId, job: "onboarding" }, async (): Promise<Resolved | null> => {
     const { domains } = await resolveCompetitorDomains([entry]);
     const domain = domains.find((d) => d !== (workspace.domain ?? "").replace(/^www\./, "").toLowerCase());
     if (!domain) return null;

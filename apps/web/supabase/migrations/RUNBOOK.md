@@ -164,7 +164,7 @@ m(file, applied) as (values
   ('112_article_images_private',             not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'Article images are readable by anyone')),
   ('113_push_record',                        exists (select 1 from col where t='refresh_executions' and c='pushed_by') and exists (select 1 from pg_trigger t join pg_class c on c.oid = t.tgrelid where t.tgname = 'refresh_executions_guard_push' and c.relname = 'refresh_executions')),
   ('114_blog_keys',                          exists (select 1 from col where t='api_keys' and c='workspace_id') and exists (select 1 from pg_constraint where conname = 'api_keys_blog_key_shape') and exists (select 1 from pg_trigger where tgname = 'api_keys_site_in_account')),
-  ('116_spend_doors',                        to_regclass('public.spend_door_uses') is not null and to_regprocedure('public.take_spend_door(uuid,uuid,text,jsonb)') is not null and to_regprocedure('public.provider_spend_summary(timestamptz)') is not null and exists (select 1 from col where t='admin_impersonations' and c='target_last_sign_in_at'))
+  ('116_spend_doors',                        to_regclass('public.spend_door_uses') is not null and to_regprocedure('public.take_spend_door(uuid,uuid,text,jsonb)') is not null and to_regprocedure('public.provider_spend_summary(timestamptz)') is not null and exists (select 1 from col where t='admin_impersonations' and c='target_last_sign_in_at') and exists (select 1 from col where t='provider_spend' and c='job'))
 )
 select file, applied from m order by file;
 ```
@@ -1901,9 +1901,16 @@ only.
   outlives its site (`on delete set null`), so deleting a site and adding it
   again does not hand the count back. RLS on with no policies, no client
   grants, and the function checks the request's role before anything else.
+- `provider_spend.job`: which work bought the row - the cron's own name
+  (`cron.generate`, `cron.refresh`, ...; written for every call a cron run
+  makes, `lib/observability/cron.ts`), `onboarding` for setup, `editor` for
+  the editor's rewrites. The schedule's "Actual" files each row under the job
+  that spent it (`jobForSpend`, `lib/billing/forecast.ts`); before, every
+  model call was filed under the nightly writer. Null for older rows, which
+  are filed the old way, by endpoint.
 - `provider_spend_summary(since)`: every provider_spend row summed in the
   groups the Operations page reports by (provider, operation, site, stage,
-  whether an article was bought for, before or after `since`), plus the total
+  job, whether an article was bought for, before or after `since`), plus the total
   call count, the first row's date and the number of distinct articles priced
   model calls were bought for. The page read the newest 2,000 rows, and
   PostgREST answers at most 1,000, so its totals covered the newest thousand
@@ -1915,7 +1922,9 @@ only.
 **Apply AFTER its code is live.** Nothing from before 116 names any of these.
 The code that ships with it works without it: presses are counted in the
 instance's memory (`lib/billing/spend-doors.ts` falls back on any error from
-the function), the Operations page pages through provider_spend
+the function), a spend row the database refuses for its `job` is written
+again without it (`lib/billing/spend.ts`, as for 106's `stage`), the
+Operations page pages through provider_spend
 (`lib/admin/spend-summary.ts`), and "View as" writes its log row again
 without the new column when the insert is refused for it. Applying first is
 harmless too, but the order keeps the rule simple. Re-running is a no-op (`if
@@ -1925,13 +1934,13 @@ not exists`, `create or replace`, grants and revokes re-stated). Depends on
 Test: `supabase/tests/116_spend_doors.rls.sql` (self-contained, rolls back).
 Green 2026-10-16 on a throwaway Postgres 17 (supabase/postgres 17.11 image)
 holding a stub of `accounts`, `workspaces`, `articles`, `provider_spend`
-(025's columns plus 106's `stage`) and `admin_impersonations`, with 116
+(025's columns plus 106's `stage`) and `admin_impersonations` (030), with 116
 applied twice: two presses per site and three per account in a day, the third
 on one site refused on the site limit and the fourth on the account limit; a
 refused press is not counted; doors are counted apart; a press older than the
 window frees the count while a lifetime limit still holds; deleting a site
 keeps its uses on the account; the summary sums 1,500 rows of $0.001 to
-$1.50; a client token is refused the two functions and the table (42501).
+$1.50 and groups them by job; a client token is refused the two functions and the table (42501).
 Also checked by hand on the same database: with EXECUTE granted to
 `authenticated` on purpose, the function's own role check still refuses a
 client token, and the service role is answered. The rollback below was run
@@ -1940,10 +1949,12 @@ Not yet run on a copy built from 001-116. (The supabase/postgres 17.6.1.106 imag
 permission-denied function call, ours or not, so use 17.11 or later for the
 throwaway.)
 
-Post-flight (expect `t`, `t`, `t`, `t`, `f`, `f`):
+Post-flight (expect `t`, `t`, `t`, `t`, `t`, `f`, `f`):
 
 ```sql
 select to_regclass('public.spend_door_uses') is not null,
+       exists (select 1 from information_schema.columns
+                where table_schema = 'public' and table_name = 'provider_spend' and column_name = 'job'),
        to_regprocedure('public.take_spend_door(uuid,uuid,text,jsonb)') is not null,
        to_regprocedure('public.provider_spend_summary(timestamptz)') is not null,
        exists (select 1 from information_schema.columns
@@ -1953,10 +1964,11 @@ select to_regclass('public.spend_door_uses') is not null,
 ```
 
 Rollback (the code keeps working: it counts in memory, pages through
-provider_spend, and writes the log row without the column):
+provider_spend, and writes spend rows and the log row without the columns):
 
 ```sql
 drop function if exists public.provider_spend_summary(timestamptz);
+alter table public.provider_spend drop column if exists job;
 drop function if exists public.take_spend_door(uuid, uuid, text, jsonb);
 drop table if exists public.spend_door_uses;
 alter table public.admin_impersonations drop column if exists target_last_sign_in_at;

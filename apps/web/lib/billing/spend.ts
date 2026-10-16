@@ -29,6 +29,8 @@ export type SpendEntry = {
   runId?: string | null;
   /** Which stage of a first look bought it. Taken from the spend scope when not given. */
   stage?: SpendStage | null;
+  /** Which work bought it (a cron's name, `onboarding`, `editor`). Taken from the spend scope when not given. */
+  job?: string | null;
 };
 
 export async function recordSpend(
@@ -55,12 +57,17 @@ export async function recordSpend(
     };
     const stage = entry.stage ?? scope.stage;
     if (stage) row.stage = stage;
-    const { error } = (await supabase.from("provider_spend").insert(row)) ?? {};
-    // A database without migration 106 has no `stage`: the row is worth more
-    // than its tag, so it goes in without one.
-    if (error && stage && /stage/.test(error.message ?? "")) {
-      delete row.stage;
-      await supabase.from("provider_spend").insert(row);
+    const job = entry.job ?? scope.job;
+    if (job) row.job = job;
+    // A database without migration 106 has no `stage`, and one without 116
+    // no `job`: the row is worth more than its tags, so it goes in without
+    // the one the database does not know.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { error } = (await supabase.from("provider_spend").insert(row)) ?? {};
+      if (!error) break;
+      const missing = (["stage", "job"] as const).find((c) => c in row && new RegExp(`\\b${c}\\b`).test(error.message ?? ""));
+      if (!missing) break;
+      delete row[missing];
     }
   } catch {
     // Bookkeeping never breaks the work it is measuring.

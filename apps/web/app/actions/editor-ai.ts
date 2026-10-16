@@ -95,7 +95,7 @@ export async function rewriteFieldAction(input: {
       if (!door.allowed) return { ok: false, error: door.message };
     }
     // Metered inside rewriteField; the scope puts the article and its site on the row.
-    const result = await withSpendScope({ workspaceId: article.workspace_id as string, articleId: article.id }, () =>
+    const result = await withSpendScope({ workspaceId: article.workspace_id as string, articleId: article.id, job: "editor" }, () =>
       rewriteField({
         field: parsed.field,
         action: parsed.action,

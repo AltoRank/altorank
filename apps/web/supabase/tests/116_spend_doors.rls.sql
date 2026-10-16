@@ -66,8 +66,8 @@ begin
 end $$;
 
 -- provider_spend_summary sums every row, not the newest thousand.
-insert into provider_spend (workspace_id, provider, operation, cost_usd, created_at)
-select '00000000-0000-4000-8000-0000000116c1', 'dataforseo', '/serp/google/organic/task_get/regular', 0.001, now() - (g || ' minutes')::interval
+insert into provider_spend (workspace_id, provider, operation, cost_usd, created_at, job)
+select '00000000-0000-4000-8000-0000000116c1', 'dataforseo', '/serp/google/organic/task_get/regular', 0.001, now() - (g || ' minutes')::interval, 'cron.serp'
 from generate_series(1, 1500) g;
 do $$
 declare
@@ -79,6 +79,10 @@ begin
    where g->>'workspace_id' = '00000000-0000-4000-8000-0000000116c1';
   if ours <> 1.5 then raise exception 'FAIL summary summed % for 1,500 rows of $0.001', ours; end if;
   raise notice 'ok   the summary sums every row';
+  if not exists (select 1 from jsonb_array_elements(s->'groups') g where g->>'job' = 'cron.serp') then
+    raise exception 'FAIL the summary does not group by job';
+  end if;
+  raise notice 'ok   the summary groups by job';
 end $$;
 
 -- --- A client token -----------------------------------------------------------

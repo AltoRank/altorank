@@ -10,7 +10,7 @@ import { getOperatorPreview } from "@/lib/auth/preview";
 import { ScheduledWork } from "./scheduled-work";
 import {
   forecastAll,
-  jobForOperation,
+  jobForSpend,
   measuredRatesFromGroups,
   type JobKey,
   type WorkspaceDrivers,
@@ -139,10 +139,10 @@ export default async function AdminPage() {
   const forecast = forecastAll(drivers, rates);
   const expectedByWs = new Map(forecast.perWorkspace.map((f) => [f.id, f.total]));
 
-  const actual30d: Record<JobKey, number> = { serp: 0, backlinks: 0, generate: 0, geo: 0, analyze: 0 };
+  const actual30d: Record<JobKey, number> = { serp: 0, backlinks: 0, generate: 0, geo: 0, analyze: 0, refresh: 0 };
   for (const g of groups) {
     if (!g.recent) continue;
-    const job = jobForOperation(g.provider, g.operation);
+    const job = jobForSpend(g);
     if (job) actual30d[job] += g.usd;
   }
 

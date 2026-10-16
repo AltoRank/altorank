@@ -61,13 +61,20 @@ export type WorkspaceDrivers = {
   needsFirstLook: boolean;
 };
 
-export type JobKey = "serp" | "backlinks" | "generate" | "geo" | "analyze";
+/**
+ * The scheduled jobs the Operations schedule reports an actual cost for.
+ * `analyze` is the first look, whether the nightly cron or setup bought it;
+ * `refresh` is the scheduled rewrite, which has no forecast of its own.
+ */
+export type JobKey = "serp" | "backlinks" | "generate" | "geo" | "analyze" | "refresh";
+/** The jobs with a monthly forecast. */
+export type ForecastJob = "serp" | "backlinks" | "generate" | "geo";
 
 export type WorkspaceForecast = {
   id: string;
   domain: string;
   /** USD per month, by job. `analyze` is a one-off and reported separately. */
-  monthly: Record<Exclude<JobKey, "analyze">, number>;
+  monthly: Record<ForecastJob, number>;
   oneOff: number;
   total: number;
 };
@@ -96,7 +103,7 @@ export function forecastWorkspace(w: WorkspaceDrivers, rates: RateCard = DEFAULT
 
 export type Forecast = {
   perWorkspace: WorkspaceForecast[];
-  byJob: Record<Exclude<JobKey, "analyze">, number>;
+  byJob: Record<ForecastJob, number>;
   oneOff: number;
   monthlyTotal: number;
   /** Set when more workspaces opted into GEO than one weekly run can serve. */
@@ -124,18 +131,53 @@ export function forecastAll(workspaces: WorkspaceDrivers[], rates: RateCard = DE
   };
 }
 
+/** provider_spend.job, as the schedule files it. A job not named here is not a scheduled one. */
+const JOB_OF: Record<string, JobKey> = {
+  "cron.generate": "generate",
+  "cron.serp": "serp",
+  "cron.serp-collect": "serp",
+  "cron.geo": "geo",
+  "cron.analyze": "analyze",
+  "cron.refresh": "refresh",
+  // Setup is a first look bought from the wizard instead of the night.
+  onboarding: "analyze",
+};
+
 /**
- * Which scheduled job a recorded operation belongs to, so actuals can sit in
- * the same row as the forecast. Null for anything not driven by a cron.
+ * Which scheduled job a recorded call belongs to, so actuals can sit in the
+ * same row as the forecast. Null for anything not driven by a cron.
+ *
+ * By the work that bought it (provider_spend.job, migration 116) when the row
+ * says: every call a cron makes is filed under that cron (observedCron), and
+ * setup's under the first look. A row from before that is read the old way,
+ * by its endpoint, with two corrections: a call made under a first look's
+ * budget (a `stage`) is the first look's, and a model call is the writer's
+ * only when it was bought for an article. Before, every model call - a
+ * refresh, the wizard's profile read, setup's - was filed under generate, and
+ * the first look's Actual was always empty.
  */
-export function jobForOperation(provider: string, operation: string): JobKey | null {
-  if (provider === "anthropic") return "generate";
-  if (operation.startsWith("/serp/google/organic/task_")) return "serp";
-  if (operation.startsWith("/serp/google/organic/tasks_ready")) return "serp";
-  if (operation.startsWith("/backlinks/")) return "backlinks";
-  if (operation.startsWith("/ai_optimization/")) return "geo";
-  if (operation.startsWith("/serp/google/organic/live/advanced")) return "generate";
-  if (operation.startsWith("/keywords_data/google_ads/keywords_for_keywords")) return "generate";
+export function jobForSpend(row: {
+  provider: string;
+  operation: string;
+  job?: string | null;
+  stage?: string | null;
+  hasArticle?: boolean;
+}): JobKey | null {
+  if (row.job) {
+    const job = JOB_OF[row.job] ?? null;
+    // The weekly backlink sync runs inside cron/serp and has a row of its own.
+    if (job === "serp" && row.operation.startsWith("/backlinks/")) return "backlinks";
+    return job;
+  }
+  if (row.stage) return "analyze";
+  if (row.operation.startsWith("editor/")) return null;
+  if (row.provider === "anthropic") return row.hasArticle ? "generate" : null;
+  if (row.operation.startsWith("/serp/google/organic/task_")) return "serp";
+  if (row.operation.startsWith("/serp/google/organic/tasks_ready")) return "serp";
+  if (row.operation.startsWith("/backlinks/")) return "backlinks";
+  if (row.operation.startsWith("/ai_optimization/")) return "geo";
+  if (row.operation.startsWith("/serp/google/organic/live/advanced")) return "generate";
+  if (row.operation.startsWith("/keywords_data/google_ads/keywords_for_keywords")) return "generate";
   return null;
 }
 

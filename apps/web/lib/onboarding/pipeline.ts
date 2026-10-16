@@ -152,7 +152,7 @@ export async function runOnboarding(
   // (lib/seo/site-urls.ts): the voice read, the readiness check, the page
   // crawl and the link pool used to fetch each of them for themselves, four
   // or five times, against hosts that ban after ten requests in forty seconds.
-  const run = () => withSiteReads(() => withSpendScope({ workspaceId: workspace.id, runId, budget: opened?.budget ?? null }, () =>
+  const run = () => withSiteReads(() => withSpendScope({ workspaceId: workspace.id, runId, job: "onboarding", budget: opened?.budget ?? null }, () =>
     runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", runId, opened?.read ?? null, clock ?? null),
   ));
   return clock ? withRunClock(clock, run) : run();

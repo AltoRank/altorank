@@ -23,6 +23,8 @@ export interface SpendGroup {
   workspaceId: string | null;
   /** The first look's stage (migration 106); null outside one. */
   stage: string | null;
+  /** Which work bought them (migration 116): a cron's name, `onboarding`, `editor`. */
+  job: string | null;
   /** Whether the rows were bought for an article. */
   hasArticle: boolean;
   /** Made at or after the summary's `since`. */
@@ -48,6 +50,7 @@ export interface SpendRow {
   operation: string;
   workspace_id: string | null;
   stage?: string | null;
+  job?: string | null;
   article_id: string | null;
   cost_usd: number | string | null;
   created_at: string;
@@ -66,6 +69,7 @@ export function summarizeSpendRows(rows: readonly SpendRow[], since: Date): Spen
       operation: r.operation,
       workspaceId: r.workspace_id ?? null,
       stage: r.stage ?? null,
+      job: r.job ?? null,
       hasArticle: Boolean(r.article_id),
       recent,
     };
@@ -96,6 +100,7 @@ export function parseSpendSummary(raw: unknown): SpendSummary {
       operation: String(g.operation),
       workspaceId: typeof g.workspace_id === "string" ? g.workspace_id : null,
       stage: typeof g.stage === "string" ? g.stage : null,
+      job: typeof g.job === "string" ? g.job : null,
       hasArticle: g.has_article === true,
       recent: g.recent === true,
       calls: Number(g.calls ?? 0),
@@ -119,14 +124,17 @@ export async function readSpendSummary(db: SupabaseClient, since: Date): Promise
       error: { message: string } | null;
       count?: number | null;
     }>;
-  let rows: SpendRow[];
-  try {
-    rows = await readAllPages<SpendRow>("provider_spend", page("id, provider, operation, workspace_id, stage, article_id, cost_usd, created_at"));
-  } catch {
-    // Before migration 106 there is no `stage`.
-    rows = await readAllPages<SpendRow>("provider_spend", page("id, provider, operation, workspace_id, article_id, cost_usd, created_at"));
+  // Without 116 there is no `job`, and before 106 no `stage`: each read asks
+  // for one column less, and the last one's error is the one thrown.
+  const base = "id, provider, operation, workspace_id, article_id, cost_usd, created_at";
+  const shapes = [`${base}, stage, job`, `${base}, stage`, base];
+  for (let i = 0; ; i++) {
+    try {
+      return summarizeSpendRows(await readAllPages<SpendRow>("provider_spend", page(shapes[i])), since);
+    } catch (err) {
+      if (i === shapes.length - 1) throw err;
+    }
   }
-  return summarizeSpendRows(rows, since);
 }
 
 /** Sum groups by a key, for the page's breakdowns. */

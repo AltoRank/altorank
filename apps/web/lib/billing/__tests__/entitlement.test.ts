@@ -100,7 +100,14 @@ function resolveImport(spec: string): string | null {
 
 /** A call that writes a provider_spend row, i.e. money left the account. */
 const SPENDS = /\brecordSpend\s*\(|\bsetSpendReporter\s*\(|\bwithSpendScope\s*\(/;
-const SPEND_MODULE = join(APP_DIR, "lib", "billing", "spend.ts");
+/**
+ * Where the spend calls are declared rather than made. spend.ts declares
+ * recordSpend. spend-scope.ts declares the scopes, and its own helpers call
+ * withSpendScope to label work (withStage, withSpendJob); every cron imports
+ * it through observedCron, which files each run's spend under the cron's name,
+ * and labelling a row is not buying one.
+ */
+const DECLARES = [join(APP_DIR, "lib", "billing", "spend.ts"), join(APP_DIR, "lib", "billing", "spend-scope.ts")];
 
 /**
  * The file, reachable from this route, that spends money - or null. Depth is
@@ -111,8 +118,8 @@ function spendSite(file: string, seen = new Set<string>(), depth = 0): string | 
   if (depth > 6 || seen.has(file)) return null;
   seen.add(file);
   const src = readFileSync(file, "utf8");
-  // spend.ts declares recordSpend; declaring it is not spending.
-  if (file !== SPEND_MODULE && SPENDS.test(src)) return file;
+  // Declaring a spend call is not spending.
+  if (!DECLARES.includes(file) && SPENDS.test(src)) return file;
   // Every runtime import or re-export from an app path. `import type` and
   // `export type` lines bring no code, so a type shared with a paid module is
   // not an edge to its spend.

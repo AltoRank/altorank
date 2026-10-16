@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
         const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
         let raw = "";
         let sentAt = 0;
-        const final = await withSpendScope({ workspaceId, articleId }, () =>
+        const final = await withSpendScope({ workspaceId, articleId, job: "editor" }, () =>
           streamMetered(
             client,
             {
