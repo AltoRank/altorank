@@ -15,6 +15,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { anthropicCost, anthropicEstimate } from "@/lib/billing/spend";
 import { recordSpendByDefault } from "@/lib/billing/default-spend";
 import { claimSpend } from "@/lib/billing/spend-scope";
+import { METERED_CALL_DEADLINE_MS } from "@/lib/onboarding/time-limits";
 
 export async function createMetered(
   client: Anthropic,
@@ -25,12 +26,19 @@ export async function createMetered(
   const claim = await claimSpend(operation, anthropicEstimate(params.model, promptChars, params.max_tokens));
   let cost: number | null = 0;
   try {
-    const response = await client.messages.create(params);
+    // Bounded end to end: the SDK's own timeout stops when the headers come,
+    // and the voice read is awaited before a first look's plan.
+    const response = await client.messages.create(params, { signal: AbortSignal.timeout(METERED_CALL_DEADLINE_MS) });
     const inputTokens = response.usage?.input_tokens ?? 0;
     const outputTokens = response.usage?.output_tokens ?? 0;
     cost = anthropicCost(params.model, inputTokens, outputTokens);
     recordSpendByDefault({ provider: "anthropic", operation, costUsd: cost, inputTokens, outputTokens });
     return response;
+  } catch (err) {
+    // Out of time, it may still have been billed: the claim keeps its estimate.
+    const name = (err as { name?: unknown } | null)?.name;
+    if (name === "APIConnectionTimeoutError" || name === "APIUserAbortError" || name === "AbortError" || name === "TimeoutError") cost = null;
+    throw err;
   } finally {
     await claim.settle(cost);
   }

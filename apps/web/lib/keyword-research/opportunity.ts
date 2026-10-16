@@ -13,7 +13,7 @@ import { getLocale } from "@/lib/seo/locales";
 import { canonicalPage, describeMatch, intentMatcher, type IntentBasis, type IntentMatch } from "./intent";
 import { readIntentLeaders, stageWords, type IntentLeader, type OnCalendar } from "./intent-leaders";
 import { canSpendOnSite, SpendRefusedError } from "@/lib/billing/spend-gate";
-import { currentSpendScope, isBudgetRefusal, watchRefusals, withStage } from "@/lib/billing/spend-scope";
+import { currentSpendScope, isBudgetRefusal, watchRefusals, withSpendScope, withStage, type RunBudget } from "@/lib/billing/spend-scope";
 import { anthropicEstimate } from "@/lib/billing/spend";
 import { anthropicModel } from "@/lib/ai/models";
 import { estimateDataForSEOUsd } from "@/lib/seo/dataforseo-cost";
@@ -140,6 +140,16 @@ export interface FirstLook {
    * again minutes later (lib/onboarding/pipeline.ts).
    */
   serps?: Map<string, SerpData>;
+  /**
+   * When this first look's qualification ends, in epoch milliseconds
+   * (lib/onboarding/time-limits.ts FIRST_LOOK_QUALIFY_MS from the start of
+   * planning). Past it nothing more is bought or waited for: a term not
+   * finished is left not judged - no verdict saved, nothing parked - and the
+   * plan is made from what was judged. Absent: no deadline.
+   */
+  deadline?: number;
+  /** Set when the deadline ended a qualification with terms still unfinished: the run's screen says so. */
+  timedOut?: boolean;
 }
 export interface OpportunityContext {
   domain: string;
@@ -315,7 +325,11 @@ export async function qualifyOpportunities(
     return out;
   }
 
-  const pending = modelAvailable() && hasDataForSEOCredentials()
+  // A first look past its deadline buys nothing more: the cached verdicts
+  // above are what it has.
+  const deadline = options.firstLook?.deadline ?? null;
+  const pastDeadline = () => deadline !== null && Date.now() >= deadline;
+  const pending = modelAvailable() && hasDataForSEOCredentials() && !pastDeadline()
     ? candidates.filter((c) => !out.has(c.id)).slice(0, QUALIFICATION_LIMIT) : [];
   // The spend gate, here and not only in the callers. Qualification buys a
   // model verdict and a results page per term, and the nightly pool refill,
@@ -331,6 +345,20 @@ export async function qualifyOpportunities(
   }
   const spend = { supabase, workspaceId };
   const firstLook = options.firstLook;
+  // The deadline, as something to wait on: everything below that waits -
+  // for the buyer test, for room, for the terms in flight - waits for it
+  // too, and stops when it comes. `closed` is the stage over: nothing more
+  // is started, asked or saved.
+  let closed = false;
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+  let waiters: Array<() => void> = [];
+  const wake = () => { const w = waiters; waiters = []; for (const f of w) f(); };
+  const deadlineReached = new Promise<"deadline">((resolve) => {
+    if (deadline === null || !pending.length) return;
+    deadlineTimer = setTimeout(() => { closed = true; wake(); resolve("deadline"); }, Math.max(0, deadline - Date.now()));
+    deadlineTimer.unref?.();
+  });
+  try {
   // Under a first look's budget every paid read below claims its estimate
   // first (lib/billing/spend-scope.ts). A term whose read was refused is not
   // judged: no verdict is saved for it and it is left out of `out`, so the
@@ -348,9 +376,15 @@ export async function qualifyOpportunities(
     if (v) saved.set(c.term.trim().toLowerCase(), v);
   }
   const toAsk = pending.filter((c) => !saved.has(c.term.trim().toLowerCase()));
+  const notAsked = { value: { verdicts: new Map<string, FitVerdict>() } as Pick<FitJudgement, "verdicts">, refused: false };
   const asked = toAsk.length
-    ? await watchRefusals(() => timed("buyer_fit", () => withStage("buyer_fit", () => judgeBuyerFitFor(context, toAsk.map((c) => c.term), { spend }))))
-    : { value: { verdicts: new Map<string, FitVerdict>() }, refused: false };
+    ? await Promise.race([
+        watchRefusals(() => timed("buyer_fit", () => withStage("buyer_fit", () => judgeBuyerFitFor(context, toAsk.map((c) => c.term), { spend })))),
+        // Past the deadline the batch is not judged; the test's own calls
+        // settle their claims when they end.
+        deadlineReached.then(() => notAsked),
+      ])
+    : notAsked;
   const fit = asked.value;
   for (const [term, v] of saved) if (!fit.verdicts.has(term)) fit.verdicts.set(term, v);
   // Under a budget, each batch is cut to what the room left can judge before
@@ -381,32 +415,67 @@ export async function qualifyOpportunities(
   // term behind it. `pledged` is what started terms will claim and have not
   // yet: two terms started together must not both count the same room.
   const width = firstLook ? FIRST_LOOK_JUDGE_ROUND : JUDGE_ROUND;
-  // Terms making calls, and the ones waiting for room.
-  let active = 0;
-  let waiters: Array<() => void> = [];
-  const wake = () => { const w = waiters; waiters = []; for (const f of w) f(); };
+  // The claims each running term holds that have not settled yet, counted on
+  // the way through the budget. Only a settle gives room back - a claim
+  // settles at or below its estimate, and nothing else in the row moves down
+  // - so a term refused while another running term holds one of these waits
+  // for a settle and asks again, and a term refused with none held elsewhere
+  // is at the budget's real end at once. It used to wait while any other
+  // term was still running, holding a claim or not, so a term that never came
+  // back held every waiter with it. A term's claims stop counting when the
+  // term ends: one it left unsettled is not going to settle now.
+  const claimsHeld = new Map<string, number>();
+  let settles = 0;
+  const trackedFor = (id: string): RunBudget | null => budget && {
+    runId: budget.runId,
+    async claim(stage, wantUsd, minUsd) {
+      const granted = await budget.claim(stage, wantUsd, minUsd);
+      if (granted !== null) claimsHeld.set(id, (claimsHeld.get(id) ?? 0) + 1);
+      return granted;
+    },
+    async settle(stage, grantedUsd, actualUsd) {
+      try {
+        await budget.settle(stage, grantedUsd, actualUsd);
+      } finally {
+        if (claimsHeld.has(id)) claimsHeld.set(id, Math.max(0, claimsHeld.get(id)! - 1));
+        settles += 1;
+        wake();
+      }
+    },
+    room: (stage) => budget.room(stage),
+  };
+  // A term waiting for room is not calling: a claim it holds is not about to
+  // settle (none should be held - every paid call settles before it returns -
+  // but two waiters each counting the other's would wait for good).
+  const waiting = new Set<string>();
+  const heldElsewhere = (id: string) => [...claimsHeld].some(([other, n]) => other !== id && n > 0 && !waiting.has(other));
+  /** Stop starting and asking: refused at the budget's real end. Whoever waits stops now too. */
+  const stop = () => { stopped = true; wake(); };
   /**
-   * Make a paid call; when its claim is refused while another term is still
-   * calling, wait for that term's call to settle and ask again. Refused with
-   * nobody else calling is the budget's real end, and stops, as it always
-   * has. Every attempt still claims before it calls.
+   * Make a paid call for term `id`; when its claim is refused while another
+   * running term holds a claim, wait for a settle (or the deadline) and ask
+   * again. Every attempt still claims before it calls; the call is the
+   * caller's to skip once the stage is closed.
    */
-  const patiently = async <T,>(call: () => Promise<{ value: T; refused: boolean }>): Promise<{ value: T; refused: boolean }> => {
-    let got = await call();
-    // Only a call that went through changes the room: a refused one wakes
-    // nobody, or two waiting terms would wake each other for ever.
-    if (!got.refused) wake();
-    while (got.refused && budget && active - 1 > 0) {
-      active -= 1;
-      await new Promise<void>((r) => waiters.push(r));
-      active += 1;
-      // Another term met the budget's real end while this one waited: the
-      // stage is over, and this term is left not judged without asking.
-      if (stopped) return got;
-      got = await call();
-      if (!got.refused) wake();
+  const patiently = async <T,>(id: string, call: () => Promise<{ value: T; refused: boolean }>): Promise<{ value: T; refused: boolean }> => {
+    for (;;) {
+      const before = settles;
+      const got = await call();
+      if (!got.refused || !budget || closed) return got;
+      // Until a settle lands after the refusal - then the room it was refused
+      // on has grown, and it is asked again at once.
+      while (settles === before) {
+        // Nothing held elsewhere can settle and give room back: no wake
+        // would come, and this is the budget's real end.
+        if (!heldElsewhere(id)) return got;
+        waiting.add(id);
+        await new Promise<void>((r) => waiters.push(r));
+        waiting.delete(id);
+        // The stage met the budget's real end, or its deadline, while this
+        // one waited: it is left not judged without asking.
+        if (stopped || closed) return got;
+      }
     }
-    return got;
   };
   let pledged = 0;
   const judgeTerm = async (c: OpportunityCandidate, release: (keep?: number) => void): Promise<void> => {
@@ -414,7 +483,7 @@ export async function qualifyOpportunities(
     const verdict = fit.verdicts.get(c.term.trim().toLowerCase());
     // No buyer decision because the budget refused the batch's read: not
     // judged, which is not the same as "the model returned none".
-    if (!verdict && asked.refused) { stopped = true; return; }
+    if (!verdict && asked.refused) { stop(); return; }
     const result: Opportunity = { ...stamp(), status: "pending", cause: "no_verdict",
       reason: "The buyer test returned no decision for this term. It is asked again on the next run." };
     if (verdict?.keep === false) {
@@ -427,7 +496,7 @@ export async function qualifyOpportunities(
       // the page again when it is asked again.
       const fresh = { ...result };
       let failed = false;
-      const page = await patiently(() => watchRefusals(async () => {
+      const page = await patiently(c.id, () => watchRefusals(async () => {
         try {
           const serp = await timed("results_pages", () => withStage("results_pages", () => fetchAdvancedSerp(c.term, context, { rich: true })));
           firstLook?.serps?.set(c.term.trim().toLowerCase(), serp);
@@ -443,10 +512,12 @@ export async function qualifyOpportunities(
       }));
       // The page is in: its share of the pledge is in the room's own count.
       release(readUsd);
-      if (page.refused) { stopped = true; return; }
+      if (page.refused) { stop(); return; }
+      // Past the deadline nothing more is asked, and the term is not judged.
+      if (closed) return;
       const input: ResultsJudgeInput | null = page.value ? { term: c.term, sourceUrl: c.source_url, context, verdict, organic: page.value.organic } : null;
       if (input && !failed) {
-        const read = await patiently(() => watchRefusals(async () => {
+        const read = await patiently(c.id, () => watchRefusals(async () => {
           // The read is about to claim its own estimate, which the room then
           // counts: its share of the pledge goes now, not after the read, or
           // the same read is counted twice for as long as it runs - which
@@ -466,10 +537,11 @@ export async function qualifyOpportunities(
           }
           return input;
         }));
-        if (read.refused) { stopped = true; return; }
+        if (read.refused) { stop(); return; }
       }
       // The first read is made: nothing of this term's pledge is left.
       release(0);
+      if (closed) return;
       try {
         // A first look asks the judge a second time before it approves: the
         // same results page read twice gave needs_page, then qualified
@@ -479,8 +551,9 @@ export async function qualifyOpportunities(
         // read the budget refused leaves the term not judged, as a refused
         // first read does: one approval is not what a first look plans on.
         if (firstLook && input && (result.status as Opportunity["status"]) === "qualified") {
-          const again = await patiently(() => watchRefusals(() => timed("judge", () => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend })))));
-          if (again.refused) { stopped = true; return; }
+          const again = await patiently(c.id, () => watchRefusals(() => timed("judge", () => withStage("judge", () => judgeOnResults({ ...stamp(), status: "pending", cause: "no_verdict", reason: "" }, input, { spend })))));
+          if (again.refused) { stop(); return; }
+          if (closed) return;
           const second = again.value;
           if (second.status === "rejected") {
             const first = result.reason;
@@ -496,21 +569,23 @@ export async function qualifyOpportunities(
         result.reason = `Qualification could not finish: ${err instanceof Error ? err.message.slice(0, 200) : "provider call failed"}. It is retried on the next run.`;
       }
     }
+    // A verdict that arrives after the deadline is not saved: the plan was
+    // made without it, and the term stays as it was, not judged.
+    if (closed) return;
     await save(c, result, verdict ?? null);
     } finally {
       release();
-      // This term makes no more calls: whoever waits for room asks again.
-      active -= 1;
-      wake();
     }
   };
   const queue = [...pending];
   const running = new Set<Promise<void>>();
-  while (queue.length && !stopped) {
+  // A running term finishing, or the deadline: whichever comes first.
+  const nextTermOrDeadline = () => Promise.race([...running, deadlineReached]);
+  while (queue.length && !stopped && !closed) {
     // A term waiting for room to ask its next read goes first: a new term
     // started now would take the room it is waiting for, and an approval's
     // second read is worth more than another candidate's first.
-    if (running.size >= width || waiters.length) { await Promise.race(running); continue; }
+    if (running.size >= width || waiters.length) { await nextTermOrDeadline(); continue; }
     const c = queue[0];
     const pays = Boolean(budget) && paidRead(c);
     if (pays) {
@@ -519,21 +594,39 @@ export async function qualifyOpportunities(
       if (free !== null && free < perTerm) {
         // Not even the next term fits now: wait for a running one to give
         // its hold back, or, with none running, the rest are not judged.
-        if (!running.size) { stopped = true; break; }
-        await Promise.race(running);
+        if (!running.size) { stop(); break; }
+        await nextTermOrDeadline();
         continue;
       }
     }
+    if (closed) break;
     queue.shift();
     let held = pays ? pledgePerTerm : 0;
     pledged += held;
     // Down to `keep`, never up: what the term may still claim.
     const release = (keep = 0) => { const next = Math.min(held, Math.max(0, keep)); pledged -= held - next; held = next; };
-    active += 1;
-    const term: Promise<void> = judgeTerm(c, release).finally(() => { running.delete(term); });
+    const tracked = trackedFor(c.id);
+    const work = tracked ? () => withSpendScope({ budget: tracked }, () => judgeTerm(c, release)) : () => judgeTerm(c, release);
+    claimsHeld.set(c.id, 0);
+    const term: Promise<void> = work().finally(() => {
+      running.delete(term);
+      // Its claims stop counting: whoever waited on them re-checks.
+      claimsHeld.delete(c.id);
+      wake();
+    });
+    // A term still running when the deadline ends the stage is not waited
+    // for, and whatever it ends with is nobody's to hear.
+    term.catch(() => undefined);
     running.add(term);
   }
-  await Promise.all(running);
+  const unfinished = await Promise.race([Promise.all(running).then(() => 0), deadlineReached.then(() => running.size)]);
+  if (unfinished > 0 || (closed && queue.length)) {
+    if (firstLook) firstLook.timedOut = true;
+    console.warn(`[keyword-research/opportunity] qualification reached the first look's deadline: ${unfinished} term${unfinished === 1 ? "" : "s"} unfinished and ${queue.length} not started are left not judged`);
+  }
+  } finally {
+    clearTimeout(deadlineTimer);
+  }
   // One article per search. A topic already live or drafted, or planned and
   // still to be written, owns its search, and a new approval for it - the
   // same results page, or the same words where no page was bought - is
