@@ -52,6 +52,7 @@ function client(
   rankings: Array<{ keyword_id: string; position: number; checked_at: string }> = [],
   pages: Array<{ url: string; keyword: string | null }> = [],
   gsc: Array<{ query: string; impressions: number }> = [],
+  targets: Array<{ url: string; keyword: string | null }> = [],
 ): SupabaseClient {
   seenFilters = [];
   const empty = { data: [] as unknown[] };
@@ -86,7 +87,9 @@ function client(
               ? { data: pages }
               : table === "analytics_metrics"
                 ? { data: gsc }
-                : empty,
+                : table === "link_targets"
+                  ? { data: targets }
+                  : empty,
       );
     },
   } as unknown as SupabaseClient;
@@ -246,6 +249,35 @@ describe("recommendKeywords — a page on the site already targets the query", (
   it("leaves a term alone when no page targets it", async () => {
     const recs = await recommendKeywords(client(ROWS_, 0, [], []), "ws1");
     expect(recs.find((r) => r.term === "rankingcoach alternative")!.existingPageUrl).toBeNull();
+  });
+});
+
+describe("recommendKeywords — a post the site already has, matched by its own words", () => {
+  // 2026-10-15 audit: "already covered" compared a topic to each page's
+  // three-word slug guess by exact words, so a post whose slug framed the
+  // query ("how to choose ...") never covered it, and the sitemap's posts the
+  // crawl had not read were not compared at all.
+  const ROWS_: Row[] = [
+    { id: "w", term: "website design account", volume: 1200, difficulty: 28, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
+    { id: "c", term: "small business websites", volume: 2400, difficulty: 39, buyer_fit: { keep: true, reason: null, funnel: "buyer" } },
+  ];
+  it("covers a search by a crawled page whose slug holds its words", async () => {
+    const pages = [{ url: "https://x.co/blog/how-to-choose-website-design-account/", keyword: "choose website design" }];
+    const recs = await recommendKeywords(client(ROWS_, 60, [], pages), "ws1");
+    expect(recs.find((r) => r.term === "website design account")!.existingPageUrl).toBe(pages[0].url);
+    expect(recs.find((r) => r.term === "small business websites")!.existingPageUrl).toBeNull();
+  });
+  it("covers a search by a sitemap post the crawl never read", async () => {
+    const targets = [{ url: "https://x.co/small-business-websites-that-convert/", keyword: "small business websites" }];
+    const recs = await recommendKeywords(client(ROWS_, 60, [], [], [], targets), "ws1");
+    const rec = recs.find((r) => r.term === "small business websites")!;
+    expect(rec.existingPageUrl).toBe(targets[0].url);
+    expect(rec.action).toBe("skip");
+  });
+  it("does not cover a broader search with a narrower post", async () => {
+    const targets = [{ url: "https://x.co/blog/website-design-account-pricing-for-dentists", keyword: null }];
+    const recs = await recommendKeywords(client(ROWS_, 60, [], [], [], targets), "ws1");
+    expect(recs.find((r) => r.term === "website design account")!.existingPageUrl).toBeNull();
   });
 });
 

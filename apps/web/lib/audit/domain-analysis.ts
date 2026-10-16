@@ -49,6 +49,7 @@ import { classifyIntent } from "@/lib/seo/intent";
 import { buildTopicalProfile, type TopicalProfile } from "@/lib/seo/topical-profile";
 import { detectPlatform, type Detection } from "@/lib/cms/detect";
 import { discoverUrls, recordLinkedPages } from "@/lib/seo/site-crawl";
+import { primeSiteReads } from "@/lib/seo/site-urls";
 import { syncBacklinks } from "@/lib/seo/backlinks";
 import { fetchDomainMetrics } from "@/lib/seo/domain-metrics";
 import { e2eStubsEnabled, stubAnalyseDomain } from "@/lib/e2e/stubs";
@@ -463,6 +464,9 @@ export async function analyseDomain(options: {
   let readiness: ReadinessResult | null = null;
   try {
     const result = await timed("readiness", () => runAgentReadiness(domain, recorded));
+    // What it read - robots.txt, the sitemap, the homepage - is offered to
+    // every later reader in this run (lib/seo/site-urls.ts withSiteReads).
+    primeSiteReads(recordedBodies(recorded.resources));
     if (result.error) {
       layers.push({ id: "readiness", status: "failed", detail: result.error });
     } else {
