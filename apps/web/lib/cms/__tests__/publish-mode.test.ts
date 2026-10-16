@@ -122,20 +122,31 @@ describe("Webflow", () => {
 describe("Shopify", () => {
   const shopify = new ShopifyAdapter({ type: "shopify", storeUrl: "https://s.myshopify.com", accessToken: "t", blogId: "7", blogHandle: "news" });
 
-  it("draft is published=false with no published_at", async () => {
-    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ article: { id: 1, handle: "hello" } }) });
+  // GraphQL: the byline query, then articleCreate. Answered by operation name.
+  beforeEach(() => {
+    mockFetch.mockImplementation(async (_url: string, init: RequestInit) => {
+      const query = JSON.parse(String(init.body)).query as string;
+      const data = query.includes("AltoRankShop")
+        ? { shop: { name: "Store" } }
+        : { articleCreate: { article: { id: "gid://shopify/Article/1", handle: "hello" }, userErrors: [] } };
+      return { ok: true, status: 200, json: async () => ({ data }) };
+    });
+  });
+  const createInput = () => {
+    const call = mockFetch.mock.calls.find(([, init]) => String(init.body).includes("AltoRankArticleCreate"));
+    return JSON.parse(String(call![1].body)).variables.article as Record<string, unknown>;
+  };
+
+  it("draft is isPublished=false with no publishDate", async () => {
     await shopify.publish(draft);
-    const article = body(0).article as Record<string, unknown>;
-    expect(article.published).toBe(false);
-    expect(article).not.toHaveProperty("published_at");
+    expect(createInput().isPublished).toBe(false);
+    expect(createInput()).not.toHaveProperty("publishDate");
   });
 
-  it("live is published=true with a published_at", async () => {
-    mockFetch.mockResolvedValue({ ok: true, json: async () => ({ article: { id: 1, handle: "hello" } }) });
+  it("live is isPublished=true with a publishDate", async () => {
     await shopify.publish(unspecified);
-    const article = body(0).article as Record<string, unknown>;
-    expect(article.published).toBe(true);
-    expect(typeof article.published_at).toBe("string");
+    expect(createInput().isPublished).toBe(true);
+    expect(typeof createInput().publishDate).toBe("string");
   });
 });
 

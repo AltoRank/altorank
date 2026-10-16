@@ -289,27 +289,38 @@ describe("Shopify discovery", () => {
     expect([...SHOPIFY_REQUIRED_SCOPES]).toEqual(["read_content", "write_content"]);
   });
 
+  // GraphQL, answered by operation name.
+  const gql = (blogs: Array<{ id: string; title?: string; handle?: string }>) =>
+    mockFetch.mockImplementation(async (_url: string, init: RequestInit) => {
+      const query = JSON.parse(String(init.body)).query as string;
+      const data = query.includes("AltoRankBlogs")
+        ? { blogs: { nodes: blogs } }
+        : query.includes("AltoRankShop")
+          ? { shop: { name: "S" } }
+          : { articleCreate: { article: { id: "gid://shopify/Article/99", handle: "hi" }, userErrors: [] } };
+      return okJson({ data });
+    });
+
   it("lists blogs with the access-token header", async () => {
-    mockFetch.mockResolvedValueOnce(okJson({ blogs: [{ id: 1, title: "News", handle: "news" }] }));
+    gql([{ id: "gid://shopify/Blog/1", title: "News", handle: "news" }]);
     const blogs = await listShopifyBlogs("https://s.myshopify.com/", { accessToken: "tok" });
     const [url, opts] = mockFetch.mock.calls[0];
-    expect(url).toBe("https://s.myshopify.com/admin/api/2025-01/blogs.json");
+    expect(url).toMatch(/^https:\/\/s\.myshopify\.com\/admin\/api\/\d{4}-\d{2}\/graphql\.json$/);
     expect(opts.headers["X-Shopify-Access-Token"]).toBe("tok");
     expect(blogs).toEqual([{ id: "1", title: "News", handle: "news" }]);
   });
 
   it("the adapter resolves its default blog through the same listing", async () => {
-    mockFetch
-      .mockResolvedValueOnce(okJson({ blogs: [{ id: 7, title: "Blog" }] }))
-      .mockResolvedValueOnce(okJson({ article: { id: 99, handle: "hi" } }));
+    gql([{ id: "gid://shopify/Blog/7", title: "Blog", handle: "blog" }]);
     const adapter = new ShopifyAdapter({ type: "shopify", storeUrl: "https://s.myshopify.com", accessToken: "tok" });
     const r = await adapter.publish({ title: "Hi", html: "<p>x</p>", slug: "hi" });
-    expect(mockFetch.mock.calls[1][0]).toBe("https://s.myshopify.com/admin/api/2025-01/blogs/7/articles.json");
+    const create = mockFetch.mock.calls.find(([, init]) => String(init.body).includes("AltoRankArticleCreate"));
+    expect(JSON.parse(String(create![1].body)).variables.article.blogId).toBe("gid://shopify/Blog/7");
     expect(r.externalId).toBe("99");
   });
 
   it("says so when the store has no blog", async () => {
-    mockFetch.mockResolvedValueOnce(okJson({ blogs: [] }));
+    gql([]);
     const adapter = new ShopifyAdapter({ type: "shopify", storeUrl: "https://s.myshopify.com", accessToken: "tok" });
     await expect(adapter.publish({ title: "Hi", html: "", slug: "hi" })).rejects.toThrow("No blogs found on Shopify store");
   });

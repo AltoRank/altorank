@@ -1,9 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { factCheckArticle, approvalBlocker } from "@/lib/ai/fact-check";
-import { tiptapToHtml } from "@/lib/cms/html";
-import type { ArticleResearch } from "@/lib/seo/research";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { needsPlanToShip, CHOOSE_PLAN_MESSAGE } from "@/lib/billing/quota";
@@ -18,8 +15,8 @@ import type { PublishResult } from "@/lib/cms/types";
 import { submitForIndexing } from "@/lib/seo/indexing";
 import { announceDraftApproved } from "@/lib/email/approval-events";
 import type { CMSConfig } from "@/lib/types";
-import { readWorkspaceLanguage } from "@/lib/i18n/workspace-language";
 import { sentBackToReview } from "@/lib/articles/approval";
+import { refuseUnsourcedFiguresIn, writeApproval } from "@/lib/articles/approve";
 
 /**
  * Whether shipping these articles needs a plan, asked of the account that owns
@@ -138,22 +135,8 @@ export async function approveArticle(articleId: string) {
   // The approval itself is the server's write (migration 109): a signed-in
   // user's client may not set `approved` or `approved_by`, so the only way to
   // an approval is this action, after its checks, naming who pressed it.
-  const { data, error } = await createServiceClient()
-    .from("articles")
-    .update({
-      status: "approved",
-      approved_by: user.id,
-      approved_at: new Date().toISOString(),
-      approval_kind: "human",
-      auto_approve_hold_reason: null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", articleId)
-    .eq("status", "review")
-    .select("id")
-    .single();
-
-  if (error || !data) throw new Error("Article must be in review to approve");
+  const moved = await writeApproval([articleId], user.id);
+  if (!moved.length) throw new Error("Article must be in review to approve");
 
   // The sign-off is the one editorial moment somebody else needs to hear
   // about: after it the article can be scheduled or published, and a
@@ -197,22 +180,9 @@ async function refuseUnsourcedFigures(
   // for a plan, so the gate is open here; it is asked again anyway, because
   // this is a read of the body and every such read asks.
   const article = await articleBodyForSession<{ content: unknown; research: unknown; workspace_id: string }>(articleId, "content, research, workspace_id");
-  if (!article.content) return;
-
-  // Read in the site's language: the same patterns generation used. An
-  // unreadable language is `unchecked`, which a person may still approve.
-  const language = await readWorkspaceLanguage(supabase, article.workspace_id, "approve");
-
-  const html = tiptapToHtml(article.content as Record<string, unknown>);
-  const report = factCheckArticle(html, (article.research as ArticleResearch | null) ?? undefined, language);
-
-  await supabase
-    .from("articles")
-    .update({ fact_checks: report, fact_check_verdict: report.verdict })
-    .eq("id", articleId);
-
-  const blocker = approvalBlocker(report);
-  if (blocker) throw new Error(blocker);
+  // The check and the stored report are shared with the session-free path
+  // (lib/articles/approve.ts), so the gate is one implementation.
+  await refuseUnsourcedFiguresIn(supabase, { id: articleId, ...article });
 }
 
 /**
@@ -248,27 +218,13 @@ export async function approveArticles(articleIds: string[]): Promise<string[]> {
   }
   if (!ids.length) return [];
 
-  const { data, error } = await createServiceClient()
-    .from("articles")
-    .update({
-      status: "approved",
-      approved_by: user.id,
-      approved_at: new Date().toISOString(),
-      approval_kind: "human",
-      auto_approve_hold_reason: null,
-      updated_at: new Date().toISOString(),
-    })
-    .in("id", ids)
-    .eq("status", "review")
-    .select("id");
-
-  if (error) throw new Error(error.message);
+  const moved = await writeApproval(ids, user.id);
   // One email per article, not one per click: the recipient cares about the
   // article, and `sent_emails` is keyed by it either way.
-  for (const row of data ?? []) await announceDraftApproved(row.id as string, user);
+  for (const id of moved) await announceDraftApproved(id, user);
   revalidatePath("/articles");
-  for (const row of data ?? []) revalidatePath(`/content/${row.id}`);
-  return (data ?? []).map((r) => r.id as string);
+  for (const id of moved) revalidatePath(`/content/${id}`);
+  return moved;
 }
 
 /**

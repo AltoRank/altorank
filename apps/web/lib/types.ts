@@ -398,7 +398,7 @@ export type WordPressPluginConfig = {
 };
 
 /**
- * How the connector authenticates to one store. Exactly one of the two:
+ * How the connector authenticates to one store. Exactly one of the three:
  *
  *  - `accessToken`: the Admin API access token of a legacy custom app, shown
  *    once in the Shopify admin. Never expires.
@@ -412,8 +412,15 @@ export type WordPressPluginConfig = {
  * `shopifyCredential` in lib/cms/shopify.ts enforces the same at the edge.
  */
 export type ShopifyCredentials =
-  | { accessToken: string; clientId?: undefined; clientSecret?: undefined }
-  | { clientId: string; clientSecret: string; accessToken?: undefined };
+  | { accessToken: string; clientId?: undefined; clientSecret?: undefined; installationId?: undefined }
+  | { clientId: string; clientSecret: string; accessToken?: undefined; installationId?: undefined }
+  /**
+   * Installed from the Shopify App Store. The token lives in
+   * shopify_installations (it expires hourly) and only this pointer is
+   * stored here. Written by the server on install, never accepted from the
+   * connect form: lib/shopify/installations.ts.
+   */
+  | { installationId: string; accessToken?: undefined; clientId?: undefined; clientSecret?: undefined };
 
 export type ShopifyConfig = {
   type: "shopify";
