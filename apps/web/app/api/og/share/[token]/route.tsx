@@ -4,6 +4,7 @@ import { getShareCardFactsByToken } from "@/lib/queries/share";
 import { buildShareCard, CARD_WIDTH, CARD_HEIGHT } from "@/lib/share/card";
 import { isShareToken, publicShareCard } from "@/lib/share/token";
 import { ShareCardView } from "@/components/share/card-view";
+import { SHARE_CARD_CACHE_CONTROL } from "@/lib/share/token";
 
 /**
  * The share card as a PNG, for a link that unfurls.
@@ -12,7 +13,8 @@ import { ShareCardView } from "@/components/share/card-view";
  * does the read, and only `publicShareCard` - the numbers drawn on the
  * picture - reaches satori. Cached for an hour so a post that gets unfurled
  * by a thousand clients costs one render; a revoked token stops resolving
- * within that hour.
+ * within that hour. No stale-while-revalidate: it let a cache keep serving a
+ * revoked card for a further day after the hour was up.
  */
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -25,6 +27,6 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ tok
   return new ImageResponse(<ShareCardView card={{ ...card, omitted: [] }} />, {
     width: CARD_WIDTH,
     height: CARD_HEIGHT,
-    headers: { "Cache-Control": "public, max-age=3600, s-maxage=3600, stale-while-revalidate=86400" },
+    headers: { "Cache-Control": SHARE_CARD_CACHE_CONTROL },
   });
 }
