@@ -17,7 +17,8 @@ vi.mock("@/lib/billing/quota", async (orig) => ({
   ...(await orig<typeof import("@/lib/billing/quota")>()),
   getQuota: async () => ({ limit: 100, used: 1, remaining: 99, reason: "plan", plan: "starter", trial: null }),
 }));
-vi.mock("@/lib/refresh/detect", () => ({ analyzeWorkspace: async () => ({ reason: "ok", pages: 0, created: 0, refreshed: 0, retired: 0 }) }));
+const analyzeWorkspace = vi.fn(async (_db: unknown, _ws: string) => ({ reason: "ok", pages: 0, created: 0, refreshed: 0, retired: 0 }));
+vi.mock("@/lib/refresh/detect", () => ({ analyzeWorkspace: (...a: [unknown, string]) => analyzeWorkspace(...a) }));
 vi.mock("@/lib/plan/pace-budget", () => ({ readPaceBudget: async () => ({ improvementsLeft: 5 }), describePaceBudget: () => "" }));
 vi.mock("@/lib/email/lifecycle", () => ({ notifyRefreshReady: async () => ({ sent: 0, skipped: 0, failed: 0 }) }));
 
@@ -65,6 +66,7 @@ beforeEach(() => {
   process.env.CRON_SECRET = "s";
   vi.useFakeTimers({ toFake: ["Date"] });
   runRefreshTask.mockClear();
+  analyzeWorkspace.mockClear();
   f = fakeSupabase({
     workspaces: [site("a"), site("b"), site("c")],
     refresh_tasks: ["a", "b", "c"].map((w) => due(w, "2026-10-12", "2026-10-10T09:00:00Z")),
@@ -105,5 +107,45 @@ describe("cron/refresh under its two-a-run cap", () => {
     const cappedAgain = next.results.find((r) => r.rewrite?.startsWith("run limit reached"))!.workspaceId;
     expect(cappedAgain).not.toBe(first);
     expect(next.results.find((r) => r.workspaceId === first)!.rewrite).toMatch(/^execution/);
+  });
+});
+
+describe("cron/refresh after its own analysis and after a failed attempt", () => {
+  it("runs the site's next due task when this run's analysis retired the one it had picked", async () => {
+    at("2026-10-12T07:30:00Z");
+    f.tables.workspaces = [{ ...site("a"), refresh_last_analyzed_at: "2026-10-01T00:00:00Z" }];
+    f.tables.refresh_tasks = [
+      due("a", "2026-10-05", "2026-10-01T09:00:00Z"),
+      { ...due("a", "2026-10-12", "2026-10-10T09:00:00Z"), candidate_id: "c-a2" },
+    ];
+    // The pass finds the oldest task's page recovered and cancels its task.
+    analyzeWorkspace.mockImplementationOnce(async () => {
+      f.tables.refresh_tasks.find((t) => t.id === "a-2026-10-05")!.status = "cancelled";
+      return { reason: "ok", pages: 1, created: 0, refreshed: 0, retired: 1 };
+    });
+    const out = await call();
+    expect(runRefreshTask).toHaveBeenCalledTimes(1);
+    expect(runRefreshTask).toHaveBeenLastCalledWith(expect.anything(), "a-2026-10-12");
+    expect(out.rewrites).toBe(1);
+  });
+
+  it("does not make up a day whose rewrite was attempted and failed", async () => {
+    f.tables.workspaces = [site("a")];
+    f.tables.refresh_tasks = [
+      due("a", "2026-10-12", "2026-10-10T09:00:00Z"),
+      { ...due("a", "2026-10-12", "2026-10-10T10:00:00Z"), id: "a-second", candidate_id: "c-a2" },
+    ];
+    runRefreshTask.mockImplementationOnce(async (_db: unknown, taskId: string) => {
+      const t = f.tables.refresh_tasks.find((r) => r.id === taskId)!;
+      Object.assign(t, { status: "failed", started_at: new Date().toISOString(), error: "model error" });
+      return { ok: false, error: "model error" } as never;
+    });
+    at("2026-10-12T07:30:00Z");
+    expect((await call()).rewrites).toBe(1);
+
+    at("2026-10-13T07:30:00Z");
+    const tue = await call();
+    expect(tue.rewrites).toBe(0);
+    expect(runRefreshTask).toHaveBeenCalledTimes(1);
   });
 });

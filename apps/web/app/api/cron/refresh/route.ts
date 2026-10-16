@@ -7,6 +7,7 @@ import { draftHoldReason } from "@/lib/billing/trial-hold";
 import { analyzeWorkspace } from "@/lib/refresh/detect";
 import { runRefreshTask } from "@/lib/refresh/rewrite";
 import { reapStoppedTasks } from "@/lib/refresh/tasks";
+import { isMissingColumn } from "@/lib/supabase/missing-column";
 import { rewriteSlot, runOrder, type DueTask, type RecentRun, type RewriteSlot } from "@/lib/refresh/schedule";
 import { readArticlesWhole } from "@/lib/articles/body-read";
 import { describePaceBudget, readPaceBudget } from "@/lib/plan/pace-budget";
@@ -27,7 +28,7 @@ import { observedCron } from "@/lib/observability/cron";
  *   rewrite   on the workspace's enabled weekdays: run the earliest due task,
  *             one per workspace per day. A model call, and one slot of the
  *             site's article pace. A site whose last rewrite day passed
- *             without one (the run's cap, a short run) gets it the next
+ *             without an attempt (the run's cap, a short run) gets it the next
  *             morning instead, within its weekly count.
  *
  * What comes out of a rewrite is an execution in `awaiting_review`. There is
@@ -74,7 +75,16 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 /** Ids per `.in()` filter, so the request line stays short at any scale. */
 const ID_CHUNK = 100;
 
-/** The due tasks and the trailing week's rewrites of these sites, for lib/refresh/schedule.ts. */
+/**
+ * The due tasks and the trailing week's rewrite attempts of these sites, for
+ * lib/refresh/schedule.ts.
+ *
+ * An attempt is a task the cron claimed (`started_at`, migration 117) or one
+ * that left an execution, counted once per task. A rewrite that failed leaves
+ * no execution but still spent its morning, and often its model call: counting
+ * only executions let a site whose rewrites keep failing be "caught up" every
+ * day instead of once a week. Before 117 only executions can be counted.
+ */
 async function readRunInputs(
   supabase: SupabaseClient,
   ids: string[],
@@ -82,11 +92,15 @@ async function readRunInputs(
   today: string,
 ): Promise<{ due: DueTask[]; recent: RecentRun[] }> {
   const due: DueTask[] = [];
-  const recent: RecentRun[] = [];
+  const latest = new Map<string, RecentRun>();
+  const note = (key: string, run: RecentRun) => {
+    const seen = latest.get(key);
+    if (!seen || Date.parse(run.created_at) > Date.parse(seen.created_at)) latest.set(key, run);
+  };
   const since = new Date(now.getTime() - WEEK_MS).toISOString();
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
     const chunk = ids.slice(i, i + ID_CHUNK);
-    const [tasks, runs] = await Promise.all([
+    const [tasks, runs, started] = await Promise.all([
       supabase
         .from("refresh_tasks")
         .select("id, workspace_id, scheduled_for, created_at")
@@ -97,18 +111,31 @@ async function readRunInputs(
         .order("created_at", { ascending: true }),
       supabase
         .from("refresh_executions")
-        .select("workspace_id, created_at")
+        .select("task_id, workspace_id, created_at")
         .in("workspace_id", chunk)
         .gte("created_at", since),
+      supabase
+        .from("refresh_tasks")
+        .select("id, workspace_id, started_at")
+        .in("workspace_id", chunk)
+        .gte("started_at", since),
     ]);
     if (tasks.error) throw new Error(`refresh_tasks: ${tasks.error.message}`);
     if (runs.error) throw new Error(`refresh_executions: ${runs.error.message}`);
+    if (started.error && !isMissingColumn(started.error)) throw new Error(`refresh_tasks: ${started.error.message}`);
     due.push(...((tasks.data ?? []) as DueTask[]));
-    recent.push(...((runs.data ?? []) as RecentRun[]));
+    for (const r of (runs.data ?? []) as { task_id: string | null; workspace_id: string; created_at: string }[]) {
+      note(r.task_id ?? `execution:${r.created_at}`, { workspace_id: r.workspace_id, created_at: r.created_at });
+    }
+    if (!started.error) {
+      for (const t of (started.data ?? []) as { id: string; workspace_id: string; started_at: string | null }[]) {
+        if (t.started_at) note(t.id, { workspace_id: t.workspace_id, created_at: t.started_at });
+      }
+    }
   }
   // Earliest first across chunks too, which rewriteSlot relies on.
   due.sort((a, b) => a.scheduled_for.localeCompare(b.scheduled_for) || a.created_at.localeCompare(b.created_at));
-  return { due, recent };
+  return { due, recent: [...latest.values()] };
 }
 
 async function run(request: Request) {
@@ -212,6 +239,9 @@ async function run(request: Request) {
     }
 
     try {
+      const days = (ws.refresh_days as number[] | null) ?? [];
+      let slot: RewriteSlot = slots.get(workspaceId) ?? { kind: "none", reason: "not a scheduled day" };
+
       const last = ws.refresh_last_analyzed_at ? Date.parse(ws.refresh_last_analyzed_at as string) : 0;
       if (Date.now() - last > ANALYSIS_STALE_MS) {
         const a = await analyzeWorkspace(supabase, workspaceId, { now, readBodies: readArticlesWhole });
@@ -219,10 +249,15 @@ async function run(request: Request) {
           a.reason === "gsc_not_connected"
             ? "skipped: Search Console is not connected"
             : `${a.pages} pages, ${a.created} new candidates, ${a.refreshed} refreshed, ${a.retired} retired`;
+        // The pass may have retired the candidate behind the task picked
+        // above, which cancels that task. Pick again from what is still due
+        // rather than spend one of the run's slots on a cancelled task.
+        if (a.reason === "ok" && a.retired > 0 && slot.kind !== "none") {
+          const fresh = await readRunInputs(supabase, [workspaceId], now, today);
+          slot = rewriteSlot({ days, now, due: fresh.due, runs: recent.filter((r) => r.workspace_id === workspaceId) });
+        }
       }
 
-      const days = (ws.refresh_days as number[] | null) ?? [];
-      const slot = slots.get(workspaceId) ?? { kind: "none", reason: "not a scheduled day" };
       const budget =
         slot.kind === "none"
           ? null

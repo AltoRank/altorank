@@ -13,7 +13,7 @@
 //     analysed in the same run shares and which a rewrite does not move, so
 //     the same sites could win the slots every week.
 //
-// Now a site whose most recent rewrite day passed without a rewrite gets one
+// Now a site whose most recent rewrite day passed with no attempt gets one
 // the next morning instead (a catch-up), still no more than its weekly count
 // of rewrites and never two in a day; and the order puts the site the cap
 // delayed last time ahead of the ones it did not (see runOrder).
@@ -28,7 +28,11 @@ export interface DueTask {
   created_at: string;
 }
 
-/** A rewrite produced in the trailing week (a `refresh_executions` row). */
+/**
+ * A rewrite attempted in the trailing week, one per task: a task the cron
+ * claimed (`started_at`) or one that left a `refresh_executions` row. A
+ * failed attempt counts: it used its day, and usually its model call.
+ */
 export interface RecentRun {
   workspace_id: string;
   created_at: string;
@@ -37,7 +41,7 @@ export interface RecentRun {
 export type RewriteSlot =
   /** Today is one of the site's days; `task` is the earliest due. */
   | { kind: "scheduled"; task: DueTask }
-  /** The site's last rewrite day (`missed`) produced nothing; run its task today. */
+  /** The site's last rewrite day (`missed`) had no attempt; run its task today. */
   | { kind: "catch_up"; task: DueTask; missed: string }
   | { kind: "none"; reason: string };
 
@@ -57,7 +61,7 @@ export function lastEnabledDayBefore(days: readonly number[], now: Date): string
  * What this site may run today.
  *
  * `due` is the site's scheduled tasks due today or earlier, earliest first;
- * `runs` its rewrites in the trailing seven days.
+ * `runs` its rewrite attempts in the trailing seven days.
  */
 export function rewriteSlot(input: {
   days: readonly number[];
