@@ -101,6 +101,19 @@ describe("the first judge read of a batch", () => {
     expect(order.slice(0, 2)).toEqual(["start a", "end a"]);
   });
 
+  it("holds the rest only for its head start: a slow first read does not stall the batch", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const ended: string[] = [];
+    const ask = firstCallAlone(async (_op, prompt) => { if (prompt === "a") await gate; ended.push(prompt); return prompt; }, 20);
+    const first = ask("op", "a", { maxTokens: 1 });
+    const second = ask("op", "b", { maxTokens: 1 });
+    expect(await second).toBe("b");
+    expect(ended).toEqual(["b"]);
+    release();
+    expect(await first).toBe("a");
+  });
+
   it("does not hold the rest when it fails", async () => {
     const ask = firstCallAlone(async (_op, prompt) => { if (prompt === "a") throw new Error("down"); return prompt; });
     const first = ask("op", "a", { maxTokens: 1 });

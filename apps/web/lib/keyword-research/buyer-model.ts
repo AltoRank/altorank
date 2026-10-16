@@ -73,23 +73,34 @@ export function promptContent(prompt: string, cachePrefix?: number): string | An
 }
 
 /**
- * `ask`, with its first call made alone: the calls that come while it is
- * out wait for its answer before they go. Made for prompts that share a
- * cached prefix (`cachePrefix`): a cache entry is readable only once the
- * call that writes it has answered, so calls sent together would each pay
- * to write the same prefix. A first look sends up to fifteen judge reads at
- * once. The waiting costs little: each of them had its own results page to
- * fetch first.
+ * How long the calls after the first wait for it at most. A cache entry is
+ * readable once the response that writes it has begun, not when it ends: by
+ * then its prompt (here ~3,000 tokens) has been read. Waiting for the whole
+ * answer would tie every other judge read, and the budget each pledged, to
+ * the first: 4-9 seconds when it is well, its full deadline when it hangs.
  */
-export function firstCallAlone(ask: AskModel): AskModel {
+export const FIRST_CALL_HEAD_START_MS = 3_000;
+
+/**
+ * `ask`, with its first call given a head start: the calls that come while
+ * it is out wait for its answer, or `headStartMs`, whichever comes first.
+ * Made for prompts that share a cached prefix (`cachePrefix`): calls sent
+ * together would each pay to write the same prefix, and a first look sends
+ * up to fifteen judge reads at once.
+ */
+export function firstCallAlone(ask: AskModel, headStartMs: number = FIRST_CALL_HEAD_START_MS): AskModel {
   let first: Promise<unknown> | null = null;
   return async (operation, prompt, options) => {
     if (first) {
-      await first.catch(() => undefined);
+      await first;
       return ask(operation, prompt, options);
     }
     const call = ask(operation, prompt, options);
-    first = call;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    first = Promise.race([
+      call.catch(() => undefined),
+      new Promise<void>((resolve) => { timer = setTimeout(resolve, headStartMs); }),
+    ]).finally(() => clearTimeout(timer));
     return call;
   };
 }
