@@ -11,9 +11,9 @@
 --
 -- The push's record on an execution is written by the server
 -- (lib/refresh/push.ts). "Refresh executions by access" (062) is FOR ALL on
--- site membership, so without a guard any member could PATCH
--- `{review_status: 'pushed', pushed_by: <a colleague>}` over PostgREST. For a
--- signed-in user (`auth.uid()` set) the trigger below refuses:
+-- site membership, which also covers these columns, so the trigger below
+-- keeps them server-written. For a signed-in user (`auth.uid()` set) it
+-- refuses:
 --
 -- 1. an INSERT that starts pushed or carries pushed_at, pushed_by or
 --    published_url (executions are written by the refresh cron);
