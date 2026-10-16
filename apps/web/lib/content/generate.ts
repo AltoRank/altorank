@@ -1,3 +1,4 @@
+import { businessEvidence, removeUnsupportedBusinessClaims, businessClaimsNote } from "@/lib/content/business-claims";
 import { assertAutonomousTopic, type Opportunity } from "@/lib/keyword-research/opportunity";
 import { selectArticleQuestions } from "@/lib/ai/article-questions";
 import { languageCodeOf } from "@/lib/keyword-research/locale";
@@ -1307,6 +1308,27 @@ async function writeArticle(
       }
     }
 
+    // Business claims the business never made - a phone number, a town, "30
+    // years", a guarantee, its own about-page greeting - come out before the
+    // fact check reads the draft, and are listed for the reviewer
+    // (lib/content/business-claims.ts). Not on a rewrite: the page it keeps
+    // is the owner's own words.
+    if (!refreshOf) {
+      const evidence = businessEvidence({
+        domain: workspace.domain,
+        profile: workspace.business_profile,
+        facts: siteFacts?.facts,
+        instructions: keywordRow?.instructions ?? null,
+        answers: brief.answers,
+      });
+      const cleaned = removeUnsupportedBusinessClaims(processedHtml, evidence);
+      if (cleaned.removed.length) {
+        processedHtml = cleaned.html;
+        research.businessClaims = cleaned.removed;
+        console.warn(`[generate] removed ${cleaned.removed.length} unsupported business claim(s): ${cleaned.removed.map((r) => r.kind).join(", ")}`);
+      }
+    }
+
     // Two passes: the first asks whether each figure is attributed, the second
     // opens the pages the attributions point at. The second is what catches a
     // real citation carrying a wrong number, which the first cannot see.
@@ -1320,6 +1342,8 @@ async function writeArticle(
     const reviewNotes: string[] = [...(trust?.notes ?? []), ...sourceReviewNotes(research.sourceReview)];
     const figureNote = figureReviewNote(research.sourceFigures, processedHtml, workspace.language);
     if (figureNote) reviewNotes.push(figureNote);
+    const businessNote = businessClaimsNote(research.businessClaims ?? []);
+    if (businessNote) reviewNotes.push(businessNote);
     const linkNote = topicLinkNote(topicPages, processedHtml);
     if (linkNote) reviewNotes.push(linkNote);
     if (!refreshOf) {
