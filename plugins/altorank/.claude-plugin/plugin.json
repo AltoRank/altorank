@@ -2,7 +2,7 @@
   "name": "altorank",
   "displayName": "AltoRank",
   "version": "1.0.0",
-  "description": "Agent-readiness audits, Search Console reporting, keyword research and SEO drafts into a human review queue. Nothing publishes without a person approving it.",
+  "description": "Agent-readiness audits, Search Console reporting, keyword research and SEO drafts into a human review queue. Every publish is attributed to a named person, by a click or by a rule they set; the MCP server has no approve or publish tool.",
   "author": {
     "name": "AltoRank",
     "email": "hello@altorank.co",
