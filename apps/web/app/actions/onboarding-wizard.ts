@@ -18,10 +18,11 @@ import { hasTrainedVoice, readExampleUrls, retrainFromExamples } from "@/lib/voi
 import { trainVoiceProfile } from "@/lib/voice/train";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
-import { canSpend, type SpendDecision } from "@/lib/billing/spend-gate";
+import { canSpend } from "@/lib/billing/spend-gate";
 import { inputKey, keepDoorResult, readDoorCache, takeDoor, type SpendDoor } from "@/lib/billing/spend-doors";
 import { withSpendScope } from "@/lib/billing/spend-scope";
 import { trialGateApplies } from "@/lib/billing/trial";
+import { refusedWhileViewingAs } from "@/lib/auth/impersonation";
 import { type BusinessProfile, type InferenceResult } from "@/lib/onboarding/business-profile";
 import { inferVerifiedBusinessProfile } from "@/lib/onboarding/observed-facts";
 import { looksLikeDomain, resolveCompetitorDomains } from "@/lib/onboarding/competitor-domains";
@@ -80,13 +81,18 @@ async function wizardDoor(
   supabase: Awaited<ReturnType<typeof createClient>>,
   workspaceId: string,
   door: SpendDoor,
-): Promise<{ gate: SpendDecision; refusal: string | null; useId: string | null }> {
+): Promise<{ refusal: null; reason: null; useId: string | null } | { refusal: string; reason: "needs_plan" | "limited"; useId: null }> {
+  // An operator viewing as the account would buy this on theirs, and use up
+  // their count (lib/auth/impersonation.ts). What is already kept is still
+  // handed back by the callers, before they get here.
+  const viewing = await refusedWhileViewingAs(door === "wizard-site-read" ? "Reading the site" : "Looking up competitors");
+  if (viewing) return { refusal: viewing, reason: "limited", useId: null };
   const { accountId, user } = await requireAuth(undefined, { workspaceId });
   const gate = await canSpend(supabase, accountId, { userEmail: user.email ?? undefined, workspaceId, action: "keyword-research" });
-  if (!gate.allowed) return { gate, refusal: gate.message, useId: null };
-  if (gate.reason === "self-host" || gate.reason === "operator") return { gate, refusal: null, useId: null };
+  if (!gate.allowed) return { refusal: gate.message, reason: "needs_plan", useId: null };
+  if (gate.reason === "self-host" || gate.reason === "operator") return { refusal: null, reason: null, useId: null };
   const taken = await takeDoor(door, { accountId, workspaceId }, { preTrial: trialGateApplies(gate.quota) });
-  return taken.allowed ? { gate, refusal: null, useId: taken.useId } : { gate, refusal: taken.message, useId: null };
+  return taken.allowed ? { refusal: null, reason: null, useId: taken.useId } : { refusal: taken.message, reason: "limited", useId: null };
 }
 
 /**
@@ -104,11 +110,11 @@ export async function proposeProfile(workspaceId: string): Promise<InferenceResu
   // One model call per press, and "Try again" is right there on the screen.
   // A new account is inside its free allowance and never sees the gate; a
   // lapsed one that comes back to add a site does.
-  const { gate, refusal, useId } = await wizardDoor(supabase, workspaceId, "wizard-site-read");
+  const { refusal, reason, useId } = await wizardDoor(supabase, workspaceId, "wizard-site-read");
   if (refusal) {
     return {
       profile: null,
-      reason: gate.allowed ? "limited" : "needs_plan",
+      reason,
       source: "none",
       message: refusal,
       localeGuess: guessLocale({ domain: workspace.domain }),
@@ -161,10 +167,11 @@ export async function suggestCompetitors(workspaceId: string, profile: BusinessP
   const key = profileKey(workspace.domain, profile);
   const kept = await readDoorCache<CompetitorSuggestions>("wizard-rivals", workspaceId, key);
   if (kept) return kept;
-  const { gate, refusal, useId } = await wizardDoor(supabase, workspaceId, "wizard-rivals");
-  if (!gate.allowed) return { own: null, suggestions: [], searchRivals: [] };
-  // Past the limit: said as a lookup that could not look, which the step
-  // already words as "name one if you know it".
+  const { refusal, reason, useId } = await wizardDoor(supabase, workspaceId, "wizard-rivals");
+  if (reason === "needs_plan") return { own: null, suggestions: [], searchRivals: [] };
+  // Past the limit, or not bought while viewing as the account: said as a
+  // lookup that could not look, which the step words as "name one if you
+  // know it".
   if (refusal) return { own: null, suggestions: [], searchRivals: [], lookupFailed: true };
   const locale = resolveLocale(profile.language, profile.country);
   const domain = workspace.domain;

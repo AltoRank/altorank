@@ -12,6 +12,8 @@ import { AdminTabs } from "../admin-tabs";
 import { Table } from "../table";
 import { ImpersonateButton } from "./impersonate-button";
 import { tallyArticles } from "@/lib/found-on-site/state";
+import { readAllPages } from "@/lib/supabase/read-all";
+import { customerLastSeen, type CustomerLastSeen, type ViewRecord } from "@/lib/auth/last-seen";
 
 export const metadata: Metadata = { title: "Users" };
 
@@ -54,11 +56,37 @@ function displayName(u: User): string | null {
   return typeof name === "string" && name.trim() ? name.trim() : null;
 }
 
-/** Users whose last sign-in falls inside the trailing window. Outside the
+/** Users whose own last sign-in falls inside the trailing window. Outside the
  *  component so the clock read is not part of render. */
-function seenWithin(users: User[], days: number): number {
+function seenWithin(seen: CustomerLastSeen[], days: number): number {
   const since = Date.now() - days * 24 * 60 * 60 * 1000;
-  return users.filter((u) => u.last_sign_in_at && new Date(u.last_sign_in_at).getTime() >= since).length;
+  return seen.filter((s) => s.at && new Date(s.at).getTime() >= since).length;
+}
+
+/**
+ * Every "View as", by the customer it opened: the sign-in it made is not the
+ * customer's (lib/auth/last-seen.ts). The kept prior sign-in is read when
+ * migration 116 is there, and the rows are read without it when it is not.
+ */
+async function viewsByTarget(admin: SupabaseClient): Promise<Map<string, ViewRecord[]>> {
+  type Row = { target_user_id: string; started_at: string; target_last_sign_in_at?: string | null };
+  let rows: Row[] = [];
+  try {
+    rows = await readAllPages<Row>("admin_impersonations", (from, to, count) =>
+      admin.from("admin_impersonations").select("id, target_user_id, started_at, target_last_sign_in_at", { count }).order("id").range(from, to),
+    );
+  } catch {
+    rows = await readAllPages<Row>("admin_impersonations", (from, to, count) =>
+      admin.from("admin_impersonations").select("id, target_user_id, started_at", { count }).order("id").range(from, to),
+    ).catch(() => []);
+  }
+  const out = new Map<string, ViewRecord[]>();
+  for (const r of rows) {
+    const list = out.get(r.target_user_id) ?? [];
+    list.push({ startedAt: r.started_at, priorSignInAt: "target_last_sign_in_at" in r ? (r.target_last_sign_in_at ?? null) : undefined });
+    out.set(r.target_user_id, list);
+  }
+  return out;
 }
 
 function planLabel(account: AccountRow | undefined): string {
@@ -80,7 +108,7 @@ export default async function AdminUsersPage({
   const needle = q.trim().toLowerCase();
 
   const admin = createServiceClient();
-  const [users, { data: members }, { data: accounts }, { data: workspaces }, { data: articles }, { data: log }] =
+  const [users, { data: members }, { data: accounts }, { data: workspaces }, { data: articles }, { data: log }, views] =
     await Promise.all([
       listAllUsers(admin),
       admin.from("account_members").select("user_id, account_id, role"),
@@ -92,7 +120,10 @@ export default async function AdminUsersPage({
         .select("*")
         .order("started_at", { ascending: false })
         .limit(25),
+      viewsByTarget(admin),
     ]);
+  // Last seen is the customer's own sign-in, not the one "View as" made.
+  const seenOf = new Map(users.map((u) => [u.id, customerLastSeen(u.last_sign_in_at, views.get(u.id) ?? [])]));
 
   const accountById = new Map((accounts ?? []).map((a) => [a.id, a as AccountRow]));
   const membersByUser = new Map<string, MemberRow[]>();
@@ -145,7 +176,7 @@ export default async function AdminUsersPage({
     .sort((a, b) => (b.user.created_at ?? "").localeCompare(a.user.created_at ?? ""));
 
   const confirmed = users.filter((u) => u.email_confirmed_at).length;
-  const seenThisWeek = seenWithin(users, 7);
+  const seenThisWeek = seenWithin([...seenOf.values()], 7);
   const paying = (accounts ?? []).filter((a) => a.plan_status === "active" || a.plan_status === "trialing").length;
 
   return (
@@ -196,7 +227,7 @@ export default async function AdminUsersPage({
         <Card
           className="shrink-0"
           title="Users"
-          meta="“View as” opens their dashboard in this tab, with a bar to come back. Every use is logged below."
+          meta="“View as” signs in as them in this tab, with a bar to come back. Paid setup steps are refused while you view, and Last seen stays theirs. Every use is logged below."
           flush
         >
           <Table
@@ -242,7 +273,13 @@ export default async function AdminUsersPage({
                 )}
               </span>,
               day(r.user.created_at),
-              when(r.user.last_sign_in_at),
+              seenOf.get(r.user.id)?.unknown ? (
+                <span key="seen" className="text-ink-3" title="Their last sign-in was a View as, and the one before it is not on record.">
+                  — (View as)
+                </span>
+              ) : (
+                when(seenOf.get(r.user.id)?.at)
+              ),
               <span key="act" className="flex justify-end">
                 <ImpersonateButton
                   userId={r.user.id}

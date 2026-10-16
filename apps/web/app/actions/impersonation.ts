@@ -106,16 +106,25 @@ export async function startImpersonation(
   // written (migration 030 not applied, database down) the account is not
   // opened, because an unlogged impersonation is the one thing this feature
   // promises never to do.
-  const { data: log, error: logError } = await admin
+  //
+  // The row also keeps the customer's own last sign-in: verifying the link
+  // below stamps a new one, and the Users page shows this one instead
+  // (lib/auth/last-seen.ts). A database without migration 116 has no column
+  // for it, and the row is written without it.
+  const logRow = {
+    operator_user_id: operator.id,
+    operator_email: operator.email,
+    target_user_id: target.id,
+    target_email: target.email,
+  };
+  let { data: log, error: logError } = await admin
     .from("admin_impersonations")
-    .insert({
-      operator_user_id: operator.id,
-      operator_email: operator.email,
-      target_user_id: target.id,
-      target_email: target.email,
-    })
+    .insert({ ...logRow, target_last_sign_in_at: target.last_sign_in_at ?? null })
     .select("id")
     .single();
+  if (logError && /target_last_sign_in_at/.test(logError.message ?? "")) {
+    ({ data: log, error: logError } = await admin.from("admin_impersonations").insert(logRow).select("id").single());
+  }
   if (logError || !log?.id) {
     return {
       error: `Could not write the audit row (${logError?.message ?? "no id returned"}), so the account was not opened. Has migration 030 been applied?`,

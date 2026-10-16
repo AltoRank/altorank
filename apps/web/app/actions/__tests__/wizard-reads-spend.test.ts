@@ -30,6 +30,9 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
+const viewing = vi.hoisted(() => ({ value: null as string | null }));
+vi.mock("@/lib/auth/impersonation", () => ({ refusedWhileViewingAs: async (what: string) => (viewing.value ? `${what} ${viewing.value}` : null) }));
+
 const { currentSpendScope } = await import("@/lib/billing/spend-scope");
 
 const PROFILE = { name: "Acme", description: "An agency that builds websites for clinics.", offerings: ["clinic websites"], audiences: ["clinic owners"], competitors: [], language: "English", country: "Global" };
@@ -65,6 +68,7 @@ const { resetDoorMemory, DOOR_LIMITS } = await import("@/lib/billing/spend-doors
 
 beforeEach(() => {
   resetDoorMemory();
+  viewing.value = null;
   inferScopes.length = 0;
   rivalCalls.length = 0;
   canSpend.mockReset().mockResolvedValue({ allowed: true, reason: "free-allowance", message: null, quota: { reason: "no-plan", trialEligible: true } });
@@ -163,5 +167,26 @@ describe("resolveCompetitor", () => {
     expect(await resolveCompetitor("ws-1", "https://www.other.example/x", null)).toEqual({ domain: "other.example", authority: null, size: null });
     expect(await resolveCompetitor("ws-1", "just a name", null)).toBeNull();
     expect(resolveDomains).not.toHaveBeenCalled();
+  });
+});
+
+describe("while an operator is viewing as the account", () => {
+  it("hands back what is kept, and buys nothing new on their account", async () => {
+    await proposeProfile("ws-1");
+    await suggestCompetitors("ws-1", { ...PROFILE });
+    viewing.value = "is not run while viewing as owner@acme-agency.example";
+    expect((await proposeProfile("ws-1")).profile?.name).toBe("Acme");
+    expect((await suggestCompetitors("ws-1", { ...PROFILE })).suggestions).toHaveLength(1);
+    expect(infer).toHaveBeenCalledTimes(1);
+    expect(findRivals).toHaveBeenCalledTimes(1);
+
+    resetDoorMemory();
+    expect(await proposeProfile("ws-1")).toMatchObject({ profile: null, reason: "limited", message: expect.stringContaining("viewing as") });
+    expect(await suggestCompetitors("ws-1", { ...PROFILE })).toMatchObject({ suggestions: [], lookupFailed: true });
+    expect(await resolveCompetitor("ws-1", "Rival", 20)).toBeNull();
+    expect(infer).toHaveBeenCalledTimes(1);
+    expect(findRivals).toHaveBeenCalledTimes(1);
+    expect(resolveDomains).not.toHaveBeenCalled();
+    expect(canSpend).toHaveBeenCalledTimes(2);
   });
 });
