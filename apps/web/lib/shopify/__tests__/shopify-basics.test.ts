@@ -6,7 +6,7 @@ import { normaliseShopDomain } from "../shop-domain";
 import { verifyShopifyWebhook } from "../webhook-hmac";
 import { SHOPIFY_COMPLIANCE_TOPICS, SHOPIFY_EVENT_TOPICS } from "../webhook-topics";
 import { SHOPIFY_API_VERSION } from "../env";
-import { SHOPIFY_REQUIRED_SCOPES } from "@/lib/cms/shopify";
+import { SHOPIFY_APP_SCOPES } from "@/lib/cms/shopify-scopes";
 
 describe("normaliseShopDomain", () => {
   it.each([
@@ -49,9 +49,9 @@ describe("shopify.app.toml agrees with the code", () => {
       .map((s) => s.trim().replace(/"/g, ""))
       .filter(Boolean);
 
-  it("asks for exactly the adapter's scopes", () => {
+  it("asks for exactly the app's scopes", () => {
     const scopes = /^scopes\s*=\s*"([^"]*)"/m.exec(toml)?.[1].split(",").map((s) => s.trim());
-    expect(scopes).toEqual([...SHOPIFY_REQUIRED_SCOPES]);
+    expect(scopes).toEqual([...SHOPIFY_APP_SCOPES]);
   });
 
   it("subscribes to every topic the route handles, the three privacy topics included", () => {

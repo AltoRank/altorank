@@ -13,6 +13,15 @@
  */
 export const SHOPIFY_REQUIRED_SCOPES = ["read_content", "write_content"] as const;
 
+/**
+ * What the App Store app asks for: publishing needs only the content pair
+ * above (a merchant's own custom app is told exactly that), and the app adds
+ * read_products so a store whose storefront is behind its password page can
+ * still be learned from - product copy is most stores' real content
+ * (lib/shopify/store-content.ts). shopify/shopify.app.toml must match.
+ */
+export const SHOPIFY_APP_SCOPES = [...SHOPIFY_REQUIRED_SCOPES, "read_products"] as const;
+
 export interface ShopifyBlog {
   id: string;
   title: string;
