@@ -14,6 +14,7 @@ import {
   servedUrls,
   topPages,
   windowAnchor,
+  windows,
   WINDOW_DAYS,
 } from "@/lib/gsc/analysis";
 import {
@@ -135,6 +136,7 @@ export default async function DashboardPage() {
   // is stated only when both windows are whole.
   const gscCoverage = health ? coverageOf(health) : rowsCoverage(gscRows);
   const gscToday = windowAnchor(now, gscCoverage.through);
+  const gscWindowEnd = windows(gscToday, WINDOW_DAYS).current.end;
   const traffic = searchPerformance(gscRows, gscToday, WINDOW_DAYS, gscCoverage);
   const bestPages = scopeId ? topPages(gscRows, gscToday, WINDOW_DAYS, 8, gscCoverage) : [];
   const cannibals = scopeId ? cannibalization(gscRows, gscToday) : [];
@@ -269,7 +271,7 @@ export default async function DashboardPage() {
             label: "Organic traffic",
             value: traffic.hasData ? traffic.clicks.current.toLocaleString() : "—",
             unit: " clicks",
-            hint: `Clicks Google reported for the last ${traffic.days} days, ending yesterday. Nothing here is estimated.`,
+            hint: `Clicks Google reported for the ${traffic.days} days ending ${gscWindowEnd}. Search Console publishes two to three days late, so the window ends on its newest day. Nothing here is estimated.`,
             // A synced zero keeps its "0", because nobody clicking IS the
             // measurement; the delta says what Google did report, so the row
             // does not read as a broken integration.
@@ -278,7 +280,7 @@ export default async function DashboardPage() {
                 ? traffic.impressions.current
                   ? `${traffic.impressions.current.toLocaleString()} impressions, no clicks yet`
                   : "no impressions reported yet"
-                : describeChange(traffic.clicks, traffic.days, "clicks")
+                : describeChange(traffic.clicks, traffic.days, "clicks", traffic.currentComplete)
               : gscConnected
                 ? gscNeedsReconnect
                   ? "Google disconnected · reconnect in Settings"
@@ -369,7 +371,7 @@ export default async function DashboardPage() {
               ) : null}
               {traffic.hasData && traffic.previousMeasured && (
                 <span className="text-ink-3">
-                  impressions {describeChange(traffic.impressions, traffic.days, "impressions")}
+                  impressions {describeChange(traffic.impressions, traffic.days, "impressions", traffic.currentComplete)}
                 </span>
               )}
               {bing.connected && (

@@ -238,10 +238,21 @@ export function SearchPerformanceBlock({ perf, connected, needsReconnect, restat
   );
 }
 
-/** "+12% vs previous 28d", "no prior period", or the raw delta when the baseline is zero. */
-export function describeChange(c: { current: number; previous: number | null; changePct: number | null }, days: number, unit: string): string {
+/**
+ * "+12% vs previous 28d", "no prior period", or the raw previous figure when
+ * the baseline is zero. `currentComplete` false (the newest days of the
+ * current window are not synced) states no figure for the previous window at
+ * all: set beside a current total missing its last week, it reads as a drop.
+ */
+export function describeChange(
+  c: { current: number; previous: number | null; changePct: number | null },
+  days: number,
+  unit: string,
+  currentComplete = true,
+): string {
   if (c.previous === null) return "no prior period synced";
   if (c.changePct !== null) return `${c.changePct >= 0 ? "+" : ""}${c.changePct}% vs previous ${days}d`;
+  if (!currentComplete) return "latest days not synced yet, no comparison";
   return `${c.previous.toLocaleString()} ${unit} in the previous ${days}d`;
 }
 
