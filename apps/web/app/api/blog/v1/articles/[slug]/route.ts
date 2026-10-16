@@ -26,10 +26,17 @@ export async function GET(
     .eq("status", "live")
     .is("found_on_site_at", null)
     .eq("slug", slug)
+    // Slugs are made unique per site when an article is created, but rows
+    // from before that can share one. The most recently published wins, so
+    // the page renders instead of the route failing the site's build.
+    .order("published_at", { ascending: false, nullsFirst: false })
+    .limit(1)
     .maybeSingle();
 
-  if (error) return json({ error: error.message }, { status: 500 });
-  if (!data) return json({ error: "Article not found" }, { status: 404 });
+  if (error) return json({ error: "Could not read the article" }, { status: 500 });
+  // `code` is what the client reads as "no such article" (null, so the page
+  // 404s); every other failure throws and keeps the pages a site already has.
+  if (!data) return json({ error: "Article not found", code: "article_not_found" }, { status: 404 });
 
   const { content, ...rest } = data as Record<string, unknown> & { content: Record<string, unknown> | null };
   return json({
