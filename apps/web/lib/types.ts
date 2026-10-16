@@ -703,4 +703,6 @@ export type ApiKeyRow = {
   revoked_at: string | null;
   created_by: string | null;
   created_at: string;
+  /** A blog key's one site (migration 114); null on every agent key, absent before 114. */
+  workspace_id?: string | null;
 };

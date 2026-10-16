@@ -22,7 +22,8 @@ import { headingsOf } from "./detect";
 import { writeBrief } from "./brief";
 import { diffBlocks } from "./hunks";
 import { validateRewrite } from "./validate";
-import type { Evidence, ExecutionSide, Opportunity, RefreshCandidate } from "./types";
+import { rewriteFactCheck } from "./fact-check";
+import type { Evidence, ExecutionSide, Opportunity, RefreshCandidate, RewriteFactCheck } from "./types";
 
 const UA = "Mozilla/5.0 (compatible; AltoRank/1.0; +https://altorank.co; content refresh)";
 
@@ -176,7 +177,10 @@ export interface RunTaskResult {
   executionId: string;
   hunks: number;
   changed: number;
-  issues: number;
+  /** Structural checks flagged on the proposed text (lib/refresh/validate.ts). Not the fact check. */
+  checks: number;
+  /** The fact check of the proposed text. */
+  factCheck: RewriteFactCheck;
   wordsBefore: number;
   wordsAfter: number;
   /** The page as it reads today, for the "a rewrite is waiting" email. */
@@ -275,6 +279,9 @@ export async function runRefreshTask(
           seoScore: result.seoScore,
           aeoScore: result.aeoScore,
           factCheck: result.factCheck.verdict,
+          // The whole report, so the review page can show which claims it
+          // flagged; `factCheck` stays the bare verdict older rows carry.
+          factCheckReport: result.factCheck,
           linkChecks: result.linkChecks,
           jobId: result.jobId,
         },
@@ -296,7 +303,8 @@ export async function runRefreshTask(
         executionId: execution.id as string,
         hunks: hunks.length,
         changed: hunks.filter((h) => h.kind !== "unchanged").length,
-        issues: issues.length,
+        checks: issues.length,
+        factCheck: rewriteFactCheck(result.factCheck),
         wordsBefore: words(before.html),
         wordsAfter: words(after.html),
         pageTitle: before.title ?? null,

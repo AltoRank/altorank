@@ -136,7 +136,8 @@ describe("refresh proposal ready", () => {
     executionId: "ex-1",
     changed: 3,
     hunks: 8,
-    issues: 0,
+    checks: 0,
+    factCheck: { verdict: "clean" as const, flagged: 0 },
   };
 
   it("says nothing has been sent to the site, and links to the diff", () => {
@@ -146,10 +147,33 @@ describe("refresh proposal ready", () => {
     expect(e.html).toContain("<strong>3 of 8</strong>");
   });
 
-  it("mentions flagged claims only when there are some", () => {
-    expect(renderRefreshReady(base).html).toContain("flagged nothing");
-    expect(renderRefreshReady({ ...base, issues: 2 }).html).toContain("2 claims were");
-    expect(renderRefreshReady({ ...base, issues: 1 }).html).toContain("1 claim was");
+  it("words the fact check from its own verdict, not from the structural lint count", () => {
+    // Two structural checks and an unsourced-figure verdict: the email used to
+    // credit the lint count to the fact check, and say "flagged nothing" over
+    // a high-risk verdict when the lint found nothing.
+    const risky = renderRefreshReady({ ...base, checks: 0, factCheck: { verdict: "high_risk", flagged: 3 } }).html;
+    expect(risky).toContain("The fact check found 3 claims to correct or remove before this can go live");
+    expect(risky).not.toContain("fact check flagged nothing");
+    expect(risky).toContain("The structural checks (headings, links, images, length) flagged nothing.");
+
+    const lint = renderRefreshReady({ ...base, checks: 2 }).html;
+    expect(lint).toContain("2 structural checks were flagged");
+    expect(lint).toContain("verified every claim");
+    expect(renderRefreshReady({ ...base, checks: 1 }).html).toContain("1 structural check was flagged");
+
+    expect(renderRefreshReady({ ...base, factCheck: { verdict: "review", flagged: 1 } }).html).toContain(
+      "1 claim to verify against its source",
+    );
+  });
+
+  it("says when nothing was checked, and why", () => {
+    expect(renderRefreshReady({ ...base, factCheck: { verdict: "unchecked", flagged: 0, unchecked: "language" } }).html).toContain(
+      "does not read this site&#39;s language",
+    );
+    expect(
+      renderRefreshReady({ ...base, factCheck: { verdict: "unchecked", flagged: 0, unchecked: "nothing_to_check" } }).html,
+    ).toContain("had nothing to check");
+    expect(renderRefreshReady({ ...base, factCheck: null }).html).toContain("No fact check result was stored");
   });
 
   it("offers an unsubscribe route in the footer that is a real setting", () => {
@@ -351,6 +375,20 @@ describe("account emails", () => {
     });
     expect(e.html).toContain("read only");
     expect(e.html).toContain("January 1, 2027");
+  });
+
+  it("names a blog key's site and says it reads nothing else", () => {
+    const e = renderApiKeyCreated({
+      keyName: "Client blog",
+      prefix: "alto_ef56",
+      createdBy: "Sam",
+      canWrite: false,
+      expiresAt: null,
+      blogSite: "client-a.example",
+    });
+    expect(e.html).toContain("blog key for <strong>client-a.example</strong>");
+    expect(e.html).toContain("nothing else");
+    expect(e.html).not.toContain("read only");
   });
 
   /** An OAuth key goes straight to the client: nobody was shown it once. */

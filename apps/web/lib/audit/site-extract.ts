@@ -101,11 +101,13 @@ export interface SitePageExtract {
 export const ROLE_LANGUAGES = ["English", "Turkish", "Italian", "Spanish", "French", "German", "Portuguese", "Dutch"] as const;
 
 /**
- * Path segments that name a blog. Shared with lib/seo/site-crawl.ts, which
+ * Path segments that name a blog: Shopify's /blogs/<handle>/, /magazine/,
+ * /journal/, /learn/ and the common Italian, Spanish, French and German
+ * names among them. Shared with lib/seo/site-crawl.ts, which
  * uses it to tell a post from a page; here it keeps a post whose slug happens
  * to contain "contact" from being taken for the contact page.
  */
-export const POST_SEGMENTS = /\/(blog|posts?|articles?|news|insights|stories|guide|guida|guides)\//i;
+export const POST_SEGMENTS = /\/(blogs?|posts?|articles?|news|insights|stories|guides?|guida|magazine|magazin|journal|learn|articoli|notizie|noticias|actualites|ratgeber)\//i;
 
 /**
  * Schema types that say "this page is a piece of writing". Shared with

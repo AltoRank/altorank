@@ -1,6 +1,6 @@
 {
   "name": "@altorank/next-blog",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pull your published AltoRank articles into a Next.js site. Read-only client plus an app/blog starter.",
   "license": "AGPL-3.0-only",
   "type": "module",

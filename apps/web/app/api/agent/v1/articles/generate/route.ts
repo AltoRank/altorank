@@ -7,6 +7,7 @@ import { bindIdempotencyKey, claimIdempotencyKey, idempotencyKeyFrom, releaseIde
 import { articleMutations } from "@/lib/agent/mutations";
 import { toAgentArticle } from "@/lib/agent/records";
 import { generateArticle, slugFor } from "@/lib/content/generate";
+import { uniqueSlug } from "@/lib/content/unique-slug";
 import { freeAllowanceUsedMessage, getQuota, quotaExceededMessage } from "@/lib/billing/quota";
 import { accountPausedMessage } from "@/lib/billing/pause";
 import { trialCancelledReason, trialHoldReason } from "@/lib/billing/trial-hold";
@@ -233,7 +234,7 @@ export const POST = withAgent(async (request, ctx) => {
       .insert({
         workspace_id: workspace.id,
         title: title || keyword,
-        slug: slugFor(title || keyword),
+        slug: await uniqueSlug(ctx.supabase, workspace.id, slugFor(title || keyword)),
         keyword,
         keyword_id: keyword_id ?? null,
         status: "drafting",

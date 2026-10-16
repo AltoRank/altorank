@@ -11,6 +11,7 @@ import { assertEditorialStatus } from "@/lib/articles/editorial-status";
 import { sessionBodyLockedForWorkspace } from "@/lib/billing/body-lock";
 import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { urlSlug } from "@/lib/i18n/locale";
+import { uniqueSlug } from "@/lib/content/unique-slug";
 import { approvalAfterStatusChange, approvalAfterTextEdit } from "@/lib/articles/approval";
 import { sanitizeArticleDoc } from "@/lib/html/article-doc";
 import { safeUrl } from "@/lib/html/sanitize";
@@ -34,7 +35,8 @@ export async function createArticle(formData: FormData) {
 
   // The same fold as every other slug: an ASCII-only strip dropped every
   // accented and Turkish letter from a title typed here.
-  const slug = urlSlug(parsed.title);
+  // Unique on the site: a blog-API site serves articles by slug.
+  const slug = await uniqueSlug(supabase, parsed.workspace_id, urlSlug(parsed.title));
 
   // Auto-fill cms from workspace integration if not explicitly set
   let cms = parsed.cms;

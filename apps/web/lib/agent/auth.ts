@@ -14,7 +14,7 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createServiceClient } from "@/lib/supabase/server";
-import { apiKeyState, hashApiKey, looksLikeApiKey, type ApiKeyScope } from "./api-keys";
+import { apiKeyState, hashApiKey, isBlogKey, looksLikeApiKey, type ApiKeyScope } from "./api-keys";
 import { fail, GUIDANCE, type FailEnvelope } from "./envelope";
 import { agentRateLimiter, type RateLimitDecision } from "./rate-limit";
 
@@ -64,6 +64,14 @@ export async function authenticateAgentRequest(
   }
   if (state === "expired") {
     return { ok: false, envelope: fail("unauthorized", "This API key has expired.", GUIDANCE.expiredKey) };
+  }
+
+  // A blog key lives in a customer site's environment, where more people can
+  // read it than the account's admins. It reads that one site's published
+  // articles through /api/blog/v1 and is refused here, whatever is asked:
+  // the hosted MCP calls this without a scope.
+  if (isBlogKey(row)) {
+    return { ok: false, envelope: fail("forbidden", "This key only reads published articles through the blog API.", GUIDANCE.blogKey) };
   }
 
   const rate = agentRateLimiter.check(row.id);

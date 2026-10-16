@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { SiteForm } from "@/components/settings/site-form";
+import { BlogApiCard } from "@/components/settings/blog-api-card";
 import { SettingsShell, NoWorkspaceCard } from "../settings-shell";
 import { getWorkspaceSettings } from "@/lib/settings/workspace-settings";
 
@@ -12,7 +13,14 @@ export default async function BlogSettingsPage() {
       title="Blog"
       subtitle={<span>{ws ? `${ws.domain} · ` : ""}sitemap, blog address and the writing drafts learn from</span>}
     >
-      {ws ? <SiteForm workspaceId={ws.id} domain={ws.domain} initial={ws.site} /> : <NoWorkspaceCard />}
+      {ws ? (
+        <>
+          <SiteForm workspaceId={ws.id} domain={ws.domain} initial={ws.site} />
+          <BlogApiCard workspaceId={ws.id} domain={ws.domain} />
+        </>
+      ) : (
+        <NoWorkspaceCard />
+      )}
     </SettingsShell>
   );
 }

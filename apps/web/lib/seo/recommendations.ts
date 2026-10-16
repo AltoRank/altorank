@@ -1,7 +1,7 @@
 import { readAllPages } from "@/lib/supabase/read-all";
 import { readOpportunity, contextKey, duplicateVerdict, OPPORTUNITY_VERSION, type FirstLook, type Opportunity, type OpportunityCause } from "@/lib/keyword-research/opportunity";
 import { rivalNamed } from "@/lib/keyword-research/results-page";
-import { clusterByIntent, intentKey, intentLanguage, sameIntent, storedSerp, unfoldedNote, type IntentFollower, type IntentStage, type StagedTopic } from "@/lib/keyword-research/intent";
+import { clusterByIntent, intentKey, intentLanguage, intentWords, sameIntent, storedSerp, unfoldedNote, wordsCover, type IntentFollower, type IntentStage, type StagedTopic } from "@/lib/keyword-research/intent";
 import { articleStage, leadersFrom, type IntentLeader, type KeywordRow, type OnCalendar } from "@/lib/keyword-research/intent-leaders";
 import { ensureBusinessProfile } from "@/lib/keyword-research/business-context";
 import { withStage } from "@/lib/billing/spend-scope";
@@ -40,6 +40,7 @@ import type { KeywordIntent } from "@/lib/types";
 import { readGsc } from "@/lib/gsc/read";
 import { scoreRelevance, subjectVocabulary, type TopicalProfile } from "./topical-profile";
 import { commercialFit } from "./commercial-fit";
+import { pageSlugWords } from "./site-crawl";
 import { relativeDifficulty, isOutOfReach } from "./difficulty";
 
 export type RecommendedAction = "write" | "refresh" | "skip";
@@ -224,6 +225,16 @@ export function assessKeywordQuality(
 }
 
 const GSC_LOOKBACK_DAYS = 90;
+
+/** A URL's slug as the words a search could hold: "/blog/how-to-choose-gym-software/" is "choose gym software". */
+export function slugWords(url: string): string {
+  try {
+    const u = new URL(url);
+    return pageSlugWords(u.pathname, u.hostname).join(" ");
+  } catch {
+    return "";
+  }
+}
 
 /** "/alternatives/rankingcoach/" for a full URL; the URL itself when it will not parse. */
 function pathOf(url: string): string {
@@ -505,7 +516,7 @@ export async function recommendKeywords(
   // bounded number of pages rather than every check a keyword ever had; a
   // position older than the window is not this keyword's latest standing.
   const lookbackStart = new Date(Date.now() - GSC_LOOKBACK_DAYS * 86_400_000);
-  const [rankRes, articleRes, gscRes, pagesRes, entriesRes] = await Promise.allSettled([
+  const [rankRes, articleRes, gscRes, pagesRes, entriesRes, targetsRes] = await Promise.allSettled([
     readAllPages("rank history", (from, to, count) =>
       supabase
         .from("keyword_rankings")
@@ -566,6 +577,18 @@ export async function recommendKeywords(
         .order("id")
         .range(from, to),
     ),
+    // Every post the site's sitemap lists (lib/linking/detect.ts fills the
+    // pool from it), read or not: the page crawl reads forty, and a site with
+    // three hundred posts had the other two hundred and sixty invisible to
+    // this check.
+    readAllPages("link targets", (from, to, count) =>
+      supabase
+        .from("link_targets")
+        .select("url, keyword", { count })
+        .eq("workspace_id", workspaceId)
+        .order("id")
+        .range(from, to),
+    ),
   ]);
 
   // Most recent position per keyword; the query is already newest-first.
@@ -597,10 +620,30 @@ export async function recommendKeywords(
   // where Google happened to land an impression, and for a term at position
   // 34 it is usually the homepage - a page that targets nothing.
   const pageRows = leaderRows<{ url: string; keyword: string | null }>(pagesRes, "site_pages");
+  // The link pool is a second list of the site's own pages, not a leader the
+  // duplicate rule depends on: a failed read leaves the crawled pages to
+  // decide alone.
+  const targetRows = targetsRes.status === "fulfilled" ? (targetsRes.value as Array<{ url: string; keyword: string | null }>) : [];
   const pageByTarget = new Map<string, string>();
-  for (const p of pageRows) {
-    if (p.keyword && p.url) pageByTarget.set(intentKey(p.keyword, language), p.url);
+  const pageWords: Array<{ url: string; words: string[][] }> = [];
+  const seenPage = new Set<string>();
+  for (const p of [...pageRows, ...targetRows]) {
+    if (!p.url) continue;
+    const key = p.keyword ? intentKey(p.keyword, language) : "";
+    if (key && !pageByTarget.has(key)) pageByTarget.set(key, p.url);
+    if (seenPage.has(p.url)) continue;
+    seenPage.add(p.url);
+    const words = [slugWords(p.url), p.keyword ?? ""].filter(Boolean).map((w) => intentWords(w, language));
+    if (words.length) pageWords.push({ url: p.url, words });
   }
+  // By the words the search competes on, then by the page's own words
+  // (`wordsCover`): its full slug and its target, not the three-word guess.
+  const coveringPage = (term: string): string | null => {
+    const exact = pageByTarget.get(intentKey(term, language));
+    if (exact) return exact;
+    const want = intentWords(term, language);
+    return pageWords.find((p) => p.words.some((w) => wordsCover(want, w)))?.url ?? null;
+  };
 
   const entryRows = leaderRows<{ keyword_id: string | null; scheduled_date: string | null }>(entriesRes, "calendar_entries");
 
@@ -638,7 +681,7 @@ export async function recommendKeywords(
 
     const position = latestPosition.get(k.id as string) ?? null;
     const existingArticleId = articleByTerm.get(intentKey(term, language))?.id ?? null;
-    const existingPageUrl = pageByTarget.get(intentKey(term, language)) ?? null;
+    const existingPageUrl = coveringPage(term);
     const impressions = impressionsByTerm.get(term) ?? null;
 
     const reasons: string[] = [];
