@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from "vitest";
 // Plain JS served as-is from public/ (no build step).
-import { esc, renderQueue, renderArticle, renderHome } from "../../../public/shopify/app.js";
+import { esc, renderQueue, renderArticle, renderHome, renderFirstLook } from "../../../public/shopify/app.js";
 
 const evil = `<img src=x onerror=alert(1)>"'`;
 
@@ -50,5 +50,12 @@ describe("embedded renderers", () => {
     expect(html).toContain("Reading your store");
     expect(html).toContain('value="40"');
     expect(html).toContain("a@fern.com");
+  });
+
+  it("explains an empty first look and offers to run it again", () => {
+    const html = renderFirstLook({ state: "empty", message: "Your storefront is password-protected <b>", storefrontLocked: true });
+    expect(html).toContain("Your storefront is locked");
+    expect(html).toContain("&lt;b&gt;");
+    expect(html).toContain('data-action="retry-first-look"');
   });
 });
