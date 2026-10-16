@@ -99,7 +99,12 @@ export function recommendedActions(state: DashboardState): RecommendedAction[] {
       title: `${state.pendingReviews} draft${state.pendingReviews === 1 ? " is" : "s are"} waiting for your yes`,
       consequence: "Nothing publishes without your approval, so an unread draft is an article that never ships.",
       cta: "Review",
-      href: "/articles",
+      // One waiting: open it. Several: the list, filtered to them. It went to
+      // the unfiltered list, a click short of either.
+      href:
+        state.pendingReviews === 1 && state.reviewDraftId
+          ? `/content/${state.reviewDraftId}`
+          : "/articles?status=review",
     });
   }
   if (!state.cmsConnected) {

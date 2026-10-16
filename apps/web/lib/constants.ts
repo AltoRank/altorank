@@ -27,6 +27,8 @@ export type NavItem = {
   soon?: boolean;
   /** Active only on this exact path, not on paths beneath it. */
   exact?: boolean;
+  /** Further path prefixes this item is active on (a detail route kept elsewhere). */
+  also?: readonly string[];
   /**
    * Sub-items rendered indented under this one, expanded by default and
    * collapsible (the shape Outrank uses for its Articles group). The parent
@@ -58,12 +60,17 @@ export const DASHBOARD_NAV: NavGroup[] = [
         href: "/content",
         icon: "articles",
         children: [
-          { id: "calendar", label: "Content planner", href: "/content", icon: "calendar" },
+          // Exact, because /content/<id> is the article editor, which belongs
+          // to the list below rather than to the calendar.
+          { id: "calendar", label: "Content planner", href: "/content", icon: "calendar", exact: true },
           // Rewrites of pages that already rank, each waiting for a yes.
           { id: "improvements", label: "Improvements", href: "/improvements", icon: "refresh" },
           // Review is the first thing that wants attention, so it is a state of
           // Articles rather than a section beside it (2026-09-02).
-          { id: "articles", label: "Content history", href: "/articles", icon: "articles" },
+          // "Content history" on a page titled "Articles", holding the drafts
+          // waiting for a yes: named for what is on it. Its badge counts those
+          // drafts, not every article (app/(dashboard)/layout.tsx).
+          { id: "articles", label: "All articles", href: "/articles", icon: "articles", also: ["/content/"] },
           { id: "keywords", label: "Keywords", href: "/keywords", icon: "keywords" },
           { id: "voice", label: "Brand voice", href: "/voice", icon: "voice" },
           { id: "linking", label: "Linking", href: "/linking", icon: "link" },

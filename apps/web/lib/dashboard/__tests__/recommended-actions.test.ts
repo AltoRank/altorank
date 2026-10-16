@@ -25,6 +25,11 @@ describe("recommendedActions", () => {
   it("singularises one draft", () => {
     expect(recommendedActions({ ...healthy, pendingReviews: 1 })[0].title).toBe("1 draft is waiting for your yes");
   });
+  it("opens the one waiting draft, and filters the list to several", () => {
+    expect(recommendedActions({ ...healthy, pendingReviews: 1, reviewDraftId: "d1" })[0].href).toBe("/content/d1");
+    expect(recommendedActions({ ...healthy, pendingReviews: 3, reviewDraftId: "d1" })[0].href).toBe("/articles?status=review");
+    expect(recommendedActions({ ...healthy, pendingReviews: 1 })[0].href).toBe("/articles?status=review");
+  });
   it("offers to plan only when the calendar is empty", () => {
     expect(recommendedActions({ ...healthy, scheduledCount: 0 }).map((a) => a.id)).toEqual(["plan-month"]);
     expect(recommendedActions({ ...healthy, scheduledCount: 1 })).toEqual([]);
