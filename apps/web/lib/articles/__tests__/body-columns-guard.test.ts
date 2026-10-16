@@ -48,6 +48,10 @@ const SERVICE_READS: Record<string, { count: number; why: string }> = {
     count: 1,
     why: "the headless blog API's list, on the service client; its column list is a constant from lib/blog-api/auth.ts, which this cannot follow across files",
   },
+  "lib/hosted-blog/data.ts": {
+    count: 2,
+    why: "the hosted blog (app/b/[slug]) on the service client: the list (column constant, no text) and one article, both live and not found on the site, the rows the blog API serves, after the trial gate; 097 still holds for client tokens",
+  },
   "lib/articles/body-read.ts": {
     count: 1,
     why: "readArticlesWhole: the server's one read of the text, on the service role, for ids a caller's own client returned",
