@@ -76,7 +76,6 @@ vi.mock("@/lib/seo/link-check", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/seo/link-check")>()),
   verifyOutboundLinks: async (html: string) => ({ html, checks: [] }),
 }));
-vi.mock("@/lib/ai/video-embedder", () => ({ embedYouTubeVideos: async (html: string) => html }));
 
 /** What the writer produced for the clinic, in shape. */
 const MODEL_HTML =

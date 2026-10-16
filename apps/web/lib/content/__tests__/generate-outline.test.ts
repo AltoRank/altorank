@@ -67,7 +67,16 @@ vi.mock("@/lib/linking/targets", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/linking/targets")>()),
   fetchKnownPages: async () => [],
 }));
-vi.mock("@/lib/ai/video-embedder", () => ({ embedYouTubeVideos: async (html: string) => html }));
+// A key is configured and YouTube has a video for anything: a draft still
+// gets a video only through the enrichment (mocked below), whose settings
+// decide, never from a step of its own.
+const { youtubeCalls } = vi.hoisted(() => ({ youtubeCalls: [] as string[] }));
+vi.mock("@/lib/youtube/search", () => ({
+  searchYouTubeVideos: async (query: string) => {
+    youtubeCalls.push(query);
+    return [{ videoId: "abc123", title: "Someone else's video", channelTitle: "Stranger" }];
+  },
+}));
 vi.mock("@/lib/seo/link-check", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/seo/link-check")>()),
   verifyOutboundLinks: async (html: string) => ({ html, checks: [] }),
@@ -223,6 +232,13 @@ describe("an article outlined before its body", () => {
     } finally {
       researchHooks.early = false;
     }
+  });
+
+  it("embeds no video outside the enrichment step, so the video switch and channel decide", async () => {
+    youtubeCalls.length = 0;
+    const result = await generateArticle({ supabase: client(), workspaceId: "ws1", keyword: "acme booking cost", callerEmail: null, relatedKeywords: [] });
+    expect(youtubeCalls).toEqual([]);
+    expect(result.html).not.toMatch(/<iframe|youtube\.com\/embed/);
   });
 
   it("writes with no outline at all when not asked for one", async () => {

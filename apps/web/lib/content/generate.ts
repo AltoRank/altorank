@@ -44,7 +44,6 @@ import { faqPlan, faqReviewNote, fitTitle, givenTitleKept, removeTitleHeading, t
 import { buildTrust } from "@/lib/content/trust";
 import { anthropicModel, openaiImageModel } from "@/lib/ai/models";
 import { GenerationTruncatedError } from "@/lib/ai/errors";
-import { embedYouTubeVideos } from "@/lib/ai/video-embedder";
 import { generateImage } from "@/lib/ai/image-generator";
 import { outputFromRow, resolveFeaturedImage, type OutputSettingsRow } from "@/lib/onboarding/output-settings";
 import { imageWriter, uploadImageBuffer } from "@/lib/storage/images";
@@ -1181,7 +1180,7 @@ async function writeArticle(
      * Tiptap doc, and a stored article titled "Untitled" after 12,529 tokens
      * had been paid for. Observed on 2026-08-30.
      *
-     * These steps embed a video and resolve link placeholders. Neither can
+     * These steps resolve link placeholders and enrich the body. Neither can
      * legitimately shrink an article to nothing, so a much shorter result is
      * a bug in the step, not an edit.
      */
@@ -1203,9 +1202,10 @@ async function writeArticle(
       }
     }
 
-    // Not on a rewrite: the brief says preserve the page, and a video the
-    // original did not have is a new block for the reviewer to reject.
-    if (!refreshOf) await enhance("video embed", (html) => embedYouTubeVideos(html, keyword));
+    // The one video step is the enrichment's (lib/content/enrich/video.ts),
+    // which honours the workspace's video switch and channel and embeds from
+    // the privacy-enhanced host. An older step here embedded the keyword's
+    // top YouTube result on every draft first, whatever those settings said.
     await enhance("internal links", async (html) => resolveInternalLinks(html, linkTargets));
 
     // What the draft may point at on its own site: the pool it was offered
