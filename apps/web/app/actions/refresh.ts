@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { analyzeWorkspace, headingsOf, type AnalyzeResult } from "@/lib/refresh/detect";
@@ -12,7 +13,8 @@ import { readArticlesWhole } from "@/lib/articles/body-read";
 import { pushExecution, exportExecution, type PushResult } from "@/lib/refresh/push";
 import { closeOpenTasks, isOpenTask, isStaleRunning, readTasks } from "@/lib/refresh/tasks";
 import { recordSpend, anthropicCost } from "@/lib/billing/spend";
-import { needsPlanToShip, SCHEDULED_REWRITES_NEED_PLAN } from "@/lib/billing/quota";
+import { entitledToScheduledWork, getQuota, needsPlanToShip, SCHEDULED_REWRITES_NEED_PLAN } from "@/lib/billing/quota";
+import { draftHoldReason } from "@/lib/billing/trial-hold";
 import { canSpend } from "@/lib/billing/spend-gate";
 import type { BillingOutcome } from "@/lib/billing/failure";
 import type { Evidence, ExecutionDecisions, Opportunity, RefreshCandidate } from "@/lib/refresh/types";
@@ -51,6 +53,38 @@ async function ownCandidate(candidateId: string): Promise<RefreshCandidate> {
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Pick a date");
 
 /**
+ * Why a rewrite scheduled on this site would never run, or null. The same
+ * gates cron/refresh applies before it runs one: the switch, a weekday, and
+ * an account entitled to scheduled work and not held by its trial.
+ */
+async function scheduleRefusal(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  userEmail: string | undefined,
+): Promise<string | null> {
+  const { data: ws, error } = await supabase
+    .from("workspaces")
+    .select("account_id, refresh_enabled, refresh_days")
+    .eq("id", workspaceId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!ws) return "Site not found";
+  if (!ws.refresh_enabled) {
+    return "Scheduled rewrites are off for this site, so nothing scheduled would run. Switch them on in Settings → Improvements, then schedule it.";
+  }
+  if (!((ws.refresh_days as number[] | null) ?? []).length) {
+    return "No weekday is picked for rewrites on this site, so nothing scheduled would run. Pick one in Settings → Improvements, then schedule it.";
+  }
+  const quota = await getQuota(supabase, ws.account_id as string, userEmail);
+  const held = draftHoldReason(quota);
+  if (held) return held;
+  if (!entitledToScheduledWork(quota)) {
+    return "Scheduled rewrites need a plan, so nothing scheduled would run. Nothing has been charged; choose a plan on the Billing page, then schedule it.";
+  }
+  return null;
+}
+
+/**
  * What scheduling answered. A refusal arrives as data, not as a throw: a
  * thrown server-action message is a digest in production, and these say
  * what to do next.
@@ -62,13 +96,18 @@ export type ScheduleOutcome = { ok: true; id: string } | { ok: false; error: str
  * enabled weekday on or after that date, one per site per day.
  */
 export async function scheduleCandidate(candidateId: string, scheduledFor: string): Promise<ScheduleOutcome> {
-  await requireAuth();
+  const { user } = await requireAuth();
   const parsedDate = dateSchema.safeParse(scheduledFor);
   if (!parsedDate.success) return { ok: false, error: "Pick a date" };
   const date = parsedDate.data;
   const candidate = await ownCandidate(candidateId);
   if (candidate.dismissed_at) return { ok: false, error: "This candidate was dismissed" };
   const supabase = await createClient();
+
+  // A task the cron will never pick up is worse than none: it sat on the
+  // calendar and in the plan's capacity, and the card promised a run.
+  const refusal = await scheduleRefusal(supabase, candidate.workspace_id, user.email ?? undefined);
+  if (refusal) return { ok: false, error: refusal };
 
   // One open task per candidate: rescheduling moves it rather than stacking.
   // A rewrite that was cut off mid-run is open too (lib/refresh/tasks.ts);

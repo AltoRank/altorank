@@ -297,7 +297,7 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
           ) : (
             <ul className="m-0 p-0 list-none divide-y divide-line-soft">
               {candidates.map((c) => (
-                <CandidateItem key={c.id} candidate={c} />
+                <CandidateItem key={c.id} candidate={c} scheduleRuns={refresh.enabled && refresh.days.length > 0} />
               ))}
             </ul>
           )}
@@ -307,7 +307,12 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
   );
 }
 
-function CandidateItem({ candidate: c }: { candidate: CandidateRow }) {
+/**
+ * `scheduleRuns`: the site's switch is on and a weekday is picked, so the
+ * cron will pick a scheduled task up. Scheduling is refused otherwise; a task
+ * scheduled before the switch went off says that it is waiting on it.
+ */
+function CandidateItem({ candidate: c, scheduleRuns }: { candidate: CandidateRow; scheduleRuns: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [brief, setBrief] = useState(c.brief ?? "");
@@ -343,7 +348,10 @@ function CandidateItem({ candidate: c }: { candidate: CandidateRow }) {
           )}
           {c.task && (
             <div className={cn("mt-1.5 text-[12px]", c.task.status === "failed" || c.task.stale ? "text-err-ink" : "text-ink-2")}>
-              {c.task.status === "scheduled" && `Scheduled for ${c.task.scheduled_for}; runs on the next enabled day on or after that.`}
+              {c.task.status === "scheduled" &&
+                (scheduleRuns
+                  ? `Scheduled for ${c.task.scheduled_for}; runs on the next enabled day on or after that.`
+                  : `Scheduled for ${c.task.scheduled_for}, but this site has no rewrite day switched on (Settings → Improvements), so it waits until one is.`)}
               {c.task.status === "running" && !c.task.stale && "Rewriting now…"}
               {c.task.status === "running" && c.task.stale && "The rewrite stopped before it finished. Nothing was changed; reschedule it to try again."}
               {c.task.status === "failed" && `Last run failed: ${c.task.error ?? "unknown error"}. Reschedule to try again.`}

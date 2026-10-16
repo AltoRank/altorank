@@ -14,10 +14,12 @@ vi.mock("@/lib/supabase/server", () => ({ createClient: async () => f, createSer
 vi.mock("@/lib/auth/require-auth", () => ({
   requireAuth: vi.fn(async () => ({ accountId: "acc1", role: "owner", user: { id: "u1", email: "a@b.co" } })),
 }));
-const { needsPlanToShip } = vi.hoisted(() => ({ needsPlanToShip: vi.fn(async () => false) }));
+const PAID = { limit: 100, used: 4, remaining: 96, reason: "plan", plan: "starter", trial: null };
+const NO_PLAN = { limit: 7, used: 7, remaining: 0, reason: "no-plan", plan: null, trial: null };
+const { getQuota } = vi.hoisted(() => ({ getQuota: vi.fn() }));
 vi.mock("@/lib/billing/quota", async () => ({
   ...(await vi.importActual<typeof import("@/lib/billing/quota")>("@/lib/billing/quota")),
-  needsPlanToShip,
+  getQuota,
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
@@ -39,7 +41,7 @@ function seed(taskOver: Record<string, unknown>, ws: Record<string, unknown> = {
 }
 
 beforeEach(() => {
-  needsPlanToShip.mockResolvedValue(false);
+  getQuota.mockReset().mockResolvedValue(PAID);
 });
 
 describe("a rewrite cut off mid-run", () => {
@@ -77,5 +79,62 @@ describe("a rewrite running now", () => {
     const out = await scheduleCandidate("c1", "2026-10-20");
     expect(out).toEqual({ ok: false, error: expect.stringMatching(/being rewritten right now/) });
     expect(f.tables.refresh_tasks[0]).toMatchObject({ status: "running", scheduled_for: "2026-10-01" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scheduling a rewrite that would never run is refused
+// ---------------------------------------------------------------------------
+//
+// cron/refresh picks up tasks only for sites with scheduled rewrites on, a
+// weekday picked, and an account entitled to scheduled work. A task outside
+// that sat on the calendar and in the plan's capacity and never ran.
+
+describe("scheduleCandidate on a site whose rewrites cannot run", () => {
+  const fresh = (ws: Record<string, unknown>) => {
+    seed({}, ws);
+    f.tables.refresh_tasks = [];
+  };
+
+  it("refuses with the switch off, and says where to turn it on", async () => {
+    fresh({ refresh_enabled: false });
+    const out = await scheduleCandidate("c1", "2026-10-20");
+    expect(out).toEqual({ ok: false, error: expect.stringMatching(/off for this site.*Settings → Improvements/) });
+    expect(f.tables.refresh_tasks).toHaveLength(0);
+  });
+
+  it("refuses with no weekday picked", async () => {
+    fresh({ refresh_days: [] });
+    const out = await scheduleCandidate("c1", "2026-10-20");
+    expect(out).toEqual({ ok: false, error: expect.stringMatching(/No weekday/) });
+    expect(f.tables.refresh_tasks).toHaveLength(0);
+  });
+
+  it("refuses without a plan, and names the Billing page", async () => {
+    fresh({});
+    getQuota.mockResolvedValue(NO_PLAN);
+    const out = await scheduleCandidate("c1", "2026-10-20");
+    expect(out).toEqual({ ok: false, error: expect.stringMatching(/need a plan.*Billing/) });
+    expect(f.tables.refresh_tasks).toHaveLength(0);
+  });
+
+  it("does not move an existing task onto a site that cannot run it", async () => {
+    seed({ status: "scheduled", started_at: null }, { refresh_enabled: false });
+    const out = await scheduleCandidate("c1", "2026-10-20");
+    expect(out.ok).toBe(false);
+    expect(f.tables.refresh_tasks[0].scheduled_for).toBe("2026-10-01");
+  });
+
+  it("schedules when the site can run it", async () => {
+    fresh({});
+    const out = await scheduleCandidate("c1", "2026-10-20");
+    expect(out.ok).toBe(true);
+    expect(f.tables.refresh_tasks).toEqual([expect.objectContaining({ candidate_id: "c1", scheduled_for: "2026-10-20" })]);
+  });
+
+  it("cancel still works with the switch off", async () => {
+    seed({ status: "scheduled", started_at: null }, { refresh_enabled: false });
+    await cancelTask("t1");
+    expect(f.tables.refresh_tasks[0].status).toBe("cancelled");
   });
 });
