@@ -4,8 +4,11 @@ import { ScopeFollow } from "@/components/dashboard/scope-follow";
 import { PageHead, DotSep } from "@/components/ui";
 import { createClient } from "@/lib/supabase/server";
 import { getDestinations } from "@/lib/publishing/destinations";
-import { UPDATABLE_CMS } from "@/lib/refresh/push";
+import { UPDATABLE_CMS, PAGE_CHANGED_MESSAGE, pageChangedSinceRewrite } from "@/lib/refresh/push";
 import { readDecisions } from "@/lib/refresh/hunks";
+import { storedFactCheck } from "@/lib/refresh/fact-check";
+import { readVisibleArticle } from "@/lib/articles/body-read";
+import { tiptapToHtml } from "@/lib/cms/html";
 import { OPPORTUNITY_LABELS, type Opportunity, type RefreshCandidate, type RefreshExecution } from "@/lib/refresh/types";
 import { ReviewExecution } from "@/components/dashboard/improvements/review-execution";
 
@@ -57,6 +60,13 @@ export default async function ReviewExecutionPage({ params }: Props) {
     pushBlocker = "No CMS is connected to this site. Connect one under Integrations, or copy the HTML.";
   } else if (!adapterCanUpdate) {
     pushBlocker = `The ${destination.label} connection can publish new posts but cannot yet edit an existing one, and a second copy of this page would be worse than no push. Copy the HTML and update the post in ${destination.label}.`;
+  } else if (execution.review_status === "awaiting_review" && candidate.article_id) {
+    // The push refuses a page that changed after the rewrite read it (an
+    // editor save, or another rewrite of it pushed first); say so before the
+    // reviewer spends time on the blocks. Only the verdict leaves the server.
+    const current = await readVisibleArticle<{ content: unknown }>(supabase, candidate.article_id, "content");
+    const html = current?.content ? tiptapToHtml(current.content as Record<string, unknown>) : "";
+    if (pageChangedSinceRewrite(execution.before, html)) pushBlocker = PAGE_CHANGED_MESSAGE;
   }
 
   const title = article?.title ?? execution.before?.title ?? candidate.url;
@@ -83,6 +93,7 @@ export default async function ReviewExecutionPage({ params }: Props) {
         reviewStatus={execution.review_status}
         hunks={execution.hunks}
         issues={execution.validation_issues ?? []}
+        factCheck={storedFactCheck(execution.after)}
         before={{ title: execution.before?.title ?? null, metaDescription: execution.before?.metaDescription ?? null }}
         after={{ title: execution.after?.title ?? null, metaDescription: execution.after?.metaDescription ?? null }}
         initialDecisions={readDecisions(execution.decisions)}
