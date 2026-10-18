@@ -73,6 +73,23 @@ export function trialEndsLabel(info: TrialInfo): string {
   return `Trial ends in ${info.daysLeft} days`;
 }
 
+/**
+ * The trial and what follows it, as one line: "Trial ends in 6 days, then
+ * €199 /mo". The sidebar said "then the plan price" and Billing said
+ * "renews Oct 22" while nothing had been charged yet; neither said what the
+ * card would pay. A trial cancelled before its first charge (cancels at or
+ * before the trial's end, as trialCancelledBeforeCharge reads it) says that
+ * instead of naming a charge that will not come.
+ */
+export function trialThenLabel(info: TrialInfo, then: string): string {
+  const cancels = info.cancelsAt ? Date.parse(info.cancelsAt) : NaN;
+  const ends = Date.parse(info.endsAt);
+  if (!Number.isNaN(cancels) && !Number.isNaN(ends) && cancels <= ends) {
+    return `${trialEndsLabel(info)}; cancelled, so nothing is charged`;
+  }
+  return `${trialEndsLabel(info)}, then ${then}`;
+}
+
 export function formatTrialDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
 }

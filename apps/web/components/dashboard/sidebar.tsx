@@ -399,7 +399,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
             </div>
           )}
           {quota.trialLabel && (
-            <div className="mt-1.5 text-[11px] text-ink-3">{quota.trialLabel}, then the plan price</div>
+            <div className="mt-1.5 text-[11px] text-ink-3">{quota.trialLabel}</div>
           )}
         </Link>
       )}

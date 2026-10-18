@@ -15,7 +15,7 @@ import { ImpersonationBanner } from "@/components/dashboard/impersonation-banner
 import { getCompletedOnboardingSteps } from "@/lib/queries/onboarding";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { entitledToScheduledWork } from "@/lib/billing/quota";
-import { trialEndsLabel, trialGateState } from "@/lib/billing/trial";
+import { trialGateState, trialThenLabel } from "@/lib/billing/trial";
 import { openBeforeTrial, REQUEST_PATH_HEADER } from "@/lib/billing/gate-paths";
 import { usageLine } from "@/lib/billing/usage-line";
 import { siteAllowanceFrom } from "@/lib/workspaces/allowance";
@@ -326,7 +326,12 @@ export default async function DashboardLayout({
                   ...(({ figure, fraction }) => ({ figure, fraction: fraction ?? 0 }))(usageLine(quota)),
                   noPlan: quota.reason === "no-plan",
                   trialEligible: Boolean(quota.trialEligible),
-                  trialLabel: quota.trial ? trialEndsLabel(quota.trial) : null,
+                  // The interval is on the Stripe subscription, which the layout
+                  // does not fetch, so this names the plan rather than a price
+                  // that could be the monthly one on a yearly card.
+                  trialLabel: quota.trial
+                    ? trialThenLabel(quota.trial, quota.plan ? `the ${PLAN_LABELS[quota.plan]} plan` : "the plan")
+                    : null,
                   limit: quota.limit,
                 }
               : null

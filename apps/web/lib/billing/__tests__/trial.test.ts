@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { draftBodyLocked, trialEligible, trialEndsLabel, trialGateApplies, trialGateBypassed, trialGateState, trialInfo } from "@/lib/billing/trial";
+import { draftBodyLocked, trialEligible, trialEndsLabel, trialGateApplies, trialGateBypassed, trialGateState, trialInfo, trialThenLabel } from "@/lib/billing/trial";
 import { planEntitled } from "@/lib/billing/dunning";
 
 describe("trialEligible", () => {
@@ -201,5 +201,20 @@ describe("draftBodyLocked", () => {
       if (before === undefined) delete process.env.TRIAL_GATE_BYPASS_EMAILS;
       else process.env.TRIAL_GATE_BYPASS_EMAILS = before;
     }
+  });
+});
+
+describe("trialThenLabel", () => {
+  const info = { endsAt: "2026-10-22T12:00:00Z", daysLeft: 6 };
+  it("names what follows the trial", () => {
+    expect(trialThenLabel(info, "€199 /mo")).toBe("Trial ends in 6 days, then €199 /mo");
+  });
+  it("says nothing is charged when the trial was cancelled before its first charge", () => {
+    expect(trialThenLabel({ ...info, cancelsAt: "2026-10-22T12:00:00Z" }, "€199 /mo")).toBe(
+      "Trial ends in 6 days; cancelled, so nothing is charged",
+    );
+  });
+  it("still names the charge when the cancellation falls after it", () => {
+    expect(trialThenLabel({ ...info, cancelsAt: "2026-11-22T12:00:00Z" }, "€199 /mo")).toBe("Trial ends in 6 days, then €199 /mo");
   });
 });

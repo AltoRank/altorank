@@ -20,7 +20,7 @@ import { PlanCards, type PlanCard } from "./plan-cards";
 import { RetentionCard } from "./retention-card";
 import { DunningCard } from "./dunning-card";
 import { dunningInfo } from "@/lib/billing/dunning";
-import { trialEndsLabel } from "@/lib/billing/trial";
+import { trialEndsLabel, trialThenLabel } from "@/lib/billing/trial";
 import { SettingsTabs } from "../settings-tabs";
 import { canManageBilling } from "@/lib/team/access";
 import { priceForInterval } from "@/lib/billing/plan-interval";
@@ -158,7 +158,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
                 dunning
                   ? `${PLAN_LABELS[plan]} plan · payment failed`
                   : isActive
-                    ? `${PLAN_LABELS[plan]} plan · ${status}`
+                    ? `${PLAN_LABELS[plan]} plan · ${quota.trial ? "trial" : status}`
                     : selfHosted
                       ? "Self-hosted · no plan needed"
                       : "No plan"
@@ -166,8 +166,14 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
             />
             {(isActive || dunning) && (
               <span>
-                {priceForInterval({ monthly: PLAN_PRICES[plan], yearly: PLAN_YEARLY_PRICES[plan] }, interval, { sales: plan === "scale" })}
-                {renews ? ` · renews ${renews}` : ""}
+                {/* A trial has not renewed anything and has charged nothing:
+                    say when it ends and what the card pays then. */}
+                {quota.trial && !dunning
+                  ? trialThenLabel(quota.trial, priceForInterval({ monthly: PLAN_PRICES[plan], yearly: PLAN_YEARLY_PRICES[plan] }, interval, { sales: plan === "scale" }))
+                  : <>
+                      {priceForInterval({ monthly: PLAN_PRICES[plan], yearly: PLAN_YEARLY_PRICES[plan] }, interval, { sales: plan === "scale" })}
+                      {renews ? ` · renews ${renews}` : ""}
+                    </>}
               </span>
             )}
           </>
