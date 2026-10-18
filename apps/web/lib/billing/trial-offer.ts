@@ -65,6 +65,15 @@ export function priceLabel(interval: BillingInterval, plan: SelfServePlan = "sta
   return interval === "month" ? `${PLAN_PRICES[plan]}/month` : `${PLAN_YEARLY_PRICES[plan]}/year`;
 }
 
+/**
+ * How to stop the trial, worded once and used everywhere it is said: the box,
+ * the checkout sheet and the trial offer outside the gate. Three wordings
+ * ("Cancel any time before then from Settings, Billing", "Cancel any time.",
+ * "Cancel from Billing before the trial ends") read like three policies (UX
+ * clarity audit 2026-10-18, #4).
+ */
+export const CANCEL_LINE = "Cancel in Settings › Billing before the trial ends and nothing is charged.";
+
 /** The plan the gate offers first, by name: Managed. Agency is the quiet second choice. */
 export const TRIAL_PLAN = PLAN_LABELS.starter;
 
@@ -77,9 +86,11 @@ export function trialIncludes(fullArticle: boolean, plan: SelfServePlan = "start
   return [
     // How publishing works today: no CMS has a self-serve Connect button
     // (lib/cms/connectable.ts), so it is a copy, or a connection we set up on
-    // request (review, 2026-10-12).
+    // request (review, 2026-10-12). With the full article on the gate, the
+    // lede already says the trial is for editing, approving and publishing
+    // it; this line says only how it reaches the site.
     fullArticle
-      ? "Edit and approve this article, then copy it to your site or ask us to connect your site"
+      ? "Copy each article to your site, or we connect your site for you"
       : "Read this article in full, approve it, then copy it to your site or ask us to connect your site",
     `Up to ${PLAN_ARTICLE_LIMITS[plan]} articles a month, written at the pace you set`,
     "Nothing publishes until you approve it",
@@ -94,7 +105,7 @@ export function chargeLine(interval: BillingInterval, facts: TrialOfferFacts, pl
 
 /** The reminder and the way out, both true in code (see the header). */
 export function reassuranceLine(): string {
-  return `We email you 3 days before the trial ends. Cancel any time before then from Settings, Billing, and nothing is charged.`;
+  return `We email you 3 days before the trial ends. ${CANCEL_LINE}`;
 }
 
 /** The quiet second option: yearly, with its real saving; or the way back to monthly. */
@@ -115,7 +126,7 @@ export function otherPlanLine(plan: SelfServePlan, interval: BillingInterval): s
     : `Back to ${PLAN_LABELS.starter}: ${priceLabel(interval, "starter")}`;
 }
 
-/** The sticky bar's sentence: the same price as the box, for the same button. */
+/** The sticky bar's sentence: the same price as the box, for the same button. How to cancel is the box's to say. */
 export function stickyOfferLine(interval: BillingInterval, plan: SelfServePlan = "starter"): string {
-  return `${TRIAL_DAYS} days free, then ${priceLabel(interval, plan)}. Cancel any time.`;
+  return `${TRIAL_DAYS} days free, then ${priceLabel(interval, plan)}.`;
 }

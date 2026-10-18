@@ -40,11 +40,13 @@ describe("the price box", () => {
   it("says what the trial includes, €0 today and the first charge's date, the reminder and the way out", () => {
     const html = text(renderToStaticMarkup(<TrialPriceBox canBuy interval="month" onInterval={() => undefined} facts={FACTS} fullArticle />));
     expect(html).toContain("Start your free 7-day trial");
-    expect(html).toContain("Managed plan");
-    expect(html).toContain("Edit and approve this article, then copy it to your site or ask us to connect your site");
+    // No plan name over the default offer: it means nothing on a first visit.
+    expect(html).not.toContain("Managed plan");
+    expect(html).toContain("Copy each article to your site, or we connect your site for you");
     expect(html).toContain(`€0 today, then ${PLAN_PRICES.starter}/month from October 19.`);
     expect(html).toContain("We email you 3 days before the trial ends");
-    expect(html).toContain("Cancel any time before then from Settings, Billing");
+    expect(html).toContain("Cancel in Settings › Billing before the trial ends and nothing is charged.");
+    expect(html).toContain("Other plans");
     expect(html).toContain(`Or pay yearly: ${PLAN_YEARLY_PRICES.starter}/year, two months free`);
     expect(html).not.toMatch(/renewal/i);
   });
@@ -58,7 +60,7 @@ describe("the price box", () => {
 
   it("offers Agency as a quiet switch under Managed, and quotes Agency's price once chosen (#280)", () => {
     const managed = text(renderToStaticMarkup(<TrialPriceBox canBuy interval="month" onInterval={() => undefined} plan="starter" onPlan={() => undefined} facts={FACTS} fullArticle />));
-    expect(managed).toContain("Managed plan");
+    expect(managed).not.toContain("Managed plan");
     expect(managed).toContain(`Try Agency instead: ${PLAN_PRICES.growth}/month`);
     const agency = text(renderToStaticMarkup(<TrialPriceBox canBuy interval="month" onInterval={() => undefined} plan="growth" onPlan={() => undefined} facts={FACTS} fullArticle />));
     expect(agency).toContain("Agency plan");

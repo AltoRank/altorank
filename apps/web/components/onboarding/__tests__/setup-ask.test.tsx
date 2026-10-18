@@ -9,7 +9,7 @@ vi.mock("@/components/billing/trial-offer", () => ({
 }));
 
 import { SetupAsk, NOTHING_PLANNED_HEADING, nothingPlannedLede } from "../setup-ask";
-import { asksForCard, setupEnding } from "@/lib/onboarding/setup-retry";
+import { asksForCard, asksWithOffer, setupEnding } from "@/lib/onboarding/setup-retry";
 import { reduceOnboarding, initialOnboardingState, stateFromRun, type EmptyPool, type OnboardingEvent, type OnboardingRunRow } from "@/lib/onboarding/events";
 
 // renderToStaticMarkup, as the editor panels are tested: no jsdom in this repo.
@@ -100,9 +100,22 @@ describe("SetupAsk", () => {
     expect(html).toContain("Nothing has been charged");
   });
 
-  it("renders the card ask otherwise", () => {
+  it("renders the card ask beside an article", () => {
     expect(renderToStaticMarkup(<SetupAsk ending="article" canBuy followUp />)).toContain("trial-offer");
-    expect(renderToStaticMarkup(<SetupAsk ending="no-article" canBuy followUp />)).toContain("trial-offer");
+  });
+
+  it("with no article, says nothing was charged and keeps the trial to one quiet button", () => {
+    for (const ending of ["first-failed", "no-article"] as const) {
+      const markup = renderToStaticMarkup(<SetupAsk ending={ending} canBuy followUp />);
+      expect(markup).toContain("quiet-trial-ask");
+      expect(markup).not.toContain("trial-offer");
+      expect(text(markup)).toContain("Nothing has been charged.");
+      expect(text(markup)).not.toContain("€");
+      expect(markup).not.toContain("bg-accent");
+      expect(asksWithOffer(ending)).toBe(false);
+    }
+    expect(asksWithOffer("article")).toBe(true);
+    expect(asksWithOffer("writing")).toBe(true);
   });
 
   it("the heading and lede say nothing cleared the bar, that the team knows, and when they will hear back", () => {

@@ -44,11 +44,13 @@ describe("the trial offer", () => {
     expect(REQUIRED_STRIPE_EVENTS).toContain("customer.subscription.trial_will_end");
     expect(isOptional("billing")).toBe(false);
     expect(reassuranceLine()).toContain("3 days before the trial ends");
-    expect(reassuranceLine()).toContain("Settings, Billing");
+    expect(reassuranceLine()).toContain("Settings › Billing");
   });
 
   it("says what the trial includes from the plan's own numbers, and the text only when it was not already read", () => {
-    expect(trialIncludes(true)[0]).toBe("Edit and approve this article, then copy it to your site or ask us to connect your site");
+    // The lede says the trial is for editing, approving and publishing it; the list says only how it reaches the site.
+    expect(trialIncludes(true)[0]).toBe("Copy each article to your site, or we connect your site for you");
+    expect(trialIncludes(true).join(" ")).not.toMatch(/edit|approve this/i);
     expect(trialIncludes(true).join(" ")).not.toMatch(/API key|Model and search-data/);
     expect(trialIncludes(false)[0]).toContain("Read this article in full");
     expect(trialIncludes(true)).toContain(`Up to ${PLAN_ARTICLE_LIMITS.starter} articles a month, written at the pace you set`);

@@ -30,7 +30,7 @@ import { getTrafficValue } from "@/lib/queries/value";
 import { describeOrganicValue, formatOrganicValue } from "@/lib/analytics/value";
 import { getBingSummary } from "@/lib/queries/bing";
 import { PageHead, DotSep, StatusPill, Avatar, Button, Chip, Card, StatStrip, ConnectPrompt, DataTable } from "@/components/ui";
-import { ClientActions } from "@/components/dashboard/client-actions";
+import { NextUp } from "@/components/dashboard/next-up";
 import { ShareResults } from "@/components/dashboard/share-results";
 import { getShareCardFacts } from "@/lib/queries/share";
 import { buildShareCard } from "@/lib/share/card";
@@ -42,9 +42,6 @@ import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
-import { requireAuth } from "@/lib/auth/require-auth";
-import { canAddWorkspace } from "@/lib/team/access";
-import { getWorkspaceAllowance } from "@/lib/billing/workspaces";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -85,22 +82,8 @@ export default async function DashboardPage() {
     .is("article_id", null);
   if (scopeId) plannedQuery = plannedQuery.eq("workspace_id", scopeId);
 
-  // The workspace allowance, so "Add workspace" can be disabled with its
-  // reason instead of opening a dialog that fails silently at the limit. The
-  // Workspaces page has always passed this; the Dashboard rendered
-  // <ClientActions /> bare, which pins `atLimit` to false (P0-O3). Chained
-  // rather than awaited here so it joins the read below instead of preceding
-  // it - it needs the account id, nothing else on this page needs it.
-  // The role rides along: "Add workspace" is owner/admin, so an editor gets
-  // the sentence naming who can rather than a button that refuses.
-  const authRead = requireAuth();
-  const allowanceRead = authRead.then(({ accountId, user }) =>
-    getWorkspaceAllowance(gscSupabase, accountId, user.email),
-  );
-  const viewerRole = (await authRead).role;
-
   const now = new Date();
-  const [workspaces, allArticles, recent, gscRows, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes, health, knownPages, shareFacts, value, allowance] =
+  const [workspaces, allArticles, recent, gscRows, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes, health, knownPages, shareFacts, value] =
     await Promise.all([
       getWorkspaces(),
       getArticles(scopeId ?? undefined),
@@ -128,7 +111,6 @@ export default async function DashboardPage() {
       // The same clicks as the chart, priced. The one figure on this page
       // that is an estimate, and its label and tooltip say so.
       getTrafficValue(scopeId ?? undefined),
-      allowanceRead,
     ]);
   // The days Search Console history covers: one site's recorded sync range,
   // or, across sites, what the rows show (a site connected last week must not
@@ -194,6 +176,12 @@ export default async function DashboardPage() {
         | (Workspace & { onboarded_at?: string | null; onboarding_skipped_at?: string | null })
         | undefined)
     : undefined;
+  // Oldest first: for a site that never finished setup, that is the draft
+  // the generate cron wrote while nobody was looking.
+  const oldestReview =
+    allArticles
+      .filter((a) => a.status === "review")
+      .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))[0] ?? null;
   const actions = recommendedActions({
     cmsConnected,
     gscConnected,
@@ -203,13 +191,14 @@ export default async function DashboardPage() {
     setupUnfinished: Boolean(
       scopedWorkspace && !scopedWorkspace.onboarded_at && !scopedWorkspace.onboarding_skipped_at,
     ),
-    // Oldest first: for a site that never finished setup, that is the draft
-    // the generate cron wrote while nobody was looking.
-    reviewDraftId:
-      allArticles
-        .filter((a) => a.status === "review")
-        .sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))[0]?.id ?? null,
+    reviewDraftId: oldestReview?.id ?? null,
   });
+  // The waiting draft is the page's one primary action, said once at the top
+  // (NextUp); the strip keeps the rest. Unfinished setup keeps its own card,
+  // which already links the draft.
+  const setupCard = actions.some((a) => a.id === "finish-setup");
+  const nextUp = oldestReview && !setupCard ? oldestReview : null;
+  const otherActions = nextUp ? actions.filter((a) => a.id !== "review-drafts") : actions;
   const competitorYields = yields ? yieldsForInputs(profile?.competitors ?? [], "competitor", yields) : [];
   const audienceYields = yields ? yieldsForInputs(profile?.audiences ?? [], "audience", yields) : [];
   // Audience research only records provenance since the drawer started
@@ -256,18 +245,19 @@ export default async function DashboardPage() {
                 shareToken={wsMap.get(scopeId)?.share_token ?? null}
               />
             )}
-            <ClientActions
-              allowance={{ limit: allowance.limit, remaining: allowance.remaining, used: allowance.used, noPlan: allowance.reason === "no-plan" }}
-              canAdd={canAddWorkspace(viewerRole)}
-            />
           </>
         }
       />
 
+      {/* Three tiles without Search Console, five with it. The clicks and
+          their price used to sit here as dashes with "Connect analytics" and
+          "needs Search Console" under them, two more copies of the Connect
+          card in the strip below; "Pending reviews" was a third copy of the
+          draft NextUp now leads with (UX clarity audit 2026-10-18). */}
       <StatStrip
         stats={[
-          { label: "Articles published", value: `${totalLive}`, unit: ` / ${totalArticles}`, delta: `${totalLive} live`, deltaType: "pos" },
-          {
+          { label: "Articles published", value: `${totalLive}`, unit: ` / ${totalArticles}` },
+          ...(gscConnected ? [{
             label: "Organic traffic",
             // A dash, not 0, when only the window before has numbers: the
             // sync stopped, and nothing was measured for this one.
@@ -283,21 +273,10 @@ export default async function DashboardPage() {
                   ? `${traffic.impressions.current.toLocaleString()} impressions, no clicks yet`
                   : "no impressions reported yet"
                 : describeChange(traffic.clicks, traffic.days, "clicks", traffic.currentComplete)
-              : gscConnected
-                ? gscNeedsReconnect
-                  ? "Google disconnected · reconnect in Settings"
-                  : "connected · Google has not returned rows yet"
-                : (
-                  <ConnectPrompt
-                    dense
-                    icon="trend"
-                    title=""
-                    body=""
-                    href="/connect"
-                    cta="Connect analytics"
-                  />
-                ),
-            deltaType: traffic.clicks.changePct != null && traffic.clicks.changePct > 0 ? "pos" : undefined,
+              : gscNeedsReconnect
+                ? "Google disconnected · reconnect in Settings"
+                : "connected · Google has not returned rows yet",
+            deltaType: traffic.clicks.changePct != null && traffic.clicks.changePct > 0 ? ("pos" as const) : undefined,
           },
           {
             label: "Est. traffic value",
@@ -311,13 +290,11 @@ export default async function DashboardPage() {
               value.value === null
                 ? value.clicks > 0
                   ? "no cost-per-click on file yet"
-                  : traffic.hasData
-                    ? "no priced clicks yet"
-                    : "needs Search Console"
+                  : "no priced clicks yet"
                 : value.coverage === null
                   ? "priced, no clicks yet"
                   : `covers ${Math.round(value.coverage * 100)}% of ${value.clicks.toLocaleString()} clicks`,
-          },
+          }] : []),
           {
             label: "Keywords tracked",
             value: keywordCount ? keywordCount.toLocaleString() : "—",
@@ -327,22 +304,16 @@ export default async function DashboardPage() {
               <ConnectPrompt dense icon="keywords" title="" body="" href="/keywords" cta="Run keyword research" />
             ),
           },
-          { label: "Pending reviews", value: String(pendingReviews), delta: (() => {
-              // Nothing pending used to read "across 0 workspaces", which is a
-              // sentence about how many sites the account has - and it says
-              // the wrong number, because the count is of sites with a review
-              // waiting, not of sites.
-              if (pendingReviews === 0) return "nothing pending";
-              const n = new Set(allArticles.filter((a) => a.status === "review").map((a) => a.workspace_id)).size;
-              return `across ${plural(n, "workspace")}`;
-            })() },
         ]}
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
-        <RecommendedActionsStrip actions={actions} />
+        {nextUp && <NextUp draft={nextUp} waiting={pendingReviews} />}
+        <RecommendedActionsStrip actions={otherActions} />
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-          {/* Traffic chart */}
+          {/* Traffic chart. Without Search Console there is nothing to draw,
+              and the strip above carries the one Connect card. */}
+          {gscConnected && (
           <Card title={`Search performance · last ${traffic.days} days`} meta={<Chip label={scopeId ? (workspaces.find((w) => w.id === scopeId)?.name ?? "This workspace") : "All workspaces"} soft />} className="md:col-span-8">
             {/* `restated`: with Search Console missing, the Recommended
                 actions strip directly above already gives the reason and the
@@ -391,46 +362,13 @@ export default async function DashboardPage() {
             </div>
             </>
             )}
-            {gscConnected && traffic.hasData && <OpportunitiesList opportunities={opportunities} />}
+            {traffic.hasData && <OpportunitiesList opportunities={opportunities} />}
           </Card>
-
-          {/* Today's queue */}
-          <Card
-            title="Needs your review"
-            meta={
-              <Link href="/articles?status=review" className="hover:text-accent-ink">
-                {pendingReviews} waiting
-              </Link>
-            }
-            className="md:col-span-4"
-            flush
-          >
-            <div className="px-2 py-1.5">
-              {allArticles
-                .filter((a) => a.status === "review")
-                .slice(0, 5)
-                .map((item) => {
-                  const w = wsMap.get(item.workspace_id);
-                  return (
-                    <Link key={item.id} href={`/content/${item.id}`} className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-[7px] hover:bg-panel">
-                      {w && <Avatar initials={w.initials} color={w.color} size="sm" />}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[13px] truncate">{item.title}</div>
-                        <div className="font-mono text-[10.5px] text-ink-3">{w?.domain ?? "—"}</div>
-                      </div>
-                      <StatusPill status={item.status} />
-                    </Link>
-                  );
-                })}
-              {pendingReviews === 0 && (
-                <div className="text-[13px] text-ink-3 px-2.5 py-4 text-center">No items in queue</div>
-              )}
-            </div>
-          </Card>
+          )}
 
           {/* The Search Console blocks. Per site only: each is about one
               property, and the page has no honest way to add two of them. */}
-          {scopeId && coverage && (
+          {scopeId && coverage && gscConnected && (
             <>
               <Card title={`Best articles · last ${traffic.days} days`} meta="clicks per page, Google's count" className="md:col-span-7" flush>
                 {/* `restated`: the Search performance card above already

@@ -12,10 +12,12 @@
 // setup had finished. Nothing was broken; nothing cleared the bar. The screen
 // now says that, says a person has been told, and asks for nothing.
 
-import { TrialOffer, TrialPriceBox } from "@/components/billing/trial-offer";
+import { MEMBER_CANNOT_BUY, TrialOffer, TrialPriceBox } from "@/components/billing/trial-offer";
+import { StartTrialButton } from "@/components/billing/start-trial-button";
 import type { BillingInterval, SelfServePlan } from "@/lib/stripe";
 import type { TrialOfferFacts } from "@/lib/billing/trial-offer";
-import { asksForCard, type SetupEnding } from "@/lib/onboarding/setup-retry";
+import { asksForCard, asksWithOffer, type SetupEnding } from "@/lib/onboarding/setup-retry";
+import { TRIAL_DAYS } from "@/lib/stripe";
 import { judgedRows, type EmptyPool } from "@/lib/onboarding/events";
 import { trackStep } from "@/lib/onboarding/track-step";
 import { TrackStep } from "./track-step";
@@ -93,6 +95,31 @@ export function SetupAsk({
   // what the heading says (the overnight retry and its email).
   if (ending === "provider-down") return <NothingPlannedNote followUp={false} />;
   if (!asksForCard(ending)) return <NothingPlannedNote followUp={followUp} />;
+  // No article to show for it: say nothing was charged first, and keep the
+  // trial as one quiet button rather than the full box.
+  if (!asksWithOffer(ending)) {
+    return (
+      <>
+        <TrackStep step="gate_shown" />
+        <div className="rounded-[10px] border border-line bg-panel p-5" data-testid="quiet-trial-ask">
+          <p className="m-0 text-[13.5px] font-medium text-ink">Nothing has been charged.</p>
+          {canBuy ? (
+            <>
+              <p className="m-0 mt-1.5 text-[13px] leading-[1.6] text-ink-2">
+                If you start the {TRIAL_DAYS}-day trial anyway, your first article is written again as soon as it starts.
+              </p>
+              <div className="mt-3">
+                <StartTrialButton returnTo={returnTo} variant="default" onStart={() => trackStep("trial_clicked")} />
+              </div>
+            </>
+          ) : (
+            <p className="m-0 mt-1.5 text-[13px] leading-[1.6] text-ink-2">{MEMBER_CANNOT_BUY}</p>
+          )}
+        </div>
+        {below}
+      </>
+    );
+  }
   // The gate is the card ask: shown is when this renders it (onboarding.step).
   return (
     <>

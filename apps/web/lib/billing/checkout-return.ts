@@ -6,6 +6,16 @@ export function checkoutDestination(value: unknown): string {
   return value;
 }
 
+/**
+ * Where a trial started from the gate lands once it is active: the first
+ * article, open to edit and approve - the thing the card was asked for - and
+ * not the dashboard, whose tiles are still empty on day one (UX clarity
+ * audit 2026-10-18, #1). No article yet: the dashboard, as before.
+ */
+export function firstArticleReturn(articleId: string | null | undefined): string {
+  return articleId && /^[a-zA-Z0-9-]+$/.test(articleId) ? `/content/${articleId}` : "/dashboard";
+}
+
 /** Where the trial screen shows "Checkout was cancelled" and the offer again. */
 export const TRIAL_CANCELLED_PATH = "/onboarding?status=cancelled";
 

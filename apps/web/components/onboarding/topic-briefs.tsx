@@ -17,8 +17,8 @@ export function TopicBriefs({ planned, title, only }: { planned: OnboardingPlann
     .filter((p) => p.brief?.status === "qualified" && (!only || p.term.trim().toLowerCase() === only.trim().toLowerCase()))
     .slice(0, 5);
   if (!topics.length) return null;
-  return <section className="my-5">
-    <h2 className="mb-3 text-lg font-semibold">{title ?? (topics.length === 1 ? "Why this article" : "Why these articles")}</h2>
+  return <section>
+    <h2 className="mb-2 text-[15px] font-semibold">{title ?? (topics.length === 1 ? "Why this article" : "Why these articles")}</h2>
     <div className="flex flex-col gap-3">{topics.map(({ term, brief }) => {
       return <details key={term} className="group rounded-lg border border-line bg-panel">
         <summary className="flex cursor-pointer list-none items-start justify-between gap-4 p-4 [&::-webkit-details-marker]:hidden">

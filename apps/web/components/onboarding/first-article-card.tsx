@@ -305,14 +305,16 @@ export function FirstArticleCardView({
         )}
       </div>
 
-      <p className="m-0 mt-4 flex items-center gap-1.5 text-[12.5px] text-ink-2">
-        <Icons.lock size={12} />
-        {showText
-          ? "Read-only. Editing, approving and publishing open when your trial starts."
-          : written
-            ? "The full text opens when your trial starts."
-            : "The full text opens when your trial starts. It keeps being written while you decide."}
-      </p>
+      {/* With the text shown, the gate's lede already says the trial is for
+          editing, approving and publishing it: a lock line here said it a
+          second time (UX clarity audit 2026-10-18, #4). Without the text, the
+          lock is the news. */}
+      {!showText && (
+        <p className="m-0 mt-4 flex items-center gap-1.5 text-[12.5px] text-ink-2">
+          <Icons.lock size={12} />
+          {written ? "The full text opens when your trial starts." : "The full text opens when your trial starts. It keeps being written while you decide."}
+        </p>
+      )}
       {article && article.more > 0 && (
         <p className="m-0 mt-1.5 text-[12px] text-ink-3">
           {article.more} more {article.more === 1 ? "draft is" : "drafts are"} written for this site and open with the trial too.
