@@ -271,11 +271,13 @@ async function runPhases(
         emit({
           phase: "scanning",
           status: "done",
-          detail: chosen
+          // "You chose" only when a person saved the wizard: a run it started
+          // by itself saved the articles it found on the blog, not a choice.
+          detail: chosen && storedProfile?.confirmedAt
             ? "Learned how your site writes, starting from the articles you chose."
             : read.source === "shopify"
               ? "Learned how your store writes, from its own pages and articles (its storefront is password-protected)."
-              : read.articleText || read.source === "sitemap" ? "Learned how your site writes, from its articles." : "Learned how your site writes.",
+              : chosen || read.articleText || read.source === "sitemap" ? "Learned how your site writes, from its articles." : "Learned how your site writes.",
         });
       } else {
         // Phrased so it still reads correctly when `onboardingOutcome` quotes

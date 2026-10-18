@@ -257,9 +257,42 @@ export function sharedResults(a: readonly string[], b: readonly string[]): numbe
 
 // --- The comparison ----------------------------------------------------------
 
-interface Prepared { key: string; exact: string; serp: Set<string> | null }
+/**
+ * The phrase in its own order with a leading question frame ("how to", "how
+ * do i") and connective words taken out, or null when it has no frame. Order
+ * is kept: "agency seo" and "seo for agencies" share their words and not
+ * their results page, and only a frame is dropped here.
+ */
+function unframedKey(term: string, locale: Locale): string | null {
+  const rules = searchWords(locale);
+  if (!rules?.questionFrames) return null;
+  const all = tokens(term, locale);
+  const frame = rules.questionFrames.find((f) => f.length < all.length && f.every((w, i) => all[i] === w));
+  return frame ? bareWords(all.slice(frame.length), rules) : null;
+}
+
+function bareWords(words: string[], rules: SearchWordRules): string {
+  return words.filter((t) => !rules.stopwords.has(t)).map((t) => foldMarks(rules.fold(t))).join(" ");
+}
+
+interface Prepared { key: string; exact: string; bare: string; unframed: string | null; serp: Set<string> | null }
 function prepare(topic: IntentTopic, locale: Locale): Prepared {
-  return { key: keyIn(topic.term, locale), exact: exactKey(topic.term, locale), serp: comparableSerp(topic.organicUrls) };
+  const rules = searchWords(locale);
+  return {
+    key: keyIn(topic.term, locale),
+    exact: exactKey(topic.term, locale),
+    bare: rules ? bareWords(tokens(topic.term, locale), rules) : "",
+    unframed: unframedKey(topic.term, locale),
+    serp: comparableSerp(topic.organicUrls),
+  };
+}
+
+/** One phrase is the other asked as a question: "how to repair a flat roof" and "repair flat roof". */
+function questionTwin(a: Prepared, b: Prepared): boolean {
+  if (!a.unframed && !b.unframed) return false;
+  const left = a.unframed ?? a.bare;
+  const right = b.unframed ?? b.bare;
+  return Boolean(left) && left === right;
 }
 /**
  * Two phrasings that differ in one word only, and only by an abbreviation
@@ -291,6 +324,10 @@ function compare(a: Prepared, b: Prepared, note: string | null): IntentMatch {
   // rival's name with and without the plural, as separate articles, because
   // their results pages shared fewer than four URLs on the day.
   if (nearIdentical(a.exact, b.exact)) return { same: true, basis: "words", note: "one word abbreviated or inflected" };
+  // And one query asked as a question: a "how to" results page leans to
+  // guides and videos and the bare one mixes in shops, so the two share few
+  // URLs, but one article answers both and a second one competes with it.
+  if (questionTwin(a, b)) return { same: true, basis: "words", note: "one asks it as a question" };
   if (a.serp && b.serp) {
     let shared = 0;
     for (const url of a.serp) if (b.serp.has(url)) shared++;

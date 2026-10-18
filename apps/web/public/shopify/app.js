@@ -34,9 +34,22 @@ export function statusBadge(a) {
   return `<s-badge tone="${tone}">${esc(a.statusLabel)}</s-badge>`;
 }
 
-/** The first look's banner, or nothing once it is done. */
-export function renderFirstLook(firstLook) {
-  if (!firstLook || firstLook.state === "done" || firstLook.state === "none") return "";
+/**
+ * The first look's banner, or nothing once it is done.
+ *
+ * `none`: no run on record. Provisioning starts one, so this is an install
+ * whose run never started or was cleared; without a button it had no way to
+ * begin. A store that already has drafts has been read, so it shows nothing.
+ */
+export function renderFirstLook(firstLook, opts = {}) {
+  if (!firstLook || firstLook.state === "done") return "";
+  if (firstLook.state === "none") {
+    if (opts.hasDrafts) return "";
+    return `<s-banner tone="info" heading="AltoRank has not read your store yet">
+      <s-paragraph>It reads your pages, products and articles, finds what your buyers search for, and plans your first articles. It takes about a minute.</s-paragraph>
+      <s-button slot="secondary-actions" data-action="retry-first-look">Read my store</s-button>
+    </s-banner>`;
+  }
   if (firstLook.state === "failed") {
     return `<s-banner tone="critical" heading="The first look stopped">
       <s-paragraph>${esc(firstLook.message)}</s-paragraph>
@@ -130,7 +143,7 @@ export function renderAccount(state) {
 export function renderHome(state) {
   return `<s-page heading="AltoRank">
     <s-paragraph slot="subtitle">${esc(state.site.domain)}</s-paragraph>
-    ${renderFirstLook(state.firstLook)}
+    ${renderFirstLook(state.firstLook, { hasDrafts: state.queue.length > 0 })}
     ${renderQueue(state.queue)}
     ${renderConnection(state.connection)}
     ${renderAccount(state)}
