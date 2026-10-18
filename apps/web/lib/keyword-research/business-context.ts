@@ -31,6 +31,8 @@ export interface BusinessFields {
   competitorNames?: string[] | null;
   language?: string | null;
   country?: string | null;
+  /** Set when a person saved it; null when a model read it off the site and nobody looked. */
+  confirmedAt?: string | null;
 }
 
 export interface EnsuredProfile {

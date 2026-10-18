@@ -199,6 +199,27 @@ describe("English regression set", () => {
     expect(sameIntent({ term: "Best CRM", organicUrls: page("a") }, { term: "best crm", organicUrls: page("b") }, "en")).toEqual({ same: true, basis: "words" });
   });
 
+  it("one query asked as a question is one search, even when the results pages differ", () => {
+    // A first look planned both, four days apart; their pages shared 2 of 10 URLs.
+    const twin = { same: true, basis: "words", note: "one asks it as a question" };
+    expect(sameIntent({ term: "how to repair leaking flat roof", organicUrls: page("a") }, { term: "repair leaking flat roof", organicUrls: serp(page("a"), 2, "b") }, "en")).toEqual(twin);
+    expect(sameIntent({ term: "How do I repair a leaking flat roof?" }, { term: "repair leaking flat roofs" }, "en")).toEqual(twin);
+    expect(sameIntent({ term: "how to repair leaking flat roof" }, { term: "how do you repair leaking flat roof" }, "en")).toEqual(twin);
+    expect(sameIntent({ term: "how to convert java to python" }, { term: "convert java to python" }, "en").same).toBe(true);
+  });
+
+  it("a question frame is not a licence to merge different searches", () => {
+    // Another subject, another order, or a question a frame does not cover.
+    expect(sameIntent({ term: "how to repair leaking flat roof" }, { term: "leaking flat roof repair cost" }, "en").same).toBe(false);
+    expect(sameIntent({ term: "how to choose seo agency" }, { term: "seo agency" }, "en").same).toBe(false);
+    expect(sameIntent({ term: "how to seo for agencies", organicUrls: page("a") }, { term: "agency seo", organicUrls: page("b") }, "en").same).toBe(false);
+    expect(sameIntent({ term: "how long does a flat roof last" }, { term: "flat roof last" }, "en").same).toBe(false);
+    expect(sameIntent({ term: "how much does epdm cost" }, { term: "epdm cost" }, "en").same).toBe(false);
+    // "how to" alone is not a search, and a language without frames compares as before.
+    expect(sameIntent({ term: "how to" }, { term: "to" }, "en").same).toBe(false);
+    expect(sameIntent({ term: "how to web tasarım" }, { term: "web tasarım" }, "tr").same).toBe(false);
+  });
+
   it("compares results pages by host and path, not by scheme, www or trailing slash", () => {
     const left = ["https://www.one.example/a/", "https://two.example/b", "https://three.example/c", "https://four.example/d"];
     const right = ["http://one.example/a", "https://www.two.example/b/", "https://three.example/c", "https://four.example/d/"];

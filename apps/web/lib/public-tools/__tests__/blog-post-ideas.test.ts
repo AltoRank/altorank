@@ -38,6 +38,11 @@ describe("blog-post-ideas", () => {
     expect(ideas).not.toContain("home composting");
     expect(ideas.some((i) => String(i).includes("3d"))).toBe(false);
     expect(t.rows.find((r) => r[0] === "Can you compost at home?")?.[1]).toBe("Yes/no questions");
+    // The result says what it is: US English searches containing the topic,
+    // not related searches worded differently.
+    const about = textOf(blocks, "About these ideas")?.text ?? "";
+    expect(about).toMatch(/US English search that contains your topic/);
+    expect(about).toMatch(/does not include related searches/);
   });
 
   it("merges phrasings of one need", () => {
