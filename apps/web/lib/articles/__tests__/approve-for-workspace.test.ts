@@ -24,7 +24,14 @@ vi.mock("@/lib/ai/fact-check", () => ({ factCheckArticle: m.factCheckArticle, ap
 vi.mock("@/lib/cms/html", () => ({ tiptapToHtml: () => "<p>x</p>" }));
 vi.mock("@/lib/supabase/server", () => ({
   createServiceClient: () => ({
-    from: () => ({
+    from: (table: string) => ({
+      // writeApproval reads which site each article is on, then that site's
+      // schedule: none here, so the approval stays `approved`.
+      select: () => ({
+        in: (_c: string, ids: string[]) => ({
+          eq: async () => ({ data: table === "articles" ? ids.map((id) => ({ id, workspace_id: "ws-1" })) : [], error: null }),
+        }),
+      }),
       update: (values: Record<string, unknown>) => ({
         in: (_c: string, ids: string[]) => ({
           eq: () => ({ select: async () => m.serviceUpdate(values, ids) }),

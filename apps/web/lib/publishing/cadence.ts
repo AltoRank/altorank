@@ -105,6 +105,95 @@ export function isCadenceDue(
   return cadenceDueState(cadence, now, lastPublishedLocalDate).due;
 }
 
+/** Minutes after local midnight for a "HH:MM" or "HH:MM:SS" publish_time. */
+function publishMinutes(publishTime: string): number {
+  const [h, m] = publishTime.split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
+/** The wall-clock reading of `instant` in `timezone`, as if that reading were UTC. */
+function wallClockAsUtc(timezone: string, instant: number): number {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "numeric",
+    minute: "numeric",
+    second: "numeric",
+    hour12: false,
+  }).formatToParts(new Date(instant));
+  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? 0);
+  return Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second"));
+}
+
+/** The instant a local date ("YYYY-MM-DD") and minute-of-day name in `timezone`. */
+function zonedInstant(timezone: string, localDate: string, minutes: number): Date {
+  const [y, mo, d] = localDate.split("-").map(Number);
+  const wall = Date.UTC(y, mo - 1, d, Math.floor(minutes / 60), minutes % 60);
+  // Two passes: the offset at the first guess can differ from the offset at
+  // the answer when a DST change falls between them.
+  let at = wall - (wallClockAsUtc(timezone, wall) - wall);
+  at = wall - (wallClockAsUtc(timezone, at) - at);
+  return new Date(at);
+}
+
+/** `localDate` plus `days`, as a calendar date (no timezone involved). */
+function addDays(localDate: string, days: number): { date: string; day: number } {
+  const [y, mo, d] = localDate.split("-").map(Number);
+  const t = new Date(Date.UTC(y, mo - 1, d + days));
+  return { date: t.toISOString().slice(0, 10), day: t.getUTCDay() };
+}
+
+/**
+ * The next `count` publishing slots of a cadence, as instants, earliest first.
+ *
+ * The same rules as `cadenceDueState`, walked forward: a slot is an enabled
+ * day at publish_time, one per day, and today's is gone once the site has
+ * published today. Today's slot is still returned when publish_time has
+ * passed and nothing went out yet, because the next cron run takes it; the
+ * instant is then in the past, and `shipLabel` says "today".
+ *
+ * cron/publish phase 2 takes the oldest queued article (created_at) per slot,
+ * so the article with `n` queued articles ahead of it ships in slot `n`.
+ */
+export function cadenceSlots(
+  cadence: Pick<PublishingCadence, "timezone" | "days_of_week" | "publish_time">,
+  now: Date,
+  lastPublishedLocalDate: string | null,
+  count: number,
+): Date[] {
+  const out: Date[] = [];
+  if (count <= 0 || !cadence.days_of_week.length) return out;
+  const today = localParts(cadence.timezone, now).date;
+  const minutes = publishMinutes(cadence.publish_time);
+  // A week holds at least one enabled day, so this bound is never the limit.
+  for (let i = 0; out.length < count && i < count * 7 + 7; i++) {
+    const { date, day } = addDays(today, i);
+    if (!cadence.days_of_week.includes(day)) continue;
+    if (i === 0 && lastPublishedLocalDate === date) continue;
+    out.push(zonedInstant(cadence.timezone, date, minutes));
+  }
+  return out;
+}
+
+/**
+ * "today 10:00", "tomorrow 10:00", "Tue 10:00", or "Tue 28 Oct 10:00" past a
+ * week, read in the site's timezone. A slot already due reads "today": it
+ * goes out on the next run, not at a time we can promise.
+ */
+export function shipLabel(at: Date, timezone: string, now: Date = new Date()): string {
+  if (at.getTime() <= now.getTime()) return "today";
+  const fmt = (opts: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-GB", { timeZone: timezone, ...opts }).format(at);
+  const time = fmt({ hour: "2-digit", minute: "2-digit", hour12: false });
+  const days =
+    (Date.parse(localParts(timezone, at).date) - Date.parse(localParts(timezone, now).date)) / 86_400_000;
+  if (days === 0) return `today ${time}`;
+  if (days === 1) return `tomorrow ${time}`;
+  if (days < 7) return `${fmt({ weekday: "short" })} ${time}`;
+  return `${fmt({ weekday: "short" })} ${fmt({ day: "numeric" })} ${fmt({ month: "short" })} ${time}`;
+}
+
 /**
  * Drop cadences (or scheduled articles) belonging to paused workspaces.
  *

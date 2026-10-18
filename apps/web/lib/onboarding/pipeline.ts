@@ -29,7 +29,8 @@
 import type { RankedKeyword } from "@/lib/seo/ranked-keywords";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readSiteText } from "./site-text";
-import { lockedStoreContent } from "@/lib/shopify/store-content";
+import { installedStoreContent } from "@/lib/shopify/store-content";
+import { ensureBusinessProfile, profileUsable, type BusinessFields } from "@/lib/keyword-research/business-context";
 import { withSiteReads } from "@/lib/seo/site-urls";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { trainVoiceProfile } from "@/lib/voice/train";
@@ -219,7 +220,28 @@ async function runPhases(
   // app, its own pages and articles are read through the Admin API instead
   // and stand in for the crawl (lib/shopify/store-content.ts). Null for every
   // other site, and for a store whose storefront is open.
-  const storeContent = domain ? await timed("store_content", () => lockedStoreContent(supabase, workspace.id, domain)) : null;
+  const store = domain ? await timed("store_content", () => installedStoreContent(supabase, workspace.id, domain)) : null;
+  const storeContent = store?.locked ? store : null;
+
+  // An App Store install never saw the wizard, so it arrives with no
+  // business profile - and discovery seeds from the profile: with none it
+  // proposed nothing to research and the look planned nothing (altorank-dev,
+  // 2026-10-16). Inferred from the store's own catalogue instead, the one
+  // call the wizard would have made, saved unconfirmed. Awaited by the
+  // keyword phase only; the voice does not need it.
+  const storedProfile = (workspace.business_profile as BusinessFields | null) ?? null;
+  const profileReady: Promise<BusinessFields | null> =
+    store && domain && !profileUsable(storedProfile)
+      ? timed("store_profile", () =>
+          withStage("profile", () =>
+            ensureBusinessProfile(supabase, workspace.id, domain, storedProfile, {
+              read: { text: store.profileText, source: "shopify", chars: store.profileText.length },
+            }),
+          ),
+        )
+          .then((r) => r.business ?? storedProfile)
+          .catch(() => storedProfile)
+      : Promise.resolve(storedProfile);
 
   emit({ phase: "scanning", status: "active" });
   const scanning = (async () => {
@@ -249,11 +271,13 @@ async function runPhases(
         emit({
           phase: "scanning",
           status: "done",
-          detail: chosen
+          // "You chose" only when a person saved the wizard: a run it started
+          // by itself saved the articles it found on the blog, not a choice.
+          detail: chosen && storedProfile?.confirmedAt
             ? "Learned how your site writes, starting from the articles you chose."
             : read.source === "shopify"
               ? "Learned how your store writes, from its own pages and articles (its storefront is password-protected)."
-              : read.articleText || read.source === "sitemap" ? "Learned how your site writes, from its articles." : "Learned how your site writes.",
+              : chosen || read.articleText || read.source === "sitemap" ? "Learned how your site writes, from its articles." : "Learned how your site writes.",
         });
       } else {
         // Phrased so it still reads correctly when `onboardingOutcome` quotes
@@ -313,6 +337,7 @@ async function runPhases(
       // results pages with - less than one term - and planned nothing.
       const runBudgetNow = currentSpendScope()?.budget ?? null;
       const researchBudget = runBudgetNow ? leavingRoom(runBudgetNow, firstLookResearchLeave(firstLookCeiling())) : undefined;
+      const profile = await profileReady;
       const { value: analysis, refused: discoveryRefused } = await watchRefusals(() => timed("analysis", () => withSpendScope({ stage: "discovery", budget: researchBudget }, () => analyseDomain({
         domain,
         supabase,
@@ -322,7 +347,7 @@ async function runPhases(
         locationCode: workspace.location_code ?? undefined,
         // What the wizard learned, so the keyword phase can seed from the
         // business and its audiences and not only from page headings.
-        profile: (workspace.business_profile as BusinessProfile | null) ?? null,
+        profile: profile as BusinessProfile | null,
         // A dozen pages is a voice and a vocabulary; the nightly pass reads the
         // rest. Every page here is one request against a host that may be
         // counting them (packhub.io bans after ten in forty seconds).

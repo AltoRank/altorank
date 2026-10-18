@@ -15,7 +15,7 @@ import { ImpersonationBanner } from "@/components/dashboard/impersonation-banner
 import { getCompletedOnboardingSteps } from "@/lib/queries/onboarding";
 import { getRequestQuota } from "@/lib/queries/quota";
 import { entitledToScheduledWork } from "@/lib/billing/quota";
-import { trialEndsLabel, trialGateState } from "@/lib/billing/trial";
+import { trialGateState, trialThenLabel } from "@/lib/billing/trial";
 import { openBeforeTrial, REQUEST_PATH_HEADER } from "@/lib/billing/gate-paths";
 import { usageLine } from "@/lib/billing/usage-line";
 import { siteAllowanceFrom } from "@/lib/workspaces/allowance";
@@ -54,15 +54,19 @@ export default async function DashboardLayout({
     .from("backlinks")
     .select("id", { count: "exact", head: true });
   const scopedBacklinks = scopeId ? backlinksQuery.eq("workspace_id", scopeId) : backlinksQuery;
+  // Drafts waiting for a yes, the one count on that row that asks something
+  // of the person. It counted every article, so the badge sat at "1" after
+  // the only draft was approved, and grew with every article ever written.
   const articlesQuery = supabase
     .from("articles")
-    .select("id", { count: "exact", head: true });
+    .select("id", { count: "exact", head: true })
+    .eq("status", "review");
   const scopedArticles = scopeId ? articlesQuery.eq("workspace_id", scopeId) : articlesQuery;
   const [
     workspaces,
     // The sidebar badge is a count. It used to fetch every article row - body
     // included - to read `.length` off the result.
-    { count: articleCount },
+    { count: reviewCount },
     // Non-null only while an operator is signed in as a customer. Everything
     // below this line then describes the customer, which is the point; the
     // banner is what says so.
@@ -304,7 +308,7 @@ export default async function DashboardLayout({
           the page; from md up it is the left column it always was. */}
       <div className="flex flex-1 min-h-0 flex-col md:grid md:grid-cols-[auto_1fr]">
         <Sidebar
-          badges={{ articles: articleCount ?? 0 }}
+          badges={{ articles: reviewCount ?? 0 }}
           hidden={hiddenNav}
           userName={userName}
           userInitials={userInitials}
@@ -322,7 +326,12 @@ export default async function DashboardLayout({
                   ...(({ figure, fraction }) => ({ figure, fraction: fraction ?? 0 }))(usageLine(quota)),
                   noPlan: quota.reason === "no-plan",
                   trialEligible: Boolean(quota.trialEligible),
-                  trialLabel: quota.trial ? trialEndsLabel(quota.trial) : null,
+                  // The interval is on the Stripe subscription, which the layout
+                  // does not fetch, so this names the plan rather than a price
+                  // that could be the monthly one on a yearly card.
+                  trialLabel: quota.trial
+                    ? trialThenLabel(quota.trial, quota.plan ? `the ${PLAN_LABELS[quota.plan]} plan` : "the plan")
+                    : null,
                   limit: quota.limit,
                 }
               : null

@@ -58,4 +58,14 @@ describe("embedded renderers", () => {
     expect(html).toContain("&lt;b&gt;");
     expect(html).toContain('data-action="retry-first-look"');
   });
+
+  it("offers to read a store that has never been read", () => {
+    // An install whose run never started, or was cleared, had no way to begin one.
+    const html = renderFirstLook({ state: "none", message: "" });
+    expect(html).toContain("Read my store");
+    expect(html).toContain('data-action="retry-first-look"');
+    // A store with drafts has been read: nothing to offer.
+    expect(renderFirstLook({ state: "none", message: "" }, { hasDrafts: true })).toBe("");
+    expect(renderFirstLook({ state: "done", message: "" })).toBe("");
+  });
 });

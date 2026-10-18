@@ -449,7 +449,8 @@ export function OnboardingWizard({
   /**
    * The one button. Saves everything on the screen as confirmed, marks the
    * wizard done and starts the run. The drafts saved while editing carry no
-   * confirmation; this click is it.
+   * confirmation; this click is it. `auto` is the run starting by itself
+   * with nobody having read the screen, so it saves without one.
    */
   function finish({ auto = false }: { auto?: boolean } = {}) {
     if (!profile) return;
@@ -468,7 +469,7 @@ export function OnboardingWizard({
       try {
         // No draft may land after the confirmed save.
         await drafts.stop();
-        await saveProfile(workspaceId, confirmed);
+        await saveProfile(workspaceId, confirmed, { auto });
         await saveSiteDetails(workspaceId, site);
         await completeWizard(workspaceId);
         posthog.capture("onboarding_completed", { workspace_id: workspaceId });

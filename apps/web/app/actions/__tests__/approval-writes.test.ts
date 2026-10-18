@@ -65,7 +65,7 @@ beforeEach(() => {
 
 describe("approving", () => {
   it("records the approval with the server's client, naming the person who pressed it", async () => {
-    await approveArticle("review");
+    await expect(approveArticle("review")).resolves.toEqual({ status: "approved" });
     expect(row(asServer, "review")).toMatchObject({ status: "approved", approved_by: "u-editor", approval_kind: "human" });
     expect(statusWrites(asUser)).toEqual([]);
   });
@@ -82,6 +82,54 @@ describe("approving", () => {
     expect(moved).toEqual(["review"]);
     expect(row(asServer, "review").approved_by).toBe("u-editor");
     expect(row(asServer, "draft").status).toBe("draft");
+  });
+});
+
+describe("approving on a site with a publishing schedule", () => {
+  /** An enabled cadence and a connected CMS on ws-1, in the server's view. */
+  function withSchedule(opts: { enabled?: boolean; cms?: boolean } = {}) {
+    asServer.tables.publishing_cadences = [
+      { workspace_id: "ws-1", enabled: opts.enabled ?? true, days_of_week: [1, 3, 5], publish_time: "10:00", timezone: "Europe/Rome" },
+    ];
+    asServer.tables.integrations = [{ id: "wordpress", name: "WordPress", tag: "CMS" }];
+    asServer.tables.workspace_integrations =
+      opts.cms === false ? [] : [{ id: "wi-1", workspace_id: "ws-1", integration_id: "wordpress", config: {}, publish_mode: "publish" }];
+  }
+
+  it("takes the next slot: scheduled with no date, as auto-approve and Add to queue write it", async () => {
+    withSchedule();
+    await expect(approveArticle("review")).resolves.toEqual({ status: "scheduled" });
+    expect(row(asServer, "review")).toMatchObject({
+      status: "scheduled",
+      scheduled_at: null,
+      approved_by: "u-editor",
+      approval_kind: "human",
+    });
+    expect(statusWrites(asUser)).toEqual([]);
+  });
+
+  it("stays approved, for Publish now, when the schedule is off", async () => {
+    withSchedule({ enabled: false });
+    await expect(approveArticle("review")).resolves.toEqual({ status: "approved" });
+    expect(row(asServer, "review")).toMatchObject({ status: "approved", approved_by: "u-editor" });
+  });
+
+  it("stays approved when there is nowhere to publish: the slot would only fail", async () => {
+    withSchedule({ cms: false });
+    await expect(approveArticle("review")).resolves.toEqual({ status: "approved" });
+    expect(row(asServer, "review").status).toBe("approved");
+  });
+
+  it("batch approval takes the slot too", async () => {
+    withSchedule();
+    expect(await approveArticles(["review"])).toEqual(["review"]);
+    expect(row(asServer, "review")).toMatchObject({ status: "scheduled", scheduled_at: null });
+  });
+
+  it("still refuses an article not in review, and writes nothing", async () => {
+    withSchedule();
+    await expect(approveArticle("approved")).rejects.toThrow("must be in review");
+    expect(statusWrites(asServer)).toEqual([]);
   });
 });
 

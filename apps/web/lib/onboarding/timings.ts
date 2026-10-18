@@ -37,6 +37,8 @@ export const TIMED_STAGES = [
   "site_read",
   // A locked Shopify storefront's pages, read through the Admin API (lib/shopify/store-content.ts).
   "store_content",
+  // Its business profile, inferred from the store's catalogue when the install skipped the wizard.
+  "store_profile",
   "voice",
   "analysis",
   "readiness",

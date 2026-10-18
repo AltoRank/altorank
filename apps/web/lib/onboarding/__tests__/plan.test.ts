@@ -69,6 +69,15 @@ describe("buildPlan plans one article per search", () => {
     ], { weeklyLimit: 7, from, language: "tr" });
     expect(plan.map((p) => p.keywordId)).toEqual(["a", "c"]);
   });
+  it("plans a search once, not again as a 'how to' question four days later", () => {
+    const plan = buildPlan([
+      r("a", "repair leaking flat roof", page("a")),
+      r("b", "leaking flat roof repair cost", page("b")),
+      r("c", "epdm flat roof cost", page("c")),
+      r("d", "how to repair leaking flat roof", [...page("a").slice(0, 2), ...page("d").slice(0, 8)]),
+    ], { weeklyLimit: 7, from, language: "en" });
+    expect(plan.map((p) => p.keywordId)).toEqual(["a", "b", "c"]);
+  });
   it("keeps keywords that only share a word", () => {
     const plan = buildPlan([r("a", "crm pricing"), r("b", "crm software"), r("c", "best crm for agencies"), r("d", "best agency crm")], { weeklyLimit: 7, from, language: "en" });
     expect(plan.map((p) => p.keywordId)).toEqual(["a", "b", "c"]);

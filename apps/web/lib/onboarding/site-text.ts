@@ -35,7 +35,11 @@ import { e2eStubsEnabled, stubReadSiteText } from "@/lib/e2e/stubs";
 import { htmlLangOf } from "./locale-guess";
 import { extractMainContent } from "@/lib/audit/markdown";
 
-export type SiteTextSource = "static" | "sitemap" | "rendered" | "none";
+/**
+ * `shopify`: not fetched from the site at all - a locked Shopify storefront's
+ * own pages and products, read through the Admin API (lib/shopify/store-content.ts).
+ */
+export type SiteTextSource = "static" | "sitemap" | "rendered" | "shopify" | "none";
 
 /** A link seen on a page this read fetched, as the page wrote it. */
 export interface ObservedLink {

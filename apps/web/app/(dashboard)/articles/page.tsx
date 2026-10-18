@@ -147,7 +147,11 @@ export default async function ArticlesPage({ searchParams }: Props) {
   // Counted over the whole list, never over a filtered view: filtered onto
   // Live, this read as zero and hid the one thing waiting on a person
   // (2026-09-02).
-  const reviewCount = allArticles.filter((a) => a.status === "review").length;
+  const inReview = allArticles.filter((a) => a.status === "review");
+  const reviewCount = inReview.length;
+  // One draft waiting is the first-week case: the banner opens it rather than
+  // filtering a list down to the single row that was already showing.
+  const reviewHref = reviewCount === 1 ? `/content/${inReview[0].id}` : "/articles?status=review";
   const scored = allArticles.filter((a) => a.seo_score > 0);
   const avgScore = scored.length > 0
     ? Math.round(scored.reduce((s, a) => s + a.seo_score, 0) / scored.length)
@@ -225,14 +229,14 @@ export default async function ArticlesPage({ searchParams }: Props) {
             were already on. It is a banner here instead (2026-09-02). */}
         {reviewCount > 0 && initialStatus !== "review" && (
           <Link
-            href="/articles?status=review"
+            href={reviewHref}
             className="mb-4 flex items-center justify-between rounded-[9px] border border-line bg-panel px-4 py-3 text-[13px] hover:border-ink-4"
           >
             <span>
               <strong className="font-medium">{plural(reviewCount, "article")}</strong>{" "}
               <span className="text-ink-3">drafted and waiting for your yes before publishing.</span>
             </span>
-            <span className="text-accent-ink underline decoration-line underline-offset-[3px]">Review them</span>
+            <span className="text-accent-ink underline decoration-line underline-offset-[3px]">{reviewCount === 1 ? "Read it" : "Review them"}</span>
           </Link>
         )}
 

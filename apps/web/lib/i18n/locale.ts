@@ -237,6 +237,12 @@ export interface SearchWordRules {
    * sets, in order, instead of one.
    */
   directional?: ReadonlySet<string>;
+  /**
+   * Leading words that only ask the question ("how to", "how do i"), each as
+   * its lower-cased words. A phrase that is another phrase with one of these
+   * in front is the same search, whatever two results pages say.
+   */
+  questionFrames?: readonly (readonly string[])[];
 }
 
 /**
@@ -376,6 +382,14 @@ const EN_SEARCH: SearchWordRules = {
   // word" to "word to pdf". "vs" is not here: "x vs y" and "y vs x" are one
   // comparison.
   directional: new Set(["to", "into"]),
+  // A first look (2026-10-16) planned "repair leaking flat roof" and "how to
+  // repair leaking flat roof" four days apart: both results pages were DIY
+  // repair guides, sharing 2 of 10 URLs on the day. A bare "how" is not one:
+  // "how long", "how much" and "how often" ask something else.
+  questionFrames: [
+    ["how", "do", "i"], ["how", "do", "you"], ["how", "can", "i"], ["how", "can", "you"],
+    ["how", "should", "i"], ["how", "to"],
+  ],
 };
 
 // Turkish: an explicit rule set for the two noun inflections that produce

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { ArticleFacts } from "@/lib/plan/card-state";
+import { readShipSchedule, shipLabelFor } from "@/lib/publishing/ship-date";
 
 // ---------------------------------------------------------------------------
 // The article side of every planner card
@@ -22,12 +23,28 @@ export async function getPlannerArticleStates(workspaceId: string, articleIds: s
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("articles")
-    .select("id, status, published_url, found_on_site_at")
+    .select("id, status, published_url, found_on_site_at, created_at, scheduled_at")
     .eq("workspace_id", workspaceId)
     .in("id", ids);
   if (error) throw new Error(error.message);
-  for (const row of (data ?? []) as Array<{ id: string; status: string; published_url: string | null; found_on_site_at: string | null }>) {
-    out.set(row.id, { status: row.status, published_url: row.published_url, found_on_site_at: row.found_on_site_at });
+  const rows = (data ?? []) as Array<{
+    id: string;
+    status: string;
+    published_url: string | null;
+    found_on_site_at: string | null;
+    created_at: string;
+    scheduled_at: string | null;
+  }>;
+  // Only read when something on the page is scheduled: the ship date is
+  // derived from the queue, and a month with nothing waiting needs no queue.
+  const schedule = rows.some((r) => r.status === "scheduled") ? await readShipSchedule(supabase, workspaceId) : null;
+  for (const row of rows) {
+    out.set(row.id, {
+      status: row.status,
+      published_url: row.published_url,
+      found_on_site_at: row.found_on_site_at,
+      ships: schedule && row.status === "scheduled" ? shipLabelFor(schedule, row) : null,
+    });
   }
   return out;
 }

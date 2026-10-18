@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { CalendarEntry } from "@/lib/types";
+import { readShipSchedule, shipDateFor, type ShipSchedule } from "@/lib/publishing/ship-date";
 
 /**
  * The publishing calendar, derived from the articles themselves.
@@ -31,14 +32,23 @@ type ArticleRow = {
   created_at: string;
 };
 
-/** The day an article belongs on, and what it is doing there. */
-function place(a: ArticleRow): { date: string; status: CalendarEntry["status"] } | null {
+/**
+ * The day an article belongs on, and what it is doing there. `slot` is the
+ * ship date of a queued article (scheduled, no date of its own), derived from
+ * the site's cadence by lib/publishing/ship-date.ts.
+ */
+function place(a: ArticleRow, slot: Date | null = null): { date: string; status: CalendarEntry["status"] } | null {
   if (a.status === "live") {
     // A live article with no published_at predates that column being written.
     // It still shipped, so date it by when it was made rather than drop it.
     return { date: a.published_at ?? a.created_at, status: "done" };
   }
   if (a.scheduled_at) return { date: a.scheduled_at, status: "scheduled" };
+  // Queued for the next slot (an approval on a site with a schedule, the
+  // auto-approve rule, Add to queue). It has no date of its own, and used to
+  // fall through to "not a calendar event", so every queued article was
+  // missing from the planner. It sits on the day its slot comes round.
+  if (a.status === "scheduled") return slot ? { date: slot.toISOString(), status: "scheduled" } : { date: a.created_at, status: "queue" };
   if (a.status === "drafting") {
     // Being written now. The grid highlights `run`, which is what makes today
     // look different from every other square.
@@ -87,9 +97,17 @@ export async function getCalendarEntries(
     end = Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 1);
   }
 
+  // Ship dates for queued articles, one schedule read per site that has any.
+  const rows = (data ?? []) as ArticleRow[];
+  const queuedSites = [...new Set(rows.filter((a) => a.status === "scheduled" && !a.scheduled_at).map((a) => a.workspace_id))];
+  const schedules = new Map<string, ShipSchedule | null>(
+    await Promise.all(queuedSites.map(async (id) => [id, await readShipSchedule(supabase, id)] as const)),
+  );
+
   const entries: CalendarEntry[] = [];
-  for (const a of (data ?? []) as ArticleRow[]) {
-    const placed = place(a);
+  for (const a of rows) {
+    const schedule = schedules.get(a.workspace_id);
+    const placed = place(a, schedule && a.status === "scheduled" && !a.scheduled_at ? shipDateFor(schedule, a) : null);
     if (!placed) continue;
     if (start !== null && end !== null) {
       const t = new Date(placed.date).getTime();
