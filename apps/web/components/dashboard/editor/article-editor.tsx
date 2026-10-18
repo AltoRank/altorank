@@ -108,6 +108,12 @@ type Props = {
    * as a verdict.
    */
   value?: TrafficValue | null;
+  /**
+   * When this article ships, read in the site's timezone ("Tue 10:00"): the
+   * slot Approve gives a draft in review, or the one a scheduled article
+   * holds (lib/publishing/ship-date.ts). Null where Approve takes no slot.
+   */
+  shipsAt?: string | null;
 };
 
 export function ArticleEditor({
@@ -123,6 +129,7 @@ export function ArticleEditor({
   internalLinksWanted = null,
   lastPublish = null,
   value = null,
+  shipsAt = null,
 }: Props) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
@@ -590,11 +597,13 @@ export function ArticleEditor({
   const handleApprove = useCallback(async () => {
     setPublishing(true);
     try {
-      await approveArticle(article.id);
+      const { status } = await approveArticle(article.id);
       toast.success(
-        destinations.length > 0
-          ? "Approved. Publish it whenever you are ready."
-          : "Approved. Copy it out, publish it on your site, then paste the URL back here.",
+        status === "scheduled"
+          ? `Approved. It ships ${shipsAt ?? "at the next publishing slot"}; change the date in Publish.`
+          : destinations.length > 0
+            ? "Approved. Publish it whenever you are ready."
+            : "Approved. Copy it out, publish it on your site, then paste the URL back here.",
       );
       showPublish();
       router.refresh();
@@ -603,7 +612,7 @@ export function ArticleEditor({
     } finally {
       setPublishing(false);
     }
-  }, [article.id, destinations.length, showPublish, router]);
+  }, [article.id, destinations.length, shipsAt, showPublish, router]);
 
   const handleHold = useCallback(async () => {
     setPublishing(true);
@@ -708,7 +717,7 @@ export function ArticleEditor({
     ) : article.status === "review" ? (
       <Button size="sm" variant="accent" className="ml-1" onClick={handleApprove} disabled={publishing}>
         <Icons.check size={13} />
-        {publishing ? "Approving…" : "Approve"}
+        {publishing ? "Approving…" : shipsAt ? `Approve · ships ${shipsAt}` : "Approve"}
       </Button>
     ) : article.status === "approved" && destinations.length > 0 && !retryable && !needsPlan ? (
       <Button size="sm" variant="accent" className="ml-1" onClick={handlePublish} disabled={publishing}>
@@ -1009,7 +1018,22 @@ export function ArticleEditor({
                   </button>
                 </>
               )}
-              <SchedulePicker article={article} cadence={cadence ?? null} />
+              <SchedulePicker article={article} cadence={cadence ?? null} shipsAt={shipsAt} />
+              {/* Approving takes the next slot now; this is the way out of
+                  waiting for it, which the Publish button used to be. */}
+              {article.status === "scheduled" && !needsPlan && !retryable && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="w-full justify-center mt-2"
+                  onClick={handlePublish}
+                  disabled={publishing}
+                >
+                  {publishing
+                    ? destination?.publishMode === "draft" ? "Saving…" : "Publishing…"
+                    : `${publishVerb(destination?.publishMode, destination?.label ?? "CMS")} now`}
+                </Button>
+              )}
             </>
           ) : platform.state === "matched" ? (
             // The analysis recognised the platform: name it and open the
@@ -1071,7 +1095,7 @@ export function ArticleEditor({
                 onClick={handleApprove}
                 disabled={publishing}
               >
-                {publishing ? "Approving…" : "Approve for publishing"}
+                {publishing ? "Approving…" : shipsAt ? `Approve · ships ${shipsAt}` : "Approve for publishing"}
               </Button>
               {/* Approve stays available with nothing connected on purpose. The
                   manual path — copy the file, publish it yourself, paste the
