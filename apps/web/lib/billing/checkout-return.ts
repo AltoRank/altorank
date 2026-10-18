@@ -11,10 +11,20 @@ export function checkoutDestination(value: unknown): string {
  * article, open to edit and approve - the thing the card was asked for - and
  * not the dashboard, whose tiles are still empty on day one (UX clarity
  * audit 2026-10-18, #1). No article yet: the dashboard, as before.
+ *
+ * `editorFits`: below md the editor keeps its desktop panes inside a sideways
+ * scroller (article-editor.tsx), with Approve and Copy off screen, so a phone
+ * lands on the dashboard instead, whose Next up links the article (verified
+ * finding "phone-editor", 2026-10-18). Back to the article once the editor
+ * has a phone layout.
  */
-export function firstArticleReturn(articleId: string | null | undefined): string {
+export function firstArticleReturn(articleId: string | null | undefined, editorFits = true): string {
+  if (!editorFits) return "/dashboard";
   return articleId && /^[a-zA-Z0-9-]+$/.test(articleId) ? `/content/${articleId}` : "/dashboard";
 }
+
+/** The viewport from which the editor shows its panes without a sideways scroll: Tailwind's md. */
+export const EDITOR_FITS_QUERY = "(min-width: 768px)";
 
 /** Where the trial screen shows "Checkout was cancelled" and the offer again. */
 export const TRIAL_CANCELLED_PATH = "/onboarding?status=cancelled";

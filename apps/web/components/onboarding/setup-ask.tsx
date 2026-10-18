@@ -15,7 +15,7 @@
 import { MEMBER_CANNOT_BUY, TrialOffer, TrialPriceBox } from "@/components/billing/trial-offer";
 import { StartTrialButton } from "@/components/billing/start-trial-button";
 import type { BillingInterval, SelfServePlan } from "@/lib/stripe";
-import type { TrialOfferFacts } from "@/lib/billing/trial-offer";
+import { chargeLine, stickyOfferLine, type TrialOfferFacts } from "@/lib/billing/trial-offer";
 import { asksForCard, asksWithOffer, type SetupEnding } from "@/lib/onboarding/setup-retry";
 import { TRIAL_DAYS } from "@/lib/stripe";
 import { judgedRows, type EmptyPool } from "@/lib/onboarding/events";
@@ -105,8 +105,17 @@ export function SetupAsk({
           <p className="m-0 text-[13.5px] font-medium text-ink">Nothing has been charged.</p>
           {canBuy ? (
             <>
-              <p className="m-0 mt-1.5 text-[13px] leading-[1.6] text-ink-2">
-                If you start the {TRIAL_DAYS}-day trial anyway, your first article is written again as soon as it starts.
+              {/* first-failed: the heading already says the trial writes it
+                  again. no-article: nothing was ever written, so "again" was
+                  false (verified finding "quiet-box-329", 2026-10-18). */}
+              {ending === "no-article" && (
+                <p className="m-0 mt-1.5 text-[13px] leading-[1.6] text-ink-2">
+                  Start the {TRIAL_DAYS}-day trial and your first article is written from the plan.
+                </p>
+              )}
+              {/* The price before the click, as the full box says it. */}
+              <p className="m-0 mt-1.5 text-[13px] leading-[1.6] text-ink-2" data-testid="quiet-trial-price">
+                {offer ? chargeLine("month", offer.facts) : stickyOfferLine("month")}
               </p>
               <div className="mt-3">
                 <StartTrialButton returnTo={returnTo} variant="default" onStart={() => trackStep("trial_clicked")} />

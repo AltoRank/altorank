@@ -110,7 +110,10 @@ describe("SetupAsk", () => {
       expect(markup).toContain("quiet-trial-ask");
       expect(markup).not.toContain("trial-offer");
       expect(text(markup)).toContain("Nothing has been charged.");
-      expect(text(markup)).not.toContain("€");
+      // The price is said before the click, not first in the checkout sheet.
+      expect(text(markup)).toMatch(/7 days free, then €\d+\/month\./);
+      // Nothing was written on no-article, so nothing is written "again".
+      expect(text(markup)).not.toMatch(/written again/);
       expect(markup).not.toContain("bg-accent");
       expect(asksWithOffer(ending)).toBe(false);
     }

@@ -311,10 +311,11 @@ export default async function DashboardPage() {
         {nextUp && <NextUp draft={nextUp} waiting={pendingReviews} />}
         <RecommendedActionsStrip actions={otherActions} />
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-          {/* Traffic chart. Without Search Console there is nothing to draw,
+          {/* Traffic chart, full width: the review queue that sat beside it
+              is NextUp now. Without Search Console there is nothing to draw,
               and the strip above carries the one Connect card. */}
           {gscConnected && (
-          <Card title={`Search performance · last ${traffic.days} days`} meta={<Chip label={scopeId ? (workspaces.find((w) => w.id === scopeId)?.name ?? "This workspace") : "All workspaces"} soft />} className="md:col-span-8">
+          <Card title={`Search performance · last ${traffic.days} days`} meta={<Chip label={scopeId ? (workspaces.find((w) => w.id === scopeId)?.name ?? "This workspace") : "All workspaces"} soft />} className="md:col-span-12">
             {/* `restated`: with Search Console missing, the Recommended
                 actions strip directly above already gives the reason and the
                 Connect button, and it is the row designed to carry exactly

@@ -17,6 +17,10 @@ describe("firstArticleReturn", () => {
     expect(firstArticleReturn("a/b")).toBe("/dashboard");
   });
 
+  it("lands a phone on the dashboard, where the editor does not fit", () => {
+    expect(firstArticleReturn("8f14e45f-ceea-467f-a0e6-1b2c3d4e5f60", false)).toBe("/dashboard");
+  });
+
   it("survives the post-checkout destination check unchanged", () => {
     const path = firstArticleReturn("8f14e45f-ceea-467f-a0e6-1b2c3d4e5f60");
     expect(checkoutDestination(path)).toBe(path);

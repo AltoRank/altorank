@@ -47,14 +47,15 @@ test("one clock to the gate, a price box that sells, a bar on the same plan, and
   await expect(box).toContainText("Nothing publishes until you approve it");
   await expect(box.getByTestId("trial-charge-line")).toHaveText(/^€0 today, then €69\/month from [A-Z][a-z]+ \d{1,2}\.$/);
   await expect(box).toContainText("We email you 3 days before the trial ends");
-  await expect(box).toContainText("Cancel any time before then from Settings, Billing");
+  await expect(box).toContainText("Cancel in Settings › Billing before the trial ends and nothing is charged.");
   await expect(box).not.toContainText(/renewal/i);
   // The trial button is the full-width primary.
   const start = box.getByRole("button", { name: "Start 7-day trial" });
   const boxWidth = (await box.boundingBox())!.width;
   expect((await start.boundingBox())!.width).toBeGreaterThan(boxWidth - 60);
 
-  // Yearly, quietly, with its real saving; the bar then quotes the same plan.
+  // Yearly, quietly behind "Other plans", with its real saving; the bar then quotes the same plan.
+  await box.getByText("Other plans", { exact: true }).click();
   await box.getByRole("button", { name: /Or pay yearly: €690\/year, two months free \(save €138\)/ }).click();
   await expect(box.getByTestId("trial-charge-line")).toHaveText(/^€0 today, then €690\/year from /);
   // Past the button, it off screen above: the bar, on the same plan. From lg

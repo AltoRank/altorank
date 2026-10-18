@@ -22,7 +22,7 @@
 // the heading, the card and the reader together; when the body lands the
 // page is read again for the real word count and sources.
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveAttribution } from "@/app/actions/attribution";
 import { StartTrialButton } from "@/components/billing/start-trial-button";
@@ -32,7 +32,7 @@ import { asksWithOffer, type SetupEnding } from "@/lib/onboarding/setup-retry";
 import { trackStep } from "@/lib/onboarding/track-step";
 import { TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
 import { stickyOfferLine, type TrialOfferFacts } from "@/lib/billing/trial-offer";
-import { firstArticleReturn } from "@/lib/billing/checkout-return";
+import { EDITOR_FITS_QUERY, firstArticleReturn } from "@/lib/billing/checkout-return";
 import { EMPTY_ATTRIBUTION, attributionComplete, type AttributionDraft } from "./attribution-picker";
 import { ATTRIBUTION_NOTE_MAX, ATTRIBUTION_SOURCES } from "@/lib/attribution";
 import { FirstArticleCardView, type PendingFirstArticle } from "./first-article-card";
@@ -188,7 +188,7 @@ export function GateTop({
   const writing = hasArticle && !written;
   const showBar = buttonSeen !== "in" && (writing || buttonSeen === "above" || intoArticle);
   const asks = asksWithOffer(ending) && canBuy;
-  const afterCheckout = firstArticleReturn(firstArticle?.id);
+  const afterCheckout = firstArticleReturn(firstArticle?.id, useEditorFits());
 
   // Said once to a screen reader when the gate replaces the loading screen,
   // and again when the article is written: the heading itself is not live,
@@ -286,6 +286,24 @@ export function GateTop({
 export function stickyLine(written: boolean, fullArticle: boolean): string {
   if (fullArticle) return "Edit, approve and publish it with the trial.";
   return written ? "Read it in full, approve it and publish it." : "Read it in full once it is written.";
+}
+
+/**
+ * Whether this screen is wide enough for the editor without a sideways
+ * scroll. The server has no viewport and says no, which lands on the
+ * dashboard as the gate always did; so does a browser without matchMedia.
+ * The answer is only used when checkout opens.
+ */
+function useEditorFits(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const query = window.matchMedia?.(EDITOR_FITS_QUERY);
+      query?.addEventListener?.("change", onChange);
+      return () => query?.removeEventListener?.("change", onChange);
+    },
+    () => window.matchMedia?.(EDITOR_FITS_QUERY).matches ?? false,
+    () => false,
+  );
 }
 
 /**
