@@ -44,6 +44,14 @@ describe("connectable", () => {
     expect(dialogCmsTypes()).toContain("wordpress");
   });
 
+  it("asks for Shopify by request in the dialog too, with no credential form", () => {
+    // Shopify is set up with us: its dialog tab sends a request (an email to
+    // FEEDBACK_EMAIL), the same as the /connect tile, and never the custom-app guide.
+    const src = readFileSync(join(__dirname, "../../../components/dashboard/connect-cms-dialog.tsx"), "utf8");
+    expect(src).toContain('<RequestIntegrationButton integrationId="shopify" integrationName="Shopify" />');
+    expect(src).not.toContain("<ShopifyGuide");
+  });
+
   it("offers a request for anything with no adapter and no OAuth flow of its own", () => {
     for (const id of ["ahrefs", "slack", "zapier", "framer"]) {
       expect(isRequestable(id, false)).toBe(true);

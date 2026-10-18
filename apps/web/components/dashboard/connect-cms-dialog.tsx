@@ -21,7 +21,8 @@ import { parseWebflowFieldMap } from "@/lib/cms/webflow-fields";
 import { CONNECTOR_NOTES } from "@/lib/cms/connector-notes";
 import { WebflowPicker } from "./connect-cms-webflow";
 import { WixPicker } from "./connect-cms-wix";
-import { ShopifyGuide, shopifyCredentialsFromForm } from "./connect-cms-shopify";
+import { shopifyCredentialsFromForm } from "./connect-cms-shopify";
+import { RequestIntegrationButton } from "./request-integration-button";
 import posthog from "posthog-js";
 
 type CMSType =
@@ -491,7 +492,22 @@ export function ConnectCmsDialog({
             </>
           )}
 
-          {cmsType === "shopify" && <ShopifyGuide />}
+          {/*
+            Shopify is set up with us, not self-serve: the AltoRank Shopify
+            app is not listed on the App Store, and the custom-app route
+            (ShopifyGuide in connect-cms-shopify.tsx) asks a merchant for five
+            admin screens and an API secret. A request emails us
+            (app/api/integration-request), the same as the /connect tile.
+          */}
+          {cmsType === "shopify" && (
+            <div className="flex flex-col gap-3">
+              <p className="text-[13px] text-ink-2 leading-[1.5]">
+                We connect Shopify stores with you. Send a request and we&apos;ll email you to set it up:
+                AltoRank installs as an app in your Shopify admin, and approved articles go to your store&apos;s blog.
+              </p>
+              <RequestIntegrationButton integrationId="shopify" integrationName="Shopify" />
+            </div>
+          )}
 
           {cmsType === "magento" && (
             <>
@@ -741,8 +757,9 @@ export function ConnectCmsDialog({
 
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" onClick={() => onOpenChange(false)}>
-              Cancel
+              {cmsType === "shopify" ? "Close" : "Cancel"}
             </Button>
+            {cmsType !== "shopify" && (<>
             <Button
               type="button"
               disabled={testing || pending || !draftCheck.ok}
@@ -756,6 +773,7 @@ export function ConnectCmsDialog({
                 ? cmsType === "wordpress-plugin" ? "Testing..." : "Connecting..."
                 : cmsType === "wordpress-plugin" ? "Test connection & save" : "Connect"}
             </Button>
+            </>)}
           </div>
         </form>
     </Dialog>
