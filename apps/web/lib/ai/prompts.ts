@@ -445,6 +445,14 @@ export function figureRules(research: ArticleResearch | undefined, opts: { refre
     "  pages state: not from memory, not rounded, not \"about\". Make each point in",
     "  words. When the search asks for a number (how long, how often, how much),",
     "  answer with what it depends on and how the reader finds their own figure.",
+    // Draft A/B 2026-10-16 (9 sites, blind pairwise vs main, both orders): 3
+    // consistent wins, 0 losses. Openings answered the search with an
+    // attributed range ("once every 12 months, as Ideal Home says") instead
+    // of "there is no single figure".
+    "- A search that asks for a number (how long, how often, how much, what size) gets one",
+    "  in the opening paragraph when the AI OVERVIEW or a ranking page's snippet states it:",
+    "  give it as a range, attributed in the sentence to that page (never a page that sells",
+    "  what this business sells), and say what moves it up or down.",
   ];
 }
 

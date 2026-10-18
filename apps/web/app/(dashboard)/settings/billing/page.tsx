@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
+import { planSelectionUrl } from "@/lib/shopify/billing";
 import { requireAuth } from "@/lib/auth/require-auth";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { PageHead, StatusPill, Icons, Button, Card } from "@/components/ui";
 import {
   PLAN_LABELS,
@@ -54,7 +55,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
     await Promise.all([
       supabase
         .from("accounts")
-        .select("plan, plan_status, current_period_end, stripe_customer_id, stripe_subscription_id, cancels_at, payment_failed_at")
+        .select("plan, plan_status, current_period_end, stripe_customer_id, stripe_subscription_id, cancels_at, payment_failed_at, billing_provider")
         .eq("id", accountId)
         .single(),
       supabase
@@ -209,7 +210,11 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
             </div>
           </Card>
 
-          {dunning ? (
+          {account?.billing_provider === "shopify" ? (
+            <Card title="Your plan">
+              <ShopifyBilledNote accountId={accountId} planLabel={isActive ? PLAN_LABELS[plan] : null} />
+            </Card>
+          ) : dunning ? (
             <Card title="Your plan" flush>
               <DunningCard planLabel={PLAN_LABELS[plan]} dunning={dunning} canManage={canManage} />
             </Card>
@@ -343,5 +348,34 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * An account a Shopify store installed: Shopify bills it (App Store rule),
+ * so the plan is changed or cancelled in the Shopify admin, never here. The
+ * Stripe ladder would have sold it a second subscription.
+ */
+async function ShopifyBilledNote({ accountId, planLabel }: { accountId: string; planLabel: string | null }) {
+  const { data } = await createServiceClient()
+    .from("shopify_installations")
+    .select("shop_domain")
+    .eq("account_id", accountId)
+    .is("uninstalled_at", null)
+    .limit(1)
+    .maybeSingle();
+  const url = data?.shop_domain ? planSelectionUrl(data.shop_domain as string) : null;
+  return (
+    <div className="space-y-2 text-[13px] text-ink-2">
+      <p>
+        {planLabel ? `${planLabel}, billed` : "This account is billed"} through Shopify, on your store&apos;s
+        Shopify invoice. Change or cancel the plan from your Shopify admin.
+      </p>
+      {url && (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="text-accent-ink underline underline-offset-[3px]">
+          Manage the plan in Shopify
+        </a>
+      )}
+    </div>
   );
 }

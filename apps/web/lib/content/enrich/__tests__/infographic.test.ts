@@ -26,6 +26,20 @@ describe("infographic: recognising comparable numbers", () => {
     expect(chartFromBeforeAfter("Costs went from €120 to 40%.")).toBeNull();
   });
 
+  it("charts a change, never a range", () => {
+    // A price range read as before/after drew bars labelled "from" and "to" (draft A/B, 2026-10-15).
+    expect(chartFromBeforeAfter("Veneers can cost anywhere from $800 to $2,000 per tooth.")).toBeNull();
+    expect(chartFromBeforeAfter("A course runs from 2 to 5 days.")).toBeNull();
+    expect(chartFromBeforeAfter("Il prezzo va da 800 € a 2.000 €.", "it")).toBeNull();
+    expect(chartFromBeforeAfter("Il tasso di riciclo è passato da 42% a 61%.", "it")?.data.map((d) => d.value)).toEqual([42, 61]);
+    expect(chartFromBeforeAfter("Bounce rate fell from 58% to 31% after the redesign.")?.data.map((d) => d.value)).toEqual([58, 31]);
+  });
+
+  it("captions the clause that holds the numbers", () => {
+    const spec = chartFromBeforeAfter("The page says prices vary, and elsewhere that conversion rose from 2% to 5% over the year, which is typical.");
+    expect(spec?.source).toBe("and elsewhere that conversion rose from 2% to 5% over the year");
+  });
+
   it("does not treat bare years as measures", () => {
     expect(extractMeasures("In 2024 the rate was 12%.")).toEqual([{ value: 12, unit: "%", index: 21 }]);
   });

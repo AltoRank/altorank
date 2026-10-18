@@ -150,11 +150,17 @@ test.describe("on a phone", () => {
     expect(r.width).toBeGreaterThanOrEqual(32);
     expect(r.height).toBeGreaterThanOrEqual(32);
 
-    // Scrolled to the end, the last section clears the bar.
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    // Scrolled to the end, the last section clears the bar. The page can
+    // still grow after the first scroll (once measured at 700px against a
+    // 574px bar top, off the bottom of the screen), so scroll and measure
+    // again until it settles; a section that really sits under the bar
+    // still fails.
     const last = page.locator("div.rounded-\\[10px\\]", { has: page.getByRole("heading", { name: "Where your content lives" }) });
-    const lastBox = (await last.boundingBox())!;
-    const barTop = (await bar.boundingBox())!.y;
-    expect(lastBox.y + lastBox.height).toBeLessThanOrEqual(barTop);
+    await expect.poll(async () => {
+      await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+      const lastBox = (await last.boundingBox())!;
+      const barTop = (await bar.boundingBox())!.y;
+      return lastBox.y + lastBox.height - barTop;
+    }).toBeLessThanOrEqual(0);
   });
 });

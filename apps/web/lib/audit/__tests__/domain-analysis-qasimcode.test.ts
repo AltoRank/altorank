@@ -307,10 +307,26 @@ describe("the qasimcode signup", () => {
       fromCompetitors: [{ keyword: "salon booking website", volume: 90, difficulty: 12, cpc: 0, competition: 0, intent: "commercial", competitor: "calendly.com" }],
     });
     fit.mockResolvedValue(refusing("do other countries have states", "other countries"));
-    const { analysis } = await analyse();
+    const { analysis } = await analyse({ ...BUSINESS_PROFILE, confirmedAt: "2026-10-16T10:00:00Z" });
     const detail = analysis.layers.find((l) => l.id === "keywords")?.detail ?? "";
+    expect(detail).toMatch(/^\d+ keywords kept of \d+ candidates: /);
     expect(detail).toContain("1 from what the 2 competitors you named rank for");
     expect(detail).toContain("around the 2 things you said people buy from you");
     expect(detail).toContain("2 parked as not what your buyers would search");
+  });
+
+  it("does not credit the person with a profile nobody confirmed", async () => {
+    // A run the wizard started by itself works from a profile a model read
+    // off the site: the person named no competitor and said nothing.
+    discover.mockResolvedValue({
+      ...ideas(),
+      competitorsAsked: ["calendly.com"],
+      fromCompetitors: [{ keyword: "salon booking website", volume: 90, difficulty: 12, cpc: 0, competition: 0, intent: "commercial", competitor: "calendly.com" }],
+    });
+    const { analysis } = await analyse({ ...BUSINESS_PROFILE, confirmedAt: null });
+    const detail = analysis.layers.find((l) => l.id === "keywords")?.detail ?? "";
+    expect(detail).not.toMatch(/you named|you said/);
+    expect(detail).toContain("1 from what calendly.com ranks for");
+    expect(detail).toContain("around the 2 things your site says people buy from you");
   });
 });

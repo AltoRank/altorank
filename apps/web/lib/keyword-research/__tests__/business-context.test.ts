@@ -75,4 +75,15 @@ describe("ensureBusinessProfile", () => {
     expect(out.missing).toContain("no domain");
     expect(infer).not.toHaveBeenCalled();
   });
+
+  it("infers from text the caller already holds, when the site cannot be fetched", async () => {
+    // A Shopify App Store install: no wizard, and a storefront that may be
+    // password-locked. The store's catalogue, read through the Admin API, is the evidence.
+    infer.mockResolvedValue({ profile: PROPOSED, reason: "ok", source: "shopify" });
+    const read = { text: "STORE: altorank-dev\n\nPRODUCTS (1):\n- The Hidden Snowboard - snowboard", source: "shopify" as const, chars: 60 };
+    const out = await ensureBusinessProfile(db, "ws", "altorank-dev.myshopify.com", null, { read });
+    expect(infer).toHaveBeenCalledWith("altorank-dev.myshopify.com", { read });
+    expect(out.inferred).toBe(true);
+    expect(updates).toHaveLength(1);
+  });
 });

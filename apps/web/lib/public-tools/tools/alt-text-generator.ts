@@ -36,6 +36,20 @@ export function sniffImage(buf: Buffer): ImageMediaType | null {
   return null;
 }
 
+/**
+ * What the image fetch asks for: only the types `sniffImage` reads, and no
+ * wildcard. Image CDNs (Cloudflare, imgix, Cloudinary, Akamai, the Next.js
+ * optimizer) pick the format from Accept, so naming AVIF here got AVIF back
+ * for a `.jpg` URL, which the tool then refused.
+ */
+export const IMAGE_ACCEPT = "image/webp,image/png,image/jpeg,image/gif;q=0.9";
+
+/** AVIF/HEIF files are ISO-BMFF: "ftyp" at byte 4, then a brand. */
+function isAvifOrHeif(buf: Buffer): boolean {
+  if (buf.length < 12 || buf.subarray(4, 8).toString("latin1") !== "ftyp") return false;
+  return /^(avif|avis|heic|heix|mif1|msf1)$/.test(buf.subarray(8, 12).toString("latin1"));
+}
+
 const Answer = z.object({
   alt: z.string().min(1),
   description: z.string().default(""),
@@ -71,7 +85,7 @@ export const altTextGenerator = defineTool({
         signal: ctx.signal,
         maxBytes: MAX_IMAGE_BYTES + 1,
         timeoutMs: 15_000,
-        headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/gif;q=0.9,*/*;q=0.5" },
+        headers: { Accept: IMAGE_ACCEPT },
       });
     } catch (err) {
       if (err instanceof UnsafeUrlError) throw new ToolError("invalid_input", err.message);
@@ -92,6 +106,12 @@ export const altTextGenerator = defineTool({
     }
     const mediaType = sniffImage(res.bodyBuffer);
     if (!mediaType) {
+      if (isAvifOrHeif(res.bodyBuffer)) {
+        throw new ToolError(
+          "invalid_input",
+          "The server sent this image as AVIF or HEIC, although the tool asked for JPEG, PNG, GIF or WebP. Some image CDNs do that whatever the file name says. Try the original file's address, or a copy saved as JPEG or PNG.",
+        );
+      }
       throw new ToolError("invalid_input", `That file is ${type}, which this tool cannot read. Use a JPEG, PNG, GIF or WebP image.`);
     }
 

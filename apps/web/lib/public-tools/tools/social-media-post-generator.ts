@@ -17,10 +17,14 @@ import { INPUT_RULES, JSON_ONLY, charLength, newFigures, tagged } from "../promp
 
 const SLUG = "social-media-post-generator";
 
+// `hashtags` is the most the prompt asks for. Only Instagram enforces a cap:
+// five per post or Reel, down from 30. Instagram announced it in December 2025
+// and is rolling it out gradually (Social Media Today, 2025-12-18). A post
+// over it may not publish with all its tags, so it is marked as failing.
 export const PLATFORMS = {
   x: { label: "X", max: 280, fold: 280, hashtags: 2 },
   linkedin: { label: "LinkedIn", max: 3000, fold: 210, hashtags: 3 },
-  instagram: { label: "Instagram", max: 2200, fold: 125, hashtags: 30 },
+  instagram: { label: "Instagram", max: 2200, fold: 125, hashtags: 5 },
 } as const;
 type Platform = keyof typeof PLATFORMS;
 
@@ -51,7 +55,7 @@ const GUIDE: Record<Platform, string> = {
   linkedin:
     "LinkedIn: 600 to 1,300 characters. The first two lines (about 200 characters) must make someone click 'see more'. Short paragraphs, line breaks between them. At most 3 hashtags, at the end.",
   instagram:
-    "Instagram caption: 300 to 1,000 characters. The first 125 characters carry the message. Line breaks between short paragraphs. 3 to 8 relevant hashtags at the end.",
+    "Instagram caption: 300 to 1,000 characters. The first 125 characters carry the message. Line breaks between short paragraphs. At most 5 relevant hashtags, at the end: Instagram allows no more than 5 per post.",
 };
 
 function system(platform: Platform): string {
@@ -98,7 +102,7 @@ export const socialMediaPostGenerator = defineTool({
       const tooManyTags = platform === "instagram" && tags > spec.hashtags;
       if (over) notes.push(`${len - spec.max} over the limit: shorten it before posting`);
       else if (len > spec.fold && platform !== "x") notes.push(`about the first ${spec.fold} show before "see more"`);
-      if (tooManyTags) notes.push(`${tags} hashtags; Instagram allows ${spec.hashtags}`);
+      if (tooManyTags) notes.push(`${tags} hashtags; Instagram allows ${spec.hashtags} per post`);
       const added = newFigures(topic_or_text, p.text);
       if (added.length) notes.push(`check ${added.join(", ")}: not in what you gave`);
       items.push({
