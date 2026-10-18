@@ -99,15 +99,25 @@ export function recommendedActions(state: DashboardState): RecommendedAction[] {
       title: `${state.pendingReviews} draft${state.pendingReviews === 1 ? " is" : "s are"} waiting for your yes`,
       consequence: "Nothing publishes without your approval, so an unread draft is an article that never ships.",
       cta: "Review",
-      href: "/articles",
+      // One waiting: open it. Several: the list, filtered to them. It went to
+      // the unfiltered list, a click short of either.
+      href:
+        state.pendingReviews === 1 && state.reviewDraftId
+          ? `/content/${state.reviewDraftId}`
+          : "/articles?status=review",
     });
   }
   if (!state.cmsConnected) {
     out.push({
       id: "connect-cms",
-      title: "No CMS connected",
-      consequence: "Without a connected CMS, an approved article reaches your site only if you copy it out as Markdown or HTML.",
-      cta: "Connect",
+      // "Connect" led to /connect, where every CMS tile offers "Request
+      // integration" (lib/cms/connectable.ts: connections are set up with the
+      // customer until each connector has published to a live site). The card
+      // now says that, so the button keeps the promise it makes.
+      title: "Publishing is not set up yet",
+      consequence:
+        "We connect your CMS with you. Until then, each approved article goes out as Markdown or HTML that you paste into your site.",
+      cta: "Set up publishing",
       href: "/connect",
     });
   }

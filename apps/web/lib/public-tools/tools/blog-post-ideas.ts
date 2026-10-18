@@ -147,7 +147,7 @@ export const blogPostIdeas = defineTool({
     }
     blocks.push(
       text(
-        "Each idea is a search people run in the United States, from DataForSEO's third-party data. Monthly searches are modelled estimates for the most-searched phrasing; long questions often show low or no volume and can still be worth a post. Cover near-duplicates on one page.",
+        "Each idea is a US English search that contains your topic, from DataForSEO's third-party data. It does not include related searches worded differently, or other countries and languages. Monthly searches are modelled estimates for the most-searched phrasing; long questions often show low or no volume and can still be worth a post. Cover near-duplicates on one page.",
         "About these ideas",
       ),
     );

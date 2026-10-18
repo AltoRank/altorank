@@ -399,7 +399,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
             </div>
           )}
           {quota.trialLabel && (
-            <div className="mt-1.5 text-[11px] text-ink-3">{quota.trialLabel}, then the plan price</div>
+            <div className="mt-1.5 text-[11px] text-ink-3">{quota.trialLabel}</div>
           )}
         </Link>
       )}
@@ -442,6 +442,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
 }
 
 function isActivePath(pathname: string, item: NavItem): boolean {
+  if (item.also?.some((prefix) => pathname.startsWith(prefix))) return true;
   if (item.exact) return pathname === item.href;
   return pathname === item.href || pathname.startsWith(item.href + "/");
 }

@@ -196,10 +196,10 @@ export function ImprovementsView({ workspaceId, gscConnected, cms, refresh, cand
             )}
             {!cms.connected && (
               <Blocker
-                title="No CMS connected"
-                body="Rewrites are still produced and reviewed here; Push to site is what a connection adds."
+                title="Publishing is not set up yet"
+                body="Rewrites are still produced and reviewed here. Push to site needs your CMS connected, which we set up with you."
                 href="/connect"
-                cta="Connect a CMS"
+                cta="Set up publishing"
               />
             )}
             {cms.connected && !cms.updatable && (

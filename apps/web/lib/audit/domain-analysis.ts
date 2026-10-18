@@ -115,6 +115,8 @@ type BusinessProfileFields = {
   offerings?: string[] | null;
   competitors?: string[] | null;
   language?: string | null;
+  /** Set when a person saved it; null when a model read it off the site and nobody looked. */
+  confirmedAt?: string | null;
 };
 
 /** Bounded so a first look cannot become an hour-long crawl of a huge site. */
@@ -1148,8 +1150,17 @@ export async function analyseDomain(options: {
           }
         }
 
+        // "You named" and "you said" only for a profile a person saved. A run
+        // the wizard started by itself works from a profile a model read off
+        // the site, and a first look (2026-10-16) told that person about "the
+        // competitor you named" and "the 7 things you said people buy".
+        const said = Boolean(business?.confirmedAt);
+        const asked = discovered.competitorsAsked;
+        const rivals = said
+          ? asked.length === 1 ? "the competitor you named" : `the ${asked.length} competitors you named`
+          : asked.length <= 2 ? asked.join(" and ") : `the ${asked.length} rivals read from your site`;
+        const ranks = asked.length === 1 ? "ranks" : "rank";
         const parts = [
-          `${fit.verdicts.size}/${toJudge.length} buyer decisions confirmed`,
           toJudge.length > fit.verdicts.size ? `${toJudge.length - fit.verdicts.size} unresolved candidates left out` : "",
           fromRanked.length ? `${fromRanked.length} it already ranks for` : "",
           rankedDropped
@@ -1165,21 +1176,21 @@ export async function analyseDomain(options: {
             ? `${discovered.serpRivalSearchesFailed.length} rival search${discovered.serpRivalSearchesFailed.length === 1 ? "" : "es"} could not be read`
             : "",
           fromCompetitors.length - (discovered.fromSerpRivals ?? 0) > 0
-            ? `${fromCompetitors.length - (discovered.fromSerpRivals ?? 0)} from what ${discovered.competitorsAsked.length === 1 ? "the competitor" : `the ${discovered.competitorsAsked.length} competitors`} you named rank${discovered.competitorsAsked.length === 1 ? "s" : ""} for`
-            : discovered.competitorsAsked.length
-              ? `0 from the ${discovered.competitorsAsked.length} competitor${discovered.competitorsAsked.length === 1 ? "" : "s"} you named`
+            ? `${fromCompetitors.length - (discovered.fromSerpRivals ?? 0)} from what ${rivals} ${ranks} for`
+            : asked.length
+              ? `0 from ${rivals}`
               : "",
           discovered.competitorsFailed?.length
             ? `${discovered.competitorsFailed.join(", ")} could not be read`
             : "",
           discovered.alternativeSeeds?.length
-            ? `${discovered.alternativeSeeds.length} phrase${discovered.alternativeSeeds.length === 1 ? "" : "s"} buyers type when weighing the rivals you named`
+            ? `${discovered.alternativeSeeds.length} phrase${discovered.alternativeSeeds.length === 1 ? "" : "s"} buyers type when weighing ${said ? "the rivals you named" : "your rivals"}`
             : "",
           discovered.competitorsUnresolved?.length
             ? `no website found for ${discovered.competitorsUnresolved.join(", ")}`
             : "",
           fromIdeas.length
-            ? `${fromIdeas.length} around the ${discovered.seedsPriced} thing${discovered.seedsPriced === 1 ? "" : "s"} you said people buy from you`
+            ? `${fromIdeas.length} around the ${discovered.seedsPriced} thing${discovered.seedsPriced === 1 ? "" : "s"} ${said ? "you said" : "your site says"} people buy from you`
             : "",
           refusedByBuyerTest
             ? `${refusedByBuyerTest} parked as not what your buyers would search`
@@ -1196,7 +1207,12 @@ export async function analyseDomain(options: {
         layers.push({
           id: "keywords",
           status: toJudge.length > 0 && fit.verdicts.size === 0 ? "failed" : "ok",
-          detail: `${keywordsFound} keywords found: ${parts.join(", ") || "none"}`,
+          // The parts count candidates on their way in and out, so they do not
+          // add up to the kept number; the header says which is which ("31
+          // keywords found: 81/81 …, 38 from …" read as wrong arithmetic).
+          detail: toJudge.length
+            ? `${keywordsFound} keywords kept of ${toJudge.length} candidates: ${parts.join(", ") || "none"}`
+            : `${keywordsFound} keywords found: ${parts.join(", ") || "none"}`,
         });
       })();
     } catch (err) {
