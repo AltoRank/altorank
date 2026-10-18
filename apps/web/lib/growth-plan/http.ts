@@ -14,12 +14,19 @@ const ALLOWED_ORIGINS = new Set([
   "http://127.0.0.1:4323",
 ]);
 
+// A cross-origin page can read only the CORS-safelisted response headers
+// (Content-Type and a few others) unless the response names the rest here.
+// Without this, the altorank.co widgets read Retry-After as null and tell a
+// rate-limited visitor "a few minutes" when the window can run for an hour.
+export const EXPOSED_HEADERS = ["Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset"] as const;
+
 export function corsHeaders(origin: string | null): Record<string, string> {
   const allow = origin && ALLOWED_ORIGINS.has(origin) ? origin : "https://altorank.co";
   return {
     "Access-Control-Allow-Origin": allow,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Expose-Headers": EXPOSED_HEADERS.join(", "),
     "Access-Control-Max-Age": "86400",
     Vary: "Origin",
   };

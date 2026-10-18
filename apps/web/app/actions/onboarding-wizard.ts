@@ -240,7 +240,11 @@ export async function resolveCompetitor(
 }
 
 /** Save the profile the person confirmed. Labels stay in the profile; codes go in the columns. */
-export async function saveProfile(workspaceId: string, profile: BusinessProfile): Promise<void> {
+export async function saveProfile(
+  workspaceId: string,
+  profile: BusinessProfile,
+  opts: { auto?: boolean } = {},
+): Promise<void> {
   const { supabase, workspace } = await assertWorkspace(workspaceId);
   const locale = resolveLocale(profile.language, profile.country);
   const { error } = await supabase
@@ -248,8 +252,11 @@ export async function saveProfile(workspaceId: string, profile: BusinessProfile)
     .update({
       // A person pressed save on what they read: that is the confirmation the
       // writer's prompt names (lib/ai/prompts.ts). Stamped here, never taken
-      // from the client.
-      business_profile: { ...profile, confirmedAt: new Date().toISOString() },
+      // from the client. A run the wizard started by itself saves the same
+      // profile with no stamp: nobody read it, and a stamp told the writer
+      // "the owner's confirmed words" and the first look "the competitor you
+      // named" about a profile a model had read off the site (2026-10-16).
+      business_profile: { ...profile, confirmedAt: opts.auto ? null : new Date().toISOString() },
       // The wizard is also where a site gets its display name; before this the
       // name was always the bare domain.
       name: profile.name?.trim() || workspace.name,

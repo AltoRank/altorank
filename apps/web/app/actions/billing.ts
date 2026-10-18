@@ -83,9 +83,16 @@ async function openCheckout(
 
   const { data: account } = await supabase
     .from("accounts")
-    .select("stripe_customer_id, stripe_subscription_id, plan_status, trial_ends_at")
+    .select("stripe_customer_id, stripe_subscription_id, plan_status, trial_ends_at, billing_provider")
     .eq("id", accountId)
     .single();
+
+  // A store that installed AltoRank from the Shopify App Store is billed by
+  // Shopify (lib/shopify/billing.ts). A Stripe checkout here would be a second
+  // subscription for the same account.
+  if (account?.billing_provider === "shopify") {
+    return { ok: false, error: "This account is billed through Shopify. Change your plan from your Shopify admin (Apps → AltoRank)." };
+  }
 
   if (account && subscriptionSwitchable(account)) {
     try {

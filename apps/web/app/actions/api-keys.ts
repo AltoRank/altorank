@@ -35,7 +35,7 @@ import { actorName } from "@/lib/email/approval-events";
 // would reach the sites they were kept out of. Migration 111 refuses the row
 // in the database as well.
 //
-// Two kinds of key (migration 114). An agent key acts for the account through
+// Two kinds of key (migration 118). An agent key acts for the account through
 // the agent API and the hosted MCP. A blog key is what goes into a customer
 // site's environment for @altorank/next-blog: scopes `{blog}`, one site, read
 // its live articles through /api/blog/v1, refused by the agent API. It is
@@ -87,7 +87,7 @@ export async function createApiKey(formData: FormData): Promise<CreatedApiKey> {
   const supabase = createServiceClient();
 
   // The site must be this account's. Read with the service role, so the
-  // account filter here is the check (migration 114's trigger repeats it).
+  // account filter here is the check (migration 118's trigger repeats it).
   let site: { id: string; domain: string } | null = null;
   if (blog) {
     if (!parsed.workspace_id) throw new Error("Choose the site this blog key reads.");

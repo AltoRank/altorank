@@ -11,6 +11,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { ShopifyAdapter, clearShopifyTokenCache, listShopifyBlogs, shopifyCredential } from "../shopify";
+import { SHOPIFY_API_VERSION } from "@/lib/shopify/env";
 
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
@@ -25,7 +26,11 @@ const okJson = (body: unknown, status = 200) => ({
   text: async () => JSON.stringify(body),
 });
 const tokenResponse = (token: string, expiresIn = 86399) => okJson({ access_token: token, scope: "read_content,write_content", expires_in: expiresIn });
-const blogsResponse = okJson({ blogs: [{ id: 7, title: "News", handle: "news" }] });
+const blogsResponse = okJson({ data: { blogs: { nodes: [{ id: "gid://shopify/Blog/7", title: "News", handle: "news" }] } } });
+const shopResponse = okJson({ data: { shop: { name: "Store" } } });
+const createdResponse = (id: number, handle: string) =>
+  okJson({ data: { articleCreate: { article: { id: `gid://shopify/Article/${id}`, handle }, userErrors: [] } } });
+const GRAPHQL = `${STORE}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
 
 /** The calls fetch has seen, as [url, method, headers, body]. */
 function calls() {
@@ -110,7 +115,7 @@ describe("client-credentials exchange", () => {
     // The exchange itself carries no access-token header.
     expect(exchange.headers["X-Shopify-Access-Token"]).toBeUndefined();
 
-    expect(api.url).toBe(`${STORE}/admin/api/2025-01/blogs.json`);
+    expect(api.url).toBe(GRAPHQL);
     expect(api.headers["X-Shopify-Access-Token"]).toBe("tok_A");
     expect(blogs).toEqual([{ id: "7", title: "News", handle: "news" }]);
   });
@@ -235,7 +240,8 @@ describe("401 handling", () => {
       .mockResolvedValueOnce(tokenResponse("tok_stale"))
       .mockResolvedValueOnce(okJson({ errors: "[API] Invalid API key or access token" }, 401))
       .mockResolvedValueOnce(tokenResponse("tok_fresh"))
-      .mockResolvedValueOnce(okJson({ article: { id: 99, handle: "hi" } }));
+      .mockResolvedValueOnce(shopResponse)
+      .mockResolvedValueOnce(createdResponse(99, "hi"));
 
     const adapter = new ShopifyAdapter({ type: "shopify", storeUrl: STORE, blogId: "7", blogHandle: "news", ...CLIENT });
     const r = await adapter.publish({ title: "Hi", html: "<p>x</p>", slug: "hi" });
@@ -244,10 +250,13 @@ describe("401 handling", () => {
     const seq = calls();
     expect(seq.map((c) => c.url.split("/").slice(-1)[0])).toEqual([
       "access_token",
-      "articles.json",
+      "graphql.json",
       "access_token",
-      "articles.json",
+      "graphql.json",
+      "graphql.json",
     ]);
+    // The fresh token is cached: the next request does not exchange again.
+    expect(seq[4].headers["X-Shopify-Access-Token"]).toBe("tok_fresh");
     expect(seq[1].headers["X-Shopify-Access-Token"]).toBe("tok_stale");
     expect(seq[3].headers["X-Shopify-Access-Token"]).toBe("tok_fresh");
     // The retried request is the same request: method and body unchanged.
@@ -281,17 +290,17 @@ describe("401 handling", () => {
 
 describe("legacy access token", () => {
   it("never calls the token endpoint and sends the token as given", async () => {
-    mockFetch.mockResolvedValueOnce(blogsResponse).mockResolvedValueOnce(okJson({ article: { id: 1, handle: "a" } }));
+    mockFetch
+      .mockResolvedValueOnce(blogsResponse)
+      .mockResolvedValueOnce(shopResponse)
+      .mockResolvedValueOnce(createdResponse(1, "a"));
 
     const adapter = new ShopifyAdapter({ type: "shopify", storeUrl: `${STORE}/`, accessToken: "shpat_legacy" });
     await adapter.publish({ title: "A", html: "", slug: "a" });
 
     const seq = calls();
     expect(seq.some((c) => c.url.endsWith("/admin/oauth/access_token"))).toBe(false);
-    expect(seq.map((c) => c.url)).toEqual([
-      `${STORE}/admin/api/2025-01/blogs.json`,
-      `${STORE}/admin/api/2025-01/blogs/7/articles.json`,
-    ]);
+    expect(seq.map((c) => c.url)).toEqual([GRAPHQL, GRAPHQL, GRAPHQL]);
     for (const c of seq) expect(c.headers["X-Shopify-Access-Token"]).toBe("shpat_legacy");
   });
 });

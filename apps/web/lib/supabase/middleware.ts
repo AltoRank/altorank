@@ -63,6 +63,11 @@ export const PUBLIC_PREFIXES = [
   // by sending the person to /signin with a `next` back to the exact
   // request, which a blanket redirect here would drop on the floor.
   "/oauth/authorize",
+  // The embedded Shopify app (app/shopify/route.ts and its script under
+  // public/shopify/). It runs in an iframe inside the Shopify admin, where our
+  // session cookies are not sent; every API call it makes is authenticated by
+  // a Shopify ID token instead (lib/shopify/request-auth.ts).
+  "/shopify",
 ] as const;
 
 /** Whether the middleware serves this path to a request with no session. */

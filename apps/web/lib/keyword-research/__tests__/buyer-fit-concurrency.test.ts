@@ -118,6 +118,34 @@ describe("judgeBuyerFit, batches side by side", () => {
     expect({ grants, refusals }).toEqual(settled);
   });
 
+  it("gives the room a settle frees to the best batch waiting for it, not to a fresh batch whose claim lands first", async () => {
+    // The first batch's claims always reach the budget a moment after the
+    // others', as a slow database round trip did under load: refused at the
+    // start with the room held, it used to lose the room every settle freed
+    // to the batch started in the same slot, and ended unjudged while the
+    // weakest batches were judged.
+    const many = Array.from({ length: MAX_JUDGED * 15 }, (_, i) => `acme phrase ${String(i).padStart(4, "0")}`);
+    const ask = async (_op: string, prompt: string) => {
+      const phrases = phrasesIn(prompt);
+      if (phrases.includes(many[0])) await new Promise((r) => setTimeout(r, 2));
+      const claim = await claimSpend("keyword-research/buyer-fit", 0.0855).catch(() => null);
+      if (!claim) return null;
+      await new Promise((r) => setTimeout(r, 6));
+      await claim.settle(0.025);
+      return JSON.stringify({ verdicts: phrases.map((t) => ({ t, s: "solution", r: "test" })) });
+    };
+    const budget = memoryRunBudget("run-line", 0.3, {});
+    const out = await withSpendScope({ budget, stage: "buyer_fit" }, () => judgeBuyerFit(business, many, { ask, concurrency: 5, prioritized: true }));
+    expect(out.verdicts.size).toBeGreaterThan(0);
+    expect(out.verdicts.size).toBeLessThan(many.length);
+    // The strongest forty phrases are judged...
+    expect(many.slice(0, MAX_JUDGED).every((p) => out.verdicts.has(p))).toBe(true);
+    // ...and what the budget left out is the weakest end of the pool, batch by batch.
+    const judged = Array.from({ length: 15 }, (_, b) => out.verdicts.has(many[b * MAX_JUDGED]));
+    expect(judged).toEqual([...judged].sort((a, b) => Number(b) - Number(a)));
+    expect(budget.state().committedUsd).toBeLessThanOrEqual(0.3 + 1e-9);
+  });
+
   it("asks a prioritized pool best first, so a budget that ends part-way leaves the weakest phrases out, not the end of the alphabet", async () => {
     // Best first is reverse-alphabetical here: the strongest phrase sorts last.
     const ranked = [...terms].reverse();

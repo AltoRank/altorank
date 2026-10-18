@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **102** (rows stay put, and the member-role guard), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **111** (member scope guards; 110 is taken by an open branch), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server), **114** (blog keys), **115** (Search Console sync outcome), **116** (how often a paid door may be pressed, the Operations totals, and the customer's own last sign-in across "View as") and **117** (refresh engine bookkeeping), each with its section at the end. **101, 104, 105, 106, 107 and 108 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113, 114, 115, 116 and 117 go in AFTER**; **102 and 112 go in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **102** (rows stay put, and the member-role guard), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **110** (Shopify installations), **111** (member scope guards), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server), **114** (blog keys), **115** (Search Console sync outcome), **116** (how often a paid door may be pressed, the Operations totals, and the customer's own last sign-in across "View as") and **117** (refresh engine bookkeeping) and **118** (Shopify billing), each with its section at the end. **101, 104, 105, 106, 107, 108, 110 and 118 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113, 114, 115, 116 and 117 go in AFTER**; **102 and 112 go in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both run to the head; `lib/__tests__/migration-runbook.test.ts` fails when a file is missing from either. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -167,7 +167,9 @@ m(file, applied) as (values
   ('114_blog_keys',                          exists (select 1 from col where t='api_keys' and c='workspace_id') and exists (select 1 from pg_constraint where conname = 'api_keys_blog_key_shape') and exists (select 1 from pg_trigger where tgname = 'api_keys_site_in_account')),
   ('115_gsc_sync_outcome',                   exists (select 1 from col where t='workspace_integrations' and c='last_synced_at') and exists (select 1 from col where t='workspace_integrations' and c='synced_from') and exists (select 1 from col where t='workspace_integrations' and c='synced_through')),
   ('116_spend_doors',                        to_regclass('public.spend_door_uses') is not null and to_regprocedure('public.take_spend_door(uuid,uuid,text,jsonb)') is not null and to_regprocedure('public.provider_spend_summary(timestamptz)') is not null and exists (select 1 from col where t='admin_impersonations' and c='target_last_sign_in_at') and exists (select 1 from col where t='provider_spend' and c='job')),
-  ('117_refresh_engine',                     exists (select 1 from col where t='refresh_tasks' and c='started_at') and exists (select 1 from col where t='refresh_candidates' and c='resolved_at'))
+  ('117_refresh_engine',                     exists (select 1 from col where t='refresh_tasks' and c='started_at') and exists (select 1 from col where t='refresh_candidates' and c='resolved_at')),
+  ('110_shopify_installations',             exists (select 1 from col where t='shopify_installations' and c='refresh_token') and exists (select 1 from col where t='shopify_webhook_events' and c='webhook_id')),
+  ('118_shopify_billing',                   exists (select 1 from col where t='accounts' and c='billing_provider') and exists (select 1 from col where t='shopify_installations' and c='shop_gid'))
 )
 select file, applied from m order by file;
 ```
@@ -320,6 +322,8 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 114_blog_keys.sql   # AFTER its co
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 115_gsc_sync_outcome.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 116_spend_doors.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 117_refresh_engine.sql   # AFTER its code is live; see its section
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 110_shopify_installations.sql   # BEFORE its code is deployed
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 118_shopify_billing.sql   # BEFORE its code is deployed (after 110)
 ```
 
 Re-running a file that is already applied is safe from 048 on, with one
@@ -406,6 +410,8 @@ no code in the repo references either).
 | 115_gsc_sync_outcome.sql | `fix/search-console-truth` | 001, 070; **its code deployed first** | yes | yes, see its section (loses only the recorded sync range) |
 | 116_spend_doors.sql | `fix/spend-doors` | 025, 030, 085, 106; **its code deployed first** | yes | yes, see its section (presses are counted per instance again, the Operations page pages through provider_spend, and the kept last sign-ins are lost) |
 | 117_refresh_engine.sql | `fix/refresh-engine` | 052; **its code deployed first** | yes | yes, see its section (loses the start times and which candidates a pass retired; the code works without both) |
+| 110_shopify_installations.sql | `shopify/app-install` | 001, 085; **applied before its code is deployed** | yes | yes: `drop table shopify_webhook_events, shopify_installations` (loses every store's tokens; each must reopen the app) |
+| 118_shopify_billing.sql | `shopify/app-billing` | **110**, 085; **applied before its code is deployed** | yes | yes: drop the trigger and function, then the three installation columns and `accounts.billing_provider` (Shopify-billed accounts would then read as Stripe) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -1824,6 +1830,37 @@ Rollback (the code keeps working; it logs that `pushed_by` was not recorded):
 drop trigger if exists refresh_executions_guard_push on public.refresh_executions;
 drop function if exists public.refresh_executions_guard_push();
 alter table public.refresh_executions drop column if exists pushed_by;
+## 110 — Shopify App Store installations
+
+policies, like 080):
+
+- `shopify_installations`: one row per store (`shop_domain`, unique), holding
+  the app's expiring offline access token and its rotating refresh token,
+  both encrypted with `lib/crypto.ts`, plus a `refreshing_until` lease so two
+  publishers never refresh one store at once, and `needs_reauth_at` for a
+  store whose refresh token Shopify refused. A connection made by installing
+  the app stores only `installationId` in `workspace_integrations.config`.
+- `shopify_webhook_events`: a delivery's `X-Shopify-Webhook-Id`, claimed
+  before the webhook route acts, so a redelivery is a no-op.
+
+**Apply BEFORE its code is deployed.** Nothing writes these tables until the
+Shopify app is configured (`SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`) and a
+store installs it, and the webhook route needs the claim table from its first
+delivery. Re-running is a no-op (`if not exists` throughout). Depends on 001
+and 085.
+
+Post-flight (expect `2`):
+
+```sql
+select count(*) from information_schema.tables
+ where table_schema = 'public' and table_name in ('shopify_installations', 'shopify_webhook_events');
+```
+
+Rollback (every installed store loses its tokens and has to reopen the app):
+
+```sql
+drop table if exists shopify_webhook_events;
+drop table if exists shopify_installations;
 ```
 
 ## 114 — blog keys read one site's published articles, nothing else
@@ -2086,4 +2123,109 @@ closed and read as dismissed):
 ```sql
 alter table public.refresh_tasks drop column if exists started_at;
 alter table public.refresh_candidates drop column if exists resolved_at;
+```
+
+## 110 — Shopify App Store installations
+
+`110_shopify_installations.sql`, two service-role-only tables (RLS on, no
+policies, like 080):
+
+- `shopify_installations`: one row per store (`shop_domain`, unique), holding
+  the app's expiring offline access token and its rotating refresh token,
+  both encrypted with `lib/crypto.ts`, plus a `refreshing_until` lease so two
+  publishers never refresh one store at once, and `needs_reauth_at` for a
+  store whose refresh token Shopify refused. A connection made by installing
+  the app stores only `installationId` in `workspace_integrations.config`.
+- `shopify_webhook_events`: a delivery's `X-Shopify-Webhook-Id`, claimed
+  before the webhook route acts, so a redelivery is a no-op.
+
+**Apply BEFORE its code is deployed.** Nothing writes these tables until the
+Shopify app is configured (`SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`) and a
+store installs it, and the webhook route needs the claim table from its first
+delivery. Re-running is a no-op (`if not exists` throughout). Depends on 001
+and 085.
+
+Post-flight (expect `2`):
+
+```sql
+select count(*) from information_schema.tables
+ where table_schema = 'public' and table_name in ('shopify_installations', 'shopify_webhook_events');
+```
+
+Rollback (every installed store loses its tokens and has to reopen the app):
+
+```sql
+drop table if exists shopify_webhook_events;
+drop table if exists shopify_installations;
+```
+
+## 114 — an account billed through Shopify
+
+
+- `accounts.billing_provider` (`'stripe'` | `'shopify'`, default `'stripe'`, so
+  every existing account reads as it is). A store installed from the Shopify
+  App Store pays through Shopify App Pricing; `lib/shopify/billing.ts` reads its
+  subscription from the Partner API and writes the same plan columns the Stripe
+  webhook writes, so quota and the trial gate read one model.
+- `shopify_installations.shop_gid`, `plan_handle`, `plan_checked_at`: what the
+  Partner API needs and what it last said.
+- `accounts_guard_billing_provider`: a signed-in user cannot change who bills
+  an account (42501). Its own trigger, like 101's, because 099 replaces
+  `accounts_guard_privileged_columns` whole.
+
+**Apply BEFORE its code is deployed, after 110.** Depends on 110 and 085.
+Re-running is a no-op (`if not exists`, guarded constraint, drop-then-create
+trigger).
+
+Post-flight (expect `t`):
+
+```sql
+select exists (select 1 from information_schema.columns where table_name = 'accounts' and column_name = 'billing_provider')
+   and exists (select 1 from pg_trigger where tgname = 'accounts_guard_billing_provider');
+```
+
+Rollback (Shopify-billed accounts would then read as Stripe-billed):
+
+```sql
+drop trigger if exists accounts_guard_billing_provider on public.accounts;
+drop function if exists public.accounts_guard_billing_provider();
+alter table shopify_installations drop column if exists plan_checked_at, drop column if exists plan_handle, drop column if exists shop_gid;
+alter table accounts drop constraint if exists accounts_billing_provider_check;
+alter table accounts drop column if exists billing_provider;
+```
+
+## 118 — an account billed through Shopify
+
+`118_shopify_billing.sql` (110 is the installations table; 111-117 are main's):
+
+- `accounts.billing_provider` (`'stripe'` | `'shopify'`, default `'stripe'`, so
+  every existing account reads as it is). A store installed from the Shopify
+  App Store pays through Shopify App Pricing; `lib/shopify/billing.ts` reads its
+  subscription from the Partner API and writes the same plan columns the Stripe
+  webhook writes, so quota and the trial gate read one model.
+- `shopify_installations.shop_gid`, `plan_handle`, `plan_checked_at`: what the
+  Partner API needs and what it last said.
+- `accounts_guard_billing_provider`: a signed-in user cannot change who bills
+  an account (42501). Its own trigger, like 101's, because 099 replaces
+  `accounts_guard_privileged_columns` whole.
+
+**Apply BEFORE its code is deployed, after 110.** Depends on 110 and 085.
+Re-running is a no-op (`if not exists`, guarded constraint, drop-then-create
+trigger).
+
+Post-flight (expect `t`):
+
+```sql
+select exists (select 1 from information_schema.columns where table_name = 'accounts' and column_name = 'billing_provider')
+   and exists (select 1 from pg_trigger where tgname = 'accounts_guard_billing_provider');
+```
+
+Rollback (Shopify-billed accounts would then read as Stripe-billed):
+
+```sql
+drop trigger if exists accounts_guard_billing_provider on public.accounts;
+drop function if exists public.accounts_guard_billing_provider();
+alter table shopify_installations drop column if exists plan_checked_at, drop column if exists plan_handle, drop column if exists shop_gid;
+alter table accounts drop constraint if exists accounts_billing_provider_check;
+alter table accounts drop column if exists billing_provider;
 ```

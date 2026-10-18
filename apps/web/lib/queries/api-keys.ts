@@ -11,7 +11,7 @@ const COLUMNS = "id, account_id, name, prefix, scopes, expires_at, last_used_at,
 export async function getApiKeys(): Promise<ApiKeyRow[]> {
   const supabase = await createClient();
   const read = (cols: string) => supabase.from("api_keys").select(cols).order("created_at", { ascending: false });
-  // A blog key's site comes from migration 114; before it, every key is an
+  // A blog key's site comes from migration 118; before it, every key is an
   // agent key and the list reads the same without the column.
   let { data, error } = await read(`${COLUMNS}, workspace_id`);
   if (isMissingColumn(error)) ({ data, error } = await read(COLUMNS));

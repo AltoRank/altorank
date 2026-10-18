@@ -67,6 +67,8 @@ export function businessEvidence(input: {
   facts: SiteFacts | null | undefined;
   instructions?: string | null;
   answers?: Array<{ question: string; answer: string }>;
+  /** The site's own text (voice_profiles.sample_text): its words, so its claims. */
+  siteText?: string | null;
 }): BusinessEvidence {
   const parts: string[] = [];
   const collect = (v: unknown, depth = 0) => {
@@ -89,6 +91,7 @@ export function businessEvidence(input: {
     collect(f.conversion?.url);
   }
   collect(input.instructions);
+  collect(input.siteText);
   collect(input.answers?.map((a) => a.answer));
   if (input.domain) parts.push(input.domain);
 

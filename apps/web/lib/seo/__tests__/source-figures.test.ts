@@ -111,6 +111,13 @@ describe("the writer is asked for two or three sourced figures, or told there ar
     expect(buildSystemPrompt({ keyword: "k", research: research([]) })).not.toContain("FIGURES FROM THE PAGES RESEARCHED");
   });
 
+  it("asks for an attributed range when the search wants a number and no page gave a figure", () => {
+    const rules = figureRules(research([])).join("\n");
+    expect(rules).toContain("A search that asks for a number");
+    expect(rules).toContain("never a page that sells");
+    expect(figureRules(research([]), { refresh: true }).join("\n")).not.toContain("A search that asks for a number");
+  });
+
   it("keeps a rewrite's own sourced figures instead of asking it to drop them", () => {
     const rules = figureRules(research([]), { refresh: true }).join("\n");
     expect(rules).toContain("Use specific figures only when sourced");
