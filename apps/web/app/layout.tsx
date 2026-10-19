@@ -6,6 +6,7 @@ import "./globals.css";
 import { APP_NAME, APP_DESCRIPTION } from "@/lib/constants";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import { NONCE_HEADER } from "@/lib/security/csp";
+import { RouteMemory } from "@/components/route-memory";
 
 const archivo = Archivo({
   variable: "--font-archivo",
@@ -54,6 +55,8 @@ export default async function RootLayout({
       </head>
       <body className="min-h-full flex flex-col font-sans">
         {children}
+        {/* The path before this one, for where an article was opened from. */}
+        <RouteMemory />
         <Toaster position="bottom-right" richColors />
       </body>
     </html>

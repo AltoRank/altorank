@@ -3,10 +3,20 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 // The card form itself is tested with billing; here it is a marker, so the
 // question is only whether the ask is rendered at all.
+const priceBox = vi.hoisted(() => ({ onSeen: undefined as undefined | (() => void) }));
 vi.mock("@/components/billing/trial-offer", () => ({
   TrialOffer: () => <div data-testid="trial-offer">Start 7-day trial</div>,
-  TrialPriceBox: () => <div data-testid="trial-offer">Start 7-day trial</div>,
+  TrialPriceBox: ({ onSeen }: { onSeen?: () => void }) => {
+    priceBox.onSeen = onSeen;
+    return <div data-testid="trial-offer">Start 7-day trial</div>;
+  },
 }));
+// The step a branch records, as a marker: effects do not run in static markup.
+vi.mock("../track-step", () => ({
+  TrackStep: ({ step, workspaceId, props }: { step: string; workspaceId?: string; props?: object }) => <i data-step={step} data-ws={workspaceId} data-props={JSON.stringify(props ?? {})} />,
+}));
+const track = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/onboarding/track-step", () => ({ trackStep: (...a: unknown[]) => track(...a) }));
 
 import { SetupAsk, NOTHING_PLANNED_HEADING, nothingPlannedLede } from "../setup-ask";
 import { asksForCard, asksWithOffer, setupEnding } from "@/lib/onboarding/setup-retry";
@@ -136,5 +146,45 @@ describe("SetupAsk", () => {
     const lede = nothingPlannedLede("acme-clinic.example", POOL, false);
     expect(lede).toContain("checked 117 searches");
     expect(lede).not.toMatch(/24 hours|our team|hear back/i);
+  });
+});
+
+describe("SetupAsk says which ending was on screen (onboarding.step)", () => {
+  const stepsIn = (html: string) => [...html.matchAll(/data-step="([^"]+)"(?: data-ws="([^"]*)")? data-props="([^"]*)"/g)].map((m) => ({ step: m[1], ws: m[2], props: JSON.parse(m[3].replace(/&quot;/g, '"')) }));
+
+  it("on every branch, with the ending, for the site it ran for", () => {
+    for (const ending of ["article", "writing", "retry", "first-failed", "no-article", "nothing-planned", "provider-down"] as const) {
+      const steps = stepsIn(renderToStaticMarkup(<SetupAsk ending={ending} canBuy followUp workspaceId="ws1" />));
+      expect(steps.filter((s) => s.step === "setup_ending_shown")).toEqual([{ step: "setup_ending_shown", ws: "ws1", props: { ending } }]);
+      // The card ask is still only where a card is asked for: the full box,
+      // or the quiet card for an ending with no article to show.
+      expect(steps.some((s) => s.step === "gate_shown")).toBe(asksForCard(ending));
+    }
+  });
+
+  it("says the ending on the quiet card too, the one no-article and first-failed get", () => {
+    for (const ending of ["no-article", "first-failed"] as const) {
+      const html = renderToStaticMarkup(<SetupAsk ending={ending} canBuy followUp workspaceId="ws1" />);
+      expect(html).toContain("quiet-trial-ask");
+      expect(stepsIn(html).map((s) => s.step)).toEqual(["setup_ending_shown", "gate_shown"]);
+    }
+  });
+
+  it("says the offer was seen only when the price box says it was on screen, with the viewport bucket", () => {
+    track.mockClear();
+    priceBox.onSeen = undefined;
+    const offer = { interval: "month" as const, onInterval: () => undefined, facts: { trialEndsOn: "2026-10-26", vatAdded: false } as never, fullArticle: true };
+    renderToStaticMarkup(<SetupAsk ending="article" canBuy followUp offer={offer} workspaceId="ws1" />);
+    expect(track).not.toHaveBeenCalledWith("offer_seen", expect.anything());
+    vi.stubGlobal("window", { innerWidth: 800 });
+    // Read through the hoisted object's type: the reset above narrowed it to undefined.
+    const onSeen: (() => void) | undefined = (priceBox as { onSeen?: () => void }).onSeen;
+    expect(onSeen).toBeTypeOf("function");
+    try {
+      onSeen?.();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(track).toHaveBeenCalledWith("offer_seen", { workspaceId: "ws1", props: { viewport: "tablet" } });
   });
 });

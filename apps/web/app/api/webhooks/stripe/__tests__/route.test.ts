@@ -95,6 +95,8 @@ vi.mock("next/server", async () => {
   return { ...real, after: (fn: () => unknown) => { deferred.push(fn); } };
 });
 vi.mock("@/lib/plan/resume-dispatch", () => ({ dispatchResume: (...a: unknown[]) => resume(...a) }));
+const recordTrial = vi.hoisted(() => vi.fn(async (..._a: unknown[]) => undefined));
+vi.mock("@/lib/onboarding/step-events", () => ({ recordTrialStarted: (...a: unknown[]) => recordTrial(...a) }));
 async function runDeferred() {
   while (deferred.length) await deferred.shift()!();
 }
@@ -832,6 +834,30 @@ describe("the seven-day card trial", () => {
     expect(resume).toHaveBeenCalledWith({ accountId: "account-1", key: "sub_1", draftWeek: true });
     expect(trialStarted.mock.calls[0][2]).toMatchObject({ weekHandedOff: true });
     expect((await import("../route")).maxDuration).toBe(300);
+  });
+
+  it("records the funnel's trial for every site of the account, after Stripe has its answer", async () => {
+    deferred.length = 0;
+    recordTrial.mockClear();
+    workspaceRows = [
+      { id: "ws-1", auto_generate_weekly_limit: 7, auto_generate: true, status: "on" },
+      { id: "ws-2", auto_generate_weekly_limit: 7, auto_generate: true, status: "on" },
+    ];
+    retrieveSubscription.mockResolvedValue({ status: "trialing", trial_end: TRIAL_END, items: { data: [{ price: { id: STARTER } }] } });
+    await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter" } }));
+    expect(recordTrial).not.toHaveBeenCalled();
+    await runDeferred();
+    expect(recordTrial).toHaveBeenCalledTimes(1);
+    expect(recordTrial.mock.calls[0][1]).toEqual({ accountId: "account-1", workspaceIds: ["ws-1", "ws-2"], plan: "starter" });
+  });
+
+  it("records no trial for a checkout that bought a plan outright", async () => {
+    deferred.length = 0;
+    recordTrial.mockClear();
+    retrieveSubscription.mockResolvedValue({ status: "active", items: { data: [{ price: { id: STARTER } }] } });
+    await deliver(checkoutCompleted({ metadata: { account_id: "account-1", plan: "starter" } }));
+    await runDeferred();
+    expect(recordTrial).not.toHaveBeenCalled();
   });
 
   it("quotes the yearly price to a yearly trialist, and the monthly one otherwise", async () => {

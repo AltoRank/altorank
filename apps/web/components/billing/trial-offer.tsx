@@ -1,10 +1,11 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Icons } from "@/components/ui";
 import { StartTrialButton } from "./start-trial-button";
 import { PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
 import { CANCEL_LINE, chargeLine, otherIntervalLine, otherPlanLine, reassuranceLine, trialIncludes, type TrialOfferFacts } from "@/lib/billing/trial-offer";
+import { observeSeenOnce } from "@/lib/onboarding/seen-once";
 
 /** The sentence for a member who cannot buy: who can, and what it opens. */
 export const MEMBER_CANNOT_BUY =
@@ -67,6 +68,7 @@ export function TrialPriceBox({
   fullArticle,
   returnTo = "/dashboard",
   onStart,
+  onSeen,
   buttonRef,
 }: {
   canBuy: boolean;
@@ -79,14 +81,22 @@ export function TrialPriceBox({
   fullArticle: boolean;
   returnTo?: string;
   onStart?: () => void;
+  /** Told once, the first time the box is actually on screen (lib/onboarding/seen-once.ts). */
+  onSeen?: () => void;
   /** Wraps the button, so the gate can tell when it is on screen. */
   buttonRef?: React.Ref<HTMLDivElement>;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const box = useRef<HTMLElement | null>(null);
+  const seen = useRef(onSeen);
+  useEffect(() => {
+    seen.current = onSeen;
+  }, [onSeen]);
+  useEffect(() => (canBuy ? observeSeenOnce(box.current, () => seen.current?.()) : undefined), [canBuy]);
   if (!canBuy) return <p className="m-0 rounded-[10px] border border-line bg-panel p-5 text-[13px] leading-[1.6] text-ink-2">{MEMBER_CANNOT_BUY}</p>;
   const other: BillingInterval = interval === "month" ? "year" : "month";
   return (
-    <section aria-labelledby="trial-offer-heading" className="rounded-[10px] border border-line bg-panel p-5">
+    <section ref={box} aria-labelledby="trial-offer-heading" className="rounded-[10px] border border-line bg-panel p-5">
       {/* The plan's name means nothing yet to someone on their first visit,
           so the box leads with the trial and names a plan only once someone
           has switched away from the default (UX clarity audit 2026-10-18). */}

@@ -1,6 +1,9 @@
+"use client";
+
 import Link from "next/link";
 import { Button } from "@/components/ui";
 import { plural } from "@/lib/utils";
+import { trackNextUpClicked } from "@/lib/onboarding/article-events";
 
 /**
  * The one thing on the dashboard that waits on a person: the oldest draft in
@@ -8,7 +11,8 @@ import { plural } from "@/lib/utils";
  * recommended-action card and a "Needs your review" card) and none of them
  * was the page's primary button - that was "Add workspace" (UX clarity audit
  * 2026-10-18, #2). Now it is said once, at the top, with the only accent
- * button on the page.
+ * button on the page. A client component only for the click: the funnel's
+ * step after an approval (onboarding.step `next_up_clicked`).
  */
 export function NextUp({ draft, waiting }: { draft: { id: string; title: string }; waiting: number }) {
   const others = waiting - 1;
@@ -27,14 +31,14 @@ export function NextUp({ draft, waiting }: { draft: { id: string; title: string 
           {others > 0 && (
             <>
               {" "}
-              <Link href="/articles?status=review" className="text-ink-2 underline underline-offset-2 hover:text-accent-ink">
+              <Link href="/articles?status=review" onClick={() => trackNextUpClicked(draft.id, "more")} className="text-ink-2 underline underline-offset-2 hover:text-accent-ink">
                 {plural(others, "more draft")} waiting
               </Link>
             </>
           )}
         </p>
       </div>
-      <Link href={`/content/${draft.id}`} className="shrink-0">
+      <Link href={`/content/${draft.id}`} onClick={() => trackNextUpClicked(draft.id, "draft")} className="shrink-0">
         <Button variant="accent">Read and approve</Button>
       </Link>
     </section>

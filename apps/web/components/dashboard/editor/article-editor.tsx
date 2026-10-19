@@ -44,6 +44,7 @@ import { SelectionBar } from "@/components/dashboard/editor/selection-bar";
 import { LinkPopover } from "@/components/dashboard/editor/link-popover";
 import { RewritePanel } from "@/components/dashboard/editor/rewrite-panel";
 import { ExportMenu } from "@/components/dashboard/editor/export-menu";
+import { trackArticleCopied, trackArticleOpened } from "@/lib/onboarding/article-events";
 import { FoundOnSiteNotice, FoundOnSiteBlindNote } from "@/components/dashboard/editor/found-on-site-notice";
 import { notFoundOnSite } from "@/app/actions/found-on-site";
 import { blindNote, foundOnSiteView } from "@/lib/found-on-site/state";
@@ -267,6 +268,11 @@ export function ArticleEditor({
   useEffect(() => {
     editorRef.current = editor;
   }, [editor]);
+
+  // Opened, and from where (onboarding.step): the funnel after the trial.
+  useEffect(() => {
+    trackArticleOpened(article.id);
+  }, [article.id]);
 
   useEffect(() => {
     editor?.setEditable(mode === "editor");
@@ -539,18 +545,19 @@ export function ArticleEditor({
   // click, so the clipboard write stays within the user gesture Safari
   // requires. Markdown is the file a git publish would commit, front matter
   // included; HTML is for pasting into a CMS we have no adapter for.
-  const copyToClipboard = useCallback(async (text: string, done: string) => {
+  const copyToClipboard = useCallback(async (text: string, done: string, format: "markdown" | "html") => {
     try {
       await navigator.clipboard.writeText(text);
       setManualError(done);
+      trackArticleCopied(article.id, format, "publish_panel");
     } catch {
       // Clipboard access needs a focused, permitted document; when it is
       // refused, say so rather than claiming a copy that did not happen.
       setManualError("Could not reach the clipboard. Click into the page and try again.");
     }
-  }, []);
+  }, [article.id]);
   const copyHtml = useCallback(
-    () => copyToClipboard(editor?.getHTML() ?? "", "Copied the article as HTML."),
+    () => copyToClipboard(editor?.getHTML() ?? "", "Copied the article as HTML.", "html"),
     [editor, copyToClipboard],
   );
   const copyMarkdown = useCallback(() => {
@@ -566,7 +573,7 @@ export function ArticleEditor({
       },
       `https://${workspace.domain}`,
     );
-    return copyToClipboard(markdown, "Copied the article as Markdown, front matter included.");
+    return copyToClipboard(markdown, "Copied the article as Markdown, front matter included.", "markdown");
   }, [editor, article, title, meta, featured, workspace.domain, copyToClipboard]);
 
   /**

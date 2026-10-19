@@ -12,6 +12,7 @@ const m = vi.hoisted(() => ({
   serviceUpdate: vi.fn(),
   factCheckArticle: vi.fn(),
   approvalBlocker: vi.fn(),
+  recordArticlesApproved: vi.fn(),
 }));
 
 vi.mock("@/lib/billing/quota", () => ({ needsPlanToShip: m.needsPlanToShip, CHOOSE_PLAN_MESSAGE: "Choose a plan" }));
@@ -22,6 +23,7 @@ vi.mock("@/lib/email/approval-events", () => ({ announceDraftApproved: m.announc
 vi.mock("@/lib/i18n/workspace-language", () => ({ readWorkspaceLanguage: async () => "en" }));
 vi.mock("@/lib/ai/fact-check", () => ({ factCheckArticle: m.factCheckArticle, approvalBlocker: m.approvalBlocker }));
 vi.mock("@/lib/cms/html", () => ({ tiptapToHtml: () => "<p>x</p>" }));
+vi.mock("@/lib/onboarding/step-events", () => ({ recordArticlesApproved: m.recordArticlesApproved }));
 vi.mock("@/lib/supabase/server", () => ({
   createServiceClient: () => ({
     from: (table: string) => ({
@@ -81,6 +83,8 @@ describe("approveForWorkspace", () => {
       ["a1"],
     );
     expect(m.announceDraftApproved).toHaveBeenCalledWith("a1", who.actor);
+    // The funnel's approval (onboarding.step): what moved, on its site, by whom.
+    expect(m.recordArticlesApproved).toHaveBeenCalledWith(expect.anything(), [{ id: "a1", workspaceId: "ws-1", status: "approved" }], "owner-1");
   });
 
   it("refuses an article on another site, before reading any body", async () => {
@@ -104,5 +108,12 @@ describe("approveForWorkspace", () => {
     m.approvalBlocker.mockReturnValue("Two figures have no source.");
     await expect(approveForWorkspace(db(), who, "a1")).rejects.toThrow("Two figures have no source.");
     expect(m.serviceUpdate).not.toHaveBeenCalled();
+    expect(m.recordArticlesApproved).not.toHaveBeenCalled();
+  });
+
+  it("records nothing approved when the row moved under it", async () => {
+    m.serviceUpdate.mockResolvedValue({ data: [], error: null });
+    await expect(approveForWorkspace(db(), who, "a1")).rejects.toThrow(/must be in review/);
+    expect(m.recordArticlesApproved).toHaveBeenCalledWith(expect.anything(), [], "owner-1");
   });
 });

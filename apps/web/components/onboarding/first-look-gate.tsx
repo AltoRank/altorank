@@ -248,6 +248,7 @@ export function GateTop({
               followUp={followUp}
               returnTo={afterCheckout}
               offer={{ interval, onInterval: setInterval, plan, onPlan: setPlan, facts: offer, fullArticle, buttonRef }}
+              workspaceId={workspaceId}
               // The soft exit, under the button and quieter than it: a link
               // back by email, never the text (UX audit 2026-10-12, #3). Only
               // once there is an article to come back to: offered from the

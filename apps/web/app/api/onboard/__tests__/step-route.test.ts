@@ -3,7 +3,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // POST /api/onboard/step: signed in, a member of the workspace's account, a
 // step it knows. The write itself is lib/onboarding/step-events.ts.
 
-const { user, workspace, member, record, scoped, run } = vi.hoisted(() => ({
+const { user, workspace, member, record, scoped, run, article } = vi.hoisted(() => ({
+  article: { value: null as null | { id: string; workspace_id: string } },
   user: { value: null as null | { id: string; created_at: string } },
   workspace: { value: null as null | { id: string; account_id: string } },
   member: { value: null as null | { id: string } },
@@ -20,7 +21,7 @@ vi.mock("@/lib/supabase/server", () => ({
       q.eq = () => q;
       q.order = () => q;
       q.limit = () => q;
-      q.maybeSingle = async () => ({ data: table === "workspaces" ? workspace.value : table === "onboarding_runs" ? run.value : member.value, error: null });
+      q.maybeSingle = async () => ({ data: table === "workspaces" ? workspace.value : table === "onboarding_runs" ? run.value : table === "articles" ? article.value : member.value, error: null });
       return q;
     },
   }),
@@ -33,6 +34,8 @@ vi.mock("@/lib/auth/impersonation", () => ({ getImpersonation: async () => imper
 
 import { POST } from "../step/route";
 
+const A = "11111111-2222-4333-8444-555555555555";
+
 const post = (body: unknown) =>
   POST(new Request("https://app.example/api/onboard/step", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }) as never);
 
@@ -43,6 +46,7 @@ beforeEach(() => {
   scoped.value = "ws1";
   run.value = { status: "done" };
   impersonation.value = null;
+  article.value = null;
   record.mockClear();
 });
 
@@ -96,6 +100,46 @@ describe("POST /api/onboard/step", () => {
   it("writes nothing while an operator is viewing as the account: the step is the customer's to reach", async () => {
     impersonation.value = { targetEmail: "owner@acme-agency.example" };
     expect((await post({ step: "site_read_finished" })).status).toBe(204);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("never takes the trial or an approval from the browser: Stripe and the server say those", async () => {
+    expect((await post({ step: "trial_started" })).status).toBe(400);
+    expect((await post({ step: "article_approved", articleId: A })).status).toBe(400);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it("keeps a step's words on its list and drops the rest", async () => {
+    await post({ step: "setup_ending_shown", workspaceId: "ws1", props: { ending: "nothing-planned", note: "someone@acme.example" } });
+    await post({ step: "offer_seen", props: { viewport: "1280x720" } });
+    const [ending, offer] = record.mock.calls.map((c) => (c as unknown as [unknown, Record<string, unknown>])[1]);
+    expect(ending).toMatchObject({ step: "setup_ending_shown", workspaceId: "ws1", props: { ending: "nothing-planned" } });
+    expect(offer).toMatchObject({ step: "offer_seen", props: {} });
+    expect(JSON.stringify(record.mock.calls)).not.toContain("someone@");
+  });
+
+  it("finds an article step's site from the article, through the person's own client", async () => {
+    article.value = { id: A, workspace_id: "ws1" };
+    scoped.value = "ws-other";
+    expect((await post({ step: "article_copied", articleId: A, workspaceId: "ws-forged", props: { format: "markdown", surface: "publish_panel" } })).status).toBe(204);
+    expect(record).toHaveBeenCalledWith(
+      { service: true },
+      expect.objectContaining({ workspaceId: "ws1", accountId: "acc1", step: "article_copied", articleId: A, props: { format: "markdown", surface: "publish_panel" } }),
+    );
+  });
+
+  it("takes Next up's click as an article step: the site is the draft's", async () => {
+    article.value = { id: A, workspace_id: "ws1" };
+    expect((await post({ step: "next_up_clicked", articleId: A, props: { target: "draft" } })).status).toBe(204);
+    expect(record).toHaveBeenCalledWith({ service: true }, expect.objectContaining({ workspaceId: "ws1", step: "next_up_clicked", articleId: A, props: { target: "draft" } }));
+    expect((await post({ step: "next_up_clicked", props: { target: "draft" } })).status).toBe(400);
+  });
+
+  it("refuses an article step without an article id, or with one the person cannot see", async () => {
+    expect((await post({ step: "article_opened", props: { from: "setup" } })).status).toBe(400);
+    expect((await post({ step: "article_opened", articleId: "../etc", props: { from: "setup" } })).status).toBe(400);
+    article.value = null;
+    expect((await post({ step: "article_opened", articleId: A, props: { from: "setup" } })).status).toBe(404);
     expect(record).not.toHaveBeenCalled();
   });
 });

@@ -26,6 +26,10 @@ vi.mock("next/server", async () => {
   return { ...real, after: (fn: () => unknown) => { deferred.push(Promise.resolve().then(() => fn())); } };
 });
 
+// The write is lib/onboarding/step-events.ts's; here, whether the route asks for it.
+const recordRunStarted = vi.hoisted(() => vi.fn(async (..._a: unknown[]) => true));
+vi.mock("@/lib/onboarding/step-events", () => ({ recordRunStarted: (...a: unknown[]) => recordRunStarted(...a) }));
+
 const dispatchWorker = vi.fn(async (_id: string) => undefined);
 vi.mock("@/lib/onboarding/run-dispatch", () => ({ dispatchWorker: (id: string) => dispatchWorker(id) }));
 
@@ -58,6 +62,7 @@ const get = (path: string) => new NextRequest(`http://localhost${path}`);
 
 beforeEach(() => {
   deferred.length = 0;
+  recordRunStarted.mockClear();
   dispatchWorker.mockClear();
   claimRun.mockReset();
   runClaimed.mockReset();
@@ -88,6 +93,8 @@ describe("POST /api/onboard/start", () => {
     expect(dispatchWorker).toHaveBeenCalledWith(body.runId);
     expect(db.tables.onboarding_runs).toHaveLength(1);
     expect(db.tables.onboarding_runs[0]).toMatchObject({ workspace_id: "ws1", account_id: "ag1", status: "running" });
+    // Where the signup got to: this run started, for this person (onboarding.step).
+    expect(recordRunStarted).toHaveBeenCalledWith(db.client, { workspaceId: "ws1", accountId: "ag1", userId: "u1", runId: body.runId });
   });
 
   it("is idempotent: a second start returns the same run and dispatches nothing", async () => {
@@ -96,6 +103,7 @@ describe("POST /api/onboard/start", () => {
     expect(second).toEqual({ runId: first.runId, existing: true });
     await Promise.all(deferred);
     expect(dispatchWorker).toHaveBeenCalledTimes(1);
+    expect(recordRunStarted).toHaveBeenCalledTimes(1);
     expect(db.tables.onboarding_runs).toHaveLength(1);
   });
 
