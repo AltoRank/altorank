@@ -1,6 +1,7 @@
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getScope } from "@/lib/workspace-scope";
 import type { Account } from "@/lib/types";
+import { recordEvent } from "@/lib/observability/record";
 
 /**
  * The account the signed-in person is working in: the one that owns the site
@@ -157,6 +158,20 @@ export async function ensureAccount(
     account_id: account.id,
     user_id: userId,
     role: "owner",
+  });
+
+  // The only trace this path leaves. Signup writes a `signup` event for every
+  // account it makes; this wrote nothing, so an account made here looked like
+  // no signup at all - and, with no site, it dead-ended on the empty Sites
+  // table (2026-10-19). Which door reached here is unknown to this function;
+  // the event says it was this one, and when. No email: the user id is the
+  // join.
+  await recordEvent({
+    level: "warn",
+    source: "signup",
+    message: "Account created by the membership fallback, not the signup form, so it has no site yet",
+    accountId: account.id as string,
+    context: { stage: "fallback", userId },
   });
 
   return account.id;

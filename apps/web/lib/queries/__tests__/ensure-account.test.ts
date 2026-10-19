@@ -59,10 +59,15 @@ vi.mock("@/lib/supabase/server", () => ({
   createServiceClient: () => serviceClient(),
 }));
 vi.mock("@/lib/workspace-scope", () => ({ getScope: async () => null }));
+// The fallback's one trace (2026-10-19: an account made here, with no site,
+// left no event at all and looked like no signup).
+const { recordEvent } = vi.hoisted(() => ({ recordEvent: vi.fn(async () => true) }));
+vi.mock("@/lib/observability/record", () => ({ recordEvent }));
 
 const USER = "user-1";
 
 beforeEach(() => {
+  recordEvent.mockClear();
   state.memberships = [];
   state.accounts = [];
   state.inserted = [];
@@ -75,6 +80,16 @@ describe("ensureAccount", () => {
     const { ensureAccount } = await import("../account");
     expect(await ensureAccount(USER, {}, "person@acme-agency.example")).toBe("acct-1");
     expect(state.inserted).toHaveLength(0);
+    expect(recordEvent).not.toHaveBeenCalled();
+  });
+
+  it("records that it made an account, by user id and without the email", async () => {
+    const { ensureAccount } = await import("../account");
+    await ensureAccount(USER, {}, "person@acme-agency.example");
+    expect(recordEvent).toHaveBeenCalledTimes(1);
+    const [event] = recordEvent.mock.calls[0] as unknown as [Record<string, unknown>];
+    expect(event).toMatchObject({ level: "warn", source: "signup", accountId: "acct-new", context: { stage: "fallback", userId: USER } });
+    expect(JSON.stringify(event)).not.toContain("acme-agency");
   });
 
   it("starts a person who never made an account at zero", async () => {

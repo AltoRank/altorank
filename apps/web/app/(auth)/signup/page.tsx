@@ -5,8 +5,7 @@ import { cookies } from "next/headers";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendSignupConfirmation } from "@/lib/email/auth-emails";
 import { authErrorMessage } from "@/lib/auth/errors";
-import { generateIndexNowKey } from "@/lib/seo/indexing";
-import { FREE_TIER_PACE } from "@/lib/content/pace";
+import { firstSiteRow } from "@/lib/workspaces/first-site";
 import { accountNameFromDomain } from "@/lib/domain/account-name";
 import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/growth-plan/build";
 import { checkDomainReachable } from "@/lib/domain/reachable";
@@ -192,39 +191,15 @@ async function signUp(formData: FormData) {
     }
 
     if (DOMAIN_PATTERN.test(domain) && !prior.workspaceId) {
-      const { error: wsError } = await admin.from("workspaces").insert({
-        account_id: accountId,
-        name: domain,
-        domain,
-        initials: domain.slice(0, 2).toUpperCase(),
-        color: "av-c1",
-        indexnow_key: generateIndexNowKey(),
-        // The free drafts are delivered by onboarding (the first, inline)
-        // and the generate cron and fan-out (the rest), all of which only
-        // write for opted-in workspaces. A workspace created at signup is
-        // the opt-in: the person typed their domain to get exactly this.
-        // Bounded by FREE_DRAFTS until they choose a plan; the pace is
-        // FREE_TIER_PACE so the whole allowance lands inside the first week
-        // rather than over seven of them. The Stripe webhook raises it to the
-        // paid default when they subscribe.
-        auto_generate: true,
-        auto_generate_weekly_limit: FREE_TIER_PACE,
-        // auto_approve is deliberately NOT set here, so the column default
-        // (false, migration 079) stands. Signup was the only path that turned
-        // it on: the migration defaults off, `createWorkspace` inherits that,
-        // and the settings action only enables it when somebody ticks the box
-        // and is recorded as having done so. Turning it on here recorded the
-        // new user as having "set" a rule they were never shown, on the one
-        // account least able to judge the drafts - and the product sells the
-        // veto ("review ALWAYS", AGENTS.md), which the onboarding wizard
-        // states as an ALWAYS ON card. Enabling it is a choice the person
-        // makes in workspace settings, after they have read a draft.
-      });
-      // Not fatal: the account exists, and the dashboard asks for a domain if
-      // there is no workspace. Log it so a silent miss here is findable - and
-      // record it, because "findable" meant a Vercel function log nobody
-      // tails. This is the branch that decides whether a new signup gets the
-      // first draft it was promised.
+      // The same row /onboarding/site writes (lib/workspaces/first-site.ts):
+      // the opt-in to the free drafts, with automatic approval left off.
+      const { error: wsError } = await admin.from("workspaces").insert({ account_id: accountId, ...firstSiteRow(domain) });
+      // Not fatal: the account exists, and /dashboard sends an account with
+      // no site to /onboarding/site, which asks for the domain again. Log it
+      // so a silent miss here is findable - and record it, because
+      // "findable" meant a Vercel function log nobody tails. This is the
+      // branch that decides whether a new signup gets the first draft it was
+      // promised.
       if (wsError) {
         console.error("[signup] workspace for", domain, wsError.message);
         await recordEvent({
