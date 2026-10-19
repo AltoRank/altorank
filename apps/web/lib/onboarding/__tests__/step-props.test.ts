@@ -14,6 +14,8 @@ describe("stepProps", () => {
     expect(stepProps("article_approved", { status: "scheduled" })).toEqual({ status: "scheduled" });
     expect(stepProps("run_started", { trigger: "provider_retry" })).toEqual({ trigger: "provider_retry" });
     expect(stepProps("trial_started", { plan: "growth" })).toEqual({ plan: "growth" });
+    expect(stepProps("next_up_clicked", { target: "draft" })).toEqual({ target: "draft" });
+    expect(stepProps("next_up_clicked", { target: "/articles?status=review" })).toEqual({});
   });
 
   it("drops anything else: another step's prop, a value off the list, free text, a non-string", () => {
@@ -49,6 +51,7 @@ describe("stepKey: what tells two events of one step apart", () => {
     expect(stepKey("article_copied", { articleId: A, props: { format: "html", surface: "publish_panel" } })).not.toBe(stepKey("article_copied", { articleId: A, props: { format: "html", surface: "export_menu" } }));
     expect(stepKey("article_approved", { articleId: A, props: { status: "approved" } })).toBe(stepKey("article_approved", { articleId: A, props: { status: "scheduled" } }));
     expect(stepKey("run_started", { runId: "r1" })).not.toBe(stepKey("run_started", { runId: "r2" }));
+    expect(stepKey("next_up_clicked", { articleId: A, props: { target: "draft" } })).not.toBe(stepKey("next_up_clicked", { articleId: A, props: { target: "more" } }));
   });
 });
 

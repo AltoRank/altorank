@@ -156,8 +156,17 @@ describe("SetupAsk says which ending was on screen (onboarding.step)", () => {
     for (const ending of ["article", "writing", "retry", "first-failed", "no-article", "nothing-planned", "provider-down"] as const) {
       const steps = stepsIn(renderToStaticMarkup(<SetupAsk ending={ending} canBuy followUp workspaceId="ws1" />));
       expect(steps.filter((s) => s.step === "setup_ending_shown")).toEqual([{ step: "setup_ending_shown", ws: "ws1", props: { ending } }]);
-      // The card ask is still only where a card is asked for.
+      // The card ask is still only where a card is asked for: the full box,
+      // or the quiet card for an ending with no article to show.
       expect(steps.some((s) => s.step === "gate_shown")).toBe(asksForCard(ending));
+    }
+  });
+
+  it("says the ending on the quiet card too, the one no-article and first-failed get", () => {
+    for (const ending of ["no-article", "first-failed"] as const) {
+      const html = renderToStaticMarkup(<SetupAsk ending={ending} canBuy followUp workspaceId="ws1" />);
+      expect(html).toContain("quiet-trial-ask");
+      expect(stepsIn(html).map((s) => s.step)).toEqual(["setup_ending_shown", "gate_shown"]);
     }
   });
 

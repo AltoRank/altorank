@@ -34,8 +34,9 @@ export const ONBOARDING_STEPS = [
   "article_opened",
   "article_copied",
   "article_approved",
-  // TODO(next_up_clicked): add when the single "Next up" card lands
-  // (fix/ux-clarity-quick-wins): the click that follows the approval.
+  // The dashboard's one primary action (components/dashboard/next-up.tsx):
+  // the waiting draft, or the rest of the queue.
+  "next_up_clicked",
 ] as const;
 export type OnboardingStepName = (typeof ONBOARDING_STEPS)[number];
 

@@ -9,7 +9,7 @@
 // trackStep; the server finds the workspace from the article.
 
 import { trackStep } from "./track-step";
-import { currentViewport, openedFrom, type CopyFormat, type CopySurface } from "./step-props";
+import { currentViewport, openedFrom, type CopyFormat, type CopySurface, type NextUpTarget } from "./step-props";
 import { pathBefore, readRouteMemory } from "@/lib/navigation/route-memory";
 
 /** What the editor knows about how it was reached; the browser's own by default. */
@@ -40,4 +40,9 @@ export function trackArticleOpened(articleId: string, env: OpenedEnv | null = br
 /** The article went to the clipboard: once per article, format and button. Only after the write worked. */
 export function trackArticleCopied(articleId: string, format: CopyFormat, surface: CopySurface): void {
   trackStep("article_copied", { articleId, props: { format, surface } });
+}
+
+/** The dashboard's Next up was followed: to the draft it named, or to the rest of the queue. Once per draft and link. */
+export function trackNextUpClicked(articleId: string, target: NextUpTarget): void {
+  trackStep("next_up_clicked", { articleId, props: { target } });
 }

@@ -128,6 +128,13 @@ describe("POST /api/onboard/step", () => {
     );
   });
 
+  it("takes Next up's click as an article step: the site is the draft's", async () => {
+    article.value = { id: A, workspace_id: "ws1" };
+    expect((await post({ step: "next_up_clicked", articleId: A, props: { target: "draft" } })).status).toBe(204);
+    expect(record).toHaveBeenCalledWith({ service: true }, expect.objectContaining({ workspaceId: "ws1", step: "next_up_clicked", articleId: A, props: { target: "draft" } }));
+    expect((await post({ step: "next_up_clicked", props: { target: "draft" } })).status).toBe(400);
+  });
+
   it("refuses an article step without an article id, or with one the person cannot see", async () => {
     expect((await post({ step: "article_opened", props: { from: "setup" } })).status).toBe(400);
     expect((await post({ step: "article_opened", articleId: "../etc", props: { from: "setup" } })).status).toBe(400);

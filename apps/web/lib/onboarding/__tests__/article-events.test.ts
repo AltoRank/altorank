@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const track = vi.fn();
 vi.mock("../track-step", () => ({ trackStep: (...a: unknown[]) => track(...a) }));
 
-import { trackArticleCopied, trackArticleOpened, type OpenedEnv } from "../article-events";
+import { trackArticleCopied, trackArticleOpened, trackNextUpClicked, type OpenedEnv } from "../article-events";
 
 const A = "11111111-2222-4333-8444-555555555555";
 const env = (over: Partial<OpenedEnv> = {}): OpenedEnv => ({
@@ -50,5 +50,12 @@ describe("trackArticleCopied", () => {
   it("says which format went to the clipboard from which button", () => {
     trackArticleCopied(A, "markdown", "export_preview");
     expect(track).toHaveBeenCalledWith("article_copied", { articleId: A, props: { format: "markdown", surface: "export_preview" } });
+  });
+});
+
+describe("trackNextUpClicked", () => {
+  it("says which of Next up's links was followed, for the draft it named", () => {
+    trackNextUpClicked(A, "more");
+    expect(track).toHaveBeenCalledWith("next_up_clicked", { articleId: A, props: { target: "more" } });
   });
 });

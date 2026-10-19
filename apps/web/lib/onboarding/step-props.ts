@@ -40,6 +40,9 @@ export const RUN_TRIGGERS = ["first", "rerun", "provider_retry"] as const;
 export type RunTrigger = (typeof RUN_TRIGGERS)[number];
 
 export const APPROVED_AS = ["approved", "scheduled"] as const;
+/** Next up's two links: the draft it names, or the rest of the review queue. */
+export const NEXT_UP_TARGETS = ["draft", "more"] as const;
+export type NextUpTarget = (typeof NEXT_UP_TARGETS)[number];
 export const TRIAL_PLANS = ["starter", "growth"] as const;
 
 /** The props each step may carry, and the list each value must be on. */
@@ -51,6 +54,7 @@ const ALLOWED: Partial<Record<OnboardingStepName, Record<string, readonly string
   article_approved: { status: APPROVED_AS },
   run_started: { trigger: RUN_TRIGGERS },
   trial_started: { plan: TRIAL_PLANS },
+  next_up_clicked: { target: NEXT_UP_TARGETS },
 };
 
 export type StepProps = Partial<{
@@ -62,6 +66,7 @@ export type StepProps = Partial<{
   trigger: RunTrigger;
   status: (typeof APPROVED_AS)[number];
   plan: (typeof TRIAL_PLANS)[number];
+  target: NextUpTarget;
 }>;
 
 /**
@@ -81,7 +86,7 @@ export function stepProps(step: OnboardingStepName, raw: unknown): StepProps {
 }
 
 /** Steps about one article: the article's id is part of the event, and the workspace is the article's. */
-export const ARTICLE_STEPS: readonly OnboardingStepName[] = ["article_opened", "article_copied", "article_approved"];
+export const ARTICLE_STEPS: readonly OnboardingStepName[] = ["article_opened", "article_copied", "article_approved", "next_up_clicked"];
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** An id as the database makes them, or undefined: never a free string in an event. */
@@ -99,6 +104,7 @@ export function uuidOrUndefined(value: unknown): string | undefined {
  *   article_approved    article          (the first approval; an edit clears
  *                                         approved_at, the event stays)
  *   run_started         run              (every run, each with its trigger)
+ *   next_up_clicked     article, target  (the draft Next up named)
  * Shared by the browser's once-per-page-load and the server's once-ever.
  */
 export function stepKey(step: OnboardingStepName, input: { articleId?: string | null; runId?: string | null; props?: StepProps }): string {
@@ -114,6 +120,8 @@ export function stepKey(step: OnboardingStepName, input: { articleId?: string | 
       return input.articleId ?? "";
     case "run_started":
       return input.runId ?? "";
+    case "next_up_clicked":
+      return [input.articleId ?? "", p.target ?? ""].join(":");
     default:
       return "";
   }
