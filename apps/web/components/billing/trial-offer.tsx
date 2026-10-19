@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Icons } from "@/components/ui";
 import { StartTrialButton } from "./start-trial-button";
 import { PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
-import { chargeLine, otherIntervalLine, otherPlanLine, reassuranceLine, trialIncludes, type TrialOfferFacts } from "@/lib/billing/trial-offer";
+import { CANCEL_LINE, chargeLine, otherIntervalLine, otherPlanLine, reassuranceLine, trialIncludes, type TrialOfferFacts } from "@/lib/billing/trial-offer";
 
 /** The sentence for a member who cannot buy: who can, and what it opens. */
 export const MEMBER_CANNOT_BUY =
@@ -41,7 +41,7 @@ export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, 
         </button>)}
     </div>
     {/* The first charge is not a renewal: said as the charge it is. */}
-    <p className="mb-3 text-sm">{TRIAL_DAYS} days free with a card, then {PLAN_LABELS[plan]} at {interval === "month" ? `${monthly} per month` : `${yearly} per year`}. Cancel from Billing before the trial ends and nothing is charged.</p>
+    <p className="mb-3 text-sm">{TRIAL_DAYS} days free with a card, then {PLAN_LABELS[plan]} at {interval === "month" ? `${monthly} per month` : `${yearly} per year`}. {CANCEL_LINE}</p>
     <StartTrialButton plan={plan} interval={interval} returnTo={returnTo} onError={setError} onStart={onStart} />
     {secondary && <Link className="ml-4 text-accent underline" href={secondary.href}>{secondary.label}</Link>}
     {error && <p role="alert" className="mt-2 text-sm text-err-ink">{error} <Link className="underline" href="/checkout/cancelled">Manage open checkout</Link></p>}
@@ -87,9 +87,10 @@ export function TrialPriceBox({
   const other: BillingInterval = interval === "month" ? "year" : "month";
   return (
     <section aria-labelledby="trial-offer-heading" className="rounded-[10px] border border-line bg-panel p-5">
-      {/* The plan's name means nothing yet to someone on their first visit:
-          it is a label over the heading, not the heading (review, 2026-10-12). */}
-      <p className="m-0 mb-1 text-[11px] uppercase tracking-wide text-ink-3">{PLAN_LABELS[plan]} plan</p>
+      {/* The plan's name means nothing yet to someone on their first visit,
+          so the box leads with the trial and names a plan only once someone
+          has switched away from the default (UX clarity audit 2026-10-18). */}
+      {plan !== "starter" && <p className="m-0 mb-1 text-[11px] uppercase tracking-wide text-ink-3">{PLAN_LABELS[plan]} plan</p>}
       <h2 id="trial-offer-heading" className="m-0 text-[16px] font-semibold leading-snug text-ink">
         Start your free {TRIAL_DAYS}-day trial
       </h2>
@@ -121,28 +122,35 @@ export function TrialPriceBox({
         />
       </div>
       <p className="m-0 mt-2.5 text-[12.5px] leading-[1.55] text-ink-2">{reassuranceLine()}</p>
-      <button
-        type="button"
-        onClick={() => {
-          onInterval(other);
-          setError(null);
-        }}
-        className="mt-2 text-left text-[12.5px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink-2"
-      >
-        {otherIntervalLine(interval, plan)}
-      </button>
-      {onPlan && (
+      {/* Yearly and Agency are two more decisions; one quiet "Other plans"
+          holds both, open once either has been picked. */}
+      <details className="mt-2" open={interval !== "month" || plan !== "starter" || undefined}>
+        <summary className="cursor-pointer list-none text-[12.5px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink-2 [&::-webkit-details-marker]:hidden">
+          Other plans
+        </summary>
         <button
           type="button"
           onClick={() => {
-            onPlan(plan === "starter" ? "growth" : "starter");
+            onInterval(other);
             setError(null);
           }}
-          className="mt-1 block text-left text-[12.5px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink-2"
+          className="mt-2 block text-left text-[12.5px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink-2"
         >
-          {otherPlanLine(plan, interval)}
+          {otherIntervalLine(interval, plan)}
         </button>
-      )}
+        {onPlan && (
+          <button
+            type="button"
+            onClick={() => {
+              onPlan(plan === "starter" ? "growth" : "starter");
+              setError(null);
+            }}
+            className="mt-1 block text-left text-[12.5px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink-2"
+          >
+            {otherPlanLine(plan, interval)}
+          </button>
+        )}
+      </details>
       {error && (
         <p role="alert" className="m-0 mt-2 text-[12.5px] text-err-ink">
           {error}{" "}

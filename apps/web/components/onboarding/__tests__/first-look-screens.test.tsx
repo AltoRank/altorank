@@ -135,7 +135,9 @@ describe("the gate's article card", () => {
     // The text is revealed by the browser, frame by frame; on the server it
     // starts empty, and the outline card is not drawn beside it.
     expect(markup).not.toContain(">Outline<");
-    expect(text(markup)).toContain("Read-only.");
+    // The gate's lede says the trial is for editing it; the card does not say it again.
+    expect(text(markup)).not.toContain("Read-only.");
+    expect(text(markup)).not.toMatch(/trial/i);
   });
 
   it("says who it is for without gluing the buying job on as a broken sentence", () => {

@@ -22,16 +22,17 @@
 // the heading, the card and the reader together; when the body lands the
 // page is read again for the real word count and sources.
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { saveAttribution } from "@/app/actions/attribution";
 import { StartTrialButton } from "@/components/billing/start-trial-button";
 import type { FirstArticleCard } from "@/lib/onboarding/first-article";
 import type { OnboardingPlanned } from "@/lib/onboarding/events";
-import { asksForCard, type SetupEnding } from "@/lib/onboarding/setup-retry";
+import { asksWithOffer, type SetupEnding } from "@/lib/onboarding/setup-retry";
 import { trackStep } from "@/lib/onboarding/track-step";
 import { TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
 import { stickyOfferLine, type TrialOfferFacts } from "@/lib/billing/trial-offer";
+import { EDITOR_FITS_QUERY, firstArticleReturn } from "@/lib/billing/checkout-return";
 import { EMPTY_ATTRIBUTION, attributionComplete, type AttributionDraft } from "./attribution-picker";
 import { ATTRIBUTION_NOTE_MAX, ATTRIBUTION_SOURCES } from "@/lib/attribution";
 import { FirstArticleCardView, type PendingFirstArticle } from "./first-article-card";
@@ -186,7 +187,8 @@ export function GateTop({
   }, [hasArticle, ending, canBuy]);
   const writing = hasArticle && !written;
   const showBar = buttonSeen !== "in" && (writing || buttonSeen === "above" || intoArticle);
-  const asks = asksForCard(ending) && canBuy;
+  const asks = asksWithOffer(ending) && canBuy;
+  const afterCheckout = firstArticleReturn(firstArticle?.id, useEditorFits());
 
   // Said once to a screen reader when the gate replaces the loading screen,
   // and again when the article is written: the heading itself is not live,
@@ -230,6 +232,10 @@ export function GateTop({
               />
             </div>
           )}
+          {/* Why this article sits under it, not in the rail: its heading
+              outranked the trial offer's beside it (UX clarity audit
+              2026-10-18, #4). */}
+          <TopicBriefs planned={planned} only={keyword || undefined} />
         </div>
         {/* Held in view, and scrolling on its own when taller than the screen:
             Stripe's form opens here at about 820px, and a pinned rail that
@@ -240,7 +246,7 @@ export function GateTop({
               ending={ending}
               canBuy={canBuy}
               followUp={followUp}
-              returnTo="/dashboard"
+              returnTo={afterCheckout}
               offer={{ interval, onInterval: setInterval, plan, onPlan: setPlan, facts: offer, fullArticle, buttonRef }}
               // The soft exit, under the button and quieter than it: a link
               // back by email, never the text (UX audit 2026-10-12, #3). Only
@@ -252,17 +258,18 @@ export function GateTop({
               below={canBuy && hasArticle && written ? <EmailMeArticle workspaceId={workspaceId} className="mt-3 block w-full text-center" /> : null}
             />
           </div>
-          <TopicBriefs planned={planned} only={keyword || undefined} />
         </aside>
       </div>
       {asks && showBar && (
         <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-panel/95 backdrop-blur lg:hidden" data-testid="trial-bar">
           <div className="mx-auto flex max-w-[680px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
             <p className="m-0 min-w-0 text-[12.5px] leading-[1.4] text-ink-2">
-              <span className="hidden sm:inline">{stickyLine(written, fullArticle)} </span>
+              {/* With the text on the page the lede has said what the trial
+                  is for; the bar keeps to the price. */}
+              {!fullArticle && <span className="hidden sm:inline">{stickyLine(written, fullArticle)} </span>}
               <span>{stickyOfferLine(interval, plan)}</span>
             </p>
-            <StartTrialButton returnTo="/dashboard" plan={plan} interval={interval} onStart={() => trackStep("trial_clicked")} className="shrink-0" />
+            <StartTrialButton returnTo={afterCheckout} plan={plan} interval={interval} onStart={() => trackStep("trial_clicked")} className="shrink-0" />
           </div>
         </div>
       )}
@@ -279,6 +286,24 @@ export function GateTop({
 export function stickyLine(written: boolean, fullArticle: boolean): string {
   if (fullArticle) return "Edit, approve and publish it with the trial.";
   return written ? "Read it in full, approve it and publish it." : "Read it in full once it is written.";
+}
+
+/**
+ * Whether this screen is wide enough for the editor without a sideways
+ * scroll. The server has no viewport and says no, which lands on the
+ * dashboard as the gate always did; so does a browser without matchMedia.
+ * The answer is only used when checkout opens.
+ */
+function useEditorFits(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const query = window.matchMedia?.(EDITOR_FITS_QUERY);
+      query?.addEventListener?.("change", onChange);
+      return () => query?.removeEventListener?.("change", onChange);
+    },
+    () => window.matchMedia?.(EDITOR_FITS_QUERY).matches ?? false,
+    () => false,
+  );
 }
 
 /**

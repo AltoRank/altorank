@@ -6,6 +6,7 @@ import { Button } from "@/components/ui";
 import { createCheckoutSession } from "@/app/actions/billing";
 import { PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
 import { CheckoutSheet, EmbeddedCheckoutForm, embeddedCheckoutAvailable } from "./embedded-checkout";
+import { CANCEL_LINE } from "@/lib/billing/trial-offer";
 
 /**
  * The one button that opens the trial's checkout: card required, seven days
@@ -37,7 +38,7 @@ export function StartTrialButton({
   /** Which price to open checkout on. Yearly is two months free (lib/stripe). */
   interval?: BillingInterval;
   label?: string;
-  variant?: "accent" | undefined;
+  variant?: "accent" | "default";
   className?: string;
   /**
    * Also surface the failure in the page itself. A toast is enough beside the
@@ -88,7 +89,7 @@ export function StartTrialButton({
             open={open}
             onClose={() => setOpen(false)}
             title={`Start your ${TRIAL_DAYS}-day trial`}
-            lede={`${PLAN_LABELS[plan]}: €0 today, then ${price}. Cancel from Billing before the trial ends and nothing is charged.`}
+            lede={`${PLAN_LABELS[plan]}: €0 today, then ${price}. ${CANCEL_LINE}`}
           >
             {form}
           </CheckoutSheet>

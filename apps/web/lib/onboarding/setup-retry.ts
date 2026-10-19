@@ -154,3 +154,15 @@ export function setupEnding(
 export function asksForCard(ending: SetupEnding): boolean {
   return ending !== "nothing-planned" && ending !== "retry" && ending !== "provider-down";
 }
+
+/**
+ * Whether the card is asked with the full price box (and the sticky bar):
+ * only beside an article, written or being written. When setup ended without
+ * one ("first-failed", "no-article") the trial is still the way on - it
+ * writes the article again - but it is offered as one quiet button under
+ * "nothing has been charged", never as the full sales box next to "Your
+ * first article did not finish" (UX clarity audit 2026-10-18, #5).
+ */
+export function asksWithOffer(ending: SetupEnding): boolean {
+  return ending === "article" || ending === "writing";
+}
