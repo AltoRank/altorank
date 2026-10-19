@@ -168,8 +168,11 @@ describe("SetupAsk says which ending was on screen (onboarding.step)", () => {
     renderToStaticMarkup(<SetupAsk ending="article" canBuy followUp offer={offer} workspaceId="ws1" />);
     expect(track).not.toHaveBeenCalledWith("offer_seen", expect.anything());
     vi.stubGlobal("window", { innerWidth: 800 });
+    // Read through the hoisted object's type: the reset above narrowed it to undefined.
+    const onSeen: (() => void) | undefined = (priceBox as { onSeen?: () => void }).onSeen;
+    expect(onSeen).toBeTypeOf("function");
     try {
-      priceBox.onSeen?.();
+      onSeen?.();
     } finally {
       vi.unstubAllGlobals();
     }
