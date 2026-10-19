@@ -10,6 +10,10 @@ export const STEP_EVENT_SOURCE = "onboarding.step";
 
 /** In the order a signup meets them. */
 export const ONBOARDING_STEPS = [
+  // An account that reached the app with no site named one on
+  // /onboarding/site (app/actions/first-site.ts). Signup's own site has no
+  // step: its `signup` event already says when it was made.
+  "site_added",
   "wizard_opened",
   "site_read_started",
   "site_read_finished",
@@ -50,7 +54,7 @@ export function isOnboardingStep(value: unknown): value is OnboardingStepName {
  * started by /api/onboard/start or the overnight provider retry, a trial by
  * Stripe's webhook, an approval by lib/articles/approve.ts.
  */
-export const SERVER_ONLY_STEPS: readonly OnboardingStepName[] = ["run_started", "trial_started", "article_approved"];
+export const SERVER_ONLY_STEPS: readonly OnboardingStepName[] = ["site_added", "run_started", "trial_started", "article_approved"];
 
 /** A step the browser may report (/api/onboard/step). */
 export function isClientStep(value: unknown): value is OnboardingStepName {

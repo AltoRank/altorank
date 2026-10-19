@@ -21,6 +21,7 @@ import { TrackStep } from "@/components/onboarding/track-step";
 import { fullArticleOn, readFirstArticleBody } from "@/lib/onboarding/first-article-body";
 import { trialOfferFacts } from "@/lib/billing/trial-offer";
 import { stripeTaxEnabled } from "@/lib/stripe";
+import { FIRST_SITE_PATH } from "@/lib/workspaces/first-site";
 
 export const metadata: Metadata = { title: "Set up your site" };
 
@@ -40,7 +41,9 @@ export const maxDuration = 120;
 export default async function OnboardingPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   const { status } = await searchParams;
   const scopeId = await getScopedWorkspaceId();
-  if (!scopeId) redirect("/workspaces");
+  // No site at all: the domain question signup would have asked, not the
+  // empty Sites table (app/(setup)/onboarding/site).
+  if (!scopeId) redirect(FIRST_SITE_PATH);
 
   const supabase = await createClient();
   // What the account may actually have written before it needs a plan. The

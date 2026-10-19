@@ -190,8 +190,9 @@ export default async function DashboardLayout({
   // wizard itself opens are let through (/connect, where Google's OAuth lands:
   // lib/billing/gate-paths.ts), by the path the middleware forwards.
   //
-  // Only with a site in scope. With none, /onboarding sends the person to
-  // /workspaces to add one, and gating that too was a redirect loop.
+  // Only with a site in scope. With none, /dashboard and /onboarding send the
+  // person to /onboarding/site to name one (or to /workspaces, when they
+  // cannot add one), and gating that too was a redirect loop.
   //
   // `trialGateState` is the one answer (lib/billing/trial.ts): self-host,
   // operator, plan, a finished trial and the kill switch are all "open", and

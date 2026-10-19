@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getRecentArticles, getArticles } from "@/lib/queries/articles";
 import { getKeywords, getKeywordSourceYields } from "@/lib/queries/keywords";
@@ -42,6 +43,7 @@ import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
+import { FIRST_SITE_PATH } from "@/lib/workspaces/first-site";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -55,6 +57,11 @@ export const metadata: Metadata = { title: "Dashboard" };
 export default async function DashboardPage() {
   // Every section is about one site unless the switcher says otherwise.
   const scopeId = await getScopedWorkspaceId();
+  // An account with no site has nothing to show here: every section below is
+  // about one. Where signing in lands, so this is where it gets asked for
+  // one (app/(setup)/onboarding/site, which sends anyone who cannot add a
+  // site to the Sites page instead).
+  if (!scopeId) redirect(FIRST_SITE_PATH);
   // Whether any workspace has Google connected at all: it changes the empty
   // state from an instruction into an explanation. Independent of the five
   // reads beside it, so it runs with them instead of after them.

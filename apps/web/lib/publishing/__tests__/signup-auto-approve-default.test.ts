@@ -9,8 +9,8 @@
  * the drafts yet. The product sells the veto: AGENTS.md says "review ALWAYS",
  * and the onboarding wizard states it as an ALWAYS ON card.
  *
- * Read from the source rather than exercised, because the insert lives inside a
- * server action that vitest cannot call: it needs a real Supabase session and a
+ * The signup action is read from the source rather than exercised, because the
+ * insert lives inside a server action that vitest cannot call: it needs a real Supabase session and a
  * Resend send. Same approach as lib/plan/__tests__/cron-pause-guard.
  */
 import { describe, expect, it } from "vitest";
@@ -35,9 +35,20 @@ describe("signup leaves automatic approval off", () => {
     ).toEqual([]);
   });
 
-  it("still creates the workspace it is meant to create", () => {
+  it("still creates the workspace it is meant to create, from the shared first-site row", () => {
     // Guards the test above against passing because the insert was deleted.
     expect(code).toMatch(/from\("workspaces"\)/);
-    expect(code).toMatch(/auto_generate:\s*true/);
+    expect(code).toMatch(/\.\.\.firstSiteRow\(domain\)/);
+  });
+});
+
+// The row itself, shared with /onboarding/site (lib/workspaces/first-site.ts),
+// so the second door to a first site cannot turn automatic approval on either.
+describe("the first-site row", () => {
+  it("opts into the free drafts and leaves automatic approval at its default", async () => {
+    const { firstSiteRow } = await import("@/lib/workspaces/first-site");
+    const row = firstSiteRow("acme.com");
+    expect(row).toMatchObject({ domain: "acme.com", name: "acme.com", initials: "AC", auto_generate: true });
+    expect(Object.keys(row).filter((k) => k.startsWith("auto_approve"))).toEqual([]);
   });
 });

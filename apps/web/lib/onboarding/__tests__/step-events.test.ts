@@ -22,6 +22,11 @@ describe("onboarding.step events", () => {
     expect(isOnboardingStep("plan_clicked")).toBe(true);
     expect(isOnboardingStep("drop table")).toBe(false);
   });
+
+  it("keep site_added to the server: the browser cannot claim a site was made", () => {
+    expect(isOnboardingStep("site_added")).toBe(true);
+    expect(isClientStep("site_added")).toBe(false);
+  });
 });
 
 describe("onboarding.step events after the run", () => {
