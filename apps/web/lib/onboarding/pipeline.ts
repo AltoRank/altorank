@@ -56,6 +56,7 @@ import { recordPlanFunnel } from "./funnel-event";
 import { withScreened, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 import type { FirstLook } from "@/lib/keyword-research/opportunity";
 import { timed, withRunClock, type RunClock } from "./timings";
+import { withDeadline } from "./deadline";
 
 /** Pages the onboarding minute reads. The nightly pass reads up to forty. */
 const ONBOARDING_CRAWL_PAGES = 20;
@@ -78,6 +79,21 @@ export interface RunOnboardingOptions {
    * writes it to the row.
    */
   clock?: RunClock;
+  /**
+   * Aborted when the run's row is closed under it - its owner stopped it to
+   * change what it was started on (./stop-to-change.ts). Every provider call
+   * the run makes is bounded by it (./deadline.ts), so a stopped run stops
+   * buying research within one look at its row rather than at the end of the
+   * phase.
+   */
+  stop?: AbortSignal;
+  /**
+   * Asked once, before planning: false ends the run there, with nothing
+   * planned and no draft. The worker answers from its row, after its own
+   * writes have landed (run-worker.ts), which is what makes a stop decided
+   * on "still finding searches" impossible to slip past.
+   */
+  stillWanted?: () => Promise<boolean>;
 }
 
 /** The first draft, chosen and gated but not yet written, for the caller to dispatch. */
@@ -154,8 +170,10 @@ export async function runOnboarding(
   // (lib/seo/site-urls.ts): the voice read, the readiness check, the page
   // crawl and the link pool used to fetch each of them for themselves, four
   // or five times, against hosts that ban after ten requests in forty seconds.
+  const phases = () => runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", runId, opened?.read ?? null, clock ?? null, options.stillWanted ?? null);
+  const stop = options.stop;
   const run = () => withSiteReads(() => withSpendScope({ workspaceId: workspace.id, runId, job: "onboarding", budget: opened?.budget ?? null }, () =>
-    runPhases(supabase, workspace, emit, options.firstDraft ?? "inline", runId, opened?.read ?? null, clock ?? null),
+    stop ? withDeadline(stop, phases) : phases(),
   ));
   return clock ? withRunClock(clock, run) : run();
 }
@@ -169,6 +187,7 @@ async function runPhases(
   /** The run's budget as it stands, for the funnel event; null when it has none. */
   readSpend: (() => Promise<RunBudgetState | null>) | null = null,
   clock: RunClock | null = null,
+  stillWanted: (() => Promise<boolean>) | null = null,
 ): Promise<RunOnboardingResult> {
   const domain = workspace.domain;
   // Approvals asked twice and the floor allowed; the spend bound is the
@@ -461,6 +480,13 @@ async function runPhases(
   // for the voice.
   await (startPages() ?? readExistingPages(supabase, workspace.id, domain, emit));
   await scanning;
+
+  // Stopped while it read the site, to change what it was started on
+  // (./stop-to-change.ts): nothing is planned, nothing is drafted, and the
+  // row keeps the reason it was closed with. The next run is the owner's.
+  if (stillWanted && !(await stillWanted())) {
+    return { pendingDraft: null, fanOutSettled: Promise.resolve(), tailSettled: Promise.all([speedSettled, questionsSettled]).then(() => undefined, () => undefined) };
+  }
 
   // --- Phase 4: schedule the month, then write the first draft ------------
   emit({ phase: "planning", status: "active" });

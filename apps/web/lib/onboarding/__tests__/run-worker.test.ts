@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fakeDb } from "./fake-runs-client";
-import { executeRun } from "../run-worker";
+import { executeRun, STOP_LOOK_MS } from "../run-worker";
+import { STOPPED_TO_CHANGE } from "../stop-to-change";
 import type { OnboardingEvent, OnboardingRunRow } from "../events";
 import type { runOnboarding } from "../pipeline";
 
@@ -206,5 +207,55 @@ describe("executeRun: announcing the batch", () => {
     announce.mockRejectedValue(new Error("Resend is down"));
     const r = await executeRun("r1", { supabase: d.client, run: pipeline({ pendingDraft: PENDING }), dispatch: dispatch as never, canDispatch: () => true, announce: announce as never });
     await expect(r.keepAlive).resolves.toBeUndefined();
+  });
+});
+
+describe("executeRun: stopped to change what it was started on (../stop-to-change.ts)", () => {
+  type Opts = { stillWanted: () => Promise<boolean>; stop: AbortSignal };
+
+  it("answers stillWanted from its row, after its own writes have landed", async () => {
+    const d = db();
+    const answers: boolean[] = [];
+    let flushedFirst = false;
+    const run = vi.fn(async (_s, _w, emit, opts: Opts) => {
+      for (const e of EVENTS.slice(0, 4)) emit(e);
+      answers.push(await opts.stillWanted());
+      // The look came after "the searches are found" reached the row.
+      flushedFirst = (d.tables.onboarding_runs[0].phases as { phase: string; status: string }[]).some((p) => p.phase === "keywords" && p.status === "done");
+      // The owner stops it.
+      Object.assign(d.tables.onboarding_runs[0], { status: "error", error: STOPPED_TO_CHANGE });
+      answers.push(await opts.stillWanted());
+      expect(opts.stop.aborted).toBe(true);
+      return { pendingDraft: null, fanOutSettled: Promise.resolve() };
+    }) as unknown as typeof runOnboarding;
+    const r = await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, announce: announce as never, canDispatch: () => true });
+    expect(answers).toEqual([true, false]);
+    expect(flushedFirst).toBe(true);
+    expect(r.outcome).toBe("ran");
+    // The stop's reason stands: finish() leaves a row it no longer owns.
+    expect(d.tables.onboarding_runs[0]).toMatchObject({ status: "error", error: STOPPED_TO_CHANGE });
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it("aborts the run's calls within one look once the row is closed under it", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const d = db();
+      let signal: AbortSignal | null = null;
+      const run = vi.fn(async (_s, _w, _emit, opts: Opts) => {
+        signal = opts.stop;
+        await vi.advanceTimersByTimeAsync(STOP_LOOK_MS);
+        expect(opts.stop.aborted).toBe(false);
+        Object.assign(d.tables.onboarding_runs[0], { status: "error", error: STOPPED_TO_CHANGE });
+        await vi.advanceTimersByTimeAsync(STOP_LOOK_MS);
+        return { pendingDraft: null, fanOutSettled: Promise.resolve() };
+      }) as unknown as typeof runOnboarding;
+      await executeRun("r1", { supabase: d.client, run, dispatch: dispatch as never, announce: announce as never, canDispatch: () => true });
+      expect(signal!.aborted).toBe(true);
+      // And stops looking once the pipeline has returned.
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

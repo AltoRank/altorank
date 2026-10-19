@@ -58,6 +58,7 @@ export function OnboardingProgress({
   refreshKey = 0,
   scheduled,
   onStartedAt,
+  onRun,
   understood,
 }: {
   workspaceId: string;
@@ -100,6 +101,8 @@ export function OnboardingProgress({
   scheduled?: React.ReactNode;
   /** Told when the run's start is known, on this browser's clock: the gate's clock carries on from it. */
   onStartedAt?: (ms: number) => void;
+  /** Told the id of the run this screen started or found live: the one a stop would close. */
+  onRun?: (runId: string) => void;
   /** What the site read found, shown beside the loading screen while the run is live. */
   understood?: React.ReactNode;
 }) {
@@ -119,6 +122,11 @@ export function OnboardingProgress({
   // that effect and clear its timer.
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+  // The same, for the run id: the start effect must not re-run for it.
+  const onRunRef = useRef(onRun);
+  useEffect(() => {
+    onRunRef.current = onRun;
+  }, [onRun]);
   const settledOnMount = Boolean(initialRun?.run && (initialRun.run.status !== "running" || initialRun.stale));
   // A connection that keeps failing is said, and never ends the run on this
   // screen: only the server's answer can (lib/onboarding/poll-backoff.ts).
@@ -217,6 +225,8 @@ export function OnboardingProgress({
           started = true;
           failures = 0;
           setReconnecting(false);
+          const body = (await Promise.resolve().then(() => res.json()).catch(() => null)) as { runId?: unknown } | null;
+          if (!cancelled && typeof body?.runId === "string") onRunRef.current?.(body.runId);
         } else if (res.status < 500) {
           // The route's refusal is a sentence written for this screen - the
           // spend gate's, when setup has already run before the trial - and

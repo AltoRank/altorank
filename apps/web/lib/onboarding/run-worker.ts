@@ -78,6 +78,42 @@ function announceWhenSettled(
     .then(() => undefined, () => undefined);
 }
 
+/**
+ * How often a working run looks at its own row for a stop: the owner closing
+ * it to change what it was started on (./stop-to-change.ts). A few seconds of
+ * research is what a stop can still buy.
+ */
+export const STOP_LOOK_MS = 4_000;
+
+/**
+ * Watch the run's row while the pipeline works, and abort `signal` once the
+ * row is no longer `running`. The pipeline bounds every provider call by it
+ * (./deadline.ts). A look that fails is not a stop.
+ */
+function watchForStop(supabase: SupabaseClient, runId: string, every = STOP_LOOK_MS): { signal: AbortSignal; closed: () => Promise<boolean>; end: () => void } {
+  const controller = new AbortController();
+  const closed = async (): Promise<boolean> => {
+    if (controller.signal.aborted) return true;
+    const { data, error } = await supabase.from("onboarding_runs").select("status").eq("id", runId).maybeSingle();
+    if (error || !data) return false;
+    if ((data as { status: string }).status === "running") return false;
+    controller.abort(new Error("The run was stopped."));
+    return true;
+  };
+  let looking = false;
+  const timer = setInterval(() => {
+    if (looking || controller.signal.aborted) return;
+    looking = true;
+    closed()
+      .catch(() => false)
+      .finally(() => {
+        looking = false;
+      });
+  }, every);
+  (timer as { unref?: () => void }).unref?.();
+  return { signal: controller.signal, closed, end: () => clearInterval(timer) };
+}
+
 interface WorkerWorkspace {
   id: string;
   domain: string | null;
@@ -155,18 +191,29 @@ export async function runClaimed(run: OnboardingRunRow, deps: ExecuteDeps = {}):
   // The run's stopwatch, on the run's own axis (started_at), so the draft
   // route's stages land on the same timeline when it merges its own.
   const clock = new RunClock(run.started_at);
+  const watch = watchForStop(supabase, runId);
   let result: Awaited<ReturnType<typeof runOnboarding>>;
   try {
     result = await (deps.run ?? runOnboarding)(supabase, workspace, recorder.record, {
       firstDraft: canDispatch ? "dispatch" : "inline",
       runId,
       clock,
+      stop: watch.signal,
+      // Every phase so far on the row first: a stop decided on "still finding
+      // searches" then either landed before this look or is refused by the
+      // row it reads (run-store.ts, stopRunToChange).
+      stillWanted: async () => {
+        await recorder.flush();
+        return !(await watch.closed().catch(() => false));
+      },
     });
   } catch (err) {
+    watch.end();
     await recorder.fail(err instanceof Error ? err.message : "Onboarding failed.");
     await saveRunTimings(supabase, runId, clock);
     return settled;
   }
+  watch.end();
   // Every phase is on the row before anything else may write to it.
   await recorder.flush();
   // Where the worker's time went, before the draft route adds its own.

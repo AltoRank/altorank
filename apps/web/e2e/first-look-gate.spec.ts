@@ -210,6 +210,51 @@ test.describe("after a setup that planned nothing or met an outage", () => {
   });
 });
 
+test.describe("while the run is still reading the site", () => {
+  test.use({ accountShape: { workspaces: [{ domain: `acme-restart-${Date.now().toString(36)}.example`, onboarded: true }] } });
+
+  test("'Wrong? Fix it and start over' stops the run and opens 'Change what we found', whose button runs it again", async ({ page, account }) => {
+    // A live run still finding searches, as the worker leaves it mid-way: no
+    // worker is behind this row, so it stays in the window the link is for.
+    const now = new Date().toISOString();
+    const { error } = await admin()
+      .from("onboarding_runs")
+      .insert({
+        workspace_id: account.workspaces[0].id,
+        account_id: account.accountId,
+        status: "running",
+        started_at: now,
+        updated_at: now,
+        planned: [],
+        phases: [
+          { phase: "scanning", status: "done" },
+          { phase: "keywords", status: "active" },
+        ],
+      });
+    if (error) throw new Error(`seed run: ${error.message}`);
+    await forceGate(page);
+    await signIn(page, account.email, "/onboarding");
+    await expect(page.getByRole("heading", { name: "What we understood" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("Settings opens when your trial starts", { exact: false })).toHaveCount(0);
+    await shot(page, "restart-early-1280");
+
+    await page.getByRole("button", { name: "Wrong? Fix it and start over" }).click();
+    await expect(page.getByRole("heading", { name: "Change what we found" })).toBeVisible();
+    const { data: stopped } = await admin().from("onboarding_runs").select("status, error").eq("workspace_id", account.workspaces[0].id).single();
+    expect(stopped).toMatchObject({ status: "error", error: "Setup was stopped to change what we found." });
+
+    await page.getByLabel("Add something people buy from you").fill("guided walking holidays");
+    await page.getByLabel("Add something people buy from you").press("Enter");
+    await page.getByRole("button", { name: "Try again with these changes" }).click();
+    // A fresh run on the corrected profile, not the stopped one resumed.
+    await expect(page.getByRole("heading", { name: /Your first article is (written|being written)/ })).toBeVisible({ timeout: 60_000 });
+    const { data: runs } = await admin().from("onboarding_runs").select("status").eq("workspace_id", account.workspaces[0].id);
+    expect((runs ?? []).length).toBe(2);
+    const { data: ws } = await admin().from("workspaces").select("business_profile").eq("id", account.workspaces[0].id).single();
+    expect((ws?.business_profile as { offerings?: string[] }).offerings).toContain("guided walking holidays");
+  });
+});
+
 /** An article being written to an outline, behind the gate: the reader's case. */
 async function seedOutlinedArticle(account: { accountId: string; workspaces: { id: string }[] }) {
   const db = admin();
