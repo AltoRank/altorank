@@ -11,6 +11,7 @@ import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
 import { readArticlesWhole } from "@/lib/articles/body-read";
 import { announceDraftApproved } from "@/lib/email/approval-events";
 import { getDestinations } from "@/lib/publishing/destinations";
+import { recordArticlesApproved } from "@/lib/onboarding/step-events";
 
 /**
  * The approval, without a session.
@@ -134,6 +135,14 @@ export async function writeApproval(ids: string[], approvedBy: string): Promise<
     if (error) throw new Error(error.message);
     for (const r of data ?? []) out.push({ id: r.id as string, status: takesSlot ? "scheduled" : "approved" });
   }
+  // The funnel's last step (onboarding.step). Every human approval comes
+  // through here, the app's and the Shopify app's. Never throws.
+  const siteOf = new Map(inReview.map((r) => [r.id, r.workspace_id]));
+  await recordArticlesApproved(
+    db,
+    out.flatMap((a) => (siteOf.has(a.id) ? [{ id: a.id, workspaceId: siteOf.get(a.id)!, status: a.status }] : [])),
+    approvedBy,
+  );
   return out;
 }
 

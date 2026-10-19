@@ -21,6 +21,7 @@ import { dispatchResume } from "@/lib/plan/resume-dispatch";
 import { oweResume } from "@/lib/plan/resume-week";
 import { canSelfInvoke } from "@/lib/content/fan-out";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
+import { recordTrialStarted } from "@/lib/onboarding/step-events";
 import { graceEndsAt } from "@/lib/billing/dunning";
 import { invoicePendingCharges, paymentMethodId } from "@/lib/billing/invoice-pending";
 import {
@@ -494,6 +495,11 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
         // email promises the hand-off, not the drafts; the drafts' own email
         // says when they are there.
         if (trial) {
+          // The funnel's trial (onboarding.step), Stripe's word for it rather
+          // than the browser's return from checkout. After the answer, like
+          // the resume: Stripe is not kept waiting on instrumentation.
+          const workspaceIds = (sites ?? []).map((s) => s.id as string);
+          after(() => recordTrialStarted(supabase, { accountId, workspaceIds, plan }));
           const tier = plan ?? "starter";
           const weekHandedOff =
             canSelfInvoke() && (sites ?? []).some((s) => s.auto_generate === true && s.status !== "paused");

@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/observability/record", () => ({ recordEvent: vi.fn(async () => undefined) }));
 vi.mock("../run-dispatch", () => ({ dispatchWorker: vi.fn(async () => undefined) }));
+const recordRunStarted = vi.hoisted(() => vi.fn(async (..._a: unknown[]) => true));
+vi.mock("../step-events", () => ({ recordRunStarted: (...a: unknown[]) => recordRunStarted(...a) }));
 
 import { initialOnboardingState, providerDown, reduceOnboarding, stateFromRun, type OnboardingRunRow } from "../events";
 import { asksForCard, setupEnding } from "../setup-retry";
@@ -126,6 +128,8 @@ describe("the overnight retry", () => {
     const out = await retryProviderDownRuns(client([row()]), NOW, { allowed: async () => true, start: start as never, dispatch });
     expect(out).toEqual([{ workspaceId: "ws1", runId: "r2" }]);
     expect(dispatch).toHaveBeenCalledWith("r2");
+    // The funnel says this run was the overnight retry, not the person (onboarding.step).
+    expect(recordRunStarted).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ workspaceId: "ws1", runId: "r2", userId: null, trigger: "provider_retry" }));
   });
 
   it("starts nothing the spend gate refuses, for a site with an article, or for a run that is not the site's latest", async () => {

@@ -3,7 +3,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { startRun } from "@/lib/onboarding/run-store";
 import { dispatchWorker } from "@/lib/onboarding/run-dispatch";
 import { canSpend } from "@/lib/billing/spend-gate";
-import { recordOnboardingStep } from "@/lib/onboarding/step-events";
+import { recordRunStarted } from "@/lib/onboarding/step-events";
 import { refusedWhileViewingAs } from "@/lib/auth/impersonation";
 
 // ---------------------------------------------------------------------------
@@ -93,8 +93,9 @@ export async function POST(request: NextRequest) {
   const { runId, created } = started;
   if (created) {
     after(() => dispatchWorker(runId));
-    // Where the signup got to (onboarding.step), after the response.
-    after(() => recordOnboardingStep(createServiceClient(), { workspaceId: workspace.id as string, accountId, userId: user.id, step: "run_started" }).then(() => undefined));
+    // Where the signup got to (onboarding.step), after the response: the
+    // site's first run, or one asked for again.
+    after(() => recordRunStarted(createServiceClient(), { workspaceId: workspace.id as string, accountId, userId: user.id, runId }).then(() => undefined));
   }
 
   return NextResponse.json({ runId, existing: !created });

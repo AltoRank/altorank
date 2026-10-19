@@ -76,4 +76,14 @@ describe.skipIf(!STACK)("onboarding.step on the local database", () => {
     const plan = (await rows(b)).filter((r) => (r.context as { step: string }).step === "plan_clicked");
     expect(plan).toHaveLength(1);
   });
+
+  it("keeps a keyed step once per key: two endings are two rows, the same ending twice is one", async () => {
+    const [a] = workspaceIds;
+    const ending = (e: "writing" | "article") => recordOnboardingStep(db, { workspaceId: a, accountId, userId: null, step: "setup_ending_shown", props: { ending: e } });
+    expect(await ending("writing")).toBe(true);
+    expect(await ending("writing")).toBe(false);
+    expect(await ending("article")).toBe(true);
+    const shown = (await rows(a)).filter((r) => (r.context as { step: string }).step === "setup_ending_shown");
+    expect(shown.map((r) => (r.context as { ending: string }).ending).sort()).toEqual(["article", "writing"]);
+  });
 });

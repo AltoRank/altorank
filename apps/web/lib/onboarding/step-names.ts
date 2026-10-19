@@ -25,6 +25,17 @@ export const ONBOARDING_STEPS = [
   "trial_clicked",
   "checkout_returned",
   "checkout_cancelled",
+  // After the run: what the gate showed and whether the offer was on screen,
+  // then the trial (Stripe's word, not the browser's) and the article's way
+  // out - opened, copied, approved. Props per step: ./step-props.ts.
+  "setup_ending_shown",
+  "offer_seen",
+  "trial_started",
+  "article_opened",
+  "article_copied",
+  "article_approved",
+  // TODO(next_up_clicked): add when the single "Next up" card lands
+  // (fix/ux-clarity-quick-wins): the click that follows the approval.
 ] as const;
 export type OnboardingStepName = (typeof ONBOARDING_STEPS)[number];
 
@@ -33,11 +44,12 @@ export function isOnboardingStep(value: unknown): value is OnboardingStepName {
 }
 
 /**
- * Written by the server alone (/api/onboard/start), never accepted from the
- * browser: each step is kept once per workspace, so a client that said it
- * first would take the slot and the funnel's run-start time with it.
+ * Written by the server alone, never accepted from the browser: each step is
+ * kept once, so a client that said it first would take the slot. A run is
+ * started by /api/onboard/start or the overnight provider retry, a trial by
+ * Stripe's webhook, an approval by lib/articles/approve.ts.
  */
-export const SERVER_ONLY_STEPS: readonly OnboardingStepName[] = ["run_started"];
+export const SERVER_ONLY_STEPS: readonly OnboardingStepName[] = ["run_started", "trial_started", "article_approved"];
 
 /** A step the browser may report (/api/onboard/step). */
 export function isClientStep(value: unknown): value is OnboardingStepName {

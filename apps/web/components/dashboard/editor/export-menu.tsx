@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { renderMarkdownAction } from "@/app/actions/editor-ai";
 import { DropMenu } from "./ai-menu";
+import { trackArticleCopied } from "@/lib/onboarding/article-events";
+import type { CopyFormat, CopySurface } from "@/lib/onboarding/step-props";
 
 // ---------------------------------------------------------------------------
 // Export: Markdown, clipboard, file
@@ -45,10 +47,11 @@ export function ExportMenu({
     }
   };
 
-  const copy = async (text: string, done: string) => {
+  const copy = async (text: string, done: string, format: CopyFormat, surface: CopySurface) => {
     try {
       await navigator.clipboard.writeText(text);
       toast.success(done);
+      trackArticleCopied(articleId, format, surface);
     } catch {
       toast.error("Could not reach the clipboard. Click into the page and try again.");
     }
@@ -85,14 +88,14 @@ export function ExportMenu({
           {
             id: "copy-html",
             label: "Copy to clipboard: HTML",
-            onSelect: guard(() => copy(getHtml(), "Copied the article as HTML.")),
+            onSelect: guard(() => copy(getHtml(), "Copied the article as HTML.", "html", "export_menu")),
           },
           {
             id: "copy-md",
             label: "Copy to clipboard: Markdown",
             onSelect: guard(async () => {
               const r = await markdown();
-              await copy(r.markdown, "Copied the article as Markdown, front matter included.");
+              await copy(r.markdown, "Copied the article as Markdown, front matter included.", "markdown", "export_menu");
             }),
           },
           {
@@ -118,7 +121,7 @@ export function ExportMenu({
               {preview.markdown}
             </pre>
             <div className="mt-3 flex justify-end gap-1.5">
-              <Button size="sm" onClick={() => copy(preview.markdown, "Copied.")}>
+              <Button size="sm" onClick={() => copy(preview.markdown, "Copied.", "markdown", "export_preview")}>
                 Copy
               </Button>
               <Button size="sm" variant="accent" onClick={() => download(preview.markdown, preview.filename)}>

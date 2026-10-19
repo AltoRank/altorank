@@ -28,6 +28,7 @@ import { providerDown, stateFromRun, type OnboardingRunRow } from "./events";
 import { startRun } from "./run-store";
 import { dispatchWorker } from "./run-dispatch";
 import { providerRetryAllowed } from "./provider-retry-gate";
+import { recordRunStarted } from "./step-events";
 import { PROVIDER_RETRY_AFTER_MS, PROVIDER_RETRY_WITHIN_MS } from "./provider-retry-window";
 
 export { providerRetryAllowed, PROVIDER_RETRY_AFTER_MS, PROVIDER_RETRY_WITHIN_MS };
@@ -131,6 +132,7 @@ export async function retryProviderDownRuns(
       },
       supabase,
     );
+    await recordRunStarted(supabase, { workspaceId, accountId: row.account_id, userId: null, runId: res.runId, trigger: "provider_retry" });
     out.push({ workspaceId, runId: res.runId });
   }
   return out;
