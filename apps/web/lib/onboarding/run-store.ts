@@ -19,6 +19,7 @@ import { accountTrialGate } from "@/lib/billing/body-lock";
 import { followUpPromised } from "@/lib/auth/operators";
 import { providerRetryAllowed } from "./provider-retry-gate";
 import type { EmptyPool, OnboardingHeld } from "./events";
+import { STOPPED_TO_CHANGE, stoppableToChange } from "./stop-to-change";
 import {
   initialOnboardingState,
   onboardingOutcome,
@@ -208,7 +209,12 @@ export class RunRecorder {
         ...(state.emptyPool ? { empty_pool: state.emptyPool } : {}),
         updated_at: new Date().toISOString(),
       })
-      .eq("id", this.runId);
+      .eq("id", this.runId)
+      // A row somebody else closed keeps what it was closed with: the owner
+      // who stopped it to change what we found (stopRunToChange), or the
+      // reaper. The calls this worker still had in flight answer as failures,
+      // and they are not the run's story.
+      .eq("status", "running");
     if (error) console.error(`[onboarding] run ${this.runId}: could not persist phases: ${error.message}`);
     else this.writes += 1;
   }
@@ -278,6 +284,72 @@ export async function failRun(
   opts: { unclaimedOnly?: boolean } = {},
 ): Promise<boolean> {
   return closeRun(supabase, runId, reason, opts);
+}
+
+/** How stopping a run to change what it was started on came out. */
+export type StopToChange = { stopped: true } | { stopped: false; reason: "not-found" | "finished" | "too-late" };
+
+/**
+ * Close a live run because its owner is changing what it was started on
+ * (./stop-to-change.ts): only while it is still reading the site or finding
+ * searches, and never announced, because nothing failed.
+ *
+ * A compare-and-set on `updated_at` as well as `status`. The worker writes
+ * the row at every phase boundary, so a stop decided on phases the worker
+ * has since moved past matches no row and is decided again on what the row
+ * says now. The worker flushes its writes and reads its row before planning
+ * (run-worker.ts), so either the stop lands first and the worker sees it, or
+ * "the searches are found" lands first and the stop is refused.
+ *
+ * Asks nothing about money: whether the next run may start is the spend
+ * gate's question, which the caller asks first.
+ */
+export async function stopRunToChange(
+  supabase: SupabaseClient,
+  runId: string,
+  workspaceId: string,
+  now = Date.now(),
+): Promise<StopToChange> {
+  for (let round = 0; round < 3; round++) {
+    const { data, error } = await supabase
+      .from("onboarding_runs")
+      .select("id, workspace_id, account_id, status, phases, article_id, updated_at")
+      .eq("id", runId)
+      .maybeSingle();
+    if (error) throw new Error(`Could not read the run to stop it: ${error.message}`);
+    const row = data as (Pick<OnboardingRunRow, "id" | "workspace_id" | "status" | "phases" | "article_id" | "updated_at"> & { account_id: string | null }) | null;
+    if (!row || row.workspace_id !== workspaceId) return { stopped: false, reason: "not-found" };
+    if (row.status !== "running" || isRunStale(row, now)) return { stopped: false, reason: "finished" };
+    if (row.article_id || !stoppableToChange(row.phases)) return { stopped: false, reason: "too-late" };
+    // The version this decision was made on, and the only one it may close.
+    const seen = row.updated_at;
+
+    const at = new Date(now).toISOString();
+    const { data: closed, error: closeError } = await supabase
+      .from("onboarding_runs")
+      .update({ status: "error", error: STOPPED_TO_CHANGE, finished_at: at, updated_at: at })
+      .eq("id", runId)
+      .eq("status", "running")
+      .eq("updated_at", seen)
+      .select("id");
+    if (closeError) throw new Error(`Could not stop the run: ${closeError.message}`);
+    if ((closed ?? []).length > 0) {
+      await recordEvent(
+        {
+          level: "info",
+          source: "onboarding.stopped_to_change",
+          message: "The owner stopped a first look while it was reading the site, to change what it was started on.",
+          accountId: row.account_id,
+          workspaceId: row.workspace_id,
+          context: { runId, phases: (row.phases ?? []).map((p) => `${p.phase}:${p.status}`) },
+        },
+        supabase,
+      );
+      return { stopped: true };
+    }
+    // The worker wrote in between: read the row again and decide on that.
+  }
+  return { stopped: false, reason: "too-late" };
 }
 
 type ClosingRow = Pick<OnboardingRunRow, "id" | "workspace_id" | "status" | "phases" | "planned" | "article_id" | "started_at"> & {

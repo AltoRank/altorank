@@ -12,7 +12,8 @@ vi.mock("@/lib/email/lifecycle", () => ({
   notifyOperatorsNothingPlanned: (...a: unknown[]) => notifyOperatorsNothingPlanned(...a),
 }));
 
-import { RunRecorder, failRun, latestRun, reapStaleRuns, setupFailedFacts, stampRun, startRun } from "../run-store";
+import { RunRecorder, failRun, latestRun, reapStaleRuns, setupFailedFacts, stampRun, startRun, stopRunToChange } from "../run-store";
+import { STOPPED_TO_CHANGE } from "../stop-to-change";
 import { asksForCard, runStateOf, setupEnding } from "../setup-retry";
 import {
   failedRunNotice,
@@ -103,7 +104,7 @@ describe("RunRecorder", () => {
 
   it("carries on when a write fails, and says so", async () => {
     const failing = {
-      from: () => ({ update: () => ({ eq: async () => ({ error: { message: "boom" } }) }) }),
+      from: () => ({ update: () => ({ eq: () => ({ eq: async () => ({ error: { message: "boom" } }) }) }) }),
     } as never;
     const warn = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const rec = new RunRecorder(failing, "r1");
@@ -770,5 +771,99 @@ describe("runStatusFrom: nothing_planned only for a pool that was judged", () =>
     // Something qualified and the planner placed none: the planner fell short.
     expect(settle({ ...judged, stage: "planning" as never, qualified: 4 })).toBe("partial");
     expect(settle(null)).toBe("partial");
+  });
+});
+
+describe("stopRunToChange: the owner stops a run to change what it was started on", () => {
+  const EARLY = [
+    { phase: "scanning", status: "done" },
+    { phase: "keywords", status: "active" },
+  ];
+  const live = (over: Row = {}) =>
+    fakeDb({
+      onboarding_runs: [
+        { id: "r1", workspace_id: "ws1", account_id: "ag1", status: "running", phases: EARLY, planned: [], article_id: null, updated_at: new Date().toISOString(), ...over },
+      ],
+    });
+
+  beforeEach(() => {
+    notifySetupFailed.mockClear();
+    notifyOperatorsNothingPlanned.mockClear();
+  });
+
+  it("closes a run that is still finding searches, with the reason, and emails nobody", async () => {
+    const db = live();
+    expect(await stopRunToChange(db.client, "r1", "ws1")).toEqual({ stopped: true });
+    const row = db.tables.onboarding_runs[0];
+    expect(row).toMatchObject({ status: "error", error: STOPPED_TO_CHANGE });
+    expect(row.finished_at).not.toBeNull();
+    expect(notifySetupFailed).not.toHaveBeenCalled();
+    // Recorded for the operator as what it is: a choice, not a failure.
+    expect(db.tables.system_events).toEqual([expect.objectContaining({ level: "info", source: "onboarding.stopped_to_change" })]);
+  });
+
+  it("refuses once the searches are found: the next run would plan from this one's", async () => {
+    const db = live({ phases: [{ phase: "scanning", status: "done" }, { phase: "keywords", status: "done" }, { phase: "pages", status: "active" }] });
+    expect(await stopRunToChange(db.client, "r1", "ws1")).toEqual({ stopped: false, reason: "too-late" });
+    expect(db.tables.onboarding_runs[0].status).toBe("running");
+  });
+
+  it("refuses once planning has begun, or the run has an article", async () => {
+    const planning = live({ phases: [...EARLY, { phase: "planning", status: "active" }] });
+    expect(await stopRunToChange(planning.client, "r1", "ws1")).toEqual({ stopped: false, reason: "too-late" });
+    const drafted = live({ article_id: "a1" });
+    expect(await stopRunToChange(drafted.client, "r1", "ws1")).toEqual({ stopped: false, reason: "too-late" });
+  });
+
+  it("leaves a run that has ended, gone quiet, or belongs to another site alone", async () => {
+    const ended = live({ status: "done" });
+    expect(await stopRunToChange(ended.client, "r1", "ws1")).toEqual({ stopped: false, reason: "finished" });
+    const quiet = live({ updated_at: new Date(Date.now() - RUN_STALE_MS - 60_000).toISOString() });
+    expect(await stopRunToChange(quiet.client, "r1", "ws1")).toEqual({ stopped: false, reason: "finished" });
+    const other = live();
+    expect(await stopRunToChange(other.client, "r1", "ws2")).toEqual({ stopped: false, reason: "not-found" });
+    expect(other.tables.onboarding_runs[0].status).toBe("running");
+  });
+
+  it("decides again when the worker wrote in between, on what the row says now", async () => {
+    const db = live();
+    // The worker's "the searches are found" lands between the stop's read
+    // and its write: the write matches no row, and the second look refuses.
+    const realFrom = db.client.from.bind(db.client);
+    let writes = 0;
+    (db.client as unknown as { from: (t: string) => unknown }).from = (table: string) => {
+      const q = realFrom(table) as unknown as { update: (p: Row) => unknown };
+      if (table !== "onboarding_runs") return q;
+      const update = q.update;
+      q.update = (p: Row) => {
+        if (++writes === 1) {
+          Object.assign(db.tables.onboarding_runs[0], {
+            phases: [{ phase: "scanning", status: "done" }, { phase: "keywords", status: "done" }],
+            updated_at: new Date(Date.now() + 1_000).toISOString(),
+          });
+        }
+        return update(p);
+      };
+      return q;
+    };
+    expect(await stopRunToChange(db.client, "r1", "ws1")).toEqual({ stopped: false, reason: "too-late" });
+    expect(writes).toBe(1);
+    expect(db.tables.onboarding_runs[0].status).toBe("running");
+  });
+});
+
+describe("RunRecorder after the run was stopped under it", () => {
+  it("writes nothing more to a row somebody else closed", async () => {
+    const db = fakeDb({ onboarding_runs: [{ id: "r1", workspace_id: "ws1", account_id: "ag1", status: "running", phases: [], planned: [] }] });
+    const rec = new RunRecorder(db.client, "r1");
+    rec.record({ phase: "scanning", status: "active" });
+    await rec.flush();
+    const closedWith = structuredClone(db.tables.onboarding_runs[0].phases);
+    Object.assign(db.tables.onboarding_runs[0], { status: "error", error: STOPPED_TO_CHANGE });
+    // A call the stop aborted answers as a failure; it is not the run's story.
+    rec.record({ phase: "keywords", status: "failed", detail: "This operation was aborted" });
+    await rec.flush();
+    expect(db.tables.onboarding_runs[0].phases).toEqual(closedWith);
+    expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "error", error: STOPPED_TO_CHANGE });
   });
 });

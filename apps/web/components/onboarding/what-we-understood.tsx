@@ -8,10 +8,17 @@
 // five sections and one button, "Write my first article", and it was the
 // screen people left on. Now the run starts as soon as the read lands
 // (wizard.tsx, `autoStart`), and what the read found is shown here, beside the
-// run, as the facts it is building on. It is not edited here: the run
-// already under way is built on it, and /api/onboard/start would hand back
-// that run rather than start another. The form, and the one free re-run the
-// spend gate allows before the trial, are offered once the run has ended.
+// run, as the facts it is building on. It is not edited here: the worker
+// read the language, the market and the profile when the run started, and
+// /api/onboard/start would hand back that run rather than start another.
+//
+// While the run is still reading the site, its owner may stop it and start
+// over: "Wrong? Fix it and start over" (`onRestart`) closes the run and opens
+// "Change what we found", whose button starts the next one. The run screen
+// decides when it shows (lib/onboarding/stop-to-change.ts): before the
+// searches are found, and only when the spend gate would start another
+// setup run. Otherwise the panel says where a correction can go, and that
+// Settings opens with the trial (lib/billing/gate-paths.ts).
 
 import type { BusinessProfile } from "@/lib/onboarding/profile-shape";
 import { businessLine, localeLine } from "@/lib/onboarding/wizard-rules";
@@ -38,7 +45,22 @@ function Row({ label, children, last = false }: { label: string; children: React
   );
 }
 
-export function WhatWeUnderstood({ profile, domain }: { profile: BusinessProfile; domain: string }) {
+export function WhatWeUnderstood({
+  profile,
+  domain,
+  onRestart,
+  restarting = false,
+  restartError = null,
+}: {
+  profile: BusinessProfile;
+  domain: string;
+  /** Stop the run and open "Change what we found"; absent when a restart is not on offer. */
+  onRestart?: () => void;
+  /** The stop is on its way. */
+  restarting?: boolean;
+  /** Why the last stop was refused, kept after the link goes. */
+  restartError?: string | null;
+}) {
   const offerings = (profile.offerings ?? []).filter((o) => o.trim());
   const rivals = [...profile.competitors, ...(profile.competitorNames ?? [])].filter((r) => r.trim());
   return (
@@ -71,9 +93,28 @@ export function WhatWeUnderstood({ profile, domain }: { profile: BusinessProfile
           <Chips items={rivals.slice(0, 5)} empty="None picked: we compare against the pages that rank" />
         </Row>
       </div>
-      <p className="m-0 border-t border-line px-4 py-3 text-[12px] leading-[1.5] text-ink-3">
-        Something off? You can change it in Settings once you are in, and the articles after this one follow it.
-      </p>
+      <div className="border-t border-line px-4 py-3 text-[12px] leading-[1.5] text-ink-3">
+        {onRestart ? (
+          <p className="m-0">
+            <button
+              type="button"
+              onClick={onRestart}
+              disabled={restarting}
+              className="text-[12.5px] text-ink-2 underline decoration-line underline-offset-[3px] hover:text-ink disabled:opacity-60"
+            >
+              {restarting ? "Stopping…" : "Wrong? Fix it and start over"}
+            </button>
+            <span className="mt-0.5 block">This setup stops, and you correct what we found before it runs again.</span>
+          </p>
+        ) : (
+          <p className="m-0">Something off? Settings opens when your trial starts. Change it there, and the articles after this one follow it.</p>
+        )}
+        {restartError && (
+          <p role="alert" className="m-0 mt-1.5 text-[12px] leading-[1.5] text-ink-2">
+            {restartError}
+          </p>
+        )}
+      </div>
     </section>
   );
 }

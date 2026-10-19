@@ -99,6 +99,7 @@ import { FIRST_DRAFT_MIN_USD, FIRST_LOOK_BUYER_TEST_ROOM_USD, FIRST_LOOK_QUALIFY
 import type { OnboardingEvent } from "../events";
 import type { FirstLook } from "@/lib/keyword-research/opportunity";
 import { FIRST_LOOK_QUALIFY_MS } from "../time-limits";
+import { currentDeadline } from "../deadline";
 
 const WS = { id: "ws1", domain: "example.com", account_id: "ag1", language: "en" };
 const NEXT = { term: "seo agent", reasons: ["27,100 searches/mo"], score: 35.5, difficulty: 19, volume: 27100 };
@@ -876,5 +877,46 @@ describe("runOnboarding: qualification's deadline", () => {
     const planning = events.filter((e) => e.phase === "planning").at(-1) as { status: string; detail?: string };
     expect(planning.status).toBe("skipped");
     expect(planning.detail).toBe("Checking the search results took longer than a first look allows, so nothing was planned yet: a problem on our side, not your site.");
+  });
+});
+
+describe("runOnboarding: stopped to change what it was started on (./stop-to-change.ts)", () => {
+  it("asks once, after the searches are found and before planning, and stops there with nothing planned or drafted", async () => {
+    const events: OnboardingEvent[] = [];
+    const asked: string[] = [];
+    const stillWanted = vi.fn(async () => {
+      asked.push(phases(events).join(","));
+      return false;
+    });
+    const result = await runOnboarding(richClient(0), WS, (e) => events.push(e), { firstDraft: "dispatch", stillWanted });
+    expect(stillWanted).toHaveBeenCalledTimes(1);
+    // Asked with the keyword phase settled: the stop it answers for was decided before that.
+    expect(asked[0]).toContain("keywords:done");
+    expect(plan).not.toHaveBeenCalled();
+    expect(recommend).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
+    expect(result.pendingDraft).toBeNull();
+    const seen = phases(events);
+    expect(seen.some((p) => p.startsWith("planning") || p.startsWith("drafting"))).toBe(false);
+    expect(seen).not.toContain("ready");
+  });
+
+  it("plans and drafts as before when the run is still wanted", async () => {
+    const result = await runOnboarding(richClient(0), WS, () => undefined, { firstDraft: "dispatch", stillWanted: async () => true });
+    expect(plan).toHaveBeenCalledTimes(1);
+    expect(result.pendingDraft).toMatchObject({ term: NEXT.term });
+  });
+
+  it("bounds the run's provider calls by the stop signal", async () => {
+    const stop = new AbortController();
+    let seen: AbortSignal | null = null;
+    analyse.mockImplementation(async () => {
+      seen = currentDeadline();
+      return { keywordsFound: 94, layers: [] };
+    });
+    await runOnboarding(richClient(0), WS, () => undefined, { firstDraft: "dispatch", stop: stop.signal, stillWanted: async () => false });
+    expect(seen).not.toBeNull();
+    stop.abort();
+    expect(seen!.aborted).toBe(true);
   });
 });

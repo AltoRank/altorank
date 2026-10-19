@@ -29,7 +29,7 @@
 // product read their site and have a reason to answer honestly; it is asked
 // and one click is not a wall.
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Icons } from "@/components/ui";
 import {
@@ -42,6 +42,8 @@ import {
   saveSiteDetails,
   completeWizard,
 } from "@/app/actions/onboarding-wizard";
+import { mayStartSetupOver, stopSetupToChange } from "@/app/actions/onboarding-restart";
+import { offerStopToChange, stoppableToChange } from "@/lib/onboarding/stop-to-change";
 import type { SiteDetails } from "@/lib/onboarding/output-settings";
 import type { OnboardingHeld } from "@/lib/onboarding/events";
 import { EMPTY_PROFILE, type BusinessProfile } from "@/lib/onboarding/profile-shape";
@@ -115,8 +117,10 @@ export function OnboardingWizard({
    * Start the run as soon as the site read lands, with no check screen in
    * between: what the read found is shown beside the run instead
    * (./what-we-understood.tsx). The check form still opens when the read
-   * failed or found nothing to write about, and from "Not right? Change it".
-   * Decided on the server (ONBOARDING_AUTOSTART).
+   * failed or found nothing to write about, and from the panel's "Wrong? Fix
+   * it and start over" while the run is still reading the site
+   * (lib/onboarding/stop-to-change.ts). Decided on the server
+   * (ONBOARDING_AUTOSTART).
    */
   autoStart?: boolean;
   workspaceId: string;
@@ -1328,8 +1332,55 @@ function RunScreen({
     refreshed.current = true;
     router.refresh();
   }, [trialStep, firstArticle, router]);
+  // "Wrong? Fix it and start over" (lib/onboarding/stop-to-change.ts). The
+  // run on screen, as /api/onboard/start named it, and whether the spend
+  // gate would start one more setup run after it: asked once per run, once
+  // the run exists, so the gate's count includes it. Only for the owner, and
+  // only when the page already found setup allowed (`onEdit`), because the
+  // link ends in that same form.
+  const [restart, setRestart] = useState<{ runId: string; allowed: boolean | null } | null>(null);
+  const [stopping, setStopping] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
+  const askRestart = trialEligible && canBuy && onEdit !== undefined;
+  const early = state === null || stoppableToChange(state.steps);
+  const onRun = useCallback((runId: string) => {
+    setRestart((r) => (r?.runId === runId ? r : { runId, allowed: null }));
+  }, []);
+  useEffect(() => {
+    if (!askRestart || !early || !restart || restart.allowed !== null) return;
+    const runId = restart.runId;
+    let gone = false;
+    void mayStartSetupOver(workspaceId, runId).then((allowed) => {
+      if (!gone) setRestart((r) => (r?.runId === runId ? { runId, allowed } : r));
+    });
+    return () => {
+      gone = true;
+    };
+  }, [askRestart, early, restart, workspaceId]);
+  const offerRestart =
+    askRestart && offerStopToChange(state, { restartable: restart?.allowed ?? null, firstAttempted: preTrialSetup.firstAttempted });
+  // Stop this run, then open "Change what we found" over it; its button
+  // starts the next run. On a refusal the reason stays under the panel.
+  const startOver = () => {
+    if (!restart || !onEdit || stopping) return;
+    setStopping(true);
+    setStopError(null);
+    stopSetupToChange(workspaceId, restart.runId).then(
+      (r) => {
+        if (r.ok) return onEdit();
+        setStopping(false);
+        setStopError(r.message);
+      },
+      () => {
+        setStopping(false);
+        setStopError("Could not stop setup. Try again.");
+      },
+    );
+  };
+
   const retryRun = () => {
     setState(null);
+    setRestart(null);
     setAttempt((a) => a + 1);
   };
 
@@ -1356,11 +1407,22 @@ function RunScreen({
         {planned.length > 10 && <p className="m-0 mt-1.5 text-[12px] text-ink-3">and {planned.length - 10} more on the calendar.</p>}
       </div>
     ) : null;
-    // Beside the live run, what it is building on; the gate replaces it. No
-    // edit control here: /api/onboard/start hands back the run already going,
-    // so "change it and start again" would quietly resume this run. The
-    // free re-run is offered where it can be kept, once the run has ended.
-    const understood = !trialStep && profile ? <WhatWeUnderstood profile={profile} domain={domain} /> : undefined;
+    // Beside the live run, what it is building on; the gate replaces it. It
+    // is never edited in place: the worker read the language, the market and
+    // the profile when it started, and /api/onboard/start hands back the run
+    // already going. While the run is still reading the site, its owner may
+    // stop it and change what we found (`startOver`); after that, the free
+    // re-run is offered where it can be kept, once the run has ended.
+    const understood =
+      !trialStep && profile ? (
+        <WhatWeUnderstood
+          profile={profile}
+          domain={domain}
+          onRestart={offerRestart ? startOver : undefined}
+          restarting={stopping}
+          restartError={stopError}
+        />
+      ) : undefined;
     return (
       <GateShell wide={trialStep || understood !== undefined}>
         {trialStep && ending && words ? (
@@ -1403,6 +1465,7 @@ function RunScreen({
             refreshKey={bodyLanded}
             scheduled={scheduled}
             onStartedAt={setRunStartedAt}
+            onRun={onRun}
             understood={understood}
           />
         </div>
