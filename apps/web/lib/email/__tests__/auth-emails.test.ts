@@ -18,6 +18,7 @@ vi.mock("@/lib/email/resend", () => ({ sendTransactionalEmail }));
 
 import { authLink, renderConfirmSignup, renderPasswordReset, renderMagicLink, sendPasswordReset, sendSignInCode, sendSignupConfirmation } from "../auth-emails";
 import { emailLayout } from "../layout";
+import { AddressTakenError } from "@/lib/auth/address-taken";
 
 describe("auth emails", () => {
   it("builds a callback link with hash, type and next", () => {
@@ -207,6 +208,8 @@ describe("sendSignupConfirmation", () => {
       error: { code: "email_exists", status: 422, message: "A user with this email address has already been registered" },
     });
     await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw" })).rejects.toThrow("already been registered");
+    // Told apart from the other refusals: the signup form offers a sign-in code for it.
+    await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw" })).rejects.toBeInstanceOf(AddressTakenError);
     expect(sendTransactionalEmail).not.toHaveBeenCalled();
     expect(deleteUser).not.toHaveBeenCalled();
   });

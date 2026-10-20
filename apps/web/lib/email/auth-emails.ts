@@ -21,6 +21,7 @@ import { emailButton, emailParagraph, EMAIL_INK, EMAIL_INK_3 } from "@/lib/email
 import { appUrl } from "@/lib/app-url";
 import { billingEnabled } from "@/lib/stripe";
 import { trialGateBypassed } from "@/lib/billing/trial";
+import { AddressTakenError, isAddressTakenRefusal } from "@/lib/auth/address-taken";
 
 
 
@@ -181,6 +182,9 @@ export async function sendSignupConfirmation(opts: {
     password: opts.password || randomPassword(),
     ...(name ? { options: { data: { name } } } : {}),
   });
+  // A confirmed address is refused; the signup form offers that person a
+  // sign-in code rather than the refusal (lib/auth/address-taken.ts).
+  if (error && isAddressTakenRefusal(error)) throw new AddressTakenError(error.message);
   if (error || !data.user) throw new Error(error?.message ?? "Could not create the account");
 
   const url = authLink("signup", data.properties.hashed_token, opts.next ?? "/dashboard");

@@ -39,6 +39,8 @@ vi.mock("@/lib/observability/record", () => ({ recordEvent: mocks.recordEvent })
 vi.mock("@/lib/auth/signup-reuse", () => ({ existingSignup: mocks.existingSignup }));
 
 import SignUpPage from "../page";
+import { AddressTakenError } from "@/lib/auth/address-taken";
+import { TAKEN_SIGNUP_COOKIE } from "@/lib/auth/pending-signup";
 
 type Result = { data?: unknown; error: { message: string; code?: string } | null };
 
@@ -195,6 +197,16 @@ describe("every error redirect back to /signup keeps the source", () => {
     mocks.checkDomainReachable.mockResolvedValue({ ok: false, reason: "No such site." });
     const url = await submit({ ...BASE, ...SOURCE });
     expect(url).toBe("/signup?error=" + encodeURIComponent("No such site.") + "&domain=acme.com" + CARRY);
+  });
+
+  it("an address that already has an account: a sign-in code is offered, the address kept out of the URL", async () => {
+    mocks.sendSignupConfirmation.mockRejectedValue(new AddressTakenError("A user with this email address has already been registered"));
+    const url = await submit({ ...BASE, email: " Owner@Acme.com ", ...SOURCE });
+    expect(url).toBe("/signup?taken=1" + CARRY);
+    expect(url).not.toContain("acme.com");
+    expect(mocks.cookieSet).toHaveBeenCalledWith(TAKEN_SIGNUP_COOKIE, "owner@acme.com", expect.objectContaining({ httpOnly: true, path: "/signup" }));
+    // Nothing is created for it.
+    expect(admin.inserts).toEqual([]);
   });
 
   it("a confirmation email that could not be sent", async () => {
