@@ -5,8 +5,15 @@
 // The marketing site adds these to a signup link at the moment it is clicked:
 //
 //   src     the path of the page the visitor clicked on ("/pricing/")
+//   lp      the path of the first page they landed on in that visit
+//           ("/alternatives/outrank/"), so a signup joins to the page that
+//           earned it and not only to the one it was clicked on
 //   ref     the external site that sent them, hostname only
 //   utm_*   campaign params that were on the page's URL
+//
+// A visitor who reaches the app with none of that (an AI answer's link, a
+// bookmark, a share page) still sends a Referer header: /signup and /signin
+// fall back to its hostname for `ref` (refererHost below).
 //
 // /signup reads them from its URL, carries them through the form as hidden
 // inputs (and through every error redirect, so a failed first submit does not
@@ -18,15 +25,18 @@
 // dropped, not repaired, and a bad value never blocks the signup. `from` is
 // not read here. It is the tools signup's mode switch, not attribution.
 
+import { MARKETING_URL } from "@/lib/constants";
+
 export const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content"] as const;
 export type UtmKey = (typeof UTM_KEYS)[number];
 
 /** Every param this module reads and writes, in the order it writes them. */
-export const SIGNUP_SOURCE_KEYS = ["src", "ref", ...UTM_KEYS] as const;
+export const SIGNUP_SOURCE_KEYS = ["src", "lp", "ref", ...UTM_KEYS] as const;
 type SourceKey = (typeof SIGNUP_SOURCE_KEYS)[number];
 
 export interface SignupSource {
   src?: string;
+  lp?: string;
   ref?: string;
   utm?: Partial<Record<UtmKey, string>>;
 }
@@ -83,6 +93,8 @@ export function parseSignupSource(input: FormData | Record<string, unknown> | nu
   const out: SignupSource = {};
   const src = cleanSrc(get("src"));
   if (src) out.src = src;
+  const lp = cleanSrc(get("lp"));
+  if (lp) out.lp = lp;
   const ref = cleanRef(get("ref"));
   if (ref) out.ref = ref;
   const utm: Partial<Record<UtmKey, string>> = {};
@@ -94,10 +106,55 @@ export function parseSignupSource(input: FormData | Record<string, unknown> | nu
   return out;
 }
 
+function hostOf(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+const MARKETING_HOST = hostOf(MARKETING_URL);
+
+/**
+ * The referring site's hostname from a request's Referer header, put through
+ * the same check as a `ref` param. Undefined when there is no header, it does
+ * not parse, or it names one of our own sites: the app itself (`requestHost`,
+ * the request's Host header, or NEXT_PUBLIC_APP_URL) and the marketing site
+ * and its subdomains. A visitor from the marketing site came through a link
+ * that carries its own source, and one from another app page carries it in
+ * the URL, so our own hostname would only hide that it is missing.
+ */
+export function refererHost(referer: string | null | undefined, requestHost?: string | null): string | undefined {
+  const host = hostOf(referer);
+  if (!host) return undefined;
+  const own = [requestHost?.split(":")[0].toLowerCase(), hostOf(process.env.NEXT_PUBLIC_APP_URL)];
+  if (own.includes(host)) return undefined;
+  if (MARKETING_HOST && (host === MARKETING_HOST || host.endsWith(`.${MARKETING_HOST}`))) return undefined;
+  return cleanRef(host);
+}
+
+/**
+ * `source` with `ref` taken from the Referer header when the URL brought none.
+ * For a page a visitor can reach straight from another site: an AI answer's
+ * link to /signup, a share page, the connect flow's /signin.
+ */
+export function withRefererFallback(
+  source: SignupSource,
+  referer: string | null | undefined,
+  requestHost?: string | null,
+): SignupSource {
+  if (source.ref) return source;
+  const ref = refererHost(referer, requestHost);
+  return ref ? { ...source, ref } : source;
+}
+
 /** The source as name/value pairs: one hidden input or one query param each. */
 export function signupSourceFields(source: SignupSource): [SourceKey, string][] {
   const fields: [SourceKey, string][] = [];
   if (source.src) fields.push(["src", source.src]);
+  if (source.lp) fields.push(["lp", source.lp]);
   if (source.ref) fields.push(["ref", source.ref]);
   for (const key of UTM_KEYS) {
     const value = source.utm?.[key];
@@ -116,17 +173,30 @@ export function signupSourceQuery(source: SignupSource): string {
 }
 
 /**
- * The shape recorded in an event's context: `{ src, ref, utm }`, with `utm`
+ * `path` with the source appended as query params, after any it already has.
+ * For a link that has to hand the source on: /signin's "Sign up", /signup's
+ * "Sign in".
+ */
+export function signupSourceHref(path: string, source: SignupSource): string {
+  const fields = signupSourceFields(source);
+  if (!fields.length) return path;
+  return `${path}${path.includes("?") ? "&" : "?"}${new URLSearchParams(fields).toString()}`;
+}
+
+/**
+ * The shape recorded in an event's context: `{ src, lp, ref, utm }`, with `utm`
  * keyed by the part after `utm_` so the row reads `utm.source`, `utm.campaign`.
  * Keys with no value are left out rather than written as null.
  */
 export function signupSourceContext(source: SignupSource): {
   src?: string;
+  lp?: string;
   ref?: string;
   utm?: Record<string, string>;
 } {
-  const out: { src?: string; ref?: string; utm?: Record<string, string> } = {};
+  const out: { src?: string; lp?: string; ref?: string; utm?: Record<string, string> } = {};
   if (source.src) out.src = source.src;
+  if (source.lp) out.lp = source.lp;
   if (source.ref) out.ref = source.ref;
   if (source.utm) {
     const utm: Record<string, string> = {};
@@ -139,10 +209,14 @@ export function signupSourceContext(source: SignupSource): {
   return out;
 }
 
-/** One readable line for an event message: "from /pricing/ via news.ycombinator.com, utm_source newsletter". */
+/**
+ * One readable line for an event message:
+ * "from /pricing/ (landed on /blog/x/) via news.ycombinator.com, utm_source newsletter".
+ */
 export function describeSignupSource(source: SignupSource): string {
   const parts: string[] = [];
   if (source.src) parts.push(`from ${source.src}`);
+  if (source.lp && source.lp !== source.src) parts.push(`(landed on ${source.lp})`);
   if (source.ref) parts.push(`via ${source.ref}`);
   const head = parts.join(" ");
   const utm = UTM_KEYS.filter((k) => source.utm?.[k]).map((k) => `${k} ${source.utm![k]}`);

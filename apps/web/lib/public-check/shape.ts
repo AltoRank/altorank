@@ -17,6 +17,7 @@ import {
   type ReadinessFinding,
   type ReadinessResult,
 } from "@/lib/audit/agent-readiness";
+import { signupSourceHref, type SignupSource } from "@/lib/auth/signup-source";
 
 export type PublicCheckStatus = "pass" | "fail" | "unknown";
 
@@ -144,6 +145,17 @@ export function describeCheckWeights(): string {
 
 export function shareUrlFor(domain: string, appUrl: string = APP_URL): string {
   return `${appUrl}/check/${encodeURIComponent(domain)}`;
+}
+
+/**
+ * The share page's signup link: the domain, so the form starts on the email,
+ * and the page itself as `src`, so a signup from a shared result is counted
+ * as one (lib/auth/signup-source.ts). `source` adds the rest, the referring
+ * site when the visitor arrived from one.
+ */
+export function signupHrefFor(domain: string, source: SignupSource = {}): string {
+  const path = `/check/${encodeURIComponent(domain)}`;
+  return signupSourceHref(`/signup?domain=${encodeURIComponent(domain)}`, { ...source, src: path });
 }
 
 function statusOf(finding: ReadinessFinding | undefined): PublicCheckStatus {
