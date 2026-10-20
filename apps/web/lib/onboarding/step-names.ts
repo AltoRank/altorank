@@ -27,6 +27,10 @@ export const ONBOARDING_STEPS = [
   "run_started",
   "gate_shown",
   "trial_clicked",
+  // What came of the click in the browser, when it was not a trial: the
+  // form was left (and how), or it never opened. Stripe has the rest.
+  "checkout_closed",
+  "checkout_failed",
   "checkout_returned",
   "checkout_cancelled",
   // After the run: what the gate showed and whether the offer was on screen,

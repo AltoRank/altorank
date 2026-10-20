@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stepContext, stepEventId } from "../step-events";
+import { ownedCheckoutSession, stepContext, stepEventId } from "../step-events";
 import { ONBOARDING_STEPS, isClientStep, isOnboardingStep } from "../step-names";
 
 describe("onboarding.step events", () => {
@@ -58,5 +58,47 @@ describe("onboarding.step events after the run", () => {
   it("are never accepted from the browser when only the server can know them", () => {
     for (const step of ["run_started", "trial_started", "article_approved"]) expect(isClientStep(step)).toBe(false);
     for (const step of ["setup_ending_shown", "offer_seen", "article_opened", "article_copied"]) expect(isClientStep(step)).toBe(true);
+  });
+});
+
+describe("onboarding.step events about a checkout", () => {
+  const S = "cs_test_a1B2c3D4e5F6g7H8i9J0";
+  const db = (row: unknown, error: unknown = null) =>
+    ({
+      from: (table: string) => {
+        expect(table).toBe("billing_checkout_attempts");
+        const q: Record<string, unknown> = {};
+        q.select = () => q;
+        q.eq = () => q;
+        q.maybeSingle = async () => ({ data: row, error });
+        return q;
+      },
+    }) as never;
+
+  it("carry the session and the step's words, nothing else", () => {
+    expect(stepContext({ workspaceId: "w", accountId: "a", userId: null, step: "checkout_closed", checkoutSession: S, props: { how: "escape", surface: "price_box", viewport: "mobile" } })).toEqual({
+      step: "checkout_closed",
+      checkoutSession: S,
+      how: "escape",
+      surface: "price_box",
+      viewport: "mobile",
+    });
+    expect(stepContext({ workspaceId: "w", accountId: "a", userId: null, step: "checkout_failed", checkoutSession: "not a session", props: { stage: "create" } })).toEqual({ step: "checkout_failed", stage: "create" });
+  });
+
+  it("are new events, never accepted only from the server", () => {
+    for (const step of ["checkout_closed", "checkout_failed"]) {
+      expect(isOnboardingStep(step)).toBe(true);
+      expect(isClientStep(step)).toBe(true);
+    }
+  });
+
+  it("keep a session only when it is the one the account has open", async () => {
+    expect(await ownedCheckoutSession(db({ stripe_session_id: S }), "acc1", S)).toBe(S);
+    expect(await ownedCheckoutSession(db({ stripe_session_id: "cs_test_another000000000" }), "acc1", S)).toBeUndefined();
+    expect(await ownedCheckoutSession(db(null), "acc1", S)).toBeUndefined();
+    expect(await ownedCheckoutSession(db({ stripe_session_id: S }, { message: "down" }), "acc1", S)).toBeUndefined();
+    // Not a session id: nothing is read at all.
+    expect(await ownedCheckoutSession({ from: () => { throw new Error("read"); } } as never, "acc1", "x")).toBeUndefined();
   });
 });

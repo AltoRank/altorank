@@ -6,6 +6,8 @@ import { Button, Icons } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { createCheckoutSession, createBillingPortalSession } from "@/app/actions/billing";
 import { planCardRelation, type BillingInterval } from "@/lib/billing/plan-interval";
+import { trackStep } from "@/lib/onboarding/track-step";
+import { currentViewport } from "@/lib/onboarding/step-props";
 
 /**
  * The ladder, on the page where you buy it.
@@ -99,9 +101,13 @@ export function PlanCards({
   const [interval, setInterval] = useState<BillingInterval>(currentInterval ?? "month");
 
   function subscribe(plan: SelfServePlan) {
+    // A plan card that opens the trial is one more trial button
+    // (onboarding.step); a plain purchase or a switch is not.
+    if (trialEligible) trackStep("trial_clicked", { props: { surface: "billing", plan, interval } });
     start(async () => {
       const result = await createCheckoutSession(plan, interval, returnTo);
       if (!result.ok) {
+        if (trialEligible) trackStep("checkout_failed", { props: { stage: "create", surface: "billing", viewport: currentViewport() } });
         toast.error(result.error);
         return;
       }

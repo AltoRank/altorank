@@ -44,6 +44,24 @@ export const APPROVED_AS = ["approved", "scheduled"] as const;
 export const NEXT_UP_TARGETS = ["draft", "more"] as const;
 export type NextUpTarget = (typeof NEXT_UP_TARGETS)[number];
 export const TRIAL_PLANS = ["starter", "growth"] as const;
+export const TRIAL_INTERVALS = ["month", "year"] as const;
+/**
+ * Which trial button was pressed: the gate's price box, its sticky bar, the
+ * quiet box when there is no article to show, the Articles page's offer, or
+ * a plan card on Billing that opens the trial.
+ */
+export const TRIAL_SURFACES = ["price_box", "sticky_bar", "quiet_box", "articles", "billing"] as const;
+export type TrialSurface = (typeof TRIAL_SURFACES)[number];
+/** How a checkout form was left without paying: the inline "Not now", the sheet's Close, Escape, its backdrop. */
+export const CHECKOUT_CLOSES = ["not_now", "close", "escape", "backdrop"] as const;
+export type CheckoutClose = (typeof CHECKOUT_CLOSES)[number];
+/**
+ * Where a checkout that never opened stopped: Stripe.js did not load (a
+ * blocker, the network), the session was not created (our action or
+ * Stripe refused), or Stripe would not build the form from it.
+ */
+export const CHECKOUT_FAILURES = ["load", "create", "mount"] as const;
+export type CheckoutFailure = (typeof CHECKOUT_FAILURES)[number];
 
 /** The props each step may carry, and the list each value must be on. */
 const ALLOWED: Partial<Record<OnboardingStepName, Record<string, readonly string[]>>> = {
@@ -55,6 +73,9 @@ const ALLOWED: Partial<Record<OnboardingStepName, Record<string, readonly string
   run_started: { trigger: RUN_TRIGGERS },
   trial_started: { plan: TRIAL_PLANS },
   next_up_clicked: { target: NEXT_UP_TARGETS },
+  trial_clicked: { surface: TRIAL_SURFACES, plan: TRIAL_PLANS, interval: TRIAL_INTERVALS },
+  checkout_closed: { how: CHECKOUT_CLOSES, surface: TRIAL_SURFACES, viewport: VIEWPORTS },
+  checkout_failed: { stage: CHECKOUT_FAILURES, surface: TRIAL_SURFACES, viewport: VIEWPORTS },
 };
 
 export type StepProps = Partial<{
@@ -62,11 +83,15 @@ export type StepProps = Partial<{
   viewport: Viewport;
   from: OpenedFrom;
   format: CopyFormat;
-  surface: CopySurface;
+  /** A copy button for article_copied, a trial button for the trial steps: each step's own list. */
+  surface: CopySurface | TrialSurface;
   trigger: RunTrigger;
   status: (typeof APPROVED_AS)[number];
   plan: (typeof TRIAL_PLANS)[number];
+  interval: (typeof TRIAL_INTERVALS)[number];
   target: NextUpTarget;
+  how: CheckoutClose;
+  stage: CheckoutFailure;
 }>;
 
 /**
@@ -85,6 +110,9 @@ export function stepProps(step: OnboardingStepName, raw: unknown): StepProps {
   return out as StepProps;
 }
 
+/** Steps about one checkout form: the Stripe session's id rides along once there is one. */
+export const CHECKOUT_STEPS: readonly OnboardingStepName[] = ["checkout_closed", "checkout_failed"];
+
 /** Steps about one article: the article's id is part of the event, and the workspace is the article's. */
 export const ARTICLE_STEPS: readonly OnboardingStepName[] = ["article_opened", "article_copied", "article_approved", "next_up_clicked"];
 
@@ -92,6 +120,16 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** An id as the database makes them, or undefined: never a free string in an event. */
 export function uuidOrUndefined(value: unknown): string | undefined {
   return typeof value === "string" && UUID.test(value) ? value.toLowerCase() : undefined;
+}
+
+const CHECKOUT_SESSION = /^cs_(test|live)_[A-Za-z0-9]{8,200}$/;
+/**
+ * A Stripe Checkout Session id (`cs_live_…`), or undefined. It is not a
+ * UUID, so `uuidOrUndefined` would drop it; the server still keeps it only
+ * when it is the account's own session (step-events.ts `ownedCheckoutSession`).
+ */
+export function checkoutSessionOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" && CHECKOUT_SESSION.test(value) ? value : undefined;
 }
 
 /**
@@ -105,11 +143,21 @@ export function uuidOrUndefined(value: unknown): string | undefined {
  *                                         approved_at, the event stays)
  *   run_started         run              (every run, each with its trigger)
  *   next_up_clicked     article, target  (the draft Next up named)
+ *   trial_clicked       button, plan, interval (without a button, once per
+ *                                         site, as before)
+ *   checkout_closed     session, button, how   (a form closed before Stripe
+ *   checkout_failed     session, button, stage  gave it a session has none)
  * Shared by the browser's once-per-page-load and the server's once-ever.
  */
-export function stepKey(step: OnboardingStepName, input: { articleId?: string | null; runId?: string | null; props?: StepProps }): string {
+export function stepKey(step: OnboardingStepName, input: { articleId?: string | null; runId?: string | null; checkoutSession?: string | null; props?: StepProps }): string {
   const p = input.props ?? {};
   switch (step) {
+    case "trial_clicked":
+      return p.surface ? [p.surface, p.plan ?? "", p.interval ?? ""].join(":") : "";
+    case "checkout_closed":
+      return [input.checkoutSession ?? "", p.surface ?? "", p.how ?? ""].join(":");
+    case "checkout_failed":
+      return [input.checkoutSession ?? "", p.surface ?? "", p.stage ?? ""].join(":");
     case "setup_ending_shown":
       return p.ending ?? "";
     case "article_opened":

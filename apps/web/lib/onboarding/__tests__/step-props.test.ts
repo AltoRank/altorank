@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SETUP_ENDINGS, openedFrom, stepKey, stepProps, uuidOrUndefined, viewportOf } from "../step-props";
+import { SETUP_ENDINGS, checkoutSessionOrUndefined, openedFrom, stepKey, stepProps, uuidOrUndefined, viewportOf } from "../step-props";
 
 // What an onboarding.step event may carry beyond its name: a word from a
 // closed list, per step. These are the guarantee that no event payload holds
@@ -90,5 +90,46 @@ describe("uuidOrUndefined", () => {
     expect(uuidOrUndefined("11111111-2222-4333-8444-555555555555")).toBe("11111111-2222-4333-8444-555555555555");
     expect(uuidOrUndefined("someone@acme.example")).toBeUndefined();
     expect(uuidOrUndefined(42)).toBeUndefined();
+  });
+});
+
+// What came after "Start trial" (2026-10-19: the first real click died inside
+// Embedded Checkout and left no cause on our side).
+describe("the trial steps", () => {
+  const S = "cs_test_a1B2c3D4e5F6g7H8i9J0";
+
+  it("say which button, plan and interval was pressed, from closed lists", () => {
+    expect(stepProps("trial_clicked", { surface: "sticky_bar", plan: "growth", interval: "year" })).toEqual({ surface: "sticky_bar", plan: "growth", interval: "year" });
+    expect(stepProps("trial_clicked", { surface: "publish_panel", plan: "enterprise", interval: "week" })).toEqual({});
+    expect(stepProps("checkout_closed", { how: "backdrop", surface: "quiet_box", viewport: "mobile" })).toEqual({ how: "backdrop", surface: "quiet_box", viewport: "mobile" });
+    expect(stepProps("checkout_closed", { how: "swiped away" })).toEqual({});
+    expect(stepProps("checkout_failed", { stage: "load", surface: "articles", viewport: "desktop", message: "Stripe could not be loaded." })).toEqual({ stage: "load", surface: "articles", viewport: "desktop" });
+    // A copy button is not a trial button, and the other way round.
+    expect(stepProps("article_copied", { format: "html", surface: "price_box" })).toEqual({ format: "html" });
+  });
+
+  it("keep each button, plan and interval's click, and the old once-per-site click without one", () => {
+    expect(stepKey("trial_clicked", {})).toBe("");
+    expect(stepKey("trial_clicked", { props: { surface: "price_box", plan: "starter", interval: "month" } })).not.toBe(stepKey("trial_clicked", { props: { surface: "sticky_bar", plan: "starter", interval: "month" } }));
+    expect(stepKey("trial_clicked", { props: { surface: "price_box", plan: "starter", interval: "month" } })).not.toBe(stepKey("trial_clicked", { props: { surface: "price_box", plan: "starter", interval: "year" } }));
+  });
+
+  it("keep a close and a failure per session, per button, per way, and one per way before there is a session", () => {
+    const close = (how: "close" | "escape", checkoutSession?: string) => stepKey("checkout_closed", { checkoutSession, props: { how, surface: "price_box", viewport: "mobile" } });
+    expect(close("close", S)).not.toBe(close("escape", S));
+    expect(close("close", S)).not.toBe(close("close", "cs_test_other0000000000"));
+    expect(close("close")).not.toBe(close("close", S));
+    // The viewport says where, not which: the same close on a turned phone is the same close.
+    expect(close("close", S)).toBe(stepKey("checkout_closed", { checkoutSession: S, props: { how: "close", surface: "price_box", viewport: "tablet" } }));
+    expect(stepKey("checkout_failed", { props: { stage: "create", surface: "billing" } })).not.toBe(stepKey("checkout_failed", { props: { stage: "load", surface: "billing" } }));
+  });
+
+  it("take a Stripe Checkout Session id and nothing else as the session", () => {
+    expect(checkoutSessionOrUndefined(S)).toBe(S);
+    expect(checkoutSessionOrUndefined("cs_live_a1B2c3D4e5F6g7H8i9J0")).toBe("cs_live_a1B2c3D4e5F6g7H8i9J0");
+    expect(checkoutSessionOrUndefined(`${S}_secret_abc`)).toBeUndefined();
+    expect(checkoutSessionOrUndefined("someone@acme.example")).toBeUndefined();
+    expect(checkoutSessionOrUndefined("11111111-2222-4333-8444-555555555555")).toBeUndefined();
+    expect(checkoutSessionOrUndefined(42)).toBeUndefined();
   });
 });

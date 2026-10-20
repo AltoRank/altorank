@@ -19,6 +19,7 @@ import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from "@stripe/st
 import { createEmbeddedCheckout } from "@/app/actions/billing";
 import { Icons } from "@/components/ui";
 import type { BillingInterval, SelfServePlan } from "@/lib/stripe";
+import type { CheckoutFailure } from "@/lib/onboarding/step-props";
 
 const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 
@@ -47,27 +48,37 @@ export function EmbeddedCheckoutForm({
   interval,
   returnTo,
   onError,
+  onSession,
 }: {
   plan: SelfServePlan;
   interval: BillingInterval;
   returnTo?: string;
-  onError: (message: string) => void;
+  /** The sentence for the person, and where it stopped (onboarding.step `checkout_failed`). */
+  onError: (message: string, stage: CheckoutFailure) => void;
+  /** The Stripe Checkout Session the form was opened on, once there is one. */
+  onSession?: (sessionId: string) => void;
 }) {
   const host = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
-  // The latest handler, without making it a reason to rebuild the form.
+  // The latest handlers, without making them a reason to rebuild the form.
   const report = useRef(onError);
+  const opened = useRef(onSession);
   useEffect(() => {
     report.current = onError;
-  }, [onError]);
+    opened.current = onSession;
+  }, [onError, onSession]);
 
   useEffect(() => {
     let cancelled = false;
     let mine: StripeEmbeddedCheckout | null = null;
+    // How far it got, for the failure's stage: Stripe.js, then our session,
+    // then Stripe's form from it.
+    let stage: CheckoutFailure = "load";
     (async () => {
       try {
         const s = await stripe();
         if (!s) throw new Error("Stripe could not be loaded.");
+        stage = "mount";
         if (current) {
           current.destroy();
           current = null;
@@ -75,6 +86,7 @@ export function EmbeddedCheckoutForm({
         if (cancelled) return;
         mine = await s.createEmbeddedCheckoutPage({
           fetchClientSecret: async () => {
+            stage = "create";
             const result = await createEmbeddedCheckout(plan, interval, returnTo);
             if (!result.ok) throw new Error(result.error);
             // A plan switch, or a session already paid: nothing to fill in here.
@@ -82,6 +94,8 @@ export function EmbeddedCheckoutForm({
               window.location.href = result.url;
               throw new Error("Redirecting");
             }
+            stage = "mount";
+            opened.current?.(result.sessionId);
             return result.clientSecret;
           },
         });
@@ -100,7 +114,7 @@ export function EmbeddedCheckoutForm({
       } catch (e) {
         if (cancelled) return;
         const message = e instanceof Error && e.message !== "Redirecting" ? e.message : null;
-        if (message) report.current(message.startsWith("Stripe") || message.endsWith(".") ? message : "Checkout could not be opened. Nothing was charged; try again.");
+        if (message) report.current(message.startsWith("Stripe") || message.endsWith(".") ? message : "Checkout could not be opened. Nothing was charged; try again.", stage);
       }
     })();
     return () => {
@@ -125,10 +139,14 @@ export function EmbeddedCheckoutForm({
   );
 }
 
+/** How the sheet was left: its Close button, Escape, or a tap on the page behind. */
+export type SheetClose = "close" | "escape" | "backdrop";
+
 /**
  * The checkout in a sheet over the page: from the bottom on a phone, from the
  * right on a wider screen, so the article stays visible behind it. Escape,
- * the backdrop and the close button all leave without paying anything.
+ * the backdrop and the close button all leave without paying anything, and
+ * each says which it was (onboarding.step `checkout_closed`).
  */
 export function CheckoutSheet({
   open,
@@ -138,14 +156,14 @@ export function CheckoutSheet({
   children,
 }: {
   open: boolean;
-  onClose: () => void;
+  onClose: (how: SheetClose) => void;
   title: string;
   lede?: string;
   children: React.ReactNode;
 }) {
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose("escape");
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -158,7 +176,7 @@ export function CheckoutSheet({
   if (!open || typeof document === "undefined") return null;
   return createPortal(
     <div className="theme-light fixed inset-0 z-[300]">
-      <button type="button" aria-label="Close checkout" className="absolute inset-0 h-full w-full cursor-default bg-black/30" onClick={onClose} />
+      <button type="button" aria-label="Close checkout" className="absolute inset-0 h-full w-full cursor-default bg-black/30" onClick={() => onClose("backdrop")} />
       <section
         role="dialog"
         aria-modal="true"
@@ -173,7 +191,7 @@ export function CheckoutSheet({
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => onClose("close")}
             aria-label="Close"
             className="-mr-2 -mt-1 grid h-11 w-11 shrink-0 place-items-center rounded-[7px] text-ink-2 hover:bg-panel-2 hover:text-ink"
           >

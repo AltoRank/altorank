@@ -29,7 +29,6 @@ import { StartTrialButton } from "@/components/billing/start-trial-button";
 import type { FirstArticleCard } from "@/lib/onboarding/first-article";
 import type { OnboardingPlanned } from "@/lib/onboarding/events";
 import { asksWithOffer, type SetupEnding } from "@/lib/onboarding/setup-retry";
-import { trackStep } from "@/lib/onboarding/track-step";
 import { TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
 import { stickyOfferLine, type TrialOfferFacts } from "@/lib/billing/trial-offer";
 import { EDITOR_FITS_QUERY, firstArticleReturn } from "@/lib/billing/checkout-return";
@@ -270,7 +269,7 @@ export function GateTop({
               {!fullArticle && <span className="hidden sm:inline">{stickyLine(written, fullArticle)} </span>}
               <span>{stickyOfferLine(interval, plan)}</span>
             </p>
-            <StartTrialButton returnTo={afterCheckout} plan={plan} interval={interval} onStart={() => trackStep("trial_clicked")} className="shrink-0" />
+            <StartTrialButton returnTo={afterCheckout} plan={plan} interval={interval} surface="sticky_bar" className="shrink-0" />
           </div>
         </div>
       )}

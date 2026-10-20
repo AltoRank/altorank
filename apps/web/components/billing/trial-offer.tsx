@@ -6,6 +6,7 @@ import { StartTrialButton } from "./start-trial-button";
 import { PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
 import { CANCEL_LINE, chargeLine, otherIntervalLine, otherPlanLine, reassuranceLine, trialIncludes, type TrialOfferFacts } from "@/lib/billing/trial-offer";
 import { observeSeenOnce } from "@/lib/onboarding/seen-once";
+import type { TrialSurface } from "@/lib/onboarding/step-props";
 
 /** The sentence for a member who cannot buy: who can, and what it opens. */
 export const MEMBER_CANNOT_BUY =
@@ -18,7 +19,7 @@ export const MEMBER_CANNOT_BUY =
  * intervals and the button. The gate has its own, fuller box below
  * (`TrialPriceBox`).
  */
-export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, compact = false, initialPlan = "starter", onStart }: { canBuy?: boolean; returnTo?: string; secondary?: { href: string; label: string }; compact?: boolean; initialPlan?: SelfServePlan; onStart?: () => void }) {
+export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, compact = false, initialPlan = "starter", surface }: { canBuy?: boolean; returnTo?: string; secondary?: { href: string; label: string }; compact?: boolean; initialPlan?: SelfServePlan; surface?: TrialSurface }) {
   const [plan, setPlan] = useState<SelfServePlan>(initialPlan);
   const [interval, setInterval] = useState<BillingInterval>("month");
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +44,7 @@ export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, 
     </div>
     {/* The first charge is not a renewal: said as the charge it is. */}
     <p className="mb-3 text-sm">{TRIAL_DAYS} days free with a card, then {PLAN_LABELS[plan]} at {interval === "month" ? `${monthly} per month` : `${yearly} per year`}. {CANCEL_LINE}</p>
-    <StartTrialButton plan={plan} interval={interval} returnTo={returnTo} onError={setError} onStart={onStart} />
+    <StartTrialButton plan={plan} interval={interval} returnTo={returnTo} onError={setError} surface={surface} />
     {secondary && <Link className="ml-4 text-accent underline" href={secondary.href}>{secondary.label}</Link>}
     {error && <p role="alert" className="mt-2 text-sm text-err-ink">{error} <Link className="underline" href="/checkout/cancelled">Manage open checkout</Link></p>}
   </div>;
@@ -67,7 +68,6 @@ export function TrialPriceBox({
   facts,
   fullArticle,
   returnTo = "/dashboard",
-  onStart,
   onSeen,
   buttonRef,
 }: {
@@ -80,7 +80,6 @@ export function TrialPriceBox({
   facts: TrialOfferFacts;
   fullArticle: boolean;
   returnTo?: string;
-  onStart?: () => void;
   /** Told once, the first time the box is actually on screen (lib/onboarding/seen-once.ts). */
   onSeen?: () => void;
   /** Wraps the button, so the gate can tell when it is on screen. */
@@ -123,7 +122,7 @@ export function TrialPriceBox({
           interval={interval}
           returnTo={returnTo}
           onError={setError}
-          onStart={onStart}
+          surface="price_box"
           label={`Start ${TRIAL_DAYS}-day trial`}
           className="w-full justify-center py-2.5 text-[14px]"
           // In the box itself the form opens in place of the button: on the

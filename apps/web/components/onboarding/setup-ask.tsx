@@ -144,7 +144,7 @@ export function SetupAsk({
                 {offer ? chargeLine("month", offer.facts) : stickyOfferLine("month")}
               </p>
               <div className="mt-3">
-                <StartTrialButton returnTo={returnTo} variant="default" onStart={() => trackStep("trial_clicked")} />
+                <StartTrialButton returnTo={returnTo} variant="default" surface="quiet_box" />
               </div>
             </>
           ) : (
@@ -170,13 +170,12 @@ export function SetupAsk({
           facts={offer.facts}
           fullArticle={offer.fullArticle}
           returnTo={returnTo}
-          onStart={() => trackStep("trial_clicked")}
           // Rendered is not seen: below lg the box sits under the article.
           onSeen={() => trackStep("offer_seen", { ...(workspaceId ? { workspaceId } : {}), props: { viewport: currentViewport() } })}
           buttonRef={offer.buttonRef}
         />
       ) : (
-        <TrialOffer canBuy={canBuy} returnTo={returnTo} onStart={() => trackStep("trial_clicked")} />
+        <TrialOffer canBuy={canBuy} returnTo={returnTo} surface="price_box" />
       )}
       {below}
     </>
