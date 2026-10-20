@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { sendSignInCode } from "@/lib/email/auth-emails";
+import { startSigninCodeSignup } from "@/lib/auth/signin-code-signup";
 import { DEFAULT_AFTER_SIGN_IN, safeNextPath } from "@/lib/auth/next-path";
 import { normalizeCode } from "@/lib/auth/pending-signup";
 import { PENDING_SIGNIN_COOKIE, PENDING_SIGNIN_MAX_AGE } from "@/lib/auth/pending-signin";
@@ -33,7 +34,11 @@ async function request(formData: FormData) {
   const next = safeNextPath(formData.get("next"));
   if (!email.includes("@")) redirect(withNext("/signin/code", next, { error: "Enter your email address." }));
   try {
-    await sendSignInCode(email, next ?? DEFAULT_AFTER_SIGN_IN);
+    const { createdUserId } = await sendSignInCode(email, next ?? DEFAULT_AFTER_SIGN_IN);
+    // An address with no user got one, made by Supabase to receive this code:
+    // a signup by the sign-in door, counted and given its account here
+    // (lib/auth/signin-code-signup.ts). The page says the same either way.
+    if (createdUserId) await startSigninCodeSignup(createdUserId, email);
   } catch (e) {
     console.error(`[signin] code for an address failed: ${e instanceof Error ? e.message : String(e)}`);
     redirect(withNext("/signin/code", next, { error: "The code could not be sent. Try again in a minute." }));

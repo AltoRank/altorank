@@ -10,6 +10,8 @@
 
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
+import { accountNameFromDomain } from "@/lib/domain/account-name";
+import { createServiceClient } from "@/lib/supabase/server";
 
 /** Where an account with no site is sent to name one (app/(setup)/onboarding/site). */
 export const FIRST_SITE_PATH = "/onboarding/site";
@@ -43,4 +45,33 @@ export function firstSiteRow(domain: string) {
     auto_generate: true,
     auto_generate_weekly_limit: FREE_TIER_PACE,
   };
+}
+
+/**
+ * Name the account after the site just named, as signup names it from the
+ * domain - but only while it still carries `unchosenName`, the name an
+ * account made for a person gets (`fallbackAccountName`: the email's local
+ * part). The sign-in code's signups and the membership fallback's accounts
+ * otherwise kept "jane.doe" in the sidebar and in every email that names the
+ * account. A name somebody set in Settings is not that name, so it stays: the
+ * update is compare-and-set on the old name, in one statement.
+ *
+ * With the service role: the person is the owner, but the account guard
+ * (migration 085) is a check on a signed-in update, and this is the product
+ * naming its own row. Never throws; a name left as it was is not worth
+ * failing the site over.
+ */
+export async function nameAccountAfterSite(accountId: string, unchosenName: string, domain: string): Promise<void> {
+  const name = accountNameFromDomain(domain) || domain;
+  if (!name || name === unchosenName) return;
+  try {
+    const { error } = await createServiceClient()
+      .from("accounts")
+      .update({ name })
+      .eq("id", accountId)
+      .eq("name", unchosenName);
+    if (error) throw new Error(error.message);
+  } catch (e) {
+    console.warn(`[first-site] could not name account ${accountId} after its site: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
