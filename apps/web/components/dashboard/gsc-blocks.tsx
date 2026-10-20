@@ -44,12 +44,18 @@ type GateProps = {
    */
   restated?: boolean;
   /**
-   * What this block in particular would have shown, e.g. "clicks per page".
-   * The restated line names it, so three gated cards in a column read as
-   * three facts about three blocks rather than the same sentence three
-   * times. Only the first of them carries the link: one page, one CTA.
+   * What this block shows, as a plural noun phrase: "clicks and
+   * impressions", "clicks per page". The restated line names it, so three
+   * gated cards in a column read as three facts about three blocks rather
+   * than the same sentence three times. Only the first of them carries the
+   * link: one page, one CTA.
+   *
+   * A noun phrase, not a clause. This was a clause ("there are no clicks or
+   * impressions to plot") that read fine in one of the three sentences built
+   * from it and printed "Connected, and Google has not returned there are no
+   * clicks or impressions to plot yet." in the other two (U31).
    */
-  needs?: string;
+  shows?: string;
   /** Give this restated block the link. Exactly one per page should. */
   restatedCta?: boolean;
 };
@@ -75,12 +81,29 @@ function BriefGate({ text, href, cta }: { text: string; href?: string; cta?: str
   );
 }
 
-export function GscGate({ connected, hasData, needsReconnect = false, children, dense = false, restated = false, needs, restatedCta = false }: GateProps) {
+export type GateState = "refused" | "not-connected" | "no-rows";
+
+const capitalise = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/**
+ * The one-line reason a restated block is empty. Pure and exported so the
+ * three sentences are tested as sentences: each takes `shows` in a position a
+ * plural noun phrase fits, and the no-rows line says when the next sync runs
+ * (nextSyncClock already ends in "UTC").
+ */
+export function gateSentence(state: GateState, shows?: string, at?: string | null): string {
+  const what = shows ?? "these numbers";
+  if (state === "refused") return `Google refused the saved sign-in, so ${what} stopped at the last sync.`;
+  if (state === "not-connected") return `${capitalise(what)} come from Search Console, which is not connected.`;
+  return `Google is connected. ${shows ? capitalise(shows) : "The first numbers"} arrive after the next sync${at ? `, at ${at}` : ""}.`;
+}
+
+export function GscGate({ connected, hasData, needsReconnect = false, children, dense = false, restated = false, shows, restatedCta = false }: GateProps) {
   if (connected && needsReconnect) {
     if (restated) {
       return (
         <BriefGate
-          text={`Google refused the stored token, so ${needs ?? "nothing here"} stopped at the last successful sync.`}
+          text={gateSentence("refused", shows)}
           href={restatedCta ? "/settings/search-console" : undefined}
           cta={restatedCta ? "Reconnect Google" : undefined}
         />
@@ -103,7 +126,7 @@ export function GscGate({ connected, hasData, needsReconnect = false, children, 
     if (restated) {
       return (
         <BriefGate
-          text={`Search Console is not connected, so ${needs ?? "there is nothing measured to show here"}.`}
+          text={gateSentence("not-connected", shows)}
           href={restatedCta ? "/connect" : undefined}
           cta={restatedCta ? "Connect Search Console" : undefined}
         />
@@ -124,20 +147,16 @@ export function GscGate({ connected, hasData, needsReconnect = false, children, 
   }
   if (!hasData) {
     const at = nextSyncClock();
-    if (restated) {
-      return (
-        <div className="h-full min-h-[72px] grid place-items-center px-[18px] py-6 text-center text-[13px] text-ink-3">
-          Connected, and Google has not returned {needs ?? "rows"} yet.
-        </div>
-      );
-    }
+    if (restated) return <BriefGate text={gateSentence("no-rows", shows, at)} />;
     return (
       <div className={`${dense ? "py-6" : "min-h-[220px]"} grid place-items-center px-8 text-center`}>
         <div className="max-w-[46ch] text-[13px] leading-relaxed text-ink-3">
-          <div className="mb-1 text-[13.5px] font-medium text-ink-2">Connected. Google has not returned rows yet</div>
-          {at ? `The first sync runs at ${at}.` : "No sync is scheduled; check vercel.json."} Search Console reports with
-          about a two-day lag, and if this stays empty, Integrations says whether the connected Google account can see a
-          property for this domain.
+          {/* The headline used to read "Connected. Google has not returned
+              rows yet" over "The first sync runs at …", which is untrue once
+              a sync has run and come back empty. */}
+          <div className="mb-1 text-[13.5px] font-medium text-ink-2">{gateSentence("no-rows", undefined, at)}</div>
+          Search Console reports with about a two-day lag, and if this stays empty, Integrations says whether the connected
+          Google account can see a property for this domain.
         </div>
       </div>
     );
@@ -209,7 +228,7 @@ export function SearchPerformanceBlock({ perf, connected, needsReconnect, restat
       hasData={perf.hasData}
       needsReconnect={needsReconnect}
       restated={restated}
-      needs="there are no clicks or impressions to plot"
+      shows="clicks and impressions"
       restatedCta
     >
       {!perf.hasClicks && perf.impressions.current === 0 && (perf.impressions.previous ?? 0) === 0 ? (
@@ -275,7 +294,8 @@ export function DataFreshness({ health, now = new Date() }: { health: SyncHealth
   const next = nextSyncClock(now);
   return (
     <div className="font-mono text-[11px] text-ink-3" title={health.latestMetricDate ? `Newest day reported by Google: ${health.latestMetricDate}` : undefined}>
-      Search Console synced {relativeTime(health.lastSyncAt, now)}
+      {/* "synced never" was what a fresh connection printed. */}
+      {health.lastSyncAt ? `Search Console synced ${relativeTime(health.lastSyncAt, now)}` : "Search Console has not synced yet"}
       {next ? `; next sync ${next}` : ""}
       {health.siteUrl ? ` · ${health.siteUrl}` : ""}
     </div>
@@ -304,47 +324,68 @@ export function BestArticlesBlock({ pages, connected, hasData, days, needsReconn
       needsReconnect={needsReconnect}
       dense
       restated={restated}
-      needs="Google's per-page click counts are unavailable"
+      shows="clicks per page"
     >
       {pages.length === 0 ? (
         <div className="px-3.5 py-6 text-center text-[13px] text-ink-3">
           Google reported no page with a click or an impression in the last {days} days.
         </div>
       ) : (
-        <table className="w-full border-collapse text-[13px]">
-          <thead>
-            <tr>
-              <th className={`${th} text-left`}>Page</th>
-              <th className={`${th} text-right`}>Clicks</th>
-              <th className={`${th} text-right`}>vs prev</th>
-              <th className={`${th} text-right`}>Impr.</th>
-              <th className={`${th} text-right`}>Pos.</th>
-            </tr>
-          </thead>
-          <tbody>
+        <>
+          {/* Below md each page is a stacked row, the path on its own line
+              and the numbers under it: five columns in a phone-width card
+              truncated every path to a few letters. */}
+          <ul className="m-0 list-none divide-y divide-line-soft p-0 md:hidden">
             {pages.map((p) => (
-              <tr key={p.url} className="hover:[&>td]:bg-panel">
-                <td className={td} style={{ maxWidth: 0 }}>
-                  {p.articleId ? (
-                    <Link href={`/content/${p.articleId}`} className="block truncate font-mono text-[12px] hover:text-accent-ink hover:underline decoration-line underline-offset-[3px]" title={p.url}>
-                      {shortUrl(p.url)}
-                    </Link>
-                  ) : (
-                    <a href={p.url} target="_blank" rel="noopener noreferrer" className="block truncate font-mono text-[12px] text-ink-2" title={`${p.url} (not written here)`}>
-                      {shortUrl(p.url)}
-                    </a>
-                  )}
-                </td>
-                <td className={num}>{p.clicks.toLocaleString()}</td>
-                <td className={num}><Delta value={p.clicksDelta} /></td>
-                <td className={num}>{p.impressions.toLocaleString()}</td>
-                <td className={num}>{p.position === null ? "—" : p.position.toFixed(1)}</td>
-              </tr>
+              <li key={p.url} className="px-3.5 py-2.5">
+                <PageLink p={p} className="block font-mono text-[12px] [overflow-wrap:anywhere]" />
+                <div className="mt-1 font-mono text-[11.5px] text-ink-3 tabular-nums">
+                  {p.clicks.toLocaleString()} clicks (<Delta value={p.clicksDelta} />) · {p.impressions.toLocaleString()} impr. · pos.{" "}
+                  {p.position === null ? "—" : p.position.toFixed(1)}
+                </div>
+              </li>
             ))}
-          </tbody>
-        </table>
+          </ul>
+          <table className="hidden w-full border-collapse text-[13px] md:table">
+            <thead>
+              <tr>
+                <th className={`${th} text-left`}>Page</th>
+                <th className={`${th} text-right`}>Clicks</th>
+                <th className={`${th} text-right`}>vs prev</th>
+                <th className={`${th} text-right`}>Impr.</th>
+                <th className={`${th} text-right`}>Pos.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pages.map((p) => (
+                <tr key={p.url} className="hover:[&>td]:bg-panel">
+                  <td className={td} style={{ maxWidth: 0 }}>
+                    <PageLink p={p} className="block truncate font-mono text-[12px]" />
+                  </td>
+                  <td className={num}>{p.clicks.toLocaleString()}</td>
+                  <td className={num}><Delta value={p.clicksDelta} /></td>
+                  <td className={num}>{p.impressions.toLocaleString()}</td>
+                  <td className={num}>{p.position === null ? "—" : p.position.toFixed(1)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
     </GscGate>
+  );
+}
+
+/** Our article opens in the editor; any other page opens on the site. */
+function PageLink({ p, className }: { p: PageStat; className: string }) {
+  return p.articleId ? (
+    <Link href={`/content/${p.articleId}`} className={`${className} hover:text-accent-ink hover:underline decoration-line underline-offset-[3px]`} title={p.url}>
+      {shortUrl(p.url)}
+    </Link>
+  ) : (
+    <a href={p.url} target="_blank" rel="noopener noreferrer" className={`${className} text-ink-2`} title={`${p.url} (not written here)`}>
+      {shortUrl(p.url)}
+    </a>
   );
 }
 
@@ -357,11 +398,14 @@ export function OpportunitiesList({ opportunities }: { opportunities: QueryStat[
   return (
     <div className="mt-4 border-t border-line-soft pt-3">
       <div className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-ink-3 mb-2">One push from page one · positions 4–15</div>
-      <ul className="grid grid-cols-2 gap-x-6 gap-y-1 text-[12.5px]">
+      {/* One column below md, the search on its own line and the numbers
+          under it: two columns at phone width printed the rows over each
+          other. */}
+      <ul className="m-0 grid list-none grid-cols-1 gap-x-6 gap-y-2 p-0 text-[12.5px] md:grid-cols-2 md:gap-y-1">
         {opportunities.map((q) => (
-          <li key={q.query} className="flex items-baseline justify-between gap-3">
-            <span className="truncate text-ink-2">{q.query}</span>
-            <span className="shrink-0 font-mono text-[11.5px] text-ink-3 tabular-nums">
+          <li key={q.query} className="flex min-w-0 flex-col gap-0.5 md:flex-row md:items-baseline md:justify-between md:gap-3">
+            <span className="text-ink-2 [overflow-wrap:anywhere] md:truncate">{q.query}</span>
+            <span className="font-mono text-[11.5px] text-ink-3 tabular-nums md:shrink-0">
               #{q.position?.toFixed(1)} · {q.impressions.toLocaleString()} impr · {q.clicks} clicks
             </span>
           </li>
@@ -383,7 +427,7 @@ export function CannibalizationBlock({ items, connected, hasData, days, needsRec
       needsReconnect={needsReconnect}
       dense
       restated={restated}
-      needs="the query-level positions this reads from are unavailable"
+      shows="positions per search"
     >
       {items.length === 0 ? (
         <div className="px-3.5 py-6 text-center text-[13px] text-ink-3">
@@ -394,16 +438,16 @@ export function CannibalizationBlock({ items, connected, hasData, days, needsRec
         <div className="divide-y divide-line-soft">
           {items.map((c) => (
             <div key={c.query} className="px-[18px] py-3.5">
-              <div className="flex items-baseline justify-between gap-3 mb-2">
-                <div className="font-mono text-[13px] font-medium text-ink truncate">{c.query}</div>
-                <div className="shrink-0 font-mono text-[11.5px] text-ink-3 tabular-nums">
+              <div className="mb-2 flex flex-col gap-0.5 md:flex-row md:items-baseline md:justify-between md:gap-3">
+                <div className="font-mono text-[13px] font-medium text-ink [overflow-wrap:anywhere] md:truncate">{c.query}</div>
+                <div className="font-mono text-[11.5px] text-ink-3 tabular-nums md:shrink-0">
                   {plural(c.pages.length, "page")} · {c.impressions.toLocaleString()} impr · {c.clicks} clicks
                 </div>
               </div>
               <ul className="grid gap-1 mb-2">
                 {c.pages.map((p) => (
-                  <li key={p.url} className="flex items-baseline justify-between gap-3 text-[12.5px]">
-                    <span className="truncate">
+                  <li key={p.url} className="flex flex-col gap-0.5 text-[12.5px] md:flex-row md:items-baseline md:justify-between md:gap-3">
+                    <span className="[overflow-wrap:anywhere] md:truncate">
                       {p.articleId ? (
                         <Link href={`/content/${p.articleId}`} className="font-mono text-[12px] hover:text-accent-ink hover:underline decoration-line underline-offset-[3px]" title={p.url}>
                           {shortUrl(p.url)}
@@ -413,7 +457,7 @@ export function CannibalizationBlock({ items, connected, hasData, days, needsRec
                       )}
                       {p.url === c.winner.url && <span className="ml-2 text-[10.5px] uppercase tracking-[0.06em] text-ok-ink">winner</span>}
                     </span>
-                    <span className="shrink-0 font-mono text-[11.5px] text-ink-3 tabular-nums">
+                    <span className="font-mono text-[11.5px] text-ink-3 tabular-nums md:shrink-0">
                       {p.position === null ? "—" : `#${p.position.toFixed(1)}`} · {p.impressions.toLocaleString()} impr · {p.clicks} clicks
                     </span>
                   </li>
