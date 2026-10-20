@@ -52,7 +52,7 @@ describe("StartTrialButton's onboarding steps", () => {
   it("says which button was pressed, on which plan and interval", () => {
     renderToStaticMarkup(<StartTrialButton surface="sticky_bar" plan="growth" interval="year" />);
     parts.button!.onClick({ currentTarget: null });
-    expect(track).toHaveBeenCalledWith("trial_clicked", { props: { surface: "sticky_bar", plan: "growth", interval: "year" } });
+    expect(track).toHaveBeenCalledWith("trial_clicked", { props: { surface: "sticky_bar", plan: "growth", interval: "year", checkout: "embedded" } });
   });
 
   it("says how the sheet was left, with the session it was on", () => {
@@ -73,15 +73,26 @@ describe("StartTrialButton's onboarding steps", () => {
   it("says where a form that never opened stopped", () => {
     renderToStaticMarkup(<StartTrialButton surface="articles" />);
     parts.sheet!.children.props.onError("Stripe could not be loaded.", "load");
-    expect(track).toHaveBeenCalledWith("checkout_failed", { checkoutSession: undefined, props: { stage: "load", surface: "articles", viewport: undefined } });
+    expect(track).toHaveBeenCalledWith("checkout_failed", { checkoutSession: undefined, props: { stage: "load", surface: "articles", viewport: undefined, checkout: "embedded" } });
   });
 
   it("says a hosted checkout that could not be created failed at create", async () => {
     parts.embedded = false;
     renderToStaticMarkup(<StartTrialButton surface="price_box" />);
     parts.button!.onClick({ currentTarget: null });
-    await vi.waitFor(() => expect(track).toHaveBeenCalledWith("checkout_failed", { checkoutSession: undefined, props: { stage: "create", surface: "price_box", viewport: undefined } }));
-    expect(track).toHaveBeenCalledWith("trial_clicked", expect.anything());
+    await vi.waitFor(() => expect(track).toHaveBeenCalledWith("checkout_failed", { checkoutSession: undefined, props: { stage: "create", surface: "price_box", viewport: undefined, checkout: "hosted" } }));
+    expect(track).toHaveBeenCalledWith("trial_clicked", { props: { surface: "price_box", plan: "starter", interval: "month", checkout: "hosted" } });
+  });
+
+  it("says the press opened Stripe's form on the page when there is a key, and Stripe's own page when there is not", () => {
+    renderToStaticMarkup(<StartTrialButton surface="quiet_box" />);
+    parts.button!.onClick({ currentTarget: null });
+    expect(track).toHaveBeenLastCalledWith("trial_clicked", { props: { surface: "quiet_box", plan: "starter", interval: "month", checkout: "embedded" } });
+
+    parts.embedded = false;
+    renderToStaticMarkup(<StartTrialButton surface="quiet_box" />);
+    parts.button!.onClick({ currentTarget: null });
+    expect(track).toHaveBeenCalledWith("trial_clicked", { props: { surface: "quiet_box", plan: "starter", interval: "month", checkout: "hosted" } });
   });
 
   it("records nothing for a button that does not say which it is", () => {

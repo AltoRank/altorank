@@ -62,6 +62,14 @@ export type CheckoutClose = (typeof CHECKOUT_CLOSES)[number];
  */
 export const CHECKOUT_FAILURES = ["load", "create", "mount"] as const;
 export type CheckoutFailure = (typeof CHECKOUT_FAILURES)[number];
+/**
+ * Which checkout a trial button opens: Stripe's own page (hosted), or
+ * Stripe's form on our page (embedded, only with a publishable key:
+ * components/billing/embedded-checkout.tsx). Billing's plan cards always
+ * open the hosted page.
+ */
+export const CHECKOUT_UIS = ["hosted", "embedded"] as const;
+export type CheckoutUi = (typeof CHECKOUT_UIS)[number];
 
 /** The props each step may carry, and the list each value must be on. */
 const ALLOWED: Partial<Record<OnboardingStepName, Record<string, readonly string[]>>> = {
@@ -73,9 +81,9 @@ const ALLOWED: Partial<Record<OnboardingStepName, Record<string, readonly string
   run_started: { trigger: RUN_TRIGGERS },
   trial_started: { plan: TRIAL_PLANS },
   next_up_clicked: { target: NEXT_UP_TARGETS },
-  trial_clicked: { surface: TRIAL_SURFACES, plan: TRIAL_PLANS, interval: TRIAL_INTERVALS },
+  trial_clicked: { surface: TRIAL_SURFACES, plan: TRIAL_PLANS, interval: TRIAL_INTERVALS, checkout: CHECKOUT_UIS },
   checkout_closed: { how: CHECKOUT_CLOSES, surface: TRIAL_SURFACES, viewport: VIEWPORTS },
-  checkout_failed: { stage: CHECKOUT_FAILURES, surface: TRIAL_SURFACES, viewport: VIEWPORTS },
+  checkout_failed: { stage: CHECKOUT_FAILURES, surface: TRIAL_SURFACES, viewport: VIEWPORTS, checkout: CHECKOUT_UIS },
 };
 
 export type StepProps = Partial<{
@@ -92,6 +100,7 @@ export type StepProps = Partial<{
   target: NextUpTarget;
   how: CheckoutClose;
   stage: CheckoutFailure;
+  checkout: CheckoutUi;
 }>;
 
 /**
@@ -143,21 +152,22 @@ export function checkoutSessionOrUndefined(value: unknown): string | undefined {
  *                                         approved_at, the event stays)
  *   run_started         run              (every run, each with its trigger)
  *   next_up_clicked     article, target  (the draft Next up named)
- *   trial_clicked       button, plan, interval (without a button, once per
- *                                         site, as before)
+ *   trial_clicked       button, plan, interval, checkout (without a
+ *                                         button, once per site, as before)
  *   checkout_closed     session, button, how   (a form closed before Stripe
- *   checkout_failed     session, button, stage  gave it a session has none)
+ *   checkout_failed     session, button, stage, checkout  gave it a session
+ *                                         has none)
  * Shared by the browser's once-per-page-load and the server's once-ever.
  */
 export function stepKey(step: OnboardingStepName, input: { articleId?: string | null; runId?: string | null; checkoutSession?: string | null; props?: StepProps }): string {
   const p = input.props ?? {};
   switch (step) {
     case "trial_clicked":
-      return p.surface ? [p.surface, p.plan ?? "", p.interval ?? ""].join(":") : "";
+      return p.surface ? [p.surface, p.plan ?? "", p.interval ?? "", p.checkout ?? ""].join(":") : "";
     case "checkout_closed":
       return [input.checkoutSession ?? "", p.surface ?? "", p.how ?? ""].join(":");
     case "checkout_failed":
-      return [input.checkoutSession ?? "", p.surface ?? "", p.stage ?? ""].join(":");
+      return [input.checkoutSession ?? "", p.surface ?? "", p.stage ?? "", p.checkout ?? ""].join(":");
     case "setup_ending_shown":
       return p.ending ?? "";
     case "article_opened":

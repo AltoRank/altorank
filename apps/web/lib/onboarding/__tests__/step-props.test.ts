@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SETUP_ENDINGS, checkoutSessionOrUndefined, openedFrom, stepKey, stepProps, uuidOrUndefined, viewportOf } from "../step-props";
+import { CHECKOUT_UIS, SETUP_ENDINGS, checkoutSessionOrUndefined, openedFrom, stepKey, stepProps, uuidOrUndefined, viewportOf } from "../step-props";
 
 // What an onboarding.step event may carry beyond its name: a word from a
 // closed list, per step. These are the guarantee that no event payload holds
@@ -131,5 +131,37 @@ describe("the trial steps", () => {
     expect(checkoutSessionOrUndefined("someone@acme.example")).toBeUndefined();
     expect(checkoutSessionOrUndefined("11111111-2222-4333-8444-555555555555")).toBeUndefined();
     expect(checkoutSessionOrUndefined(42)).toBeUndefined();
+  });
+});
+
+// Which checkout a trial click opened: Stripe's own page, or Stripe's form
+// on our page. One click is the same press whichever it opens, so without
+// this a hosted click and an embedded click read the same.
+describe("the checkout a trial step was about", () => {
+  const click = (checkout?: string) => ({ props: stepProps("trial_clicked", { surface: "price_box", plan: "starter", interval: "month", checkout }) });
+
+  it("is kept from its closed list on the click and the failure, and dropped anywhere else", () => {
+    expect(CHECKOUT_UIS).toEqual(["hosted", "embedded"]);
+    expect(stepProps("trial_clicked", { surface: "price_box", plan: "starter", interval: "month", checkout: "hosted" })).toEqual({ surface: "price_box", plan: "starter", interval: "month", checkout: "hosted" });
+    expect(stepProps("checkout_failed", { stage: "create", surface: "billing", checkout: "hosted" })).toEqual({ stage: "create", surface: "billing", checkout: "hosted" });
+    expect(stepProps("checkout_failed", { stage: "load", surface: "price_box", checkout: "embedded" })).toEqual({ stage: "load", surface: "price_box", checkout: "embedded" });
+    // Off the list: dropped, the rest of the step kept.
+    expect(stepProps("trial_clicked", { surface: "price_box", plan: "starter", interval: "month", checkout: "iframe" })).toEqual({ surface: "price_box", plan: "starter", interval: "month" });
+    expect(stepProps("trial_clicked", { surface: "price_box", checkout: 1 })).toEqual({ surface: "price_box" });
+    // A close is only ever the embedded form's, so it carries no checkout.
+    expect(stepProps("checkout_closed", { how: "close", surface: "price_box", checkout: "embedded" })).toEqual({ how: "close", surface: "price_box" });
+    expect(stepProps("gate_shown", { checkout: "hosted" })).toEqual({});
+  });
+
+  it("keeps an embedded click and a hosted click from one button as two", () => {
+    expect(stepKey("trial_clicked", click("embedded"))).not.toBe(stepKey("trial_clicked", click("hosted")));
+    expect(stepKey("trial_clicked", click("hosted"))).toBe(stepKey("trial_clicked", click("hosted")));
+    // Still once per site without a button, whatever it opened.
+    expect(stepKey("trial_clicked", { props: { checkout: "hosted" } })).toBe("");
+  });
+
+  it("keeps a hosted failure apart from an embedded one on the same button before either has a session", () => {
+    const failed = (checkout: "hosted" | "embedded") => stepKey("checkout_failed", { props: { stage: "create", surface: "price_box", checkout } });
+    expect(failed("hosted")).not.toBe(failed("embedded"));
   });
 });

@@ -63,6 +63,14 @@ describe("trackStep", () => {
     expect(bodies()[0]).toMatchObject({ checkoutSession: S });
   });
 
+  it("says a click once per checkout it opened: an embedded click and then a hosted one are both sent", () => {
+    const click = (checkout: "hosted" | "embedded") => trackStep("trial_clicked", { props: { surface: "price_box", plan: "starter", interval: "month", checkout } });
+    click("embedded");
+    click("embedded");
+    click("hosted");
+    expect(bodies().map((b) => b.props.checkout)).toEqual(["embedded", "hosted"]);
+  });
+
   it("never throws, whatever the network does", () => {
     fetchMock.mockImplementationOnce(() => {
       throw new Error("offline");

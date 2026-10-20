@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ownedCheckoutSession, stepContext, stepEventId } from "../step-events";
+import { ownedCheckoutSession, recordOnboardingStep, stepContext, stepEventId } from "../step-events";
 import { ONBOARDING_STEPS, isClientStep, isOnboardingStep } from "../step-names";
 
 describe("onboarding.step events", () => {
@@ -100,5 +100,40 @@ describe("onboarding.step events about a checkout", () => {
     expect(await ownedCheckoutSession(db({ stripe_session_id: S }, { message: "down" }), "acc1", S)).toBeUndefined();
     // Not a session id: nothing is read at all.
     expect(await ownedCheckoutSession({ from: () => { throw new Error("read"); } } as never, "acc1", "x")).toBeUndefined();
+  });
+});
+
+describe("onboarding.step trial clicks on one site", () => {
+  const W = "11111111-2222-4333-8444-555555555555";
+  // system_events as the upsert sees it: a row per id, a second write of an
+  // id is ignored (ignoreDuplicates).
+  const table = () => {
+    const ids = new Set<string>();
+    const db = {
+      from: () => ({
+        upsert: (row: { id: string }) => ({
+          select: async () => {
+            if (ids.has(row.id)) return { data: [], error: null };
+            ids.add(row.id);
+            return { data: [{ id: row.id }], error: null };
+          },
+        }),
+      }),
+    } as never;
+    return { db, ids };
+  };
+  const click = (checkout: "hosted" | "embedded") => ({ workspaceId: W, accountId: null, userId: null, step: "trial_clicked" as const, props: { surface: "price_box" as const, plan: "starter" as const, interval: "month" as const, checkout } });
+
+  it("keep an embedded click and then a hosted click as two rows, and a repeat of either as none", async () => {
+    const { db, ids } = table();
+    expect(await recordOnboardingStep(db, click("embedded"))).toBe(true);
+    expect(await recordOnboardingStep(db, click("hosted"))).toBe(true);
+    expect(await recordOnboardingStep(db, click("hosted"))).toBe(false);
+    expect(await recordOnboardingStep(db, click("embedded"))).toBe(false);
+    expect(ids.size).toBe(2);
+  });
+
+  it("write which checkout it was into the event", () => {
+    expect(stepContext(click("hosted"))).toEqual({ step: "trial_clicked", surface: "price_box", plan: "starter", interval: "month", checkout: "hosted" });
   });
 });

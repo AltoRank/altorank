@@ -102,12 +102,13 @@ export function PlanCards({
 
   function subscribe(plan: SelfServePlan) {
     // A plan card that opens the trial is one more trial button
-    // (onboarding.step); a plain purchase or a switch is not.
-    if (trialEligible) trackStep("trial_clicked", { props: { surface: "billing", plan, interval } });
+    // (onboarding.step); a plain purchase or a switch is not. It always
+    // opens Stripe's own page, whatever the publishable key says.
+    if (trialEligible) trackStep("trial_clicked", { props: { surface: "billing", plan, interval, checkout: "hosted" } });
     start(async () => {
       const result = await createCheckoutSession(plan, interval, returnTo);
       if (!result.ok) {
-        if (trialEligible) trackStep("checkout_failed", { props: { stage: "create", surface: "billing", viewport: currentViewport() } });
+        if (trialEligible) trackStep("checkout_failed", { props: { stage: "create", surface: "billing", viewport: currentViewport(), checkout: "hosted" } });
         toast.error(result.error);
         return;
       }
