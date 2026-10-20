@@ -12,6 +12,17 @@ describe("userOrigin", () => {
     expect(userOrigin({ stage: "created", src: "/pricing/" })).toEqual({ kind: "page", label: "/pricing/", detail: "no referrer or campaign" });
   });
 
+  it("credits the landing page when the visit carried one, and says where signup was clicked when it differs", () => {
+    expect(userOrigin({ stage: "created", src: "/pricing/", lp: "/alternatives/outrank/", ref: "www.google.com" })).toEqual({
+      kind: "referrer",
+      label: "www.google.com",
+      detail: "landed on /alternatives/outrank/ · signed up from /pricing/",
+    });
+    expect(userOrigin({ stage: "created", src: "/tools/", lp: "/tools/" })).toEqual({ kind: "page", label: "/tools/", detail: "no referrer or campaign" });
+    expect(userOrigin({ stage: "created", src: "/pricing/", lp: "/blog/x/" })).toEqual({ kind: "page", label: "/blog/x/", detail: "signed up from /pricing/ · no referrer or campaign" });
+    expect(userOrigin({ stage: "created", source: "signin_code", lp: "/tools/", ref: "www.perplexity.ai" })).toMatchObject({ kind: "referrer", label: "www.perplexity.ai", detail: "landed on /tools/" });
+  });
+
   it("names the door when it was not the signup form", () => {
     expect(userOrigin({ stage: "created", source: "signin_code" })).toMatchObject({ kind: "door", label: "Sign-in code" });
     expect(userOrigin({ stage: "created", source: "shopify", shop: "x.myshopify.com" } as never)).toMatchObject({ kind: "door", label: "Shopify App Store" });
