@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui";
 import { createCheckoutSession } from "@/app/actions/billing";
@@ -53,6 +53,8 @@ export function StartTrialButton({
 }) {
   const [pending, start] = useTransition();
   const [open, setOpen] = useState(false);
+  // Where focus goes back to when the sheet closes.
+  const opener = useRef<HTMLButtonElement | null>(null);
   const fail = (message: string) => {
     onError?.(message);
     toast.error(message);
@@ -77,7 +79,8 @@ export function StartTrialButton({
         <Button
           variant={variant}
           className={className}
-          onClick={() => {
+          onClick={(e) => {
+            opener.current = e.currentTarget;
             onStart?.();
             setOpen(true);
           }}
@@ -88,6 +91,7 @@ export function StartTrialButton({
           <CheckoutSheet
             open={open}
             onClose={() => setOpen(false)}
+            opener={opener}
             title={`Start your ${TRIAL_DAYS}-day trial`}
             lede={`${PLAN_LABELS[plan]}: €0 today, then ${price}. ${CANCEL_LINE}`}
           >

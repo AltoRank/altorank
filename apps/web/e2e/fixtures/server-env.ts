@@ -38,4 +38,9 @@ export const E2E_SERVER_ENV: Record<string, string> = {
   DATAFORSEO_LOGIN: "",
   DATAFORSEO_PASSWORD: "",
   STRIPE_SECRET_KEY: "",
+  // A placeholder, never a real key: with one the trial button opens
+  // Embedded Checkout on the page, as production does, and the specs serve
+  // their own Stripe.js (e2e/fixtures/fake-stripe.ts) so nothing reaches
+  // Stripe. It also keeps a live key in .env.local out of the e2e bundle.
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_e2e_placeholder",
 };
