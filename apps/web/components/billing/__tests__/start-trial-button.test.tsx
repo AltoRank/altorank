@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ReactElement } from "react";
 
-// What the trial button records after it is pressed (onboarding.step). On
-// 2026-10-19 the first real trial click died inside Embedded Checkout and
-// nothing on our side said why: which button, whether the form was closed,
-// or whether it never opened. No jsdom in this repo, so the button's own
-// handlers are reached through the props it hands its parts.
+// What the trial button records after it is pressed (onboarding.step). A
+// click that died inside Embedded Checkout left nothing on our side to say
+// why: which button, whether the form was closed, or whether it never
+// opened. No jsdom in this repo, so the button's own handlers are reached
+// through the props it hands its parts.
 
 const parts = vi.hoisted(() => ({
   button: null as null | { onClick: (e: unknown) => void },

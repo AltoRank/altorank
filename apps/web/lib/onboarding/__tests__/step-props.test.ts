@@ -93,8 +93,8 @@ describe("uuidOrUndefined", () => {
   });
 });
 
-// What came after "Start trial" (2026-10-19: the first real click died inside
-// Embedded Checkout and left no cause on our side).
+// What came after "Start trial": a click that died inside Embedded Checkout
+// used to leave no cause on our side.
 describe("the trial steps", () => {
   const S = "cs_test_a1B2c3D4e5F6g7H8i9J0";
 
