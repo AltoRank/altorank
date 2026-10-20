@@ -40,6 +40,13 @@ export function authErrorMessage(raw: string | undefined | null): string {
     );
   }
 
+  // A wrong password, or an account made since code signup, which has a
+  // random password nobody was ever shown: Supabase's "Invalid login
+  // credentials" says neither, nor what to do instead.
+  if (lower.includes("invalid login credentials")) {
+    return "That email and password do not match. If you signed up with a code, there is no password to type: email yourself a sign-in code instead.";
+  }
+
   // Supabase's own messages are already written for end users.
   return message;
 }
