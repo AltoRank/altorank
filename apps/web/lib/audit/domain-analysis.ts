@@ -27,7 +27,7 @@ import { runAuditChecks, calculateAuditScore } from "./checks";
 import { pageFacts, type PageFacts } from "./page-facts";
 import { fetchPageSpeedDetailed } from "./pagespeed";
 import { type DiscoveredKeyword, storedCpc } from "@/lib/seo/keywords";
-import { profileIsUsable, scoreRelevance, subjectVocabulary } from "@/lib/seo/topical-profile";
+import { profileFromBusiness, profileIsUsable, scoreRelevance, subjectVocabulary } from "@/lib/seo/topical-profile";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { assessKeywordQuality } from "@/lib/seo/recommendations";
 import { discoverBuyerKeywords } from "@/lib/keyword-research/discovery";
@@ -114,6 +114,8 @@ type BusinessProfileFields = {
   audiences?: string[] | null;
   offerings?: string[] | null;
   competitors?: string[] | null;
+  buyingJobs?: string[] | null;
+  differentiators?: string[] | null;
   language?: string | null;
   /** Set when a person saved it; null when a model read it off the site and nobody looked. */
   confirmedAt?: string | null;
@@ -501,6 +503,9 @@ export async function analyseDomain(options: {
   let pagesCrawled = 0;
   let crawlAttempts = 1;
   let crawlRateLimited = false;
+  // Every page the crawl asked for was refused (403/429): the host's bot rule,
+  // not a site with nothing on it. See the business-profile fallback below.
+  let crawlRefused = false;
   let homeFacts: PageFacts | null = null;
   let auditScore: number | null = null;
   let issues: unknown[] = [];
@@ -543,6 +548,7 @@ export async function analyseDomain(options: {
       const pages = usablePages(fetched);
       pagesCrawled = pages.length;
       if (!pages.length && fetched.length) {
+        crawlRefused = fetched.every(isRefused);
         // Every fetch failed. Say why, and score nothing: the first version of
         // this gave www.lully.ai a 95/100 on-page score and a topical profile of
         // {"www"} from a fetch that never got a response.
@@ -802,6 +808,21 @@ export async function analyseDomain(options: {
       // Nothing here throws. A workspace whose profile cannot be read gets the
       // page-seed-only behaviour it had before this existed.
       business = null;
+    }
+  }
+
+  // A site that refused the crawl outright still has a market: the wizard
+  // described the business, and DataForSEO knows what the domain ranks for.
+  // Judge keywords against the description instead of storing none
+  // (`profileFromBusiness` says why). Only on a refusal: a site that answered
+  // with too little text (example.com) is still told so, and only with
+  // rankings, which are the evidence that there is a real site behind the
+  // wall. Every term still goes through the buyer test below.
+  if (!profile && crawlRefused && ranked.length > 0) {
+    const fromBusiness = profileFromBusiness(domain, business);
+    if (fromBusiness) {
+      profile = fromBusiness;
+      console.log(`[analyse] ${domain} refused the crawl; judging its ${ranked.length} ranked keywords against the business profile`);
     }
   }
 
