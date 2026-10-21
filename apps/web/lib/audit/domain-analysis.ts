@@ -506,6 +506,7 @@ export async function analyseDomain(options: {
   // Every page the crawl asked for was refused (403/429): the host's bot rule,
   // not a site with nothing on it. See the business-profile fallback below.
   let crawlRefused = false;
+  let judgedFromBusiness = false;
   let homeFacts: PageFacts | null = null;
   let auditScore: number | null = null;
   let issues: unknown[] = [];
@@ -822,6 +823,7 @@ export async function analyseDomain(options: {
     const fromBusiness = profileFromBusiness(domain, business);
     if (fromBusiness) {
       profile = fromBusiness;
+      judgedFromBusiness = true;
       console.log(`[analyse] ${domain} refused the crawl; judging its ${ranked.length} ranked keywords against the business profile`);
     }
   }
@@ -1384,6 +1386,7 @@ export async function analyseDomain(options: {
       pagesCrawled,
       failedForGood:
         crawlReason !== null && !isTransientCrawlFailure(crawlReason) && !(crawlRateLimited && pagesCrawled === 0),
+      judgedFromProfile: judgedFromBusiness && keywordsFound > 0,
     });
 
     await supabase
