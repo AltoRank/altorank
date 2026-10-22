@@ -13,7 +13,7 @@
 // article or run it was about. No email, no domain, no text.
 //
 // Most steps are kept once per workspace. A few are kept once per what tells
-// them apart (`stepKey`): an ending, an article, a run.
+// them apart (`stepKey`): an ending, an article, a run, a checkout session.
 //
 // Server-only: the write uses the service role, like every system event. The
 // browser reaches it through /api/onboard/step, which checks who is asking.
@@ -22,7 +22,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createHash } from "node:crypto";
 import { buildEventRow } from "@/lib/observability/event";
 import { STEP_EVENT_SOURCE, type OnboardingStepName } from "./step-names";
-import { stepKey, stepProps, uuidOrUndefined, type RunTrigger, type StepProps } from "./step-props";
+import { checkoutSessionOrUndefined, stepKey, stepProps, uuidOrUndefined, type RunTrigger, type StepProps } from "./step-props";
 
 export interface StepEventInput {
   workspaceId: string;
@@ -39,6 +39,13 @@ export interface StepEventInput {
   articleId?: string | null;
   /** For `run_started`: which run. */
   runId?: string | null;
+  /**
+   * For the checkout steps: the account's Stripe Checkout Session, once it
+   * has one (`ownedCheckoutSession`). Not `checkoutSession`: the event log
+   * blanks any context key with "session" in its name
+   * (lib/observability/event.ts), and the id is what ties a close to its try.
+   */
+  checkoutId?: string | null;
   /** The step's words from ./step-props.ts; anything off its lists is dropped. */
   props?: StepProps;
 }
@@ -57,6 +64,7 @@ export function stepContext(input: StepEventInput): Record<string, unknown> {
   const count = whole(input.count, 1_000);
   const articleId = uuidOrUndefined(input.articleId);
   const runId = uuidOrUndefined(input.runId);
+  const checkoutId = checkoutSessionOrUndefined(input.checkoutId);
   return {
     step: input.step,
     ...(input.userId ? { userId: input.userId } : {}),
@@ -65,6 +73,7 @@ export function stepContext(input: StepEventInput): Record<string, unknown> {
     ...(count !== undefined ? { count } : {}),
     ...(articleId ? { articleId } : {}),
     ...(runId ? { runId } : {}),
+    ...(checkoutId ? { checkoutId } : {}),
     ...stepProps(input.step, input.props),
   };
 }
@@ -107,7 +116,14 @@ export async function recordOnboardingStep(db: SupabaseClient, input: StepEventI
     const { data, error } = await db
       .from("system_events")
       .upsert(
-        { id: stepEventId(input.workspaceId, input.step, stepKey(input.step, { articleId: context.articleId as string | undefined, runId: context.runId as string | undefined, props })), ...row },
+        {
+          id: stepEventId(
+            input.workspaceId,
+            input.step,
+            stepKey(input.step, { articleId: context.articleId as string | undefined, runId: context.runId as string | undefined, checkoutId: context.checkoutId as string | undefined, props }),
+          ),
+          ...row,
+        },
         { onConflict: "id", ignoreDuplicates: true },
       )
       .select("id");
@@ -119,6 +135,25 @@ export async function recordOnboardingStep(db: SupabaseClient, input: StepEventI
   } catch (err) {
     console.warn(`[onboarding.step] ${input.step}: ${err instanceof Error ? err.message : String(err)}`);
     return false;
+  }
+}
+
+/**
+ * The Stripe Checkout Session a browser named, when it is the one this
+ * account has open (lib/billing/checkout-attempt.ts keeps one per account),
+ * else undefined. Each session is its own key for the checkout steps, so a
+ * made-up id would be a new row every time; only a real one of the account's
+ * gets that far. Never throws: a failed read is no session.
+ */
+export async function ownedCheckoutSession(db: SupabaseClient, accountId: string, raw: unknown): Promise<string | undefined> {
+  const session = checkoutSessionOrUndefined(raw);
+  if (!session) return undefined;
+  try {
+    const { data, error } = await db.from("billing_checkout_attempts").select("stripe_session_id").eq("account_id", accountId).maybeSingle();
+    if (error) return undefined;
+    return (data as { stripe_session_id?: string | null } | null)?.stripe_session_id === session ? session : undefined;
+  } catch {
+    return undefined;
   }
 }
 

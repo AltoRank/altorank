@@ -7,6 +7,8 @@ import { createCheckoutSession } from "@/app/actions/billing";
 import { PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
 import { CheckoutSheet, EmbeddedCheckoutForm, embeddedCheckoutAvailable } from "./embedded-checkout";
 import { CANCEL_LINE } from "@/lib/billing/trial-offer";
+import { trackStep } from "@/lib/onboarding/track-step";
+import { currentViewport, type CheckoutClose, type CheckoutFailure, type TrialSurface } from "@/lib/onboarding/step-props";
 
 /**
  * The one button that opens the trial's checkout: card required, seven days
@@ -28,7 +30,7 @@ export function StartTrialButton({
   variant = "accent",
   className,
   onError,
-  onStart,
+  surface,
   embed = "sheet",
 }: {
   /** Same-origin path to land on after the card is taken. */
@@ -46,8 +48,13 @@ export function StartTrialButton({
    * the error needs somewhere to stay.
    */
   onError?: (message: string) => void;
-  /** Told when the button is pressed, before checkout opens: instrumentation (onboarding.step). */
-  onStart?: () => void;
+  /**
+   * Which trial button this is, for onboarding.step: the press
+   * (`trial_clicked`), and when it does not become a trial, how the form
+   * was left (`checkout_closed`) or where it stopped (`checkout_failed`).
+   * Without one nothing is recorded.
+   */
+  surface?: TrialSurface;
   /** Where Stripe's form opens when it can open on the page: a sheet, or in place of the button. */
   embed?: "sheet" | "inline";
 }) {
@@ -55,7 +62,22 @@ export function StartTrialButton({
   const [open, setOpen] = useState(false);
   // Where focus goes back to when the sheet closes.
   const opener = useRef<HTMLButtonElement | null>(null);
-  const fail = (message: string) => {
+  // The Stripe session the open form is on, once it has one: what tells
+  // one attempt's events from the next (lib/onboarding/step-props.ts stepKey).
+  const session = useRef<string | undefined>(undefined);
+  const pressed = () => {
+    session.current = undefined;
+    if (surface) trackStep("trial_clicked", { props: { surface, plan, interval } });
+  };
+  const failed = (stage: CheckoutFailure) => {
+    if (surface) trackStep("checkout_failed", { checkoutId: session.current, props: { stage, surface, viewport: currentViewport() } });
+  };
+  const leave = (how: CheckoutClose) => {
+    if (surface) trackStep("checkout_closed", { checkoutId: session.current, props: { how, surface, viewport: currentViewport() } });
+    setOpen(false);
+  };
+  const fail = (message: string, stage: CheckoutFailure) => {
+    failed(stage);
     onError?.(message);
     toast.error(message);
     setOpen(false);
@@ -63,12 +85,14 @@ export function StartTrialButton({
 
   if (embeddedCheckoutAvailable) {
     const price = interval === "month" ? `${PLAN_PRICES[plan]} per month` : `${PLAN_YEARLY_PRICES[plan]} per year`;
-    const form = <EmbeddedCheckoutForm key={`${plan}-${interval}`} plan={plan} interval={interval} returnTo={returnTo} onError={fail} />;
+    const form = (
+      <EmbeddedCheckoutForm key={`${plan}-${interval}`} plan={plan} interval={interval} returnTo={returnTo} onError={fail} onSession={(id) => (session.current = id)} />
+    );
     if (embed === "inline" && open) {
       return (
         <div className="flex flex-col gap-2">
           {form}
-          <button type="button" onClick={() => setOpen(false)} className="self-center text-[12.5px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink-2">
+          <button type="button" onClick={() => leave("not_now")} className="self-center text-[12.5px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink-2">
             Not now
           </button>
         </div>
@@ -81,7 +105,7 @@ export function StartTrialButton({
           className={className}
           onClick={(e) => {
             opener.current = e.currentTarget;
-            onStart?.();
+            pressed();
             setOpen(true);
           }}
         >
@@ -90,7 +114,7 @@ export function StartTrialButton({
         {embed === "sheet" && (
           <CheckoutSheet
             open={open}
-            onClose={() => setOpen(false)}
+            onClose={leave}
             opener={opener}
             title={`Start your ${TRIAL_DAYS}-day trial`}
             lede={`${PLAN_LABELS[plan]}: €0 today, then ${price}. ${CANCEL_LINE}`}
@@ -108,7 +132,7 @@ export function StartTrialButton({
       disabled={pending}
       className={className}
       onClick={() => {
-        onStart?.();
+        pressed();
         start(async () => {
           // The action returns {ok:false} for the failures it predicts, and
           // throws for the ones it does not - no Stripe key, a price id that
@@ -120,12 +144,14 @@ export function StartTrialButton({
           try {
             const result = await createCheckoutSession(plan, interval, returnTo);
             if (!result.ok) {
+              failed("create");
               onError?.(result.error);
               toast.error(result.error);
               return;
             }
             window.location.href = result.url;
           } catch {
+            failed("create");
             const message = "Checkout could not be opened. Please try again, or contact us if it keeps happening.";
             onError?.(message);
             toast.error(message);
