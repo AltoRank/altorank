@@ -1,11 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { createClient } from "@/lib/supabase/server";
-import { authErrorMessage } from "@/lib/auth/errors";
-import { DEFAULT_AFTER_SIGN_IN, safeNextPath } from "@/lib/auth/next-path";
-import { SubmitButton } from "@/components/auth/submit-button";
+import { safeNextPath } from "@/lib/auth/next-path";
+import { signInMethod } from "@/lib/auth/signin-path";
+import { SignInForm } from "@/components/auth/signin-form";
 import { inviteJoinPath, inviteTokenFromNext } from "@/lib/team/invite";
 import {
   parseSignupSource,
@@ -14,6 +12,7 @@ import {
   withRefererFallback,
   type SignupSource,
 } from "@/lib/auth/signup-source";
+import { requestSignInCode, signInWithPassword } from "./actions";
 
 // Where a connector (ChatGPT, Claude, Cursor) sends a signed-out person: the
 // OAuth consent page, by way of this one.
@@ -22,29 +21,6 @@ const CONNECT_PATH = "/oauth/authorize";
 export const metadata: Metadata = {
   title: "Sign In",
 };
-
-async function signIn(formData: FormData) {
-  "use server";
-  const email = formData.get("email") as string;
-  const password = formData.get("password") as string;
-  // Where the middleware was taking them before it stopped them here. Validated
-  // rather than trusted: it arrives in a URL, and a redirect target read out of
-  // a URL is an open redirect unless something refuses `//evil.com` and its
-  // relatives (lib/auth/next-path.ts).
-  const next = safeNextPath(formData.get("next"));
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) {
-    const back = new URLSearchParams({ error: authErrorMessage(error.message) });
-    // Kept across a failed attempt, or a mistyped password costs the reader the
-    // article the email was about.
-    if (next) back.set("next", next);
-    // So is where they came from: the next step may be "Sign up" after all.
-    for (const [key, value] of signupSourceFields(parseSignupSource(formData))) back.set(key, value);
-    redirect(`/signin?${back}`);
-  }
-  redirect(next ?? DEFAULT_AFTER_SIGN_IN);
-}
 
 /**
  * Where a visitor who reached sign-in came from, to hand on to "Sign up" and
@@ -60,8 +36,14 @@ async function signinSource(params: Record<string, unknown>, next: string | null
   return source;
 }
 
+/**
+ * Where every signed-out app link lands (lib/supabase/middleware.ts sends it
+ * here with `next`), most of them from an email. Code signup gives an account
+ * a random password it never sees, so the code comes first and the password
+ * is one tap away; `?method=password` opens on it.
+ */
 export default async function SignInPage(props: {
-  searchParams: Promise<{ error?: string; next?: string } & Record<string, string | string[] | undefined>>;
+  searchParams: Promise<{ error?: string; next?: string; method?: string } & Record<string, string | string[] | undefined>>;
 }) {
   const searchParams = await props.searchParams;
   const next = safeNextPath(searchParams?.next);
@@ -74,63 +56,17 @@ export default async function SignInPage(props: {
     <div className="space-y-6">
       <div className="text-center">
         <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
-        <p className="mt-2 text-sm text-ink-3">
-          Sign in to AltoRank
-        </p>
+        <p className="mt-2 text-sm text-ink-3">Sign in to AltoRank</p>
       </div>
 
-      <form action={signIn} className="space-y-4">
-        {next && <input type="hidden" name="next" value={next} />}
-        {signupSourceFields(source).map(([name, value]) => (
-          <input key={name} type="hidden" name={name} value={value} />
-        ))}
-        {searchParams?.error && (
-          <div className="text-sm text-err-ink bg-err-soft px-3 py-2 rounded-lg">
-            {searchParams.error}
-          </div>
-        )}
-        <div>
-          <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 mb-1.5 block">
-            Email
-          </label>
-          <input
-            name="email"
-            type="email"
-            required
-            className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
-            placeholder="you@example.com"
-          />
-        </div>
-        <div>
-          <div className="flex items-baseline justify-between mb-1.5">
-            <label className="font-mono text-[10.5px] font-medium uppercase tracking-[0.08em] text-ink-3 block">
-              Password
-            </label>
-            <Link
-              href="/reset-password"
-              className="text-[11.5px] text-ink-3 hover:text-ink"
-            >
-              Forgot it?
-            </Link>
-          </div>
-          <input
-            name="password"
-            type="password"
-            required
-            className="w-full px-2.5 py-2 bg-bg border border-line rounded-[7px] text-[13px] focus:outline-0 focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
-          />
-        </div>
-        <SubmitButton pendingLabel="Signing in…">Sign in</SubmitButton>
-      </form>
-
-      {/* Accounts made since signup asked for a code have no password they
-          know: this is their way in, and anyone's who forgot theirs. */}
-      <p className="text-center text-[12.5px] text-ink-3">
-        No password?{" "}
-        <Link href={signupSourceHref(next ? `/signin/code?next=${encodeURIComponent(next)}` : "/signin/code", source)} className="font-medium text-accent-ink hover:underline">
-          Email me a sign-in code
-        </Link>
-      </p>
+      <SignInForm
+        next={next}
+        initialMethod={signInMethod(searchParams?.method)}
+        error={searchParams?.error}
+        source={signupSourceFields(source)}
+        requestCode={requestSignInCode}
+        signIn={signInWithPassword}
+      />
 
       <p className="text-center text-sm text-ink-3">
         Don&apos;t have an account?{" "}

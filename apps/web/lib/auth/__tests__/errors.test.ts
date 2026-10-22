@@ -22,8 +22,14 @@ describe("authErrorMessage", () => {
   });
 
   it("passes through Supabase's own user-facing messages unchanged", () => {
-    expect(authErrorMessage("Invalid login credentials")).toBe("Invalid login credentials");
     expect(authErrorMessage("User already registered")).toBe("User already registered");
+  });
+
+  it("says a wrong password plainly, and that a code account has none to type", () => {
+    // Code signup gives an account a random password nobody is shown.
+    const msg = authErrorMessage("Invalid login credentials");
+    expect(msg).toContain("That email and password do not match.");
+    expect(msg).toContain("email yourself a sign-in code instead");
   });
 
   it("falls back to something actionable when there is no message", () => {

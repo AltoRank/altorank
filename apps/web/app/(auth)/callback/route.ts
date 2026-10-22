@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { sendWelcome } from "@/lib/auth/welcome";
+import { safeNextPath } from "@/lib/auth/next-path";
+import { EXPIRED_LINK_MESSAGE, signinPath } from "@/lib/auth/signin-path";
+import { recordSignIn } from "@/lib/auth/signin-event";
 import type { EmailOtpType } from "@supabase/supabase-js";
-
-const SAFE_NEXT = /^\/[a-zA-Z0-9/_-]*$/;
 
 /**
  * Two ways in.
@@ -25,13 +26,11 @@ export async function GET(request: Request) {
 
   const jar = await cookies();
   const resetPending = jar.get("pw_reset_pending")?.value === "1";
-  const requestedNext = searchParams.get("next");
-  const next =
-    requestedNext && SAFE_NEXT.test(requestedNext)
-      ? requestedNext
-      : type === "recovery" || resetPending
-        ? "/reset-password/confirm"
-        : "/dashboard";
+  // The same rule as every other `next` (lib/auth/next-path.ts). The old
+  // pattern here refused any query, so the one-click link in the sign-in
+  // code email dropped `/articles?status=review` for the dashboard.
+  const requestedNext = safeNextPath(searchParams.get("next"));
+  const next = requestedNext ?? (type === "recovery" || resetPending ? "/reset-password/confirm" : "/dashboard");
 
   const supabase = await createClient();
 
@@ -46,11 +45,12 @@ export async function GET(request: Request) {
       // /invite/<token>): the welcome is about their own site and trial, and
       // they have neither.
       if (type === "signup" && verified.user && !next.startsWith("/invite/")) await sendWelcome(verified.user.id);
+      if (type === "magiclink") await recordSignIn("link", verified.user?.id);
       return NextResponse.redirect(`${origin}${next}`);
     }
-    return NextResponse.redirect(
-      `${origin}/signin?error=${encodeURIComponent("That link has expired or was already used. Request a new one.")}`,
-    );
+    // To the code form, still holding where the link was going: a code is
+    // the way in that needs nothing the person may not have.
+    return NextResponse.redirect(`${origin}${signinPath("/signin", requestedNext, { error: EXPIRED_LINK_MESSAGE })}`);
   }
 
   if (code) {
