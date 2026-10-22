@@ -19,17 +19,25 @@
 import { createServiceClient } from "@/lib/supabase/server";
 import { createOwnedAccount } from "@/lib/queries/account";
 import { recordEvent } from "@/lib/observability/record";
+import { describeSignupSource, signupSourceContext, type SignupSource } from "@/lib/auth/signup-source";
 
 /** The `source` this door writes on its `signup` event. */
 export const SIGNIN_CODE_SOURCE = "signin_code";
 
 /**
  * Make the account for a user the sign-in code just created, and record the
- * signup. Never throws: the code is already on its way, and if this fails the
- * membership fallback still makes an account on the first page load (and
- * says so, lib/queries/account.ts). Returns the account id, or null.
+ * signup, with where the visitor came from when /signin carried it (the same
+ * `src`/`lp`/`ref`/`utm` the signup form records). Never throws: the code is
+ * already on its way, and if this fails the membership fallback still makes
+ * an account on the first page load (and says so, lib/queries/account.ts).
+ * Returns the account id, or null.
  */
-export async function startSigninCodeSignup(userId: string, email: string): Promise<string | null> {
+export async function startSigninCodeSignup(
+  userId: string,
+  email: string,
+  source: SignupSource = {},
+): Promise<string | null> {
+  const attribution = signupSourceContext(source);
   try {
     const admin = createServiceClient();
     // A second request before the first code was used reaches here only if
@@ -47,9 +55,11 @@ export async function startSigninCodeSignup(userId: string, email: string): Prom
     await recordEvent({
       level: "info",
       source: "signup",
-      message: "Account created, from the sign-in code (no signup form, so no site yet)",
+      message: `Account created, from the sign-in code (no signup form, so no site yet)${
+        Object.keys(attribution).length ? `, ${describeSignupSource(source)}` : ""
+      }`,
       accountId,
-      context: { stage: "created", userId, source: SIGNIN_CODE_SOURCE },
+      context: { stage: "created", userId, source: SIGNIN_CODE_SOURCE, ...attribution },
     });
     return accountId;
   } catch (e) {
@@ -57,7 +67,7 @@ export async function startSigninCodeSignup(userId: string, email: string): Prom
       level: "error",
       source: "signup",
       message: `The sign-in code made a user but its account could not be created: ${e instanceof Error ? e.message : String(e)}`,
-      context: { stage: "account", userId, source: SIGNIN_CODE_SOURCE },
+      context: { stage: "account", userId, source: SIGNIN_CODE_SOURCE, ...attribution },
     });
     return null;
   }

@@ -30,6 +30,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
+// /signin reads the Referer for where a visitor came from; none here.
+vi.mock("next/headers", () => ({ headers: async () => new Headers() }));
 vi.mock("@/lib/email/auth-emails", () => ({ sendSignupConfirmation: mocks.sendSignupConfirmation }));
 vi.mock("@/lib/supabase/server", () => {
   const admin = {

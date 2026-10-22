@@ -11,11 +11,13 @@ import {
   shortDate,
   badgeText,
   describeCheckWeights,
+  signupHrefFor,
   APP_URL,
   type PublicCheck,
   type PublicCheckData,
 } from "@/lib/public-check/shape";
 import { OSS_REPO_PUBLIC, OSS_REPO_URL } from "@/lib/constants";
+import { withRefererFallback } from "@/lib/auth/signup-source";
 import { RerunButton } from "./rerun-button";
 
 /**
@@ -110,7 +112,13 @@ export default async function CheckPage(props: Props) {
   const { data, cached } = loaded;
   const failing = data.checks.filter((c) => c.status === "fail");
   const unknown = data.checks.filter((c) => c.status === "unknown");
-  const signupHref = `/signup?domain=${encodeURIComponent(domain)}`;
+  // A shared result is opened from wherever it was shared (a chat, a post, an
+  // email), so that site is the signup's `ref`.
+  const requestHeaders = await headers();
+  const signupHref = signupHrefFor(
+    domain,
+    withRefererFallback({}, requestHeaders.get("referer"), requestHeaders.get("host")),
+  );
   const jsonHref = `/api/public/readiness?domain=${encodeURIComponent(domain)}`;
   const snippet = `<script src="${APP_URL}/check/badge.js?domain=${encodeURIComponent(domain)}" async></script>`;
 

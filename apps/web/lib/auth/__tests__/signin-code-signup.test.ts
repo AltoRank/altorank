@@ -55,6 +55,31 @@ describe("startSigninCodeSignup", () => {
     expect(JSON.stringify(recordEvent.mock.calls)).not.toContain("jane.doe");
   });
 
+  it("records where the visitor came from when sign-in carried it", async () => {
+    await startSigninCodeSignup("u1", "a@x.example", {
+      src: "/pricing/",
+      lp: "/alternatives/outrank/",
+      ref: "www.google.com",
+      utm: { utm_source: "newsletter" },
+    });
+    expect(recordEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        level: "info",
+        message:
+          "Account created, from the sign-in code (no signup form, so no site yet), from /pricing/ (landed on /alternatives/outrank/) via www.google.com, utm_source newsletter",
+        context: {
+          stage: "created",
+          userId: "u1",
+          source: "signin_code",
+          src: "/pricing/",
+          lp: "/alternatives/outrank/",
+          ref: "www.google.com",
+          utm: { source: "newsletter" },
+        },
+      }),
+    );
+  });
+
   it("makes nothing twice when the user already has an account", async () => {
     membership = { account_id: "acct-1" };
     await expect(startSigninCodeSignup("u1", "a@x.example")).resolves.toBe("acct-1");
