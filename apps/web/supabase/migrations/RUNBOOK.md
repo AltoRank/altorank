@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **102** (rows stay put, and the member-role guard), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **110** (Shopify installations), **111** (member scope guards), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server), **114** (blog keys), **115** (Search Console sync outcome), **116** (how often a paid door may be pressed, the Operations totals, and the customer's own last sign-in across "View as") and **117** (refresh engine bookkeeping) and **118** (Shopify billing), each with its section at the end. **101, 104, 105, 106, 107, 108, 110 and 118 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113, 114, 115, 116 and 117 go in AFTER**; **102 and 112 go in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **102** (rows stay put, and the member-role guard), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **110** (Shopify installations), **111** (member scope guards), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server), **114** (blog keys), **115** (Search Console sync outcome), **116** (how often a paid door may be pressed, the Operations totals, and the customer's own last sign-in across "View as") and **117** (refresh engine bookkeeping) and **118** (Shopify billing) and **120** (hosted blog; 119 is reserved for the exception rules), each with its section at the end. **101, 104, 105, 106, 107, 108, 110, 118 and 120 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113, 114, 115, 116 and 117 go in AFTER**; **102 and 112 go in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both run to the head; `lib/__tests__/migration-runbook.test.ts` fails when a file is missing from either. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -169,7 +169,8 @@ m(file, applied) as (values
   ('116_spend_doors',                        to_regclass('public.spend_door_uses') is not null and to_regprocedure('public.take_spend_door(uuid,uuid,text,jsonb)') is not null and to_regprocedure('public.provider_spend_summary(timestamptz)') is not null and exists (select 1 from col where t='admin_impersonations' and c='target_last_sign_in_at') and exists (select 1 from col where t='provider_spend' and c='job')),
   ('117_refresh_engine',                     exists (select 1 from col where t='refresh_tasks' and c='started_at') and exists (select 1 from col where t='refresh_candidates' and c='resolved_at')),
   ('110_shopify_installations',             exists (select 1 from col where t='shopify_installations' and c='refresh_token') and exists (select 1 from col where t='shopify_webhook_events' and c='webhook_id')),
-  ('118_shopify_billing',                   exists (select 1 from col where t='accounts' and c='billing_provider') and exists (select 1 from col where t='shopify_installations' and c='shop_gid'))
+  ('118_shopify_billing',                   exists (select 1 from col where t='accounts' and c='billing_provider') and exists (select 1 from col where t='shopify_installations' and c='shop_gid')),
+  ('120_hosted_blog',                       exists (select 1 from col where t='workspaces' and c='hosted_blog_status') and to_regclass('public.workspaces_hosted_blog_slug_key') is not null)
 )
 select file, applied from m order by file;
 ```
@@ -324,6 +325,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 116_spend_doors.sql   # AFTER its 
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 117_refresh_engine.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 110_shopify_installations.sql   # BEFORE its code is deployed
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 118_shopify_billing.sql   # BEFORE its code is deployed (after 110)
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 120_hosted_blog.sql   # BEFORE its code is deployed
 ```
 
 Re-running a file that is already applied is safe from 048 on, with one
@@ -412,6 +414,7 @@ no code in the repo references either).
 | 117_refresh_engine.sql | `fix/refresh-engine` | 052; **its code deployed first** | yes | yes, see its section (loses the start times and which candidates a pass retired; the code works without both) |
 | 110_shopify_installations.sql | `shopify/app-install` | 001, 085; **applied before its code is deployed** | yes | yes: `drop table shopify_webhook_events, shopify_installations` (loses every store's tokens; each must reopen the app) |
 | 118_shopify_billing.sql | `shopify/app-billing` | **110**, 085; **applied before its code is deployed** | yes | yes: drop the trigger and function, then the three installation columns and `accounts.billing_provider` (Shopify-billed accounts would then read as Stripe) |
+| 120_hosted_blog.sql | `feat/hosted-blog-pages` | 001, 100; **applied before its code is deployed** | yes | yes: drop the three constraints, the two indexes and the four columns (every hosted blog goes dark; /b/* 404s once its code is reverted) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -2228,4 +2231,37 @@ drop function if exists public.accounts_guard_billing_provider();
 alter table shopify_installations drop column if exists plan_checked_at, drop column if exists plan_handle, drop column if exists shop_gid;
 alter table accounts drop constraint if exists accounts_billing_provider_check;
 alter table accounts drop column if exists billing_provider;
+```
+
+## 120 — a blog AltoRank hosts for the site
+
+`120_hosted_blog.sql` (119 is reserved for the exception rules):
+
+- `workspaces.hosted_blog_slug` (unique, `[a-z0-9-]`), `hosted_blog_host`
+  (unique, lowercase), `hosted_blog_status` (`off` | `preview` |
+  `pending_dns` | `verified`, default `off`, so every existing site serves
+  nothing) and `hosted_blog_verified_at`. `app/(hosted)/b/[slug]` reads them
+  through the service client; a slug whose status is `off` is a 404.
+- Server-written only: since 100 a new `workspaces` column is writable by no
+  client token until a migration grants it, and 120 grants nothing. Its
+  `revoke update (...)` restates that.
+
+**Apply BEFORE its code is deployed.** The /b pages select these columns and
+answer 500 without them. Depends on 001 and 100. Re-running is a no-op
+(`if not exists`, guarded constraints, revoke).
+
+Post-flight (expect `t`):
+
+```sql
+select exists (select 1 from information_schema.columns where table_name = 'workspaces' and column_name = 'hosted_blog_status')
+   and not exists (select 1 from information_schema.column_privileges where table_name = 'workspaces' and column_name like 'hosted_blog_%' and grantee = 'authenticated' and privilege_type in ('INSERT', 'UPDATE'));
+```
+
+Rollback (after its code is reverted):
+
+```sql
+alter table public.workspaces drop constraint if exists workspaces_hosted_blog_slug_check, drop constraint if exists workspaces_hosted_blog_host_check, drop constraint if exists workspaces_hosted_blog_status_check;
+drop index if exists public.workspaces_hosted_blog_slug_key;
+drop index if exists public.workspaces_hosted_blog_host_key;
+alter table public.workspaces drop column if exists hosted_blog_verified_at, drop column if exists hosted_blog_status, drop column if exists hosted_blog_host, drop column if exists hosted_blog_slug;
 ```
