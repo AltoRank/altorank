@@ -1,27 +1,19 @@
-import { NextResponse, after } from "next/server";
+import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import {
   getStripe,
-  isSelfServePlan,
   planForPriceId,
   PLAN_ARTICLE_LIMITS,
   PLAN_LABELS,
   intervalForSubscription,
   planChargeLabel,
-  type BillingInterval,
   type PlanTier,
-  type SelfServePlan,
 } from "@/lib/stripe";
 import { createServiceClient } from "@/lib/supabase/server";
 import { recordEvent } from "@/lib/observability/record";
 import { describe as describeError } from "@/lib/observability/event";
-import { paceOnActivation } from "@/lib/content/pace";
 import { paceOnDowngrade } from "@/lib/plan/pace-options";
-import { dispatchResume } from "@/lib/plan/resume-dispatch";
-import { oweResume } from "@/lib/plan/resume-week";
-import { canSelfInvoke } from "@/lib/content/fan-out";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
-import { recordTrialStarted } from "@/lib/onboarding/step-events";
 import { graceEndsAt } from "@/lib/billing/dunning";
 import { invoicePendingCharges, paymentMethodId } from "@/lib/billing/invoice-pending";
 import {
@@ -29,8 +21,8 @@ import {
   notifyPlanChanged,
   notifySubscriptionCancelled,
   notifyTrialEnding,
-  notifyTrialStarted,
 } from "@/lib/email/lifecycle";
+import { activateCheckout, planForSubscription, readCheckoutSubscription, trialEndOf } from "@/lib/billing/activate-checkout";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 function mapStatus(s: Stripe.Subscription.Status): string {
@@ -64,120 +56,6 @@ function mapStatus(s: Stripe.Subscription.Status): string {
  * top-up, which buys verdicts. The same budget cron/analyze and write-now use.
  */
 export const maxDuration = 300;
-
-/**
- * Which tier a completed checkout bought.
- *
- * `checkout.session.completed` carries no line items, so the price has to be
- * read off the subscription the session created. That read is the authoritative
- * answer - it is what Stripe bills - and `session.metadata.plan`, written by
- * `createCheckoutSession`, is the fallback for when the read fails or returns a
- * price id this deployment does not recognise.
- *
- * This exists because the handler used to write `stripe_customer_id`,
- * `stripe_subscription_id` and `plan_status` and *not* `plan`. `accounts.plan`
- * is `not null default 'starter'`, so a EUR 199 Agency buyer sat on Managed's
- * row - badged "Managed plan" on the Billing page and metered at
- * PLAN_ARTICLE_LIMITS.starter = 100 instead of 400, which also capped the pace
- * they were allowed to set - until some later `customer.subscription.updated`
- * happened to arrive and correct it (2026-09-06).
- */
-export async function planForCheckoutSession(
-  session: Stripe.Checkout.Session,
-): Promise<SelfServePlan | undefined> {
-  const subscriptionId =
-    typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
-
-  if (subscriptionId) {
-    try {
-      const sub = await getStripe().subscriptions.retrieve(subscriptionId);
-      const fromPrice = planForPriceId(sub.items?.data?.[0]?.price?.id);
-      if (fromPrice) return fromPrice;
-    } catch {
-      // Fall through to the metadata hint. The checkout handler reads the
-      // subscription again for the trial (trialForCheckoutSession), and that
-      // read throws, so a Stripe that stays down fails the event for a retry
-      // rather than recording a guess; this fallback covers a read that
-      // failed once and a price we do not sell.
-    }
-  }
-
-  const hint = session.metadata?.plan;
-  return isSelfServePlan(hint) ? hint : undefined;
-}
-
-/**
- * Which tier a subscription is on: the price first, the metadata hint second.
- *
- * The same resolver as the checkout above, applied to the subscription object
- * an event carries. It matters most on `customer.subscription.updated` after
- * a plan switch: `switchPlan` changes the price on the existing item, and the
- * tier column has to follow the price, not the `plan` hint written when the
- * subscription was first bought.
- */
-/**
- * The trial end on a checkout's subscription, as ISO, or null when the
- * subscription is not trialing. Read from Stripe rather than assumed from
- * the session, because whether checkout added trial days was decided by
- * `trialEligible` at session creation and the subscription is the record.
- */
-export async function trialForCheckoutSession(session: Stripe.Checkout.Session): Promise<string | null> {
-  const subscriptionId =
-    typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
-  if (!subscriptionId) return null;
-  // A failed read is not "no trial". Answering null here wrote a trial
-  // checkout as a paid `active` plan with no trial end, and the rest of the
-  // week was never drafted (round-6 real-stack run, Stripe unreachable).
-  // Thrown instead, before the account write, so the event answers 500 and
-  // Stripe delivers it again. The timeout keeps one slow read inside
-  // Stripe's own wait for the webhook, rather than the SDK's 80 s default
-  // retried until the delivery had long been given up on.
-  let sub: Stripe.Subscription;
-  try {
-    sub = await getStripe().subscriptions.retrieve(subscriptionId, {}, { timeout: STRIPE_READ_TIMEOUT_MS, maxNetworkRetries: 1 });
-  } catch (err) {
-    throw new Error(`checkout.session.completed: could not read subscription ${subscriptionId} to tell a trial from a paid plan (${err instanceof Error ? err.message : String(err)})`);
-  }
-  return trialEndOf(sub);
-}
-
-/**
- * How often a checkout's subscription bills, for the trial-started email's
- * amount. Read from the subscription, like the tier and the trial; when that
- * read fails, the `interval` our checkout wrote on the session stands in,
- * because a failed read must not cost the customer the email that tells them
- * when they will be charged.
- */
-export async function intervalForCheckoutSession(session: Stripe.Checkout.Session): Promise<BillingInterval> {
-  const fallback: BillingInterval = session.metadata?.interval === "year" ? "year" : "month";
-  const subscriptionId =
-    typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
-  if (!subscriptionId) return fallback;
-  try {
-    const sub = await getStripe().subscriptions.retrieve(subscriptionId, {}, { timeout: STRIPE_READ_TIMEOUT_MS, maxNetworkRetries: 1 });
-    // The session's hint sits under the subscription's own metadata, so a
-    // price this deployment does not recognise still reads the checkout's.
-    return intervalForSubscription({ items: sub.items, metadata: { ...(session.metadata ?? {}), ...(sub.metadata ?? {}) } });
-  } catch {
-    return fallback;
-  }
-}
-
-/** One Stripe read inside the webhook: long enough for a slow answer, short enough for a retry. */
-const STRIPE_READ_TIMEOUT_MS = 8_000;
-
-/** `trial_end` as ISO when the subscription is trialing, else null. */
-export function trialEndOf(sub: Stripe.Subscription): string | null {
-  if (sub.status !== "trialing" || !sub.trial_end) return null;
-  return new Date(sub.trial_end * 1000).toISOString();
-}
-
-export function planForSubscription(sub: Stripe.Subscription): SelfServePlan | undefined {
-  const fromPrice = planForPriceId(sub.items?.data?.[0]?.price?.id);
-  if (fromPrice) return fromPrice;
-  const hint = sub.metadata?.plan;
-  return isSelfServePlan(hint) ? hint : undefined;
-}
 
 type AccountBillingRow = {
   id: string;
@@ -394,128 +272,20 @@ async function handleEvent(supabase: ReturnType<typeof createServiceClient>, eve
       const session = event.data.object as Stripe.Checkout.Session;
       const accountId =
         session.metadata?.account_id ?? session.metadata?.agency_id ?? session.client_reference_id ?? undefined;
-      if (accountId && session.customer && session.subscription) {
-        const plan = await planForCheckoutSession(session);
-        const trial = await trialForCheckoutSession(session);
-
-        // Checked, and thrown so Stripe delivers the event again. Everything
-        // below acts on this write: the resume it owes and dispatches drafts
-        // the rest of the week only for an account that is no longer gated,
-        // and against an account this write missed it recorded "waiting for
-        // your trial to start" on every owed entry and spent the checkout's
-        // one burst, while Stripe had its 200.
-        const { error: accountWriteError } = await supabase
-          .from("accounts")
-          .update({
-            stripe_customer_id: String(session.customer),
-            stripe_subscription_id: String(session.subscription),
-            // A checkout that opened a trial is `trialing`, not paid: the
-            // card is held and the first charge is on day eight. Writing
-            // `active` here (the rule until 2026-09-09) would have shown a
-            // trial as a paid plan and never counted it as the account's one
-            // trial.
-            plan_status: trial ? "trialing" : "active",
-            ...(trial ? { trial_ends_at: trial } : {}),
-            // The tier the money bought. Omitted only when neither the
-            // subscription's price nor the session metadata resolved to a
-            // plan we sell, in which case the later subscription event is the
-            // last line of defence rather than the first.
-            ...(plan ? { plan } : {}),
-          })
-          .eq("id", accountId);
-        if (accountWriteError) {
-          throw new Error(`checkout.session.completed: could not record the subscription on the account (${accountWriteError.message})`);
-        }
-
-        /**
-         * Start writing at a paid pace.
-         *
-         * Signup sets FREE_TIER_PACE, which is right while the account is
-         * free: the quota allows FREE_DRAFTS a calendar month, and the pace
-         * matches so those drafts land inside the first week. It used to set
-         * one a week against a one-draft month, and nothing raised it
-         * afterwards, so a customer who paid for 100 a month kept getting
-         * about four with no control anywhere to change it. `paceOnActivation`
-         * only ever raises, and only from a value the product itself chose - a
-         * site deliberately paused at 0, or set to anything that is not the
-         * free-tier pace, is left alone.
-         */
-        // Both checked, like the account write: a failed read left the
-        // sites at the free pace and the trial email saying the week was not
-        // handed off, and a failed write left one site at the free pace, each
-        // under a 200. Stripe retries the event; `paceOnActivation` only
-        // raises from the free pace, so a redelivery repeats nothing.
-        const { data: sites, error: sitesError } = await supabase
-          .from("workspaces")
-          .select("id, auto_generate_weekly_limit, auto_generate, status")
-          .eq("account_id", accountId);
-        if (sitesError) throw new Error(`checkout.session.completed: could not read the account's sites (${sitesError.message})`);
-        for (const site of sites ?? []) {
-          const next = paceOnActivation(site.auto_generate_weekly_limit as number | null, plan);
-          if (next === null) continue;
-          const { error: paceError } = await supabase
-            .from("workspaces")
-            .update({ auto_generate_weekly_limit: next })
-            .eq("id", site.id);
-          if (paceError) throw new Error(`checkout.session.completed: could not raise a site to the plan's pace (${paceError.message})`);
-        }
-
-        /**
-         * Open what the trial gate held back, off this request.
-         *
-         * A gated account has its one article and nothing else: one entry on
-         * the calendar, nothing more drafted (lib/billing/trial-hold.ts). The
-         * trial lifts that, and the person comes back from checkout to a
-         * dashboard that should fill while they look around: the month on the
-         * calendar, and the rest of this week being written now.
-         *
-         * Neither is done here. The top-up buys results pages and verdicts
-         * and ran for minutes inside this handler, which Stripe times out and
-         * redelivers; the drafts are minutes each. What this request does is
-         * write down that every site is owed this checkout's follow-up
-         * (`oweResume`, keyed by the subscription), and a failure to write it
-         * is thrown like any other here, so Stripe delivers the event again.
-         * The work itself is handed to /api/internal/resume-drafting after the
-         * answer (lib/plan/resume-dispatch.ts); if that hand-off or the work
-         * is cut off, the sites are still owed, and the scheduled writer's
-         * next run sends it again (lib/plan/resume-sweep.ts). A checkout
-         * without a trial gets the top-up only, as it always did; its drafts
-         * come at the scheduled writer's pace.
-         */
-        const key = String(session.subscription);
-        await oweResume(supabase, accountId, key);
-        const resume = { accountId, key, draftWeek: Boolean(trial) };
-        after(() => dispatchResume(resume));
-
-        // The card was taken: say when it is charged and where to stop that.
-        // And, when it is true at the moment this is sent, that the rest of
-        // this week has gone to the writer: a trial checkout, an install that
-        // can hand the drafts off, and a site set to write automatically and
-        // not paused. Whether each draft then lands is not known yet, so the
-        // email promises the hand-off, not the drafts; the drafts' own email
-        // says when they are there.
-        if (trial) {
-          // The funnel's trial (onboarding.step), Stripe's word for it rather
-          // than the browser's return from checkout. After the answer, like
-          // the resume: Stripe is not kept waiting on instrumentation.
-          const workspaceIds = (sites ?? []).map((s) => s.id as string);
-          after(() => recordTrialStarted(supabase, { accountId, workspaceIds, plan }));
-          const tier = plan ?? "starter";
-          const weekHandedOff =
-            canSelfInvoke() && (sites ?? []).some((s) => s.auto_generate === true && s.status !== "paused");
-          try {
-            // The amount the card is charged on day eight: the yearly price
-            // for a yearly trial, which used to be quoted the monthly one.
-            const interval = await intervalForCheckoutSession(session);
-            await notifyTrialStarted(
-              supabase,
-              accountId,
-              { planLabel: PLAN_LABELS[tier] ?? tier, planPrice: planChargeLabel(tier, interval), endsAt: trial, weekHandedOff },
-              key,
-            );
-          } catch (err) {
-            console.error(`[stripe] trial-started email: ${err instanceof Error ? err.message : err}`);
-          }
+      const subscriptionId =
+        typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
+      const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
+      if (accountId && customerId && subscriptionId) {
+        // The subscription, not the session, says whether this opened a trial
+        // and which tier it bills: read from Stripe, and a failed read is
+        // thrown so the event is delivered again. The return page may have
+        // recorded this checkout already (app/api/billing/checkout-status);
+        // then nothing below writes or sends anything a second time.
+        try {
+          const subscription = await readCheckoutSubscription(subscriptionId);
+          await activateCheckout(supabase, { accountId, customerId, subscription, hints: session.metadata });
+        } catch (err) {
+          throw new Error(`checkout.session.completed: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
       break;
