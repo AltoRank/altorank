@@ -685,6 +685,25 @@ function preTrialArticle(article: OnboardingArticle | null): string {
   return article?.outlined ? "article is outlined and being written" : "article is written";
 }
 
+/**
+ * The outcome, once the site has an article the run itself did not write.
+ *
+ * A bot-walled store, 2026-10-21: setup read nothing and ended "partial", and
+ * that evening the planner drafted its first article from the keywords a
+ * later look stored. The screen still headed the finished run "Set up, but
+ * nothing could be scheduled yet: no page could be fetched", directly under
+ * the article card. The run's own account stays in its log; the headline says
+ * what is true now. A run that produced something keeps its own line.
+ */
+export function outcomeSince(outcome: OnboardingOutcome, articleExists: boolean): OnboardingOutcome {
+  if (outcome.produced || !articleExists || outcome.tone === "working") return outcome;
+  return {
+    tone: "partial",
+    line: "Setup could not finish on its own, but your first article has been written since.",
+    produced: true,
+  };
+}
+
 export function onboardingOutcome(state: OnboardingState, handoff = false, opts: { preTrial?: boolean } = {}): OnboardingOutcome {
   if (state.error) return { tone: "error", line: state.error, produced: false };
   if (!state.ready) {
