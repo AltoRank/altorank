@@ -107,15 +107,15 @@ function plainLines(markdown: string): string[] {
 
 /**
  * The sentences of one fetched page that state a figure, best first: short
- * enough to quote, long enough to carry what the figure is of.
+ * enough to quote, long enough to carry what the figure is of, and, with a
+ * `topic` (the keyword), about it (`aboutTopic`).
  *
- * With a `topic` (the keyword), the sentences about it (`aboutTopic`) come
- * first and the rest only fill what is left. They are ranked, not dropped:
- * a page about a topic states figures in sentences that do not name it ("62%
- * of the sports injuries we saw were sprains" on a physiotherapy page), and
- * a word match cannot tell those from a figure about the page itself. The
- * writer is told to leave an off-topic figure out (`figureRules`), and the
- * fact check will not verify one (`verifyCitedFigures`).
+ * Off-topic sentences used to be ranked after the on-topic ones and still
+ * fill the list when a page had fewer than three of those. That is how a
+ * magazine's "100% of the fees we collect" reached a diaper-cream brief a
+ * second time (2026-10-22). A real figure in a sentence that does not name
+ * the topic is lost with them; the writer can still use it from the page,
+ * and the fact check will not verify it (`figureOnTopic`).
  */
 export function figureSentences(
   markdown: string,
@@ -125,23 +125,23 @@ export function figureSentences(
 ): SourceFigure[] {
   const locale = resolveLocale(language);
   if (!locale.supported) return [];
-  const onTopic: SourceFigure[] = [];
-  const rest: SourceFigure[] = [];
+  const out: SourceFigure[] = [];
   const seen = new Set<string>();
   for (const line of plainLines(markdown)) {
     for (const sentence of line.split(/(?<=[.!?])\s+(?=[\p{Lu}\p{N}"“(%$€£₺])/u)) {
       const s = sentence.trim();
       if (s.length < MIN_SENTENCE || s.length > MAX_SENTENCE || FURNITURE.test(s)) continue;
+      if (!aboutTopic(s, topic)) continue;
       const figures = [...new Set(findFigures(s, locale.code).map((f) => f.trim()))];
       if (!figures.length) continue;
       const key = foldCase(s);
       if (seen.has(key)) continue;
       seen.add(key);
-      (aboutTopic(s, topic) ? onTopic : rest).push({ sentence: s, figures, url: page.url, domain: page.domain });
-      if (onTopic.length >= MAX_PER_PAGE) return onTopic;
+      out.push({ sentence: s, figures, url: page.url, domain: page.domain });
+      if (out.length >= MAX_PER_PAGE) return out;
     }
   }
-  return [...onTopic, ...rest].slice(0, MAX_PER_PAGE);
+  return out;
 }
 
 /** The pages' sentences as one list, capped, one sentence per wording. */
