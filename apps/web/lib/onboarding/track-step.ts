@@ -20,7 +20,7 @@ export interface TrackStepData {
   /** For the article steps: the server finds the workspace from the article. */
   articleId?: string;
   /** For the checkout steps: the Stripe Checkout Session the form was opened on, once there is one. */
-  checkoutSession?: string;
+  checkoutId?: string;
   props?: StepProps;
 }
 

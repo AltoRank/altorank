@@ -211,8 +211,9 @@ export function GateTop({
       {/* Two columns from lg: the article, and beside it the ask and why this
           article, held in view while the article scrolls. The card form opens
           in that rail (Embedded Checkout, inline), beside the article and never
-          over it. Below lg the rail follows the article, and the slim bar
-          opens the same checkout in a sheet. */}
+          over it. Below lg the rail follows the article, and its button and
+          the slim bar both open the same checkout in a sheet: one form at a
+          time (components/billing/trial-offer.tsx INLINE_CHECKOUT_QUERY). */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
         <div className="flex min-w-0 flex-col gap-4 lg:flex-1">
           {retry}

@@ -149,17 +149,17 @@ describe("POST /api/onboard/step", () => {
   });
 
   it("keeps a checkout step's Stripe session only when it is the account's own", async () => {
-    await post({ step: "checkout_closed", checkoutSession: "cs_test_ours000000000000", props: { how: "escape", surface: "price_box", viewport: "mobile" } });
-    await post({ step: "checkout_failed", checkoutSession: "cs_test_someone_elses0000", props: { stage: "mount", surface: "sticky_bar" } });
+    await post({ step: "checkout_closed", checkoutId: "cs_test_ours000000000000", props: { how: "escape", surface: "price_box", viewport: "mobile" } });
+    await post({ step: "checkout_failed", checkoutId: "cs_test_someone_elses0000", props: { stage: "mount", surface: "sticky_bar" } });
     expect(owned).toHaveBeenCalledWith({ service: true }, "acc1", "cs_test_ours000000000000");
     const [closed, failed] = record.mock.calls.map((c) => (c as unknown as [unknown, Record<string, unknown>])[1]);
-    expect(closed).toMatchObject({ step: "checkout_closed", checkoutSession: "cs_test_ours000000000000", props: { how: "escape", surface: "price_box", viewport: "mobile" } });
-    expect(failed).toMatchObject({ step: "checkout_failed", checkoutSession: null, props: { stage: "mount", surface: "sticky_bar" } });
+    expect(closed).toMatchObject({ step: "checkout_closed", checkoutId: "cs_test_ours000000000000", props: { how: "escape", surface: "price_box", viewport: "mobile" } });
+    expect(failed).toMatchObject({ step: "checkout_failed", checkoutId: null, props: { stage: "mount", surface: "sticky_bar" } });
   });
 
   it("never reads a session for a step that is not about a checkout", async () => {
-    await post({ step: "trial_clicked", checkoutSession: "cs_test_ours000000000000", props: { surface: "articles", plan: "starter", interval: "month" } });
+    await post({ step: "trial_clicked", checkoutId: "cs_test_ours000000000000", props: { surface: "articles", plan: "starter", interval: "month" } });
     expect(owned).not.toHaveBeenCalled();
-    expect(record).toHaveBeenCalledWith({ service: true }, expect.objectContaining({ step: "trial_clicked", checkoutSession: null, props: { surface: "articles", plan: "starter", interval: "month" } }));
+    expect(record).toHaveBeenCalledWith({ service: true }, expect.objectContaining({ step: "trial_clicked", checkoutId: null, props: { surface: "articles", plan: "starter", interval: "month" } }));
   });
 });

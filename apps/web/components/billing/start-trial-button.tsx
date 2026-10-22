@@ -60,6 +60,8 @@ export function StartTrialButton({
 }) {
   const [pending, start] = useTransition();
   const [open, setOpen] = useState(false);
+  // Where focus goes back to when the sheet closes.
+  const opener = useRef<HTMLButtonElement | null>(null);
   // The Stripe session the open form is on, once it has one: what tells
   // one attempt's events from the next (lib/onboarding/step-props.ts stepKey).
   const session = useRef<string | undefined>(undefined);
@@ -72,10 +74,10 @@ export function StartTrialButton({
     if (surface) trackStep("trial_clicked", { props: { surface, plan, interval, checkout } });
   };
   const failed = (stage: CheckoutFailure) => {
-    if (surface) trackStep("checkout_failed", { checkoutSession: session.current, props: { stage, surface, viewport: currentViewport(), checkout } });
+    if (surface) trackStep("checkout_failed", { checkoutId: session.current, props: { stage, surface, viewport: currentViewport(), checkout } });
   };
   const leave = (how: CheckoutClose) => {
-    if (surface) trackStep("checkout_closed", { checkoutSession: session.current, props: { how, surface, viewport: currentViewport() } });
+    if (surface) trackStep("checkout_closed", { checkoutId: session.current, props: { how, surface, viewport: currentViewport() } });
     setOpen(false);
   };
   const fail = (message: string, stage: CheckoutFailure) => {
@@ -105,7 +107,8 @@ export function StartTrialButton({
         <Button
           variant={variant}
           className={className}
-          onClick={() => {
+          onClick={(e) => {
+            opener.current = e.currentTarget;
             pressed();
             setOpen(true);
           }}
@@ -116,6 +119,7 @@ export function StartTrialButton({
           <CheckoutSheet
             open={open}
             onClose={leave}
+            opener={opener}
             title={`Start your ${TRIAL_DAYS}-day trial`}
             lede={`${PLAN_LABELS[plan]}: €0 today, then ${price}. ${CANCEL_LINE}`}
           >

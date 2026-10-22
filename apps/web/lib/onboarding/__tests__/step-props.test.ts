@@ -115,12 +115,12 @@ describe("the trial steps", () => {
   });
 
   it("keep a close and a failure per session, per button, per way, and one per way before there is a session", () => {
-    const close = (how: "close" | "escape", checkoutSession?: string) => stepKey("checkout_closed", { checkoutSession, props: { how, surface: "price_box", viewport: "mobile" } });
+    const close = (how: "close" | "escape", checkoutId?: string) => stepKey("checkout_closed", { checkoutId, props: { how, surface: "price_box", viewport: "mobile" } });
     expect(close("close", S)).not.toBe(close("escape", S));
     expect(close("close", S)).not.toBe(close("close", "cs_test_other0000000000"));
     expect(close("close")).not.toBe(close("close", S));
     // The viewport says where, not which: the same close on a turned phone is the same close.
-    expect(close("close", S)).toBe(stepKey("checkout_closed", { checkoutSession: S, props: { how: "close", surface: "price_box", viewport: "tablet" } }));
+    expect(close("close", S)).toBe(stepKey("checkout_closed", { checkoutId: S, props: { how: "close", surface: "price_box", viewport: "tablet" } }));
     expect(stepKey("checkout_failed", { props: { stage: "create", surface: "billing" } })).not.toBe(stepKey("checkout_failed", { props: { stage: "load", surface: "billing" } }));
   });
 
