@@ -105,6 +105,19 @@ describe("a site that refuses the crawl", () => {
     expect(stored.map((r) => r.term)).toContain("baby eczema cream");
   });
 
+  it("settles the first look, so the nightly retries do not buy discovery again", async () => {
+    const { analysis } = await analyse();
+    expect(analysis.firstLook).toEqual({ attempts: 1, settled: true, reason: "profile" });
+  });
+
+  it("keeps retrying when the fallback stored nothing", async () => {
+    fit.mockImplementation(async (_b: unknown, terms: string[]) => ({ basis: "model", verdicts: new Map(terms.map((t) => [t, { keep: false, reason: "no" }])) }));
+    discover.mockResolvedValue({ fromCompetitors: [], fromIdeas: [], seeds: { seeds: [], basis: "none" }, seedsPriced: 0, competitorsAsked: [] });
+    ranked.mockResolvedValue([]);
+    const { analysis } = await analyse();
+    expect(analysis.firstLook?.reason).not.toBe("profile");
+  });
+
   it("still runs every term through the buyer test", async () => {
     fit.mockImplementation(async (_b: unknown, terms: string[]) => ({
       basis: "model",
