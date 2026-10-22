@@ -37,7 +37,7 @@ import { checkDomainReachable } from "@/lib/domain/reachable";
 import { trainVoiceProfile } from "@/lib/voice/train";
 import { composeVoiceSample, readExampleArticles, readExampleUrls } from "@/lib/voice/examples";
 import { analyseDomain, isTransientCrawlFailure } from "@/lib/audit/domain-analysis";
-import { refusing } from "@/lib/audit/host-circuit";
+import { refusalKind, refusalLine, refusing } from "@/lib/audit/host-circuit";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { generateArticle } from "@/lib/content/generate";
 import { draftHoldReason, planHold } from "@/lib/billing/trial-hold";
@@ -881,7 +881,7 @@ async function readExistingPages(supabase: SupabaseClient, workspaceId: string, 
         detail: "Your store turns automated readers away, so we could not read its pages. Connect your Shopify store and we read them through Shopify instead.",
       });
     } else {
-      emit({ phase: "pages", status: "skipped", detail: "The site is rate-limiting us right now; the nightly pass reads your existing pages." });
+      emit({ phase: "pages", status: "skipped", detail: refusalLine(refusalKind(`https://${domain}/`)) });
     }
   } else if (!domain) {
     emit({ phase: "pages", status: "skipped", detail: "No domain to read pages from." });
