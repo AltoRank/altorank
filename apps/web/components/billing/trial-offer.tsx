@@ -6,6 +6,15 @@ import { StartTrialButton } from "./start-trial-button";
 import { PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
 import { CANCEL_LINE, chargeLine, otherIntervalLine, otherPlanLine, reassuranceLine, trialIncludes, type TrialOfferFacts } from "@/lib/billing/trial-offer";
 import { observeSeenOnce } from "@/lib/onboarding/seen-once";
+import { useMediaQuery } from "@/lib/hooks/use-media-query";
+
+/**
+ * From Tailwind's lg the gate has a rail beside the article and the box opens
+ * Stripe's form in place there. Below it the box opens the same sheet as the
+ * sticky bar: Stripe keeps one Embedded Checkout per page, so an inline form
+ * and a sheet both open would leave one of them an empty frame.
+ */
+export const INLINE_CHECKOUT_QUERY = "(min-width: 1024px)";
 
 /** The sentence for a member who cannot buy: who can, and what it opens. */
 export const MEMBER_CANNOT_BUY =
@@ -87,6 +96,7 @@ export function TrialPriceBox({
   buttonRef?: React.Ref<HTMLDivElement>;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const inline = useMediaQuery(INLINE_CHECKOUT_QUERY);
   const box = useRef<HTMLElement | null>(null);
   const seen = useRef(onSeen);
   useEffect(() => {
@@ -126,9 +136,9 @@ export function TrialPriceBox({
           onStart={onStart}
           label={`Start ${TRIAL_DAYS}-day trial`}
           className="w-full justify-center py-2.5 text-[14px]"
-          // In the box itself the form opens in place of the button: on the
-          // gate that is the rail beside the article.
-          embed="inline"
+          // From lg the form opens in place of the button, in the rail
+          // beside the article; below lg in the sheet, like the bar's.
+          embed={inline ? "inline" : "sheet"}
         />
       </div>
       <p className="m-0 mt-2.5 text-[12.5px] leading-[1.55] text-ink-2">{reassuranceLine()}</p>
