@@ -23,7 +23,7 @@ export const CRAWLER_UA =
  */
 export const FALLBACK_UA = "AltoRankBot/1.0 (content analysis)";
 
-import { noteRefusal, refusing } from "./host-circuit";
+import { noteRefusal, refusalOf, refusing } from "./host-circuit";
 import { extractFetchedPage, type SitePageExtract } from "./site-extract";
 
 /** Statuses a bot rule returns; anything else is the site's real answer. */
@@ -45,7 +45,7 @@ async function fetchPage(url: string, signal: AbortSignal): Promise<Response> {
     redirect: "follow",
   });
   if (again.ok) return again;
-  noteRefusal(url);
+  noteRefusal(url, Date.now(), refusalOf(res) === "challenge" ? "challenge" : refusalOf(again));
   return res;
 }
 
