@@ -7,6 +7,7 @@ import { resolveLocale } from "@/lib/i18n/locale";
 import { matchingOfferings } from "@/lib/content/topic-pages";
 import { faqPlan } from "@/lib/content/on-page";
 import { BLOCKED_CLASSES, classOf } from "@/lib/seo/source-classes";
+import { knownBrandNames, mayNameOtherBrands, namesKnownBrand } from "@/lib/seo/brand-terms";
 
 // ---------------------------------------------------------------------------
 // Build the system prompt sent to the AI model for article generation.
@@ -23,8 +24,14 @@ import { BLOCKED_CLASSES, classOf } from "@/lib/seo/source-classes";
  * Exported for testing: the exact wording of these sections is the difference
  * between a research-informed article and a generic one.
  */
-export function buildResearchSection(research: ArticleResearch): string[] {
+export function buildResearchSection(
+  research: ArticleResearch,
+  opts: { otherBrands?: { keyword: string; ownDomain?: string | null } } = {},
+): string[] {
   const sections: string[] = [];
+  // Set when the article may not name other businesses' brands: a related
+  // search that names one is not offered as a term to cover.
+  const brands = opts.otherBrands ? knownBrandNames(research, opts.otherBrands) : new Set<string>();
   const review = research.sourceReview;
   const blocked = (url: string) => Boolean(review) && BLOCKED_CLASSES.has(classOf(url, review));
   const sellerMark = " [sells what this business sells: do not cite, quote or link]";
@@ -150,6 +157,7 @@ export function buildResearchSection(research: ArticleResearch): string[] {
   // --- Terms to cover --------------------------------------------------------
   const worthCovering = research.relatedKeywords
     .filter((k) => (k.searchVolume ?? 0) > 0)
+    .filter((k) => !namesKnownBrand(k.keyword, brands))
     .slice(0, 20);
   if (worthCovering.length) {
     sections.push(
@@ -742,8 +750,37 @@ export function buildSystemPrompt(prompt: ArticlePrompt): string {
   // --- Research --------------------------------------------------------------
   // Placed before the format and SEO rules so the model has the subject matter
   // in hand before it is told how to lay it out.
+  const otherBrandsAllowed = mayNameOtherBrands({
+    keyword: prompt.keyword,
+    title: prompt.title,
+    articleSubtype: prompt.brief?.articleSubtype,
+    instructions: prompt.brief?.instructions,
+    mentionSimilarProducts: prompt.output?.mentionSimilarProducts,
+  });
   if (research) {
-    sections.push(...buildResearchSection(research));
+    sections.push(
+      ...buildResearchSection(research, otherBrandsAllowed ? {} : { otherBrands: { keyword: prompt.keyword } }),
+    );
+  }
+
+  // --- Other businesses' brands -----------------------------------------------
+  // The research above is full of them: the ranking pages, the related
+  // searches, the rivals. A first draft of 2026-10-22 passed four of them on
+  // to the store's readers as names that "come up often in that search".
+  // Unless the article is a comparison, the business's own blog does not
+  // advertise anyone else's products (lib/seo/brand-terms.ts).
+  if (!otherBrandsAllowed) {
+    sections.push(
+      [
+        "OTHER BRANDS:",
+        "- Do not name any other business's brand, product, product line or shop anywhere in the",
+        "  article: not the ones in the research above, not ones you know of, not even in passing",
+        "  (\"brands like X or Y\"). Describe the kind of product instead, by what it is and does,",
+        "  and help the reader choose by what to look for rather than by name.",
+        "- This is the business's own blog. The only products it names are its own.",
+        "- Naming a public body, a professional association or a study as the source of a fact is fine.",
+      ].join("\n"),
+    );
   }
 
   // --- Structure -------------------------------------------------------------
