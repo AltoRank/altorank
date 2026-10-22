@@ -12,6 +12,7 @@ import {
   initialOnboardingState,
   isTerminal,
   onboardingOutcome,
+  outcomeSince,
   phaseLabel,
   reduceOnboarding,
   stateFromRun,
@@ -60,6 +61,7 @@ export function OnboardingProgress({
   onStartedAt,
   onRun,
   understood,
+  articleExists = false,
 }: {
   workspaceId: string;
   domain: string;
@@ -105,6 +107,8 @@ export function OnboardingProgress({
   onRun?: (runId: string) => void;
   /** What the site read found, shown beside the loading screen while the run is live. */
   understood?: React.ReactNode;
+  /** The site has an article, whether or not this run wrote it (`outcomeSince`). */
+  articleExists?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState>(() =>
@@ -311,7 +315,7 @@ export function OnboardingProgress({
   // The closing sentence is derived, not chosen: `ready` is emitted whatever
   // happened, so "Done. Your first month is on the calendar" used to print
   // over an empty calendar and a refused draft.
-  const outcome = onboardingOutcome(state, autoNavigate, { preTrial });
+  const outcome = outcomeSince(onboardingOutcome(state, autoNavigate, { preTrial }), articleExists && finished);
 
   const calendar = (
     <CalendarStrip

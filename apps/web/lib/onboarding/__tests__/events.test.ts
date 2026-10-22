@@ -3,6 +3,7 @@ import {
   initialOnboardingState,
   reduceOnboarding,
   stateFromRun,
+  outcomeSince,
   isTerminal,
   onboardingOutcome,
   phaseLabel,
@@ -262,5 +263,26 @@ describe("stateFromRun: the drafts the trial step lists", () => {
 
   it("is empty when nothing was written", () => {
     expect(stateFromRun(run, null).drafts).toEqual([]);
+  });
+});
+
+describe("outcomeSince: an article written after the run", () => {
+  const nothing = { tone: "partial" as const, line: "Set up, but nothing could be scheduled yet: no page could be fetched.", produced: false };
+
+  it("says the article exists instead of the run's stale headline", () => {
+    const o = outcomeSince(nothing, true);
+    expect(o.produced).toBe(true);
+    expect(o.line).toMatch(/first article has been written since/);
+  });
+
+  it("leaves the run's own line when there is no article", () => {
+    expect(outcomeSince(nothing, false)).toBe(nothing);
+  });
+
+  it("leaves a run that produced something, and a run still working, alone", () => {
+    const done = { tone: "done" as const, line: "Done.", produced: true };
+    const working = { tone: "working" as const, line: "This takes a minute.", produced: false };
+    expect(outcomeSince(done, true)).toBe(done);
+    expect(outcomeSince(working, true)).toBe(working);
   });
 });
