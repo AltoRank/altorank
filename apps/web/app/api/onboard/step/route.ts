@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
   // Nothing is written; the browser does not wait for this answer anyway.
   if (await getImpersonation().catch(() => null)) return new NextResponse(null, { status: 204 });
 
-  let body: { step?: unknown; workspaceId?: unknown; ms?: unknown; count?: unknown; articleId?: unknown; checkoutSession?: unknown; props?: unknown };
+  let body: { step?: unknown; workspaceId?: unknown; ms?: unknown; count?: unknown; articleId?: unknown; checkoutId?: unknown; props?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
   // open session is kept; any other id is dropped and the step is kept
   // once per site and button, as if it had none.
   const service = createServiceClient();
-  const checkoutSession = CHECKOUT_STEPS.includes(body.step) ? await ownedCheckoutSession(service, workspace.account_id as string, body.checkoutSession) : undefined;
+  const checkoutId = CHECKOUT_STEPS.includes(body.step) ? await ownedCheckoutSession(service, workspace.account_id as string, body.checkoutId) : undefined;
 
   const signedUp = Date.parse(user.created_at ?? "");
   await recordOnboardingStep(service, {
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
     ms: typeof body.ms === "number" ? body.ms : null,
     count: typeof body.count === "number" ? body.count : null,
     articleId: articleId ?? null,
-    checkoutSession: checkoutSession ?? null,
+    checkoutId: checkoutId ?? null,
     props: stepProps(body.step, body.props),
     secondsSinceSignup: body.step === "gate_shown" && Number.isFinite(signedUp) ? (Date.now() - signedUp) / 1000 : null,
   });

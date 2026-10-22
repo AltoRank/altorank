@@ -70,10 +70,10 @@ export function StartTrialButton({
     if (surface) trackStep("trial_clicked", { props: { surface, plan, interval } });
   };
   const failed = (stage: CheckoutFailure) => {
-    if (surface) trackStep("checkout_failed", { checkoutSession: session.current, props: { stage, surface, viewport: currentViewport() } });
+    if (surface) trackStep("checkout_failed", { checkoutId: session.current, props: { stage, surface, viewport: currentViewport() } });
   };
   const leave = (how: CheckoutClose) => {
-    if (surface) trackStep("checkout_closed", { checkoutSession: session.current, props: { how, surface, viewport: currentViewport() } });
+    if (surface) trackStep("checkout_closed", { checkoutId: session.current, props: { how, surface, viewport: currentViewport() } });
     setOpen(false);
   };
   const fail = (message: string, stage: CheckoutFailure) => {

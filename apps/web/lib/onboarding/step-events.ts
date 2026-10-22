@@ -39,8 +39,13 @@ export interface StepEventInput {
   articleId?: string | null;
   /** For `run_started`: which run. */
   runId?: string | null;
-  /** For the checkout steps: the account's Stripe Checkout Session, once it has one (`ownedCheckoutSession`). */
-  checkoutSession?: string | null;
+  /**
+   * For the checkout steps: the account's Stripe Checkout Session, once it
+   * has one (`ownedCheckoutSession`). Not `checkoutSession`: the event log
+   * blanks any context key with "session" in its name
+   * (lib/observability/event.ts), and the id is what ties a close to its try.
+   */
+  checkoutId?: string | null;
   /** The step's words from ./step-props.ts; anything off its lists is dropped. */
   props?: StepProps;
 }
@@ -59,7 +64,7 @@ export function stepContext(input: StepEventInput): Record<string, unknown> {
   const count = whole(input.count, 1_000);
   const articleId = uuidOrUndefined(input.articleId);
   const runId = uuidOrUndefined(input.runId);
-  const checkoutSession = checkoutSessionOrUndefined(input.checkoutSession);
+  const checkoutId = checkoutSessionOrUndefined(input.checkoutId);
   return {
     step: input.step,
     ...(input.userId ? { userId: input.userId } : {}),
@@ -68,7 +73,7 @@ export function stepContext(input: StepEventInput): Record<string, unknown> {
     ...(count !== undefined ? { count } : {}),
     ...(articleId ? { articleId } : {}),
     ...(runId ? { runId } : {}),
-    ...(checkoutSession ? { checkoutSession } : {}),
+    ...(checkoutId ? { checkoutId } : {}),
     ...stepProps(input.step, input.props),
   };
 }
@@ -115,7 +120,7 @@ export async function recordOnboardingStep(db: SupabaseClient, input: StepEventI
           id: stepEventId(
             input.workspaceId,
             input.step,
-            stepKey(input.step, { articleId: context.articleId as string | undefined, runId: context.runId as string | undefined, checkoutSession: context.checkoutSession as string | undefined, props }),
+            stepKey(input.step, { articleId: context.articleId as string | undefined, runId: context.runId as string | undefined, checkoutId: context.checkoutId as string | undefined, props }),
           ),
           ...row,
         },

@@ -60,27 +60,27 @@ describe("StartTrialButton's onboarding steps", () => {
     parts.button!.onClick({ currentTarget: null });
     parts.sheet!.children.props.onSession?.(S);
     parts.sheet!.onClose("backdrop");
-    expect(track).toHaveBeenLastCalledWith("checkout_closed", { checkoutSession: S, props: { how: "backdrop", surface: "quiet_box", viewport: undefined } });
+    expect(track).toHaveBeenLastCalledWith("checkout_closed", { checkoutId: S, props: { how: "backdrop", surface: "quiet_box", viewport: undefined } });
   });
 
   it("says a form closed before Stripe gave it a session, without one", () => {
     renderToStaticMarkup(<StartTrialButton surface="price_box" />);
     parts.button!.onClick({ currentTarget: null });
     parts.sheet!.onClose("escape");
-    expect(track).toHaveBeenLastCalledWith("checkout_closed", { checkoutSession: undefined, props: { how: "escape", surface: "price_box", viewport: undefined } });
+    expect(track).toHaveBeenLastCalledWith("checkout_closed", { checkoutId: undefined, props: { how: "escape", surface: "price_box", viewport: undefined } });
   });
 
   it("says where a form that never opened stopped", () => {
     renderToStaticMarkup(<StartTrialButton surface="articles" />);
     parts.sheet!.children.props.onError("Stripe could not be loaded.", "load");
-    expect(track).toHaveBeenCalledWith("checkout_failed", { checkoutSession: undefined, props: { stage: "load", surface: "articles", viewport: undefined } });
+    expect(track).toHaveBeenCalledWith("checkout_failed", { checkoutId: undefined, props: { stage: "load", surface: "articles", viewport: undefined } });
   });
 
   it("says a hosted checkout that could not be created failed at create", async () => {
     parts.embedded = false;
     renderToStaticMarkup(<StartTrialButton surface="price_box" />);
     parts.button!.onClick({ currentTarget: null });
-    await vi.waitFor(() => expect(track).toHaveBeenCalledWith("checkout_failed", { checkoutSession: undefined, props: { stage: "create", surface: "price_box", viewport: undefined } }));
+    await vi.waitFor(() => expect(track).toHaveBeenCalledWith("checkout_failed", { checkoutId: undefined, props: { stage: "create", surface: "price_box", viewport: undefined } }));
     expect(track).toHaveBeenCalledWith("trial_clicked", expect.anything());
   });
 

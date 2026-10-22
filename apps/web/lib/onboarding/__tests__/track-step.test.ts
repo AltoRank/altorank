@@ -49,9 +49,9 @@ describe("trackStep", () => {
 
   it("says a checkout's close once per session and way, and a trial click once per button", () => {
     const S = "cs_test_a1B2c3D4e5F6g7H8i9J0";
-    trackStep("checkout_closed", { checkoutSession: S, props: { how: "close", surface: "price_box" } });
-    trackStep("checkout_closed", { checkoutSession: S, props: { how: "close", surface: "price_box" } });
-    trackStep("checkout_closed", { checkoutSession: S, props: { how: "escape", surface: "price_box" } });
+    trackStep("checkout_closed", { checkoutId: S, props: { how: "close", surface: "price_box" } });
+    trackStep("checkout_closed", { checkoutId: S, props: { how: "close", surface: "price_box" } });
+    trackStep("checkout_closed", { checkoutId: S, props: { how: "escape", surface: "price_box" } });
     trackStep("trial_clicked", { props: { surface: "price_box", plan: "starter", interval: "month" } });
     trackStep("trial_clicked", { props: { surface: "sticky_bar", plan: "starter", interval: "month" } });
     expect(bodies().map((b) => [b.step, b.props.how ?? b.props.surface])).toEqual([
@@ -60,7 +60,7 @@ describe("trackStep", () => {
       ["trial_clicked", "price_box"],
       ["trial_clicked", "sticky_bar"],
     ]);
-    expect(bodies()[0]).toMatchObject({ checkoutSession: S });
+    expect(bodies()[0]).toMatchObject({ checkoutId: S });
   });
 
   it("never throws, whatever the network does", () => {

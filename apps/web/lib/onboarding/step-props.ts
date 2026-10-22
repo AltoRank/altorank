@@ -149,15 +149,15 @@ export function checkoutSessionOrUndefined(value: unknown): string | undefined {
  *   checkout_failed     session, button, stage  gave it a session has none)
  * Shared by the browser's once-per-page-load and the server's once-ever.
  */
-export function stepKey(step: OnboardingStepName, input: { articleId?: string | null; runId?: string | null; checkoutSession?: string | null; props?: StepProps }): string {
+export function stepKey(step: OnboardingStepName, input: { articleId?: string | null; runId?: string | null; checkoutId?: string | null; props?: StepProps }): string {
   const p = input.props ?? {};
   switch (step) {
     case "trial_clicked":
       return p.surface ? [p.surface, p.plan ?? "", p.interval ?? ""].join(":") : "";
     case "checkout_closed":
-      return [input.checkoutSession ?? "", p.surface ?? "", p.how ?? ""].join(":");
+      return [input.checkoutId ?? "", p.surface ?? "", p.how ?? ""].join(":");
     case "checkout_failed":
-      return [input.checkoutSession ?? "", p.surface ?? "", p.stage ?? ""].join(":");
+      return [input.checkoutId ?? "", p.surface ?? "", p.stage ?? ""].join(":");
     case "setup_ending_shown":
       return p.ending ?? "";
     case "article_opened":

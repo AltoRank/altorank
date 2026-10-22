@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ownedCheckoutSession, stepContext, stepEventId } from "../step-events";
+import { ownedCheckoutSession, recordOnboardingStep, stepContext, stepEventId } from "../step-events";
 import { ONBOARDING_STEPS, isClientStep, isOnboardingStep } from "../step-names";
 
 describe("onboarding.step events", () => {
@@ -76,14 +76,14 @@ describe("onboarding.step events about a checkout", () => {
     }) as never;
 
   it("carry the session and the step's words, nothing else", () => {
-    expect(stepContext({ workspaceId: "w", accountId: "a", userId: null, step: "checkout_closed", checkoutSession: S, props: { how: "escape", surface: "price_box", viewport: "mobile" } })).toEqual({
+    expect(stepContext({ workspaceId: "w", accountId: "a", userId: null, step: "checkout_closed", checkoutId: S, props: { how: "escape", surface: "price_box", viewport: "mobile" } })).toEqual({
       step: "checkout_closed",
-      checkoutSession: S,
+      checkoutId: S,
       how: "escape",
       surface: "price_box",
       viewport: "mobile",
     });
-    expect(stepContext({ workspaceId: "w", accountId: "a", userId: null, step: "checkout_failed", checkoutSession: "not a session", props: { stage: "create" } })).toEqual({ step: "checkout_failed", stage: "create" });
+    expect(stepContext({ workspaceId: "w", accountId: "a", userId: null, step: "checkout_failed", checkoutId: "not a session", props: { stage: "create" } })).toEqual({ step: "checkout_failed", stage: "create" });
   });
 
   it("are new events, never accepted only from the server", () => {
@@ -91,6 +91,26 @@ describe("onboarding.step events about a checkout", () => {
       expect(isOnboardingStep(step)).toBe(true);
       expect(isClientStep(step)).toBe(true);
     }
+  });
+
+  it("store the session where the log keeps it, one row per session", async () => {
+    const rows: Array<Record<string, unknown>> = [];
+    const sink = {
+      from: () => ({
+        upsert: (row: Record<string, unknown>) => {
+          rows.push(row);
+          return { select: async () => ({ data: [{ id: row.id }], error: null }) };
+        },
+      }),
+    } as never;
+    const closed = (checkoutId: string) =>
+      recordOnboardingStep(sink, { workspaceId: "w", accountId: null, userId: null, step: "checkout_closed", checkoutId, props: { how: "close", surface: "price_box" } });
+    await closed(S);
+    await closed("cs_test_another000000000");
+    // The log blanks any context key with "session" in its name.
+    expect(rows[0].context).toMatchObject({ checkoutId: S });
+    expect(rows[1].context).toMatchObject({ checkoutId: "cs_test_another000000000" });
+    expect(rows[0].id).not.toBe(rows[1].id);
   });
 
   it("keep a session only when it is the one the account has open", async () => {
