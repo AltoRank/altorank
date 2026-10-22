@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("next/headers", () => ({
+  headers: async () => new Headers({ host: "app.altorank.co" }),
   cookies: async () => ({
     get: (name: string) => (mocks.jar.has(name) ? { value: mocks.jar.get(name) } : undefined),
     set: (name: string, value: string) => void mocks.jar.set(name, value),
@@ -122,7 +123,7 @@ describe("the sign-in actions", () => {
     expect(mocks.startSigninCodeSignup).not.toHaveBeenCalled();
     mocks.sendSignInCode.mockResolvedValueOnce({ sent: true, createdUserId: "u-new" });
     const url = await redirectOf(requestSignInCode(form({ email: "new@example.com", next: "/dashboard" })));
-    expect(mocks.startSigninCodeSignup).toHaveBeenCalledWith("u-new", "new@example.com");
+    expect(mocks.startSigninCodeSignup).toHaveBeenCalledWith("u-new", "new@example.com", {});
     // The same page either way: the form says nothing about which addresses exist.
     expect(url).toBe("/signin/code?step=code&next=%2Fdashboard");
   });

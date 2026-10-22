@@ -31,7 +31,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
-vi.mock("next/headers", () => ({ cookies: async () => ({ set: mocks.cookieSet }) }));
+vi.mock("next/headers", () => ({ cookies: async () => ({ set: mocks.cookieSet }), headers: async () => new Headers() }));
 vi.mock("@/lib/supabase/server", () => ({ createServiceClient: mocks.createServiceClient }));
 vi.mock("@/lib/email/auth-emails", () => ({ sendSignupConfirmation: mocks.sendSignupConfirmation }));
 vi.mock("@/lib/domain/reachable", () => ({ checkDomainReachable: mocks.checkDomainReachable }));

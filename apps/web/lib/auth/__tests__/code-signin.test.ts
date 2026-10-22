@@ -27,10 +27,12 @@ describe("emailSignInCode", () => {
     expect(mocks.set).toHaveBeenCalledWith(PENDING_SIGNIN_COOKIE, "owner@example.com", expect.objectContaining({ httpOnly: true, path: "/signin" }));
   });
 
-  it("makes the account for a user Supabase created to send the code to", async () => {
+  it("makes the account for a user Supabase created to send the code to, with where they came from", async () => {
     mocks.sendSignInCode.mockResolvedValue({ sent: true, createdUserId: "u-new" });
     await emailSignInCode("new@example.com", "/dashboard");
-    expect(mocks.startSigninCodeSignup).toHaveBeenCalledWith("u-new", "new@example.com");
+    expect(mocks.startSigninCodeSignup).toHaveBeenCalledWith("u-new", "new@example.com", {});
+    await emailSignInCode("new@example.com", "/dashboard", { lp: "/blog/x/", ref: "www.google.com" });
+    expect(mocks.startSigninCodeSignup).toHaveBeenLastCalledWith("u-new", "new@example.com", { lp: "/blog/x/", ref: "www.google.com" });
   });
 
   it("throws, and remembers nothing, when the code did not go out", async () => {

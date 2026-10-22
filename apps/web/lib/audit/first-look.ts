@@ -63,6 +63,14 @@ export interface FirstLookInput {
    * is known, so it is retried on the same terms as a blip.
    */
   failedForGood: boolean;
+  /**
+   * True when no page was read but keywords were still stored, judged against
+   * the wizard's business profile (`profileFromBusiness`). A site behind its
+   * own bot wall refuses every page, which looks like a rate-limit ban and
+   * was retried; each retry bought the keyword discovery again for a result
+   * already in hand. That look happened.
+   */
+  judgedFromProfile?: boolean;
 }
 
 export interface FirstLookDecision {
@@ -75,7 +83,7 @@ export interface FirstLookDecision {
    */
   settled: boolean;
   /** Why, for the cron's result row. */
-  reason: "read" | "unreachable" | "retry" | "gave-up";
+  reason: "read" | "profile" | "unreachable" | "retry" | "gave-up";
 }
 
 /**
@@ -87,6 +95,7 @@ export function decideFirstLook(
 ): FirstLookDecision {
   const attempts = Math.max(0, input.attemptsBefore) + 1;
   if (input.pagesCrawled > 0) return { attempts, settled: true, reason: "read" };
+  if (input.judgedFromProfile) return { attempts, settled: true, reason: "profile" };
   if (input.failedForGood) return { attempts, settled: true, reason: "unreachable" };
   if (attempts >= maxAttempts) return { attempts, settled: true, reason: "gave-up" };
   return { attempts, settled: false, reason: "retry" };

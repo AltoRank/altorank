@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { safeNextPath } from "@/lib/auth/next-path";
 import { PENDING_SIGNIN_COOKIE } from "@/lib/auth/pending-signin";
 import { signinPath } from "@/lib/auth/signin-path";
+import { parseSignupSource, signupSourceFields } from "@/lib/auth/signup-source";
 import { SubmitButton } from "@/components/auth/submit-button";
 import { CodeInput } from "@/components/auth/code-input";
 import { verifySignInCode } from "../actions";
@@ -14,13 +15,20 @@ export const metadata: Metadata = { title: "Sign in with a code" };
 /**
  * Where the emailed code is typed. Asking for one is /signin's own form now
  * (../actions.ts), so without a code on its way this page sends there,
- * keeping `next` and any error.
+ * keeping `next`, any error, and where the visitor came from (an older link
+ * to this page carries it, and /signin's form is the one that records it).
  */
-export default async function SignInCodePage(props: { searchParams: Promise<{ step?: string; error?: string; next?: string }> }) {
-  const { step, error, next: rawNext } = await props.searchParams;
+export default async function SignInCodePage(props: {
+  searchParams: Promise<{ step?: string; error?: string; next?: string } & Record<string, string | string[] | undefined>>;
+}) {
+  const searchParams = await props.searchParams;
+  const { step, error, next: rawNext } = searchParams;
   const next = safeNextPath(rawNext);
   const email = (await cookies()).get(PENDING_SIGNIN_COOKIE)?.value ?? null;
-  if (step !== "code" || email === null) redirect(signinPath("/signin", next, error ? { error } : undefined));
+  if (step !== "code" || email === null) {
+    const carry = Object.fromEntries(signupSourceFields(parseSignupSource(searchParams)));
+    redirect(signinPath("/signin", next, { ...(error ? { error } : {}), ...carry }));
+  }
 
   return (
     <div className="space-y-6">

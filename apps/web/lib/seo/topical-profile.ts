@@ -272,7 +272,7 @@ function tokenize(text: string): string[] {
  */
 export function buildTopicalProfile(
   domain: string,
-  pages: CrawlResult[],
+  pages: Array<Pick<CrawlResult, "title" | "metaDescription" | "h1" | "h2">>,
   now: string = new Date().toISOString(),
 ): TopicalProfile {
   // Each text fragment is a document, which is what makes the frequency filter
@@ -386,6 +386,46 @@ export function buildTopicalProfile(
     .map(([t]) => t);
 
   return { domain, terms, topTerms, pagesAnalysed: pages.length, builtAt: now };
+}
+
+/**
+ * A profile from what the wizard learned about the business, for a site that
+ * refused every page the crawl asked for.
+ *
+ * A signup, 2026-10-21: a Shopify store behind its own Cloudflare challenge
+ * answered 403 to every agent, a desktop Chrome on a home line included.
+ * The wizard had still described it (plant-based baby skincare, parents of
+ * eczema-prone babies) and DataForSEO knew what it ranked for, but with no
+ * page text there was no profile, and the keyword phase stored nothing: a
+ * dead end for an established store with real search traffic.
+ *
+ * The answers are laid out the way a crawl lays out a site: the name and
+ * description are the homepage, each offering a page title, audiences and
+ * buying jobs the headings. The same TF-IDF then runs over them, so a
+ * keyword is judged against what the business sells, not against nothing.
+ * Null when the answers are too thin to say that much.
+ */
+export function profileFromBusiness(
+  domain: string,
+  business: {
+    name?: string | null;
+    description?: string | null;
+    offerings?: string[] | null;
+    audiences?: string[] | null;
+    buyingJobs?: string[] | null;
+    differentiators?: string[] | null;
+  } | null | undefined,
+  now: string = new Date().toISOString(),
+): TopicalProfile | null {
+  if (!business?.description?.trim() || !business.offerings?.length) return null;
+  const pages = [
+    { title: business.name ?? "", metaDescription: business.description, h1: [business.description], h2: business.audiences ?? [] },
+    ...business.offerings.map((o) => ({ title: o, metaDescription: "", h1: [], h2: [] })),
+    ...(business.buyingJobs ?? []).map((j) => ({ title: "", metaDescription: "", h1: [], h2: [j] })),
+    ...(business.differentiators ?? []).map((d) => ({ title: "", metaDescription: d, h1: [], h2: [] })),
+  ];
+  const profile = { ...buildTopicalProfile(domain, pages, now), pagesAnalysed: 0 };
+  return profileIsUsable(profile, domain) ? profile : null;
 }
 
 /**

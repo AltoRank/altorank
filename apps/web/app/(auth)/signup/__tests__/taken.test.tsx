@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("next/headers", () => ({
+  headers: async () => new Headers({ host: "app.altorank.co" }),
   cookies: async () => ({
     get: (name: string) => (mocks.jar.has(name) ? { value: mocks.jar.get(name) } : undefined),
     set: (name: string, value: string) => void mocks.jar.set(name, value),

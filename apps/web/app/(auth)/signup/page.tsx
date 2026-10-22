@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendSignupConfirmation } from "@/lib/email/auth-emails";
 import { authErrorMessage } from "@/lib/auth/errors";
@@ -23,7 +23,9 @@ import {
   parseSignupSource,
   signupSourceContext,
   signupSourceFields,
+  signupSourceHref,
   signupSourceQuery,
+  withRefererFallback,
 } from "@/lib/auth/signup-source";
 
 export const metadata: Metadata = {
@@ -272,8 +274,16 @@ export default async function SignUpPage(props: {
   const domain = normalizeDomain(searchParams?.domain ?? "");
   const prefilled = DOMAIN_PATTERN.test(domain) ? domain : null;
   // Read the same way the action reads them, so only values that pass the
-  // shape checks are ever echoed into the form.
-  const source = parseSignupSource(searchParams);
+  // shape checks are ever echoed into the form. A visitor who came straight
+  // here (an AI answer's link, a bookmark) brings no `ref`, so the Referer
+  // header's site stands in for it; an error redirect back here comes from
+  // this page, which is not a source, and keeps the one it carried.
+  const requestHeaders = await headers();
+  const source = withRefererFallback(
+    parseSignupSource(searchParams),
+    requestHeaders.get("referer"),
+    requestHeaders.get("host"),
+  );
   const sourceFields = signupSourceFields(source);
 
   if (searchParams?.taken) {
@@ -342,7 +352,7 @@ export default async function SignUpPage(props: {
 
       <p className="text-center text-sm text-ink-3">
         Already have an account?{" "}
-        <Link href="/signin" className="font-medium text-accent-ink hover:underline">
+        <Link href={signupSourceHref("/signin", source)} className="font-medium text-accent-ink hover:underline">
           Sign in
         </Link>
       </p>
