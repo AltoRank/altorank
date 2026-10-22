@@ -8,7 +8,7 @@ import { PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingI
 import { CheckoutSheet, EmbeddedCheckoutForm, embeddedCheckoutAvailable } from "./embedded-checkout";
 import { CANCEL_LINE } from "@/lib/billing/trial-offer";
 import { trackStep } from "@/lib/onboarding/track-step";
-import { currentViewport, type CheckoutClose, type CheckoutFailure, type TrialSurface } from "@/lib/onboarding/step-props";
+import { currentViewport, type CheckoutClose, type CheckoutFailure, type CheckoutUi, type TrialSurface } from "@/lib/onboarding/step-props";
 
 /**
  * The one button that opens the trial's checkout: card required, seven days
@@ -65,12 +65,16 @@ export function StartTrialButton({
   // The Stripe session the open form is on, once it has one: what tells
   // one attempt's events from the next (lib/onboarding/step-props.ts stepKey).
   const session = useRef<string | undefined>(undefined);
+  // Which checkout this button opens, said on the press and on a failure:
+  // Stripe's form on this page when there is a publishable key, else
+  // Stripe's own page. The same test picks the branch below.
+  const checkout: CheckoutUi = embeddedCheckoutAvailable ? "embedded" : "hosted";
   const pressed = () => {
     session.current = undefined;
-    if (surface) trackStep("trial_clicked", { props: { surface, plan, interval } });
+    if (surface) trackStep("trial_clicked", { props: { surface, plan, interval, checkout } });
   };
   const failed = (stage: CheckoutFailure) => {
-    if (surface) trackStep("checkout_failed", { checkoutId: session.current, props: { stage, surface, viewport: currentViewport() } });
+    if (surface) trackStep("checkout_failed", { checkoutId: session.current, props: { stage, surface, viewport: currentViewport(), checkout } });
   };
   const leave = (how: CheckoutClose) => {
     if (surface) trackStep("checkout_closed", { checkoutId: session.current, props: { how, surface, viewport: currentViewport() } });
@@ -83,7 +87,7 @@ export function StartTrialButton({
     setOpen(false);
   };
 
-  if (embeddedCheckoutAvailable) {
+  if (checkout === "embedded") {
     const price = interval === "month" ? `${PLAN_PRICES[plan]} per month` : `${PLAN_YEARLY_PRICES[plan]} per year`;
     const form = (
       <EmbeddedCheckoutForm key={`${plan}-${interval}`} plan={plan} interval={interval} returnTo={returnTo} onError={fail} onSession={(id) => (session.current = id)} />
