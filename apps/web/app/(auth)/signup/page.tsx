@@ -10,7 +10,12 @@ import { accountNameFromDomain } from "@/lib/domain/account-name";
 import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/growth-plan/build";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { SignupSteps } from "@/components/auth/signup-steps";
-import { PENDING_SIGNUP_COOKIE, PENDING_SIGNUP_MAX_AGE } from "@/lib/auth/pending-signup";
+import { PENDING_SIGNUP_COOKIE, PENDING_SIGNUP_MAX_AGE, TAKEN_SIGNUP_COOKIE, TAKEN_SIGNUP_MAX_AGE } from "@/lib/auth/pending-signup";
+import { isAddressTaken } from "@/lib/auth/address-taken";
+import { emailSignInCode } from "@/lib/auth/code-signin";
+import { DEFAULT_AFTER_SIGN_IN } from "@/lib/auth/next-path";
+import { CODE_NOT_SENT, signinPath } from "@/lib/auth/signin-path";
+import { SubmitButton } from "@/components/auth/submit-button";
 import { recordEvent } from "@/lib/observability/record";
 import { existingSignup } from "@/lib/auth/signup-reuse";
 import {
@@ -83,6 +88,19 @@ async function signUp(formData: FormData) {
   try {
     userId = await sendSignupConfirmation({ email, password, next: "/onboarding" });
   } catch (e) {
+    // A returning owner on the wrong form, most of them with no password
+    // they know since code signup: offered a sign-in code to the address
+    // they typed, which waits in a cookie rather than the URL.
+    if (isAddressTaken(e)) {
+      (await cookies()).set(TAKEN_SIGNUP_COOKIE, email.trim().toLowerCase(), {
+        httpOnly: true,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/signup",
+        maxAge: TAKEN_SIGNUP_MAX_AGE,
+      });
+      redirect("/signup?taken=1" + carry);
+    }
     redirect(
       "/signup?error=" +
         encodeURIComponent(authErrorMessage(e instanceof Error ? e.message : "Could not create the account")) +
@@ -228,8 +246,29 @@ async function signUp(formData: FormData) {
   redirect("/signup/verify");
 }
 
+/**
+ * "Email me a sign-in code", for the address a signup was refused for
+ * because it already has an account. The address comes from the cookie the
+ * signup set, never from the form, so this cannot email anyone else.
+ */
+async function emailCodeToTakenAddress() {
+  "use server";
+  const jar = await cookies();
+  const email = jar.get(TAKEN_SIGNUP_COOKIE)?.value;
+  // The cookie ran out: /signin asks for the address again.
+  if (!email) redirect("/signin");
+  try {
+    await emailSignInCode(email, DEFAULT_AFTER_SIGN_IN);
+  } catch (e) {
+    console.error(`[signup] sign-in code for a taken address failed: ${e instanceof Error ? e.message : String(e)}`);
+    redirect(signinPath("/signin", null, { error: CODE_NOT_SENT }));
+  }
+  jar.delete({ name: TAKEN_SIGNUP_COOKIE, path: "/signup" });
+  redirect(signinPath("/signin/code", null, { step: "code" }));
+}
+
 export default async function SignUpPage(props: {
-  searchParams: Promise<{ error?: string; success?: string; domain?: string }>;
+  searchParams: Promise<{ error?: string; success?: string; domain?: string; taken?: string }>;
 }) {
   const searchParams = await props.searchParams;
   const domain = normalizeDomain(searchParams?.domain ?? "");
@@ -246,6 +285,40 @@ export default async function SignUpPage(props: {
     requestHeaders.get("host"),
   );
   const sourceFields = signupSourceFields(source);
+
+  if (searchParams?.taken) {
+    const taken = (await cookies()).get(TAKEN_SIGNUP_COOKIE)?.value ?? null;
+    // Another address starts the form again, still carrying where it came from.
+    const again = "/signup" + signupSourceQuery(source).replace(/^&/, "?");
+    return (
+      <div className="space-y-6">
+        <div className="text-center">
+          <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
+        </div>
+        <div role="alert" className="text-sm text-accent-ink bg-accent-soft px-3 py-2 rounded-lg">
+          {taken ? (
+            <>
+              You already have an account with <span className="font-medium">{taken}</span>. We can email you a sign-in code.
+            </>
+          ) : (
+            "You already have an account with this address. We can email you a sign-in code."
+          )}
+        </div>
+        <form action={emailCodeToTakenAddress}>
+          <SubmitButton pendingLabel="Sending…">Email me a sign-in code</SubmitButton>
+        </form>
+        <p className="text-center text-[12.5px] text-ink-3">
+          <Link href="/signin?method=password" className="text-ink-2 underline decoration-line underline-offset-[3px] hover:text-ink">
+            Use a password instead
+          </Link>
+          {" · "}
+          <Link href={again} className="text-ink-2 underline decoration-line underline-offset-[3px] hover:text-ink">
+            Sign up with another address
+          </Link>
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

@@ -28,3 +28,6 @@ export function signinPath(path: "/signin" | "/signin/code", next: string | null
 
 /** What /callback says when an emailed link no longer works, on the page that can send a new one. */
 export const EXPIRED_LINK_MESSAGE = "That link has expired. We can email you a new code.";
+
+/** What a sign-in code request says when the email did not go out. */
+export const CODE_NOT_SENT = "The code could not be sent. Try again in a minute.";

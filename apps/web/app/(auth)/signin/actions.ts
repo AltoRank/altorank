@@ -11,13 +11,12 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { sendSignInCode } from "@/lib/email/auth-emails";
-import { startSigninCodeSignup } from "@/lib/auth/signin-code-signup";
 import { authErrorMessage } from "@/lib/auth/errors";
 import { DEFAULT_AFTER_SIGN_IN, safeNextPath } from "@/lib/auth/next-path";
 import { normalizeCode } from "@/lib/auth/pending-signup";
-import { PENDING_SIGNIN_COOKIE, PENDING_SIGNIN_MAX_AGE } from "@/lib/auth/pending-signin";
-import { signinPath } from "@/lib/auth/signin-path";
+import { PENDING_SIGNIN_COOKIE } from "@/lib/auth/pending-signin";
+import { emailSignInCode } from "@/lib/auth/code-signin";
+import { CODE_NOT_SENT, signinPath } from "@/lib/auth/signin-path";
 import { recordSignIn } from "@/lib/auth/signin-event";
 import { parseSignupSource, signupSourceFields } from "@/lib/auth/signup-source";
 
@@ -35,22 +34,11 @@ export async function requestSignInCode(formData: FormData) {
   const carry = Object.fromEntries(signupSourceFields(source));
   if (!email.includes("@")) redirect(signinPath("/signin", next, { error: "Enter your email address.", ...carry }));
   try {
-    const { createdUserId } = await sendSignInCode(email, next ?? DEFAULT_AFTER_SIGN_IN);
-    // An address with no user got one, made by Supabase to receive this code:
-    // a signup by the sign-in door, counted and given its account here
-    // (lib/auth/signin-code-signup.ts). The page says the same either way.
-    if (createdUserId) await startSigninCodeSignup(createdUserId, email, source);
+    await emailSignInCode(email, next ?? DEFAULT_AFTER_SIGN_IN, source);
   } catch (e) {
     console.error(`[signin] code for an address failed: ${e instanceof Error ? e.message : String(e)}`);
-    redirect(signinPath("/signin", next, { error: "The code could not be sent. Try again in a minute.", ...carry }));
+    redirect(signinPath("/signin", next, { error: CODE_NOT_SENT, ...carry }));
   }
-  (await cookies()).set(PENDING_SIGNIN_COOKIE, email, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/signin",
-    maxAge: PENDING_SIGNIN_MAX_AGE,
-  });
   redirect(signinPath("/signin/code", next, { step: "code" }));
 }
 
