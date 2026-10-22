@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
-import { recordOnboardingStep } from "@/lib/onboarding/step-events";
+import { ownedCheckoutSession, recordOnboardingStep } from "@/lib/onboarding/step-events";
 import { isClientStep } from "@/lib/onboarding/step-names";
-import { ARTICLE_STEPS, stepProps, uuidOrUndefined } from "@/lib/onboarding/step-props";
+import { ARTICLE_STEPS, CHECKOUT_STEPS, stepProps, uuidOrUndefined } from "@/lib/onboarding/step-props";
 import { getImpersonation } from "@/lib/auth/impersonation";
 
 // ---------------------------------------------------------------------------
@@ -14,9 +14,11 @@ import { getImpersonation } from "@/lib/auth/impersonation";
 // that) in an account they are a member of. The workspace is the one named,
 // or the one in scope when none is (the checkout pages have no workspace in
 // their URL). An article step names its article instead, and the workspace
-// is the article's, read through the person's own client. Written with the
-// service role, once per step per workspace (lib/onboarding/step-events.ts),
-// with only the props on the step's lists (lib/onboarding/step-props.ts).
+// is the article's, read through the person's own client. A checkout step
+// may name its Stripe session, kept only when it is the account's own.
+// Written with the service role, once per step per workspace
+// (lib/onboarding/step-events.ts), with only the props on the step's lists
+// (lib/onboarding/step-props.ts).
 // Answers 204 whatever happens to the write: the caller does not wait for it
 // and has nothing to do with an error.
 
@@ -31,7 +33,7 @@ export async function POST(request: NextRequest) {
   // Nothing is written; the browser does not wait for this answer anyway.
   if (await getImpersonation().catch(() => null)) return new NextResponse(null, { status: 204 });
 
-  let body: { step?: unknown; workspaceId?: unknown; ms?: unknown; count?: unknown; articleId?: unknown; props?: unknown };
+  let body: { step?: unknown; workspaceId?: unknown; ms?: unknown; count?: unknown; articleId?: unknown; checkoutId?: unknown; props?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -77,8 +79,14 @@ export async function POST(request: NextRequest) {
     if (!status || status === "running") return new NextResponse(null, { status: 204 });
   }
 
+  // A checkout step keys on its Stripe session, so only the account's own
+  // open session is kept; any other id is dropped and the step is kept
+  // once per site and button, as if it had none.
+  const service = createServiceClient();
+  const checkoutId = CHECKOUT_STEPS.includes(body.step) ? await ownedCheckoutSession(service, workspace.account_id as string, body.checkoutId) : undefined;
+
   const signedUp = Date.parse(user.created_at ?? "");
-  await recordOnboardingStep(createServiceClient(), {
+  await recordOnboardingStep(service, {
     workspaceId: workspace.id as string,
     accountId: workspace.account_id as string,
     userId: user.id,
@@ -86,6 +94,7 @@ export async function POST(request: NextRequest) {
     ms: typeof body.ms === "number" ? body.ms : null,
     count: typeof body.count === "number" ? body.count : null,
     articleId: articleId ?? null,
+    checkoutId: checkoutId ?? null,
     props: stepProps(body.step, body.props),
     secondsSinceSignup: body.step === "gate_shown" && Number.isFinite(signedUp) ? (Date.now() - signedUp) / 1000 : null,
   });

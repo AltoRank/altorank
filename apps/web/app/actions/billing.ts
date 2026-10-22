@@ -44,10 +44,11 @@ export async function createCheckoutSession(
 
 /**
  * What an embedded checkout start hands back: the session's client secret to
- * mount Stripe's form on our own page, or a URL when there is nothing to pay
- * here (a plan switch, a session already completed).
+ * mount Stripe's form on our own page (and the session's id, for the
+ * browser's checkout steps), or a URL when there is nothing to pay here (a
+ * plan switch, a session already completed).
  */
-export type EmbeddedCheckoutStart = BillingRedirect | { ok: true; clientSecret: string };
+export type EmbeddedCheckoutStart = BillingRedirect | { ok: true; clientSecret: string; sessionId: string };
 
 /**
  * The same checkout as `createCheckoutSession`, opened as Stripe's Embedded
@@ -210,7 +211,7 @@ async function openCheckout(
   if (session.status === "complete") return { ok: true, url: `${appUrl()}/checkout/complete?session_id=${session.id}&next=${encodeURIComponent(checkoutDestination(returnTo))}` };
   if (surface === "embedded") {
     if (!session.client_secret) return { ok: false, error: "Stripe did not return a checkout form. Nothing was charged; try again." };
-    return { ok: true, clientSecret: session.client_secret };
+    return { ok: true, clientSecret: session.client_secret, sessionId: session.id };
   }
   if (!session.url) {
     return { ok: false, error: "Stripe did not return a checkout link. Nothing was charged; try again." };

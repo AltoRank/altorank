@@ -29,7 +29,6 @@ import { StartTrialButton } from "@/components/billing/start-trial-button";
 import type { FirstArticleCard } from "@/lib/onboarding/first-article";
 import type { OnboardingPlanned } from "@/lib/onboarding/events";
 import { asksWithOffer, type SetupEnding } from "@/lib/onboarding/setup-retry";
-import { trackStep } from "@/lib/onboarding/track-step";
 import { TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
 import { stickyOfferLine, type TrialOfferFacts } from "@/lib/billing/trial-offer";
 import { EDITOR_FITS_QUERY, firstArticleReturn } from "@/lib/billing/checkout-return";
@@ -212,8 +211,9 @@ export function GateTop({
       {/* Two columns from lg: the article, and beside it the ask and why this
           article, held in view while the article scrolls. The card form opens
           in that rail (Embedded Checkout, inline), beside the article and never
-          over it. Below lg the rail follows the article, and the slim bar
-          opens the same checkout in a sheet. */}
+          over it. Below lg the rail follows the article, and its button and
+          the slim bar both open the same checkout in a sheet: one form at a
+          time (components/billing/trial-offer.tsx INLINE_CHECKOUT_QUERY). */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
         <div className="flex min-w-0 flex-col gap-4 lg:flex-1">
           {retry}
@@ -270,7 +270,7 @@ export function GateTop({
               {!fullArticle && <span className="hidden sm:inline">{stickyLine(written, fullArticle)} </span>}
               <span>{stickyOfferLine(interval, plan)}</span>
             </p>
-            <StartTrialButton returnTo={afterCheckout} plan={plan} interval={interval} onStart={() => trackStep("trial_clicked")} className="shrink-0" />
+            <StartTrialButton returnTo={afterCheckout} plan={plan} interval={interval} surface="sticky_bar" className="shrink-0" />
           </div>
         </div>
       )}

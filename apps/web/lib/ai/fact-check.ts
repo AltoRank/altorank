@@ -37,6 +37,15 @@
 // block: "is this the regulator" is a judgement a page search can inform
 // and cannot make. And a draft in which nothing at all was checkable is
 // `unchecked`, not `clean`: nothing found is not the same as nothing wrong.
+//
+// Nor are digits the only way to write a figure. A baby-skincare draft
+// (2026-10-22) said, citing Mayo Clinic, that "a pediatrician may recommend a
+// mild hydrocortisone cream used twice a day for three to five days". Every
+// pattern here read digits, so the draft "stated no figure" and came back
+// `unchecked`, while the page it cited no longer carried a word of it. So
+// figures written as words count ("twenty percent", "three times more"), and
+// a dose, frequency or duration in a sentence that names a medicine is a
+// claim of its own (`dosing`), in digits or in words.
 
 import { stripTags } from "@/lib/audit/html-utils";
 import type { ArticleResearch } from "@/lib/seo/research";
@@ -58,6 +67,7 @@ import {
   inflection,
   phrasePattern,
   type Locale,
+  type SpelledNumbers,
   type SupportedLocale,
 } from "@/lib/i18n/locale";
 
@@ -71,7 +81,9 @@ export type ClaimKind =
   /** "regulated by", "licensed by", "X regulates": who has authority over something. */
   | "authority"
   /** "covered by", "X covers": what an insurer or a public plan pays for. */
-  | "coverage";
+  | "coverage"
+  /** A dose, frequency or duration in a sentence that names a medicine: "twice a day for three to five days". */
+  | "dosing";
 
 /** Claims about a named body rather than a figure. Their `figures` hold the body's name. */
 export const ENTITY_KINDS: ReadonlySet<ClaimKind> = new Set<ClaimKind>(["authority", "coverage"]);
@@ -146,9 +158,13 @@ interface ClaimPattern {
   pattern: RegExp;
   /** Severity when the sentence carries no attribution. */
   bareSeverity: ClaimSeverity;
+  /** Read only in a sentence this matches. */
+  when?: RegExp;
 }
 
 const E = String.raw`(?![\p{L}\p{N}_])`;
+/** Start of a word or a number: not inside another one. */
+const WB = String.raw`(?<![\p{L}\p{N}_-])`;
 const SYMBOLS = "[$€£¥₺]";
 const PATTERNS = new Map<string, ClaimPattern[]>();
 
@@ -200,7 +216,45 @@ function claimPatterns(locale: SupportedLocale): ClaimPattern[] {
       : []),
   ];
 
+  // The same claims written in words, where the language describes how.
+  const sp = n.spelled;
+  let dosing: ClaimPattern | null = null;
+  if (sp) {
+    const word = spelledNumber(sp);
+    statistic.push(String.raw`${WB}${word}\s+(?:${phrasePattern(n.percentWordsAfter)})${E}`);
+    multiplier.push(...n.multiplierWords.map((w) => String.raw`${WB}${word}\s*(?:${w})${E}`));
+    if (counted.length) {
+      largeCount.push(String.raw`${WB}${word}\s+(?:${counted.join("|")})\s+(?:${n.countNouns.join("|")})${suffixes}${E}`);
+    }
+    const medication = locale.prose.medication;
+    if (medication) {
+      const qty = String.raw`(?:\d+(?:[.,]\d+)?|${word})`;
+      const span = String.raw`${qty}(?:${sp.range}${qty})?`;
+      const times = String.raw`(?:${Object.keys(sp.times).join("|")}|${qty}\s+${sp.timesWord})`;
+      const time = Object.values(n.timeUnits).flat().join("|");
+      // Frequency before duration, so "every four hours" is one figure and
+      // not also "four hours".
+      dosing = {
+        kind: "dosing",
+        pattern: new RegExp(
+          [
+            String.raw`${WB}${times}\s+${sp.perPeriod}${E}`,
+            String.raw`${WB}${sp.every}\s+(?:other\s+)?${span}\s+(?:${time})${E}`,
+            String.raw`${WB}${span}\s*(?:${sp.doseUnits.join("|")})${E}`,
+            String.raw`${WB}${span}\s+(?:${time})${E}`,
+          ].join("|"),
+          "giu",
+        ),
+        // Dosing advice with no source is as serious as a bare statistic.
+        bareSeverity: "high",
+        when: medication,
+      };
+    }
+  }
+
   const patterns: ClaimPattern[] = [
+    // First, so a sentence that gives a dose is read as dosing advice.
+    ...(dosing ? [dosing] : []),
     { kind: "statistic", pattern: new RegExp(statistic.join("|"), "giu"), bareSeverity: "high" },
     { kind: "money", pattern: new RegExp(money.join("|"), "giu"), bareSeverity: "high" },
     { kind: "multiplier", pattern: new RegExp(multiplier.join("|"), "giu"), bareSeverity: "high" },
@@ -215,6 +269,21 @@ function claimPatterns(locale: SupportedLocale): ClaimPattern[] {
   ];
   PATTERNS.set(locale.code, patterns);
   return patterns;
+}
+
+/**
+ * A number written in words, as a regex fragment: "three", "twenty-five",
+ * "one hundred". Longest first, so "fourteen" is not read as "four".
+ */
+export function spelledNumber(sp: SpelledNumbers): string {
+  const word = Object.keys(sp.words).sort((a, b) => b.length - a.length).join("|");
+  return String.raw`(?:${word})(?:[-\s](?:${word}))?(?![\p{L}])`;
+}
+
+/** The medicine a sentence names, or null. */
+export function medicationIn(sentence: string, locale: SupportedLocale): string | null {
+  const re = locale.prose.medication;
+  return re ? (sentence.match(new RegExp(re.source, re.flags.replace("g", "")))?.[0] ?? null) : null;
 }
 
 // ── Text extraction ────────────────────────────────────────────────────────
@@ -590,7 +659,8 @@ export function factCheckArticle(
       // produce two entries for one sentence and one decision.
       const perSentence: { kind: ClaimKind; figures: string[]; bareSeverity: ClaimSeverity }[] = [];
 
-      for (const { kind, pattern, bareSeverity } of patterns) {
+      for (const { kind, pattern, bareSeverity, when } of patterns) {
+        if (when && !when.test(sentence)) continue;
         // Fresh regex per sentence: the patterns are /g and carry lastIndex
         // between uses, which would silently skip matches on later sentences.
         const re = new RegExp(pattern.source, pattern.flags);
@@ -643,6 +713,13 @@ export function factCheckArticle(
           const rival = rivalSourceOf({ sentence, figures, attribution, citationUrl, corroboratedBy, statedOn }, research);
           const unclassifiedSource = !rival && citationUrl ? readButUnclassified(citationUrl, research?.sourceReview) : null;
 
+          // Dosing advice is checked word for word, not just traced to a source.
+          const drug = kind === "dosing" ? medicationIn(sentence, locale) : null;
+          const dosingNote =
+            kind === "dosing"
+              ? ` This is dosing advice${drug ? ` for ${drug}` : ""}: the dose, how often and for how long must each match the source.`
+              : "";
+
           if (rival) {
             status = "rival_source";
             severity = "high";
@@ -678,8 +755,11 @@ export function factCheckArticle(
             note =
               kind === "research_reference"
                 ? "Appeals to research without naming it. Name the study or remove the appeal."
-                : "No source given anywhere in the sentence. Attribute it or remove it.";
+                : kind === "dosing"
+                  ? "Gives a dose, frequency or duration for a medicine with no source. Link the medical guidance it comes from, or remove it."
+                  : "No source given anywhere in the sentence. Attribute it or remove it.";
           }
+          if (status !== "unsourced" && status !== "rival_source") note += dosingNote;
 
           claims.push({
             id: claimId(index++, kind, text),

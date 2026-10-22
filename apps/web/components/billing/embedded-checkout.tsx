@@ -18,7 +18,9 @@ import { createPortal } from "react-dom";
 import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from "@stripe/stripe-js";
 import { createEmbeddedCheckout } from "@/app/actions/billing";
 import { Icons } from "@/components/ui";
+import { holdFocus } from "./sheet-focus";
 import type { BillingInterval, SelfServePlan } from "@/lib/stripe";
+import type { CheckoutFailure } from "@/lib/onboarding/step-props";
 
 const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 
@@ -47,27 +49,37 @@ export function EmbeddedCheckoutForm({
   interval,
   returnTo,
   onError,
+  onSession,
 }: {
   plan: SelfServePlan;
   interval: BillingInterval;
   returnTo?: string;
-  onError: (message: string) => void;
+  /** The sentence for the person, and where it stopped (onboarding.step `checkout_failed`). */
+  onError: (message: string, stage: CheckoutFailure) => void;
+  /** The Stripe Checkout Session the form was opened on, once there is one. */
+  onSession?: (sessionId: string) => void;
 }) {
   const host = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
-  // The latest handler, without making it a reason to rebuild the form.
+  // The latest handlers, without making them a reason to rebuild the form.
   const report = useRef(onError);
+  const opened = useRef(onSession);
   useEffect(() => {
     report.current = onError;
-  }, [onError]);
+    opened.current = onSession;
+  }, [onError, onSession]);
 
   useEffect(() => {
     let cancelled = false;
     let mine: StripeEmbeddedCheckout | null = null;
+    // How far it got, for the failure's stage: Stripe.js, then our session,
+    // then Stripe's form from it.
+    let stage: CheckoutFailure = "load";
     (async () => {
       try {
         const s = await stripe();
         if (!s) throw new Error("Stripe could not be loaded.");
+        stage = "mount";
         if (current) {
           current.destroy();
           current = null;
@@ -75,6 +87,7 @@ export function EmbeddedCheckoutForm({
         if (cancelled) return;
         mine = await s.createEmbeddedCheckoutPage({
           fetchClientSecret: async () => {
+            stage = "create";
             const result = await createEmbeddedCheckout(plan, interval, returnTo);
             if (!result.ok) throw new Error(result.error);
             // A plan switch, or a session already paid: nothing to fill in here.
@@ -82,6 +95,8 @@ export function EmbeddedCheckoutForm({
               window.location.href = result.url;
               throw new Error("Redirecting");
             }
+            stage = "mount";
+            opened.current?.(result.sessionId);
             return result.clientSecret;
           },
         });
@@ -100,7 +115,7 @@ export function EmbeddedCheckoutForm({
       } catch (e) {
         if (cancelled) return;
         const message = e instanceof Error && e.message !== "Redirecting" ? e.message : null;
-        if (message) report.current(message.startsWith("Stripe") || message.endsWith(".") ? message : "Checkout could not be opened. Nothing was charged; try again.");
+        if (message) report.current(message.startsWith("Stripe") || message.endsWith(".") ? message : "Checkout could not be opened. Nothing was charged; try again.", stage);
       }
     })();
     return () => {
@@ -125,45 +140,70 @@ export function EmbeddedCheckoutForm({
   );
 }
 
+/** How the sheet was left: its Close button, Escape, or a tap on the page behind. */
+export type SheetClose = "close" | "escape" | "backdrop";
+
 /**
  * The checkout in a sheet over the page: from the bottom on a phone, from the
  * right on a wider screen, so the article stays visible behind it. Escape,
- * the backdrop and the close button all leave without paying anything.
+ * the backdrop and the close button all leave without paying anything, and
+ * each says which it was (onboarding.step `checkout_closed`).
+ *
+ * While it is open the page behind is inert and focus starts on Close; on
+ * closing, focus goes back to `opener` (./sheet-focus.ts says why it is not
+ * a keydown trap).
  */
 export function CheckoutSheet({
   open,
   onClose,
   title,
   lede,
+  opener,
   children,
 }: {
   open: boolean;
-  onClose: () => void;
+  onClose: (how: SheetClose) => void;
   title: string;
   lede?: string;
+  /** The button that opened the sheet. Safari does not focus a clicked button, so it is passed, not read from the document. */
+  opener?: React.RefObject<HTMLElement | null>;
   children: React.ReactNode;
 }) {
+  const root = useRef<HTMLDivElement | null>(null);
+  const closeButton = useRef<HTMLButtonElement | null>(null);
+  // The latest handler, without making a new one a reason to take focus
+  // back to Close: the caller's arrow is new on every render, and the gate
+  // re-renders while someone is typing in Stripe's form.
+  const close = useRef(onClose);
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    close.current = onClose;
+  }, [onClose]);
+  useEffect(() => {
+    if (!open || !root.current) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close.current("escape");
     document.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
+    const back = opener?.current ?? (document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null);
+    const release = holdFocus(root.current, closeButton.current, back);
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
+      release();
     };
-  }, [open, onClose]);
+  }, [open, opener]);
   // Opened only by a click, so only ever in the browser.
   if (!open || typeof document === "undefined") return null;
   return createPortal(
-    <div className="theme-light fixed inset-0 z-[300]">
-      <button type="button" aria-label="Close checkout" className="absolute inset-0 h-full w-full cursor-default bg-black/30" onClick={onClose} />
+    <div ref={root} className="theme-light fixed inset-0 z-[300]">
+      <button type="button" aria-label="Close checkout" tabIndex={-1} className="absolute inset-0 h-full w-full cursor-default bg-black/30" onClick={() => onClose("backdrop")} />
+      {/* dvh, not vh: on iOS Safari 92vh is measured without the toolbars
+          and clipped the drag handle and the top of the title. */}
       <section
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="absolute inset-x-0 bottom-0 flex max-h-[92vh] flex-col rounded-t-2xl border-t border-line bg-bg shadow-xl sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-full sm:max-w-[480px] sm:rounded-none sm:border-l sm:border-t-0"
+        className="absolute inset-x-0 bottom-0 flex max-h-[92dvh] flex-col rounded-t-2xl border-t border-line bg-bg shadow-xl sm:inset-y-0 sm:left-auto sm:right-0 sm:max-h-none sm:w-full sm:max-w-[480px] sm:rounded-none sm:border-l sm:border-t-0"
       >
         <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-line sm:hidden" aria-hidden />
         <div className="flex items-start justify-between gap-3 px-5 pb-3 pt-3 sm:pt-5">
@@ -172,8 +212,9 @@ export function CheckoutSheet({
             {lede && <p className="m-0 mt-1 text-[12.5px] leading-[1.5] text-ink-2">{lede}</p>}
           </div>
           <button
+            ref={closeButton}
             type="button"
-            onClick={onClose}
+            onClick={() => onClose("close")}
             aria-label="Close"
             className="-mr-2 -mt-1 grid h-11 w-11 shrink-0 place-items-center rounded-[7px] text-ink-2 hover:bg-panel-2 hover:text-ink"
           >

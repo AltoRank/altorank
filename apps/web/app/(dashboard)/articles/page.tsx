@@ -208,7 +208,7 @@ export default async function ArticlesPage({ searchParams }: Props) {
 
       {offerTrial && (
         <div className="px-6 pt-5">
-          <TrialOffer returnTo="/articles?status=review" compact />
+          <TrialOffer returnTo="/articles?status=review" compact surface="articles" />
         </div>
       )}
 
