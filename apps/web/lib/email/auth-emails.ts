@@ -121,9 +121,11 @@ export function renderMagicLink(url: string, email: string, code?: string | null
 }
 
 /**
- * `generateLink` for an address with no account fails with `user_not_found`.
- * That one stays silent on purpose: the request form shows the same message
- * either way, so it cannot be used to find out which addresses have accounts.
+ * `generateLink({ type: "recovery" })` for an address with no account fails
+ * with `user_not_found`. A magic link does NOT: Supabase creates the user and
+ * returns a signup link instead (see `sendSignInCode`). The not-found answer
+ * stays silent on purpose: the request form shows the same message either
+ * way, so it cannot be used to find out which addresses have accounts.
  * Everything else, such as a missing or wrong service-role key or Supabase
  * being unreachable, is a configuration failure. Swallowing those too is what
  * hid the broken reset flow on 2026-09-02, so they are thrown and reach the
@@ -253,25 +255,51 @@ export async function sendPasswordReset(email: string): Promise<boolean> {
   return true;
 }
 
+/** What `sendSignInCode` did: whether a code left, and the user it had to create. */
+export interface SignInCodeResult {
+  sent: boolean;
+  /**
+   * Set when the address had no user and Supabase created one to send the
+   * code to: a signup, by the sign-in door (lib/auth/signin-code-signup.ts).
+   */
+  createdUserId: string | null;
+}
+
 /**
  * Email a one-time sign-in code, with the link beside it, for accounts made
- * without a password (signup asks for a code since 2026-10-15). Resolves
- * false, silently, when the address has no account, like the reset: the form
- * says the same thing either way. Throws on a configuration failure.
+ * without a password (signup asks for a code since 2026-10-15). Throws on a
+ * configuration failure.
+ *
+ * For an address with no user, Supabase's magic link does not fail with
+ * `user_not_found` as the reset does: it creates the user and returns a
+ * signup link (`verification_type: "signup"`) whose code signs them in. So
+ * "Email me a sign-in code" was a signup door that skipped the domain
+ * question and left no `signup` event - a real signup came in that way on
+ * 2026-10-19 and landed with no site. The new user is reported back so the
+ * caller can make it a signup on purpose; the form still says the same thing
+ * either way.
  */
-export async function sendSignInCode(email: string, next: string): Promise<boolean> {
+export async function sendSignInCode(email: string, next: string): Promise<SignInCodeResult> {
   const admin = createServiceClient();
   const { data, error } = await admin.auth.admin.generateLink({ type: "magiclink", email });
   if (error) {
-    if (isUserNotFound(error)) return false;
+    if (isUserNotFound(error)) return { sent: false, createdUserId: null };
     throw new Error(`Could not generate the sign-in code: ${error.message}`);
   }
+  const createdUserId = data.properties?.verification_type === "signup" ? (data.user?.id ?? null) : null;
   const token = data.properties?.hashed_token;
   if (!token) throw new Error("Supabase returned a sign-in link without a token hash");
   const url = authLink("magiclink", token, next);
   const { subject, html, footerNote } = renderMagicLink(url, email, data.properties?.email_otp || null);
-  await sendTransactionalEmail(email, subject, html, footerNote, "Your one-time sign-in code.");
-  return true;
+  try {
+    await sendTransactionalEmail(email, subject, html, footerNote, "Your one-time sign-in code.");
+  } catch (e) {
+    // A user made only to receive this code, and the code never left: undo
+    // it, as signup does, so the next try starts clean.
+    if (createdUserId) await rollbackUnsentSignup(createdUserId);
+    throw e;
+  }
+  return { sent: true, createdUserId };
 }
 
 /**

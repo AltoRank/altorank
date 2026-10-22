@@ -1,11 +1,23 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { authErrorMessage } from "@/lib/auth/errors";
 import { DEFAULT_AFTER_SIGN_IN, safeNextPath } from "@/lib/auth/next-path";
 import { SubmitButton } from "@/components/auth/submit-button";
 import { inviteJoinPath, inviteTokenFromNext } from "@/lib/team/invite";
+import {
+  parseSignupSource,
+  signupSourceFields,
+  signupSourceHref,
+  withRefererFallback,
+  type SignupSource,
+} from "@/lib/auth/signup-source";
+
+// Where a connector (ChatGPT, Claude, Cursor) sends a signed-out person: the
+// OAuth consent page, by way of this one.
+const CONNECT_PATH = "/oauth/authorize";
 
 export const metadata: Metadata = {
   title: "Sign In",
@@ -27,19 +39,36 @@ async function signIn(formData: FormData) {
     // Kept across a failed attempt, or a mistyped password costs the reader the
     // article the email was about.
     if (next) back.set("next", next);
+    // So is where they came from: the next step may be "Sign up" after all.
+    for (const [key, value] of signupSourceFields(parseSignupSource(formData))) back.set(key, value);
     redirect(`/signin?${back}`);
   }
   redirect(next ?? DEFAULT_AFTER_SIGN_IN);
 }
 
+/**
+ * Where a visitor who reached sign-in came from, to hand on to "Sign up" and
+ * to the sign-in code (which makes an account for an address that has none):
+ * the marketing site's `src`/`lp`/`ref`/`utm_*` on the link, else the
+ * Referer's site, and for the connect flow, which carries none of it, the
+ * consent page as `src`. See lib/auth/signup-source.ts.
+ */
+async function signinSource(params: Record<string, unknown>, next: string | null): Promise<SignupSource> {
+  const requestHeaders = await headers();
+  const source = withRefererFallback(parseSignupSource(params), requestHeaders.get("referer"), requestHeaders.get("host"));
+  if (!source.src && next?.startsWith(CONNECT_PATH)) return { ...source, src: CONNECT_PATH };
+  return source;
+}
+
 export default async function SignInPage(props: {
-  searchParams: Promise<{ error?: string; next?: string }>;
+  searchParams: Promise<{ error?: string; next?: string } & Record<string, string | string[] | undefined>>;
 }) {
   const searchParams = await props.searchParams;
   const next = safeNextPath(searchParams?.next);
   // Signing in to accept an invitation: somebody with no login yet needs the
   // invitee's join form, not the owner signup that makes an account and a site.
   const inviteToken = inviteTokenFromNext(next);
+  const source = await signinSource(searchParams ?? {}, next);
 
   return (
     <div className="space-y-6">
@@ -52,6 +81,9 @@ export default async function SignInPage(props: {
 
       <form action={signIn} className="space-y-4">
         {next && <input type="hidden" name="next" value={next} />}
+        {signupSourceFields(source).map(([name, value]) => (
+          <input key={name} type="hidden" name={name} value={value} />
+        ))}
         {searchParams?.error && (
           <div className="text-sm text-err-ink bg-err-soft px-3 py-2 rounded-lg">
             {searchParams.error}
@@ -95,7 +127,7 @@ export default async function SignInPage(props: {
           know: this is their way in, and anyone's who forgot theirs. */}
       <p className="text-center text-[12.5px] text-ink-3">
         No password?{" "}
-        <Link href={next ? `/signin/code?next=${encodeURIComponent(next)}` : "/signin/code"} className="font-medium text-accent-ink hover:underline">
+        <Link href={signupSourceHref(next ? `/signin/code?next=${encodeURIComponent(next)}` : "/signin/code", source)} className="font-medium text-accent-ink hover:underline">
           Email me a sign-in code
         </Link>
       </p>
@@ -105,8 +137,9 @@ export default async function SignInPage(props: {
         {/* No `next` here: signup ends at the confirm email and then the
             wizard, so carrying a destination through would promise a landing
             this flow does not make. An invitation is the exception: its join
-            form returns to the invite. */}
-        <Link href={inviteToken ? inviteJoinPath(inviteToken) : "/signup"} className="font-medium text-accent-ink hover:underline">
+            form returns to the invite. The source does go along, or every
+            signup by way of sign-in reads "source unknown". */}
+        <Link href={inviteToken ? inviteJoinPath(inviteToken) : signupSourceHref("/signup", source)} className="font-medium text-accent-ink hover:underline">
           Sign up
         </Link>
       </p>

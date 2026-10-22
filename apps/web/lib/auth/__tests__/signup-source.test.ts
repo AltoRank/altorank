@@ -6,8 +6,11 @@ import {
   describeSignupSource,
   parseSignupSource,
   signupSourceContext,
+  refererHost,
   signupSourceFields,
+  signupSourceHref,
   signupSourceQuery,
+  withRefererFallback,
 } from "../signup-source";
 import { buildEventRow } from "@/lib/observability/event";
 
@@ -62,6 +65,19 @@ describe("parseSignupSource", () => {
     });
   });
 
+  it("reads the landing path `lp` with the same path rules as `src`", () => {
+    expect(parseSignupSource({ src: "/pricing/", lp: "/alternatives/outrank/" })).toEqual({
+      src: "/pricing/",
+      lp: "/alternatives/outrank/",
+    });
+    const form = new FormData();
+    form.set("lp", "/blog/how-to-rank-in-chatgpt/");
+    expect(parseSignupSource(form)).toEqual({ lp: "/blog/how-to-rank-in-chatgpt/" });
+    for (const lp of ["pricing", "https://evil.example/", "//evil.example/", "/<script>", "/a?b=c", "/" + "a".repeat(MAX_SRC)]) {
+      expect(parseSignupSource({ lp }).lp, lp).toBeUndefined();
+    }
+  });
+
   it("does not read `from`, which is the tools signup's mode and not attribution", () => {
     expect(parseSignupSource({ from: "tools", return_to: "https://altorank.co/tools/x/" })).toEqual({});
   });
@@ -109,11 +125,12 @@ describe("parseSignupSource", () => {
 });
 
 describe("carrying the source through the form and redirects", () => {
-  const source = parseSignupSource({ src: "/check/", ref: "t.co", utm_source: "x", utm_campaign: "spring sale" });
+  const source = parseSignupSource({ src: "/check/", lp: "/tools/x/", ref: "t.co", utm_source: "x", utm_campaign: "spring sale" });
 
   it("lists one field per value, in a stable order", () => {
     expect(signupSourceFields(source)).toEqual([
       ["src", "/check/"],
+      ["lp", "/tools/x/"],
       ["ref", "t.co"],
       ["utm_source", "x"],
       ["utm_campaign", "spring sale"],
@@ -131,13 +148,60 @@ describe("carrying the source through the form and redirects", () => {
   it("adds nothing to a redirect when there is nothing to carry", () => {
     expect(signupSourceQuery({})).toBe("");
   });
+
+  it("appends the source to a link, after any query it already has", () => {
+    expect(signupSourceHref("/signup", {})).toBe("/signup");
+    const plain = new URL(signupSourceHref("/signup", source), "https://app.altorank.co");
+    expect(plain.pathname).toBe("/signup");
+    expect(parseSignupSource(Object.fromEntries(plain.searchParams))).toEqual(source);
+    const withQuery = new URL(signupSourceHref("/signin/code?next=%2Fdashboard", source), "https://app.altorank.co");
+    expect(withQuery.searchParams.get("next")).toBe("/dashboard");
+    expect(parseSignupSource(Object.fromEntries(withQuery.searchParams))).toEqual(source);
+  });
+});
+
+describe("the Referer header as the fallback `ref`", () => {
+  it("keeps the referring site's hostname, lowercased, and nothing else of the URL", () => {
+    expect(refererHost("https://chatgpt.com/")).toBe("chatgpt.com");
+    expect(refererHost("https://www.Perplexity.ai/search?q=seo+tool")).toBe("www.perplexity.ai");
+    expect(refererHost("http://news.ycombinator.com:8080/item?id=1")).toBe("news.ycombinator.com");
+  });
+
+  it("ignores a missing, unparseable or non-host Referer", () => {
+    for (const referer of [null, undefined, "", "not a url", "/relative/path", "file:///tmp/x.html"]) {
+      expect(refererHost(referer), String(referer)).toBeUndefined();
+    }
+  });
+
+  it("keeps an Android app's package name, which is what its Referer carries", () => {
+    expect(refererHost("android-app://com.google.android.googlequicksearchbox/")).toBe("com.google.android.googlequicksearchbox");
+  });
+
+  it("is never one of our own sites: the marketing site, its subdomains, or the app itself", () => {
+    expect(refererHost("https://altorank.co/pricing/")).toBeUndefined();
+    expect(refererHost("https://www.altorank.co/")).toBeUndefined();
+    expect(refererHost("https://app.altorank.co/signin")).toBeUndefined();
+    // A self-hosted app on its own domain: the request's own Host.
+    expect(refererHost("https://seo.example.org/signin", "seo.example.org")).toBeUndefined();
+    expect(refererHost("http://localhost:3150/signup?error=x", "localhost:3150")).toBeUndefined();
+    // Somebody else's site with our name in it is not ours.
+    expect(refererHost("https://notaltorank.co/")).toBe("notaltorank.co");
+  });
+
+  it("fills `ref` only when the URL brought none", () => {
+    expect(withRefererFallback({}, "https://chatgpt.com/", "app.altorank.co")).toEqual({ ref: "chatgpt.com" });
+    expect(withRefererFallback({ src: "/pricing/" }, "https://chatgpt.com/")).toEqual({ src: "/pricing/", ref: "chatgpt.com" });
+    expect(withRefererFallback({ ref: "www.google.com" }, "https://chatgpt.com/")).toEqual({ ref: "www.google.com" });
+    expect(withRefererFallback({ src: "/" }, "https://app.altorank.co/signin")).toEqual({ src: "/" });
+    expect(withRefererFallback({}, null)).toEqual({});
+  });
 });
 
 describe("recording the source", () => {
-  it("records { src, ref, utm } with utm keyed by its short name", () => {
+  it("records { src, lp, ref, utm } with utm keyed by its short name", () => {
     expect(
-      signupSourceContext(parseSignupSource({ src: "/", ref: "chatgpt.com", utm_source: "a", utm_medium: "b" })),
-    ).toEqual({ src: "/", ref: "chatgpt.com", utm: { source: "a", medium: "b" } });
+      signupSourceContext(parseSignupSource({ src: "/", lp: "/blog/x/", ref: "chatgpt.com", utm_source: "a", utm_medium: "b" })),
+    ).toEqual({ src: "/", lp: "/blog/x/", ref: "chatgpt.com", utm: { source: "a", medium: "b" } });
     expect(signupSourceContext({})).toEqual({});
   });
 
@@ -145,6 +209,7 @@ describe("recording the source", () => {
     const attribution = signupSourceContext(
       parseSignupSource({
         src: "/pricing/",
+        lp: "/alternatives/outrank/",
         ref: "perplexity.ai",
         utm_source: "s",
         utm_medium: "m",
@@ -162,6 +227,11 @@ describe("recording the source", () => {
       "from /pricing/ via news.ycombinator.com, utm_source hn",
     );
     expect(describeSignupSource(parseSignupSource({ utm_campaign: "oct" }))).toBe("utm_campaign oct");
+    expect(describeSignupSource(parseSignupSource({ src: "/pricing/", lp: "/alternatives/outrank/", ref: "www.google.com" }))).toBe(
+      "from /pricing/ (landed on /alternatives/outrank/) via www.google.com",
+    );
+    // Landed and signed up on the same page: said once.
+    expect(describeSignupSource(parseSignupSource({ src: "/", lp: "/" }))).toBe("from /");
     expect(describeSignupSource({})).toBe("source unknown");
   });
 });

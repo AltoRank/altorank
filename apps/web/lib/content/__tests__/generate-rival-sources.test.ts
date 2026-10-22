@@ -19,12 +19,14 @@ const GOV = "https://health.gov.example.gov/back-pain"; // code: government
 const ASSOC = "https://physio-association.example/facts"; // the model reads it as information
 const SHOP = "https://brace-shop.example/back-braces"; // the model reads it as supplier_retailer
 
+// Every sentence names back pain: research keeps only figure sentences about
+// the keyword (lib/seo/source-figures.ts, `aboutTopic`).
 const PAGES: Record<string, string> = {
   [RIVAL_NAMED]: "About 41% of adults with back pain recover within six weeks of their first visit to a clinic.",
   [RIVAL_SAME]: "Our clinic has treated 37.4% more back pain patients this year than the regional average.",
   [GOV]: "Low back pain affects 619 million people worldwide according to the latest public health estimates.",
-  [ASSOC]: "Members of the association report that 80% of patients return to work within three months.",
-  [SHOP]: "Our braces are recommended by 92% of customers who stand all day at work and want support.",
+  [ASSOC]: "Members of the association report that 80% of back pain patients return to work within three months.",
+  [SHOP]: "Our back braces are recommended by 92% of customers who stand all day at work and want support.",
 };
 
 const { serp, fetchSite, ask } = vi.hoisted(() => ({ serp: vi.fn(), fetchSite: vi.fn(), ask: vi.fn() }));

@@ -375,6 +375,57 @@ export async function resolveConversionPage(opts: {
   return { conversion: null, note: `No conversion page could be confirmed: ${failures.join("; ")}.` };
 }
 
+function isRootUrl(url: string): boolean {
+  try {
+    return new URL(url).pathname.replace(/\/+$/, "") === "";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The page the approved brief sends this article's reader to, checked now.
+ *
+ * A real store, 2026-10-21: its site sat behind a Cloudflare challenge, so no
+ * page was ever read and there was no conversion page. The brief named its
+ * product page, the draft named the product, and nothing linked it: the
+ * writer had been told to link no page of the site at all, and a link it had
+ * written would have been removed as unknown.
+ *
+ * The brief's path is a model's pick (lib/keyword-research/opportunity.ts
+ * keeps it on the site, nothing more), so it is opened once. A page that
+ * answers is used. A page that is gone is not. A page the site would not let
+ * us check is used only when the site refused every page (`siteRead` false):
+ * there, a refusal says nothing about this page that it does not say about
+ * the homepage, and the check says it was not checked. The homepage is no
+ * product page: the closing section already points the reader to the business.
+ */
+export async function resolveBriefPage(opts: {
+  path: string | null | undefined;
+  offering?: string | null;
+  domain: string;
+  siteRead: boolean;
+  fetch?: SafeFetch;
+}): Promise<{ page: NonNullable<SiteFacts["briefPage"]> | null; note: string | null }> {
+  const url = opts.path?.trim() ? absoluteOnSite(opts.path, opts.domain) : null;
+  if (!url || isRootUrl(url) || classifyHref(url, opts.domain) !== "internal") return { page: null, note: null };
+  const offering = opts.offering?.trim() || null;
+  const check = await checkSiteUrl(url, opts.domain, { fetch: opts.fetch });
+  if (check.state === "verified") {
+    return { page: { url: check.url, offering, check: `answered HTTP ${check.status} when this draft was written` }, note: null };
+  }
+  if (check.state === "unverified" && !opts.siteRead) {
+    return {
+      page: { url, offering, check: `named in the approved brief; not checked, because the site refuses our reader (${check.reason})` },
+      note: `The brief's page ${url} could not be checked (${check.reason}); offered because the site refuses every read.`,
+    };
+  }
+  return {
+    page: null,
+    note: `The brief's page ${url} ${check.state === "unverified" ? `could not be checked (${check.reason})` : check.state === "dead" && check.reason.startsWith("HTTP") ? `answered ${check.reason}` : check.reason}, so it is not offered.`,
+  };
+}
+
 /** One line for the draft's research panel: what the writer was told, and from what. */
 function layerDetail(facts: SiteFacts, conversionNote: string): string {
   const parts = [
@@ -396,7 +447,7 @@ export async function loadSiteFacts(
   workspaceId: string,
   domain: string | null | undefined,
   profile: unknown,
-  opts: { fetch?: SafeFetch } = {},
+  opts: { fetch?: SafeFetch; brief?: { conversionPath?: string | null; offering?: string | null } | null } = {},
 ): Promise<{ facts: SiteFacts; layer: ResearchLayer }> {
   const empty = (note: string): SiteFacts => ({
     pagesRead: 0, offerings: [], work: [], headings: [], stated: [], about: null, people: [], pages: [], conversion: null, notes: [note],
@@ -434,6 +485,14 @@ export async function loadSiteFacts(
     });
     facts.conversion = outcome.conversion;
     if (!outcome.conversion) facts.notes.push(outcome.note);
+    if (opts.brief?.conversionPath) {
+      const same = outcome.conversion && normaliseSiteUrl(outcome.conversion.url, domain) === normaliseSiteUrl(absoluteOnSite(opts.brief.conversionPath, domain) ?? "", domain);
+      const brief = same
+        ? { page: { url: outcome.conversion!.url, offering: opts.brief.offering?.trim() || null, check: outcome.conversion!.check }, note: null }
+        : await resolveBriefPage({ path: opts.brief.conversionPath, offering: opts.brief.offering, domain, siteRead: facts.pagesRead > 0, fetch: opts.fetch });
+      facts.briefPage = brief.page;
+      if (brief.note) facts.notes.push(brief.note);
+    }
     return {
       facts,
       layer: {

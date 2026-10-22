@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { sendSignInCode } from "@/lib/email/auth-emails";
+import { startSigninCodeSignup } from "@/lib/auth/signin-code-signup";
+import { parseSignupSource, signupSourceFields, withRefererFallback } from "@/lib/auth/signup-source";
 import { DEFAULT_AFTER_SIGN_IN, safeNextPath } from "@/lib/auth/next-path";
 import { normalizeCode } from "@/lib/auth/pending-signup";
 import { PENDING_SIGNIN_COOKIE, PENDING_SIGNIN_MAX_AGE } from "@/lib/auth/pending-signin";
@@ -31,12 +33,21 @@ async function request(formData: FormData) {
   "use server";
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const next = safeNextPath(formData.get("next"));
-  if (!email.includes("@")) redirect(withNext("/signin/code", next, { error: "Enter your email address." }));
+  // Where the visitor came from, carried in by hidden inputs from /signin's
+  // link (lib/auth/signup-source.ts): recorded if this code makes the account,
+  // and kept across a retry.
+  const source = parseSignupSource(formData);
+  const carry = Object.fromEntries(signupSourceFields(source));
+  if (!email.includes("@")) redirect(withNext("/signin/code", next, { error: "Enter your email address.", ...carry }));
   try {
-    await sendSignInCode(email, next ?? DEFAULT_AFTER_SIGN_IN);
+    const { createdUserId } = await sendSignInCode(email, next ?? DEFAULT_AFTER_SIGN_IN);
+    // An address with no user got one, made by Supabase to receive this code:
+    // a signup by the sign-in door, counted and given its account here
+    // (lib/auth/signin-code-signup.ts). The page says the same either way.
+    if (createdUserId) await startSigninCodeSignup(createdUserId, email, source);
   } catch (e) {
     console.error(`[signin] code for an address failed: ${e instanceof Error ? e.message : String(e)}`);
-    redirect(withNext("/signin/code", next, { error: "The code could not be sent. Try again in a minute." }));
+    redirect(withNext("/signin/code", next, { error: "The code could not be sent. Try again in a minute.", ...carry }));
   }
   (await cookies()).set(PENDING_SIGNIN_COOKIE, email, {
     httpOnly: true,
@@ -63,11 +74,21 @@ async function verify(formData: FormData) {
   redirect(next ?? DEFAULT_AFTER_SIGN_IN);
 }
 
-export default async function SignInCodePage(props: { searchParams: Promise<{ step?: string; error?: string; next?: string }> }) {
-  const { step, error, next: rawNext } = await props.searchParams;
+export default async function SignInCodePage(props: {
+  searchParams: Promise<{ step?: string; error?: string; next?: string } & Record<string, string | string[] | undefined>>;
+}) {
+  const searchParams = await props.searchParams;
+  const { step, error, next: rawNext } = searchParams;
   const next = safeNextPath(rawNext);
   const email = (await cookies()).get(PENDING_SIGNIN_COOKIE)?.value ?? null;
   const onCode = step === "code" && email !== null;
+  // Only the request form can make an account, so only it carries the source.
+  const requestHeaders = await headers();
+  const sourceFields = onCode
+    ? []
+    : signupSourceFields(
+        withRefererFallback(parseSignupSource(searchParams), requestHeaders.get("referer"), requestHeaders.get("host")),
+      );
 
   return (
     <div className="space-y-6">
@@ -85,6 +106,9 @@ export default async function SignInCodePage(props: { searchParams: Promise<{ st
       </div>
       <form action={onCode ? verify : request} className="space-y-4">
         {next && <input type="hidden" name="next" value={next} />}
+        {sourceFields.map(([name, value]) => (
+          <input key={name} type="hidden" name={name} value={value} />
+        ))}
         {error && (
           <div role="alert" className="text-sm text-err-ink bg-err-soft px-3 py-2 rounded-lg">
             {error}
