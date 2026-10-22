@@ -153,7 +153,9 @@ describe("unsupported language: checks say they did not run", () => {
     };
     expect(decideAutoApproval(rule, candidate, new Date("2026-09-25T00:00:00Z"))).toEqual({
       approve: false,
+      kind: "facts",
       reason: "not fact-checked: the checker does not read Japanese, so a person has to approve it",
+      fix: "Read it and approve it yourself: nothing checked its figures.",
     });
   });
 
