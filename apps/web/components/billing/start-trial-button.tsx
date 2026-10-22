@@ -60,6 +60,8 @@ export function StartTrialButton({
 }) {
   const [pending, start] = useTransition();
   const [open, setOpen] = useState(false);
+  // Where focus goes back to when the sheet closes.
+  const opener = useRef<HTMLButtonElement | null>(null);
   // The Stripe session the open form is on, once it has one: what tells
   // one attempt's events from the next (lib/onboarding/step-props.ts stepKey).
   const session = useRef<string | undefined>(undefined);
@@ -101,7 +103,8 @@ export function StartTrialButton({
         <Button
           variant={variant}
           className={className}
-          onClick={() => {
+          onClick={(e) => {
+            opener.current = e.currentTarget;
             pressed();
             setOpen(true);
           }}
@@ -112,6 +115,7 @@ export function StartTrialButton({
           <CheckoutSheet
             open={open}
             onClose={leave}
+            opener={opener}
             title={`Start your ${TRIAL_DAYS}-day trial`}
             lede={`${PLAN_LABELS[plan]}: €0 today, then ${price}. ${CANCEL_LINE}`}
           >

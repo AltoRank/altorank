@@ -1,5 +1,6 @@
 import { test, expect } from "./fixtures/test";
 import { admin, signIn } from "./fixtures/account";
+import { fakeStripe, liveCheckouts } from "./fixtures/fake-stripe";
 import type { Page } from "@playwright/test";
 
 /**
@@ -134,6 +135,54 @@ test.describe("on a phone", () => {
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow).toBeLessThanOrEqual(0);
     await shot(page, "b17-gate-375");
+  });
+
+  // Below lg the box opened Stripe's form in place while the bar opened a
+  // sheet, and mounting the second destroyed the first (one Embedded
+  // Checkout per page), leaving the box an empty frame. Now both open the
+  // sheet, which holds focus while it is open.
+  test("one checkout at a time, in a sheet that holds focus", async ({ page, signedIn }) => {
+    void signedIn;
+    await fakeStripe(page);
+    await forceGate(page);
+    await startSetup(page);
+    await expect(page.getByRole("heading", { name: /Your first article is (written|being written)/ })).toBeVisible({ timeout: 45_000 });
+
+    // The box's button opens the sheet, not a form in place of itself.
+    const start = page.locator("#start-trial").getByRole("button", { name: "Start 7-day trial" });
+    await start.scrollIntoViewIfNeeded();
+    await start.click();
+    const sheet = page.getByRole("dialog", { name: "Start your 7-day trial" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.locator("[data-fake-checkout]")).toHaveCount(1);
+    await expect(page.locator("#start-trial").getByTestId("embedded-checkout")).toHaveCount(0);
+    expect(await liveCheckouts(page)).toBe(1);
+    // Focus starts on Close, and the page behind cannot take it.
+    await expect(sheet.getByRole("button", { name: "Close", exact: true })).toBeFocused();
+    expect(await page.evaluate(() => Boolean(document.getElementById("start-trial")?.closest("[inert]")))).toBe(true);
+    await shot(page, "u19-sheet-375");
+
+    // Escape closes it, and focus is back on the button that opened it.
+    await page.keyboard.press("Escape");
+    await expect(sheet).toHaveCount(0);
+    await expect(start).toBeFocused();
+    expect(await liveCheckouts(page)).toBe(0);
+    expect(await page.evaluate(() => Array.from(document.body.children).some((el) => el.hasAttribute("inert")))).toBe(false);
+
+    // The bar, once the box's button is off screen: the same sheet, one form.
+    const bar = page.getByTestId("trial-bar");
+    await page.evaluate(() => window.scrollTo(0, 0));
+    for (let i = 0; i < 40 && !(await bar.isVisible()); i++) await page.evaluate(() => window.scrollBy(0, 150));
+    await expect(bar).toBeVisible();
+    const barStart = bar.getByRole("button", { name: "Start 7-day trial" });
+    await barStart.click();
+    await expect(sheet).toBeVisible();
+    await expect(page.locator("[data-fake-checkout]")).toHaveCount(1);
+    expect(await liveCheckouts(page)).toBe(1);
+    await sheet.getByRole("button", { name: "Close", exact: true }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(barStart).toBeFocused();
+    expect(await liveCheckouts(page)).toBe(0);
   });
 });
 
