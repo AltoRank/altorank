@@ -215,6 +215,7 @@ const UA =
 async function measureCompetitorLengths(
   competitors: CompetitorPage[],
   languageCode?: string,
+  keyword?: string,
 ): Promise<{ competitors: CompetitorPage[]; layer: ResearchLayer; perPage?: SourceFigure[][] }> {
   const targets = competitors
     .map((c, i) => ({ c, i }))
@@ -258,7 +259,7 @@ async function measureCompetitorLengths(
         const { words, markdown } = htmlToMarkdown(html, c.url);
         if (words > 0) measured[i] = { ...c, wordCount: words };
         const slot = targets.findIndex((t) => t.i === i);
-        if (slot >= 0 && words > 0) perPage[slot] = figureSentences(markdown, { url: c.url, domain: c.domain }, languageCode);
+        if (slot >= 0 && words > 0) perPage[slot] = figureSentences(markdown, { url: c.url, domain: c.domain }, languageCode, keyword);
         return words > 0;
       } finally {
         clearTimeout(timer);
@@ -589,7 +590,7 @@ export async function gatherArticleResearch(options: {
   // Fill in the word counts the SERP provider does not supply. Only worth the
   // round trips when there are competitors to measure at all.
   const { competitors, layer: lengthLayer, perPage } = rawCompetitors.length
-    ? await measureCompetitorLengths(rawCompetitors, localeParam.languageCode)
+    ? await measureCompetitorLengths(rawCompetitors, localeParam.languageCode, keyword)
     : {
         competitors: rawCompetitors,
         perPage: undefined,

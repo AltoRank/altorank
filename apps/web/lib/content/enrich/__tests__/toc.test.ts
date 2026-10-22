@@ -22,6 +22,18 @@ describe("toc", () => {
     }
   });
 
+  it("links a heading past the id length cap by the id the heading carries", () => {
+    // A first draft of 2026-10-22 looked broken: the Contents link ended
+    // "...-prescription" and the heading reads "...prescription options?". The
+    // id is capped at 64 characters for both, so the link lands; this keeps
+    // the TOC from ever slugging the text itself.
+    const heading = "How do you pick between zinc oxide, plant-based, and prescription options?";
+    const { html } = addTableOfContents(SECTION("One", "a") + SECTION("Two", "b") + SECTION(heading, "c"));
+    const href = html.match(/href="#(how-do-you-pick[^"]*)"/)?.[1];
+    expect(href).toBe("how-do-you-pick-between-zinc-oxide-plant-based-and-prescription");
+    expect(html).toContain(`<h2 id="${href}">${heading}</h2>`);
+  });
+
   it("skips when disabled, when there are fewer than three H2s, or when one exists", () => {
     expect(addTableOfContents(ARTICLE, { enabled: false }).added).toBe(false);
     expect(addTableOfContents(SECTION("One", "a") + SECTION("Two", "b")).added).toBe(false);

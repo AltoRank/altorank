@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { noteRefusal, refusing, clearRefusal, resetHostCircuit } from "../host-circuit";
+import { noteRefusal, refusing, clearRefusal, resetHostCircuit, refusalKind, refusalLine, refusalOf } from "../host-circuit";
 import { crawlSite, usablePages } from "../crawler";
 import { fetchResource } from "../agent-readiness";
 
@@ -58,5 +58,44 @@ describe("the readiness check behind a refusing host", () => {
     const c = await fetchResource("https://packhub.io/sitemap.xml", 1000);
     expect([a.status, b.status, c.status]).toEqual([403, 403, 403]);
     expect(n).toBe(2); // one resource, two agents; the other two never left
+  });
+});
+
+describe("how a host refused us", () => {
+  const res = (status: number, headers: Record<string, string> = {}) => new Response("", { status, headers });
+
+  it("tells a bot check from a rate limit from a plain 403", () => {
+    expect(refusalOf(res(403, { "cf-mitigated": "challenge" }))).toBe("challenge");
+    expect(refusalOf(res(429))).toBe("rate");
+    expect(refusalOf(res(403))).toBe("refused");
+  });
+
+  it("remembers it while the host is refusing, and forgets it after", () => {
+    noteRefusal("https://wall.example/", 1_000, "challenge");
+    expect(refusalKind("https://wall.example/x", 2_000)).toBe("challenge");
+    expect(refusalKind("https://wall.example/x", 62_000)).toBeNull();
+    expect(refusalKind("https://open.example/")).toBeNull();
+  });
+
+  it("does not let a later plain 403 demote a challenge", () => {
+    noteRefusal("https://wall.example/", 1_000, "challenge");
+    noteRefusal("https://wall.example/", 2_000, "refused");
+    expect(refusalKind("https://wall.example/", 3_000)).toBe("challenge");
+    clearRefusal("https://wall.example/");
+    expect(refusalKind("https://wall.example/", 3_000)).toBeNull();
+  });
+
+  it("records a challenge from the crawl", async () => {
+    globalThis.fetch = (async () => res(403, { "cf-mitigated": "challenge" })) as typeof fetch;
+    await crawlSite("https://wall.example/", 3, 1, 0);
+    expect(refusalKind("https://wall.example/")).toBe("challenge");
+  });
+
+  it("only tells a challenged site to wait for the night when it is a rate limit", () => {
+    expect(refusalLine("challenge")).toMatch(/bot check/);
+    expect(refusalLine("challenge")).not.toMatch(/nightly/);
+    expect(refusalLine("rate")).toMatch(/rate-limiting/);
+    expect(refusalLine("refused")).toMatch(/HTTP 403/);
+    expect(refusalLine(null)).toMatch(/HTTP 403/);
   });
 });

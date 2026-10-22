@@ -16,7 +16,7 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/email/resend", () => ({ sendTransactionalEmail }));
 
-import { authLink, renderConfirmSignup, renderPasswordReset, renderMagicLink, sendPasswordReset, sendSignupConfirmation } from "../auth-emails";
+import { authLink, renderConfirmSignup, renderPasswordReset, renderMagicLink, sendPasswordReset, sendSignInCode, sendSignupConfirmation } from "../auth-emails";
 import { emailLayout } from "../layout";
 
 describe("auth emails", () => {
@@ -208,6 +208,68 @@ describe("sendSignupConfirmation", () => {
     });
     await expect(sendSignupConfirmation({ email: "a@x.co", password: "pw" })).rejects.toThrow("already been registered");
     expect(sendTransactionalEmail).not.toHaveBeenCalled();
+    expect(deleteUser).not.toHaveBeenCalled();
+  });
+});
+
+// Supabase's magic link does not fail for an address with no user, as the
+// reset does: it creates the user and returns a signup link. A real signup came
+// in that way on 2026-10-19 with no account and no site; the caller now makes
+// it a signup on purpose, so it has to be told which user was just made.
+describe("sendSignInCode", () => {
+  beforeEach(() => {
+    generateLink.mockReset();
+    deleteUser.mockReset();
+    memberCount.mockReset();
+    sendTransactionalEmail.mockReset();
+    sendTransactionalEmail.mockResolvedValue(undefined);
+    deleteUser.mockResolvedValue({ error: null });
+    memberCount.mockResolvedValue({ count: 0, error: null });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  it("reports the user Supabase created for an address that had none", async () => {
+    generateLink.mockResolvedValue({
+      data: { properties: { hashed_token: "h", email_otp: "123456", verification_type: "signup" }, user: { id: "new-user" } },
+      error: null,
+    });
+    await expect(sendSignInCode("new@x.co", "/dashboard")).resolves.toEqual({ sent: true, createdUserId: "new-user" });
+    expect(generateLink).toHaveBeenCalledWith({ type: "magiclink", email: "new@x.co" });
+    expect(sendTransactionalEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports no new user for an address that has an account", async () => {
+    generateLink.mockResolvedValue({
+      data: { properties: { hashed_token: "h", email_otp: "123456", verification_type: "magiclink" }, user: { id: "u1" } },
+      error: null,
+    });
+    await expect(sendSignInCode("a@x.co", "/dashboard")).resolves.toEqual({ sent: true, createdUserId: null });
+  });
+
+  it("is silent when Supabase says there is no such user", async () => {
+    generateLink.mockResolvedValue({ data: { properties: null, user: null }, error: { code: "user_not_found", status: 404, message: "User with this email not found" } });
+    await expect(sendSignInCode("a@x.co", "/dashboard")).resolves.toEqual({ sent: false, createdUserId: null });
+    expect(sendTransactionalEmail).not.toHaveBeenCalled();
+  });
+
+  it("undoes a user made only for a code that never left", async () => {
+    generateLink.mockResolvedValue({
+      data: { properties: { hashed_token: "h", verification_type: "signup" }, user: { id: "new-user" } },
+      error: null,
+    });
+    sendTransactionalEmail.mockRejectedValue(new Error("refused"));
+    await expect(sendSignInCode("new@x.co", "/dashboard")).rejects.toThrow("refused");
+    expect(deleteUser).toHaveBeenCalledWith("new-user");
+  });
+
+  it("never deletes an existing user when their code cannot be sent", async () => {
+    generateLink.mockResolvedValue({
+      data: { properties: { hashed_token: "h", verification_type: "magiclink" }, user: { id: "u1" } },
+      error: null,
+    });
+    sendTransactionalEmail.mockRejectedValue(new Error("refused"));
+    await expect(sendSignInCode("a@x.co", "/dashboard")).rejects.toThrow("refused");
     expect(deleteUser).not.toHaveBeenCalled();
   });
 });

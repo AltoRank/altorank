@@ -147,6 +147,13 @@ export interface SiteFacts {
   pages: Array<{ role: string; name: string; url: string }>;
   /** Where a ready reader should go, and how that was checked. Null when nothing could be. */
   conversion: { url: string; check: string } | null;
+  /**
+   * The page the approved brief sends this article's reader to
+   * (`Opportunity.conversionPath`) and the offering it names, checked now
+   * (lib/content/site-facts.ts). Null or absent when there is no brief, the
+   * brief only names the homepage, or the page is gone.
+   */
+  briefPage?: { url: string; offering: string | null; check: string } | null;
   notes: string[];
 }
 

@@ -12,6 +12,7 @@ import {
   initialOnboardingState,
   isTerminal,
   onboardingOutcome,
+  outcomeSince,
   phaseLabel,
   reduceOnboarding,
   stateFromRun,
@@ -60,6 +61,7 @@ export function OnboardingProgress({
   onStartedAt,
   onRun,
   understood,
+  articleExists = false,
 }: {
   workspaceId: string;
   domain: string;
@@ -105,6 +107,8 @@ export function OnboardingProgress({
   onRun?: (runId: string) => void;
   /** What the site read found, shown beside the loading screen while the run is live. */
   understood?: React.ReactNode;
+  /** The site has an article, whether or not this run wrote it (`outcomeSince`). */
+  articleExists?: boolean;
 }) {
   const router = useRouter();
   const [state, setState] = useState<OnboardingState>(() =>
@@ -307,10 +311,11 @@ export function OnboardingProgress({
   }, [refreshKey, workspaceId]);
 
   const drafting = state.steps.find((s) => s.phase === "drafting");
+  const shopifyWall = state.steps.some((s) => s.cause === "shopify_wall");
   // The closing sentence is derived, not chosen: `ready` is emitted whatever
   // happened, so "Done. Your first month is on the calendar" used to print
   // over an empty calendar and a refused draft.
-  const outcome = onboardingOutcome(state, autoNavigate, { preTrial });
+  const outcome = outcomeSince(onboardingOutcome(state, autoNavigate, { preTrial }), articleExists && finished);
 
   const calendar = (
     <CalendarStrip
@@ -335,6 +340,7 @@ export function OnboardingProgress({
         <Fold title="How setup went" line={outcome.line} tone={outcome.tone === "error" ? "err" : undefined}>
           <RunLog steps={state.steps} preTrial={preTrial} />
         </Fold>
+        {shopifyWall && <ShopifyWallCta />}
         {scheduledCount > 0 && (
           <Fold
             title="Your calendar"
@@ -373,6 +379,8 @@ export function OnboardingProgress({
 
       <RunLog steps={state.steps} />
 
+      {shopifyWall && finished && <ShopifyWallCta />}
+
       {calendar}
 
       {/* What the first look measured, to read while the draft is written.
@@ -380,6 +388,34 @@ export function OnboardingProgress({
           wait it is on the screen; once the run is over it stays as the
           site's first report. */}
       <FirstLookReportView report={report} domain={domain} live={!finished} />
+    </div>
+  );
+}
+
+/**
+ * A Shopify store whose own bot wall refused every page (lib/shopify/bot-wall.ts).
+ * Connected, its pages are read through Shopify instead, so this is the one
+ * thing that gets the next run past the wall. A new tab, like Search Console
+ * on the wizard: /connect is open before the trial (lib/billing/gate-paths.ts),
+ * and this screen is still here to press Try again on.
+ */
+export function ShopifyWallCta() {
+  return (
+    <div className="flex flex-col items-start gap-3 rounded-[8px] border border-line bg-bg px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <div className="text-[13px] font-medium text-ink">Connect your Shopify store</div>
+        <div className="text-[12px] text-ink-3">
+          Your store turns automated readers away. Connected, setup reads your pages and products through Shopify instead.
+        </div>
+      </div>
+      <a
+        href="/connect?connect=shopify"
+        target="_blank"
+        rel="noreferrer"
+        className="inline-flex shrink-0 items-center rounded-[7px] border border-line bg-bg px-[9px] py-[5px] text-[12.5px] font-medium text-ink transition-colors hover:bg-panel-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+      >
+        Connect Shopify
+      </a>
     </div>
   );
 }

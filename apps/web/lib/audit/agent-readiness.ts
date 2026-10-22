@@ -29,7 +29,7 @@
 
 import { fetchLenient, isTlsChainError } from "./lenient-fetch";
 import { FALLBACK_UA } from "./crawler";
-import { noteRefusal, refusing, REFUSED_STATUSES } from "./host-circuit";
+import { noteRefusal, refusalOf, refusing, REFUSED_STATUSES } from "./host-circuit";
 import { evaluateRobots, parseRobotsTxt } from "../robots/rfc9309";
 
 export type ReadinessSeverity = "high" | "medium" | "low";
@@ -219,7 +219,7 @@ export async function fetchResource(
         redirect: "follow",
       });
       if (again.ok) res = again;
-      else noteRefusal(url);
+      else noteRefusal(url, Date.now(), refusalOf(res) === "challenge" ? "challenge" : refusalOf(again));
     }
     const body = (await res.text()).slice(0, MAX_BODY_BYTES);
     const headers: Record<string, string> = {};

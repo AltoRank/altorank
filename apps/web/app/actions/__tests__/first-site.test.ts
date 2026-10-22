@@ -16,10 +16,24 @@ vi.mock("next/navigation", () => ({ redirect: (to: string) => redirect(to) }));
 const cookieSet = vi.fn();
 vi.mock("next/headers", () => ({ cookies: async () => ({ set: cookieSet }) }));
 
-let user: { id: string; email: string } | null = { id: "u1", email: "owner@acme.example" };
+let user: { id: string; email: string; user_metadata?: Record<string, unknown> } | null = { id: "u1", email: "owner@acme.example" };
+/** The account rename (lib/workspaces/first-site.ts): table, row, and the compare-and-set filters. */
+const renamed = vi.fn();
 vi.mock("@/lib/supabase/server", () => ({
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user } }) } }),
-  createServiceClient: () => ({ service: true }),
+  createServiceClient: () => ({
+    service: true,
+    from: (table: string) => ({
+      update: (row: Record<string, unknown>) => ({
+        eq: (c1: string, v1: unknown) => ({
+          eq: async (c2: string, v2: unknown) => {
+            renamed(table, row, { [c1]: v1, [c2]: v2 });
+            return { error: null };
+          },
+        }),
+      }),
+    }),
+  }),
 }));
 
 let scope: string | null = null;
@@ -27,7 +41,10 @@ vi.mock("@/lib/workspace-scope", () => ({
   SCOPE_COOKIE: "active_workspace",
   getScopedWorkspaceId: async () => scope,
 }));
-vi.mock("@/lib/queries/account", () => ({ workingAccountId: async () => "account-1" }));
+vi.mock("@/lib/queries/account", () => ({
+  workingAccountId: async () => "account-1",
+  fallbackAccountName: (_meta: unknown, email?: string | null) => email?.split("@")[0] ?? "My account",
+}));
 
 let reach: { ok: true } | { ok: false; reason: string } = { ok: true };
 vi.mock("@/lib/domain/reachable", () => ({ checkDomainReachable: async () => reach }));
@@ -82,6 +99,7 @@ beforeEach(() => {
   insertResult = { ok: true, id: "ws-new" };
   insert.mockClear();
   step.mockClear();
+  renamed.mockClear();
   cookieSet.mockClear();
   redirect.mockClear();
 });
@@ -103,10 +121,23 @@ describe("addFirstSite", () => {
     expect(row).not.toHaveProperty("auto_approve");
 
     expect(step).toHaveBeenCalledWith(
-      { service: true },
+      expect.objectContaining({ service: true }),
       { workspaceId: "ws-new", accountId: "account-1", userId: "u1", step: "site_added" },
     );
     expect(cookieSet).toHaveBeenCalledWith("active_workspace", "ws-new", expect.objectContaining({ path: "/" }));
+  });
+
+  it("names an account still called after its owner's email after the site, and nothing else", async () => {
+    await submit("acme-widgets.co.uk");
+    expect(renamed).toHaveBeenCalledTimes(1);
+    // Compare-and-set on the unchosen name: one somebody set in Settings is not it, so it stays.
+    expect(renamed).toHaveBeenCalledWith("accounts", { name: "Acme Widgets" }, { id: "account-1", name: "owner" });
+  });
+
+  it("leaves the account name alone when the site is refused", async () => {
+    insertResult = { ok: false, error: "Adding a workspace changes what the account pays for, so an owner or admin has to do it." };
+    await submit("acme.com");
+    expect(renamed).not.toHaveBeenCalled();
   });
 
   it("sends someone who already has a site to the wizard without writing another", async () => {

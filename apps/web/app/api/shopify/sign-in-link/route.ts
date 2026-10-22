@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "This account has no email to send a link to." }, { status: 409 });
   }
   try {
-    const sent = await sendSignInCode(owner.email, "/dashboard");
+    const { sent } = await sendSignInCode(owner.email, "/dashboard");
     if (!sent) return NextResponse.json({ error: "Could not find the account's login." }, { status: 409 });
   } catch {
     return NextResponse.json({ error: "Could not send the link. Try again in a minute." }, { status: 502 });

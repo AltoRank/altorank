@@ -28,14 +28,16 @@ import { stripTags } from "@/lib/audit/html-utils";
 import { isUnsafeHost } from "@/lib/seo/link-check";
 import { until } from "@/lib/onboarding/deadline";
 import { bareHost, isBlockedSource, type SourceReview } from "@/lib/seo/source-classes";
+import { aboutTopic } from "@/lib/seo/source-figures";
 import type { ExtractedClaim, FactCheckReport } from "@/lib/ai/fact-check";
-import { ENTITY_KINDS, summarise } from "@/lib/ai/fact-check";
+import { ENTITY_KINDS, medicationIn, spelledNumber, summarise } from "@/lib/ai/fact-check";
 import {
   resolveLocale,
   supportedLocales,
   parseNumber,
   escapeRegex,
   phrasePattern,
+  type SpelledNumbers,
   type SupportedLocale,
 } from "@/lib/i18n/locale";
 
@@ -48,6 +50,13 @@ export interface VerifyCitationsOptions {
    * whatever its page says, and its page is not opened.
    */
   sourceReview?: SourceReview | null;
+  /**
+   * What the article is about (`research.keyword`). A figure found on its
+   * page is `verified` only when the page's own sentence carrying it is
+   * about this (`aboutTopic`, `figureOnTopic`); otherwise it stays
+   * `needs_verification`, for a person to read.
+   */
+  topic?: string | null;
   fetcher?: PageFetcher;
   timeoutMs?: number;
   concurrency?: number;
@@ -90,6 +99,44 @@ export const defaultPageFetcher = (timeoutMs: number): PageFetcher => async (url
 };
 
 /** Page text as one lower-case line, entities resolved, for substring search. */
+/**
+ * The page's sentences, read the way `readablePageText` reads the page. A
+ * block (paragraph, heading, list item, cell) always ends a sentence, so a
+ * heading that names the topic is never read as part of the line under it.
+ */
+export function readableSentences(html: string): string[] {
+  return html
+    .split(/<\/(?:p|h[1-6]|li|td|th|dt|dd|div|section|article|blockquote|figcaption|caption)>|<br\s*\/?>/i)
+    .map(readablePageText)
+    .flatMap((block) => block.split(/(?<=[.!?])\s+/))
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Whether every figure in a claim is stated, somewhere on the cited page, in
+ * a sentence about `topic`. The page's sentence is the one judged, not the
+ * article's: the article's says what the writer made of the figure, and the
+ * writer can frame anything as on topic. A diaper-cream draft (2026-10-22)
+ * linked "Consumer Reports' guide to choosing a diaper cream" around the
+ * magazine's "100% of the fees we collect are used to support our nonprofit
+ * mission"; the anchor text named the topic, and the sentence the figure
+ * came from does not. A figure the sentences cannot place (split across
+ * blocks, say) falls back to the article's sentence.
+ */
+export function figureOnTopic(
+  pageSentences: string[],
+  claim: { figures: string[]; sentence: string },
+  topic: string | null | undefined,
+  language?: string | null,
+): boolean {
+  if (!topic) return true;
+  return claim.figures.every((f) => {
+    const carrying = pageSentences.filter((t) => pageHasFigure(t, f, language));
+    return carrying.length ? carrying.some((t) => aboutTopic(t, topic)) : aboutTopic(claim.sentence, topic);
+  });
+}
+
 export function readablePageText(html: string): string {
   return stripTags(html)
     .replace(/&nbsp;|&#160;/gi, " ")
@@ -149,11 +196,22 @@ function valueOf(digits: string, locale: SupportedLocale): { value: number; deci
  * is 1500.5 in Turkish) and written back in every supported language's
  * spelling, because the cited page need not share the article's language.
  */
-export function figureVariants(figure: string, language?: string | null): string[] {
+export function figureVariants(figure: string, language?: string | null, spelled = true): string[] {
   const raw = figure.trim().toLowerCase();
   const out = new Set<string>([raw]);
   const locale = resolveLocale(language);
   if (!locale.supported) return [...out];
+
+  // A figure with words in it ("three to five days", "twice a day", "twenty
+  // percent") is written every way the words and the digits allow, and each
+  // digit spelling is then expanded the usual way ("20 percent" → "20%").
+  const sp = locale.numbers.spelled;
+  if (spelled && sp && /\p{L}/u.test(raw)) {
+    for (const v of spelledVariants(raw, sp)) {
+      out.add(v);
+      if (v !== raw && /\d/.test(v)) for (const w of figureVariants(v, language, false)) out.add(w);
+    }
+  }
 
   const all = supportedLocales();
   const percentAfter = [...new Set(all.flatMap((l) => l.numbers.percentWordsAfter))];
@@ -219,6 +277,81 @@ export function figureVariants(figure: string, language?: string | null): string
   }
 
   return [...out].filter(Boolean);
+}
+
+/** The most spellings one worded figure expands to: three numbers with all their forms is well under it. */
+const MAX_SPELLED_VARIANTS = 512;
+
+/** The value of a number written in words or digits, or null. "twenty-five" → 25, "one hundred" → 100. */
+function wordValue(text: string, sp: SpelledNumbers): number | null {
+  if (/^\d+$/.test(text)) return Number(text);
+  const parts = text.split(/[-\s]+/).map((p) => sp.words[p]);
+  if (parts.some((p) => p === undefined)) return null;
+  const [a, b] = parts as number[];
+  if (b === undefined) return a;
+  if (b === 100) return a * 100;
+  return a >= 20 && a % 10 === 0 && b < 10 ? a + b : null;
+}
+
+/** A number as words, for the values the language's words can write: 1–20, the tens, 21–99, 100. */
+function inWords(n: number, sp: SpelledNumbers): string[] {
+  const name = Object.fromEntries(Object.entries(sp.words).map(([w, v]) => [v, w]));
+  if (name[n] && n !== 100) return [name[n]];
+  if (n === 100) return [`one ${name[100]}`, name[100]];
+  const tens = Math.floor(n / 10) * 10;
+  if (n > 20 && n < 100 && name[tens] && name[n - tens]) return [`${name[tens]}-${name[n - tens]}`, `${name[tens]} ${name[n - tens]}`];
+  return [];
+}
+
+/**
+ * Every way a page might write a worded figure: each number in words or
+ * digits, "twice" as "two times" or "2 times", "a day" as "daily", and a
+ * range joined by "to" or a dash. "three to five days" is found on a page
+ * that says "3-5 days", and "3 to 5 days" on one that says it in words.
+ */
+function spelledVariants(raw: string, sp: SpelledNumbers): string[] {
+  const word = spelledNumber(sp);
+  const times = Object.keys(sp.times).join("|");
+  const perDay = sp.perDay.map(escapeRegex).join("|");
+  const num = String.raw`(?:\d+|${word})`;
+  const token = new RegExp(
+    [
+      String.raw`(?<counted>${num})\s+${escapeRegex(sp.timesWord)}(?![\p{L}])`,
+      String.raw`(?<![\p{L}])(?<times>${times})(?![\p{L}])`,
+      String.raw`(?<![\p{L}\d.,])(?<number>${num})(?![\d.,]\d)`,
+      String.raw`(?<![\p{L}])(?<perDay>${perDay})(?![\p{L}])`,
+      String.raw`(?<range>${sp.range})`,
+    ].join("|"),
+    "gu",
+  );
+  const timesWordOf = Object.fromEntries(Object.entries(sp.times).map(([w, v]) => [v, w]));
+  const countOf = (n: number) => [
+    ...[String(n), ...inWords(n, sp)].map((x) => `${x} ${sp.timesWord}`),
+    ...(timesWordOf[n] ? [timesWordOf[n]] : []),
+  ];
+
+  const pieces: string[][] = [];
+  let at = 0;
+  for (const m of raw.matchAll(token)) {
+    const g = m.groups ?? {};
+    const index = m.index ?? 0;
+    if (index > at) pieces.push([raw.slice(at, index)]);
+    at = index + m[0].length;
+    const counted = g.counted !== undefined ? wordValue(g.counted, sp) : g.times !== undefined ? sp.times[g.times] : null;
+    const value = g.number !== undefined ? wordValue(g.number, sp) : null;
+    if (counted !== null) pieces.push(countOf(counted));
+    else if (value !== null) pieces.push([...new Set([String(value), ...inWords(value, sp)])]);
+    else if (g.perDay !== undefined) pieces.push(sp.perDay);
+    else if (g.range !== undefined) pieces.push([" to ", "-", "–", " - ", " – "]);
+    else pieces.push([m[0]]);
+  }
+  if (at < raw.length) pieces.push([raw.slice(at)]);
+
+  let out = [""];
+  for (const options of pieces) {
+    out = out.flatMap((head) => options.map((o) => head + o)).slice(0, MAX_SPELLED_VARIANTS);
+  }
+  return out;
 }
 
 /**
@@ -300,6 +433,7 @@ export async function verifyCitedFigures(
 
   const urls = [...new Set(checkable.map((c) => c.sourceUrl!))].slice(0, MAX_CITED_PAGES);
   const pages = new Map<string, string | null>();
+  const sentences = new Map<string, string[]>();
 
   const signal = opts.signal ?? null;
   const read = async (url: string): Promise<void> => {
@@ -311,6 +445,7 @@ export async function verifyCitedFigures(
       const { status, body } = signal ? await until(fetcher(url), signal, "fact check") : await fetcher(url);
       const text = status >= 200 && status < 300 ? readablePageText(body) : "";
       pages.set(url, text.length >= MIN_READABLE_CHARS ? text : null);
+      if (text.length >= MIN_READABLE_CHARS && opts.topic) sentences.set(url, readableSentences(body));
     } catch {
       pages.set(url, null);
     }
@@ -354,6 +489,57 @@ export async function verifyCitedFigures(
     }
 
     const missing = c.figures.filter((f) => !pageHasFigure(text, f, language));
+
+    // Dosing advice: verified only when the page carries every figure AND
+    // names the medicine, since "3 to 5 days" is on many pages about other
+    // things. A miss is not `contradicted`: a page can give the same dose
+    // another way ("every 12 hours" for "twice a day") that no spelling
+    // search sees. It stays with the reviewer at medium, never a green tick.
+    if (c.kind === "dosing") {
+      const locale = resolveLocale(language);
+      const drug = locale.supported ? medicationIn(c.sentence, locale) : null;
+      const named = !drug || text.includes(drug.toLowerCase());
+      if (missing.length === 0 && named && figureOnTopic(sentences.get(c.sourceUrl!) ?? [], c, opts.topic, language)) {
+        return {
+          ...c,
+          status: "verified" as const,
+          severity: "low" as const,
+          note:
+            `The page it cites (${c.sourceUrl}) names ${drug ?? "the medicine"} and carries every dose, frequency and ` +
+            `duration in this sentence. That is not proof the advice is right, but the citation is real.`,
+        };
+      }
+      const absent = [...(named ? [] : [drug!]), ...missing];
+      return {
+        ...c,
+        status: "needs_verification" as const,
+        severity: "medium" as const,
+        note:
+          `Dosing advice the cited page does not back: ${c.sourceUrl} loaded and ` +
+          (absent.length
+            ? `does not contain ${absent.map((f) => `"${f}"`).join(", ")}. `
+            : `carries these figures, but not in a sentence about ${opts.topic}. `) +
+          `Open it and match the dose, how often and for how long to what it says, or cut the sentence.`,
+      };
+    }
+    // The number is on the page, and the page's sentence carrying it is not
+    // about the article's subject: the citation is real and proves nothing
+    // here. Kept at
+    // `needs_verification` rather than a status of its own, because that is
+    // already the state every surface (review panel, auto-approve, evals)
+    // reads as "a person decides"; a new status would need each of them to
+    // learn it. It only stops a green tick: the verdict becomes `review`.
+    if (missing.length === 0 && !figureOnTopic(sentences.get(c.sourceUrl!) ?? [], c, opts.topic, language)) {
+      return {
+        ...c,
+        status: "needs_verification" as const,
+        severity: "medium" as const,
+        note:
+          `The page it cites (${c.sourceUrl}) carries this figure, but in a sentence that is not about ` +
+          `${opts.topic}. A figure about something else is not evidence for this article: cut it, ` +
+          `or replace it with one about the subject.`,
+      };
+    }
     if (missing.length === 0) {
       return {
         ...c,

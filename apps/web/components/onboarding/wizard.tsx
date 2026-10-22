@@ -1467,6 +1467,7 @@ function RunScreen({
             onStartedAt={setRunStartedAt}
             onRun={onRun}
             understood={understood}
+            articleExists={firstArticle?.state === "written"}
           />
         </div>
         {trialStep && askAttribution ? (

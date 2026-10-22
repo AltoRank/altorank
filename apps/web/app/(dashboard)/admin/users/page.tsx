@@ -14,6 +14,7 @@ import { ImpersonateButton } from "./impersonate-button";
 import { tallyArticles } from "@/lib/found-on-site/state";
 import { readAllPages, type PageResult } from "@/lib/supabase/read-all";
 import { customerLastSeen, type CustomerLastSeen, type ViewRecord } from "@/lib/auth/last-seen";
+import { originSearchText, signupEventsByUser, userOrigin, type SignupEventRow } from "@/lib/admin/user-origin";
 
 export const metadata: Metadata = { title: "Users" };
 
@@ -114,7 +115,7 @@ export default async function AdminUsersPage({
     readAllPages<T>(table, (from, to, count) =>
       admin.from(table).select(`id, ${columns}`, { count }).order("id").range(from, to) as unknown as PromiseLike<PageResult<T>>,
     );
-  const [users, members, accounts, workspaces, articles, { data: log }, views] =
+  const [users, members, accounts, workspaces, articles, { data: log }, views, signupEvents] =
     await Promise.all([
       listAllUsers(admin),
       all<MemberRow>("account_members", "user_id, account_id, role"),
@@ -127,7 +128,14 @@ export default async function AdminUsersPage({
         .order("started_at", { ascending: false })
         .limit(25),
       viewsByTarget(admin),
+      // Where each user came from: the one `signup` event each door writes
+      // (lib/admin/user-origin.ts). A failed read leaves the column blank,
+      // never the page.
+      readAllPages<SignupEventRow>("system_events", (from, to, count) =>
+        admin.from("system_events").select("id, context, created_at", { count }).eq("source", "signup").order("id").range(from, to),
+      ).catch(() => [] as SignupEventRow[]),
     ]);
+  const signupOf = signupEventsByUser(signupEvents);
   // Last seen is the customer's own sign-in, not the one "View as" made.
   const seenOf = new Map(users.map((u) => [u.id, customerLastSeen(u.last_sign_in_at, views.get(u.id) ?? [])]));
 
@@ -168,12 +176,13 @@ export default async function AdminUsersPage({
         articleCount,
         liveCount,
         foundCount,
+        origin: userOrigin(signupOf.get(u.id), { invited: Boolean(primary && primary.role !== "owner") }),
         operator: isAdminEmail(u.email),
       };
     })
     .filter((r) => {
       if (!needle) return true;
-      const hay = [r.user.email, r.name, r.account?.name, ...r.domains]
+      const hay = [r.user.email, r.name, r.account?.name, ...r.domains, originSearchText(r.origin)]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -201,7 +210,7 @@ export default async function AdminUsersPage({
               type="search"
               name="q"
               defaultValue={q}
-              placeholder="Email, name, account or domain"
+              placeholder="Email, name, account, domain or source"
               aria-label="Search users"
               className="w-[260px] rounded-[7px] border border-line bg-panel-2 px-2.5 py-1.5 text-[13px] focus:border-line focus:bg-bg focus:outline-0"
             />
@@ -237,7 +246,7 @@ export default async function AdminUsersPage({
           flush
         >
           <Table
-            head={["User", "Account", "Plan", "Workspaces", "Articles", "Signed up", "Last seen", ""]}
+            head={["User", "Account", "Source", "Plan", "Workspaces", "Articles", "Signed up", "Last seen", ""]}
             empty={needle ? "No user matches that." : "No users yet."}
             rows={rows.map((r) => [
               <span key="who" className="flex flex-col gap-0.5">
@@ -258,6 +267,10 @@ export default async function AdminUsersPage({
                 ) : (
                   <span className="text-ink-3">no account</span>
                 )}
+              </span>,
+              <span key="source" className="flex flex-col gap-0.5 font-sans text-[13px]" title={r.origin.detail ?? undefined}>
+                <span className={r.origin.kind === "unknown" ? "text-ink-3" : "text-ink"}>{r.origin.label}</span>
+                {r.origin.detail && r.origin.kind !== "unknown" && <span className="text-[12px] text-ink-3">{r.origin.detail}</span>}
               </span>,
               planLabel(r.account),
               <span key="ws" className="font-sans text-[13px]" title={r.domains.join(", ")}>
