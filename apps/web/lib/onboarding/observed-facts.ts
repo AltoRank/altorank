@@ -103,7 +103,7 @@ export async function checkSiteUrl(url: string, domain: string, opts: CheckOptio
   }
   // A host that refused this run is not asked again until the window passes
   // (lib/audit/host-circuit.ts): one more knock only extends a ban.
-  if (refusing(url)) return { state: "unverified", url, status: null, reason: "the site is rate-limiting us right now" };
+  if (refusing(url)) return { state: "unverified", url, status: null, reason: "the site is refusing our reader right now" };
   const fetchImpl = opts.fetch ?? safeFetch;
   let res;
   try {

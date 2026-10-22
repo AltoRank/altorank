@@ -119,28 +119,58 @@ export async function ensureAccount(
     throw new Error(`Could not look up account membership: ${error.message}`);
   }
 
-  // Auto-create using service role (bypasses RLS)
-  const admin = createServiceClient();
+  const accountId = await createOwnedAccount(userId, meta, email);
 
-  /**
-   * What to call the row.
-   *
-   * Two things were wrong with `meta.name || "My Account"`. It read only
-   * `name`, but an OAuth sign-in supplies `full_name` - and OAuth is exactly
-   * the path that reaches here, since the signup form names the account
-   * itself. So the one case this fallback exists for was also the one case it
-   * had a name for and ignored. Everywhere else in the app already reads both
-   * (app/actions/team.ts, admin/users).
-   *
-   * And "My Account" is not what this product sells any more. The table keeps
-   * the name - it is the tenant row, and renaming it is a migration, not a
-   * copy change - but a solo user on the free tier should not be greeted by a
-   * word that now denotes the EUR199 tier. "Account" is the fallback the
-   * sidebar already uses.
-   */
+  // The only trace this path leaves. Signup writes a `signup` event for every
+  // account it makes; this wrote nothing, so an account made here looked like
+  // no signup at all - and, with no site, it dead-ended on the empty Sites
+  // table (2026-10-19). That one came in by the sign-in code, which now makes
+  // its own account (lib/auth/signin-code-signup.ts), so reaching here means
+  // a door nobody has found yet: hence a warning. No email: the user id is
+  // the join.
+  await recordEvent({
+    level: "warn",
+    source: "signup",
+    message: "Account created by the membership fallback, not the signup form, so it has no site yet",
+    accountId,
+    context: { stage: "fallback", userId },
+  });
+
+  return accountId;
+}
+
+/**
+ * What to call an account made for a person rather than for a site: the name
+ * they gave, else their email's local part, else "My account". The account is
+ * renamed after its site when that site is named on /onboarding/site
+ * (app/actions/first-site.ts), which is why this is exported: a name that
+ * still matches this is one nobody chose.
+ *
+ * Two things were wrong with `meta.name || "My Account"`. It read only
+ * `name`, but an OAuth sign-in supplies `full_name`, and everywhere else in
+ * the app already reads both (app/actions/team.ts, admin/users). And "My
+ * Account" is not what this product sells any more: a solo user on the free
+ * tier should not be greeted by a word that now denotes the EUR199 tier.
+ */
+export function fallbackAccountName(meta: Record<string, unknown>, email?: string | null): string {
   const fromMeta = (meta.name as string) || (meta.full_name as string) || "";
   const fromEmail = email?.split("@")[0]?.trim() ?? "";
-  const name = fromMeta.trim() || fromEmail || "My account";
+  return fromMeta.trim() || fromEmail || "My account";
+}
+
+/**
+ * Create an account owned by `userId`, named by `fallbackAccountName`, with
+ * the service role (bypasses RLS). Returns its id. For a person who has none:
+ * the caller has checked. Shared by `ensureAccount` and the sign-in code's
+ * signup (lib/auth/signin-code-signup.ts).
+ */
+export async function createOwnedAccount(
+  userId: string,
+  meta: Record<string, unknown>,
+  email?: string | null,
+): Promise<string> {
+  const admin = createServiceClient();
+  const name = fallbackAccountName(meta, email);
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -160,19 +190,5 @@ export async function ensureAccount(
     role: "owner",
   });
 
-  // The only trace this path leaves. Signup writes a `signup` event for every
-  // account it makes; this wrote nothing, so an account made here looked like
-  // no signup at all - and, with no site, it dead-ended on the empty Sites
-  // table (2026-10-19). Which door reached here is unknown to this function;
-  // the event says it was this one, and when. No email: the user id is the
-  // join.
-  await recordEvent({
-    level: "warn",
-    source: "signup",
-    message: "Account created by the membership fallback, not the signup form, so it has no site yet",
-    accountId: account.id as string,
-    context: { stage: "fallback", userId },
-  });
-
-  return account.id;
+  return account.id as string;
 }

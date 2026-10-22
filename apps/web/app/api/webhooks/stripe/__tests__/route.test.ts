@@ -45,6 +45,7 @@ function query(table: string, op: "select" | "update", row?: Row, columns?: stri
   let single = false;
   const q = {
     eq: (c: string, v: unknown) => (filters.push([c, "eq", v]), q),
+    is: (c: string, v: unknown) => (filters.push([c, "is", v]), q),
     not: (c: string, o: string, v: unknown) => (filters.push([c, `not ${o}`, v]), q),
     or: (expr: string) => (filters.push(["or", "or", expr]), q),
     select: () => q,
@@ -138,7 +139,11 @@ vi.mock("@/lib/stripe", async (importOriginal) => {
     ...actual,
     getStripe: () => ({
       webhooks: { constructEvent },
-      subscriptions: { retrieve: retrieveSubscription },
+      // Stripe's subscription always carries its own id; the fixtures below
+      // leave it out, so it is filled in from the id that was asked for.
+      subscriptions: {
+        retrieve: async (id: string, ...rest: unknown[]) => ({ id, ...(await retrieveSubscription(id, ...rest)) }),
+      },
       invoiceItems: { list: pendingItems },
       invoices: { create: createInvoice, finalizeInvoice },
     }),

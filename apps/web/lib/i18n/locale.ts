@@ -146,6 +146,31 @@ export interface NumberRules {
    * `from`/`to`, the sentence's own words for the two bars.
    */
   beforeAfter: RegExp;
+  /**
+   * Figures written as words: "three to five days", "twice a day". Absent:
+   * the language's spelled figures are not read, only its digits.
+   */
+  spelled?: SpelledNumbers;
+}
+
+/** How a language writes a number, a count of times and a dose in words. Lowercase literals unless noted. */
+export interface SpelledNumbers {
+  /** "three" → 3. Compounds ("twenty-five") are read from the parts. */
+  words: Record<string, number>;
+  /** "twice" → 2: a count of times in one word. */
+  times: Record<string, number>;
+  /** What joins the two ends of a range ("to", "or", "-"). Regex fragment. */
+  range: string;
+  /** "a day", "daily": what makes a count of times a frequency. Regex fragment. */
+  perPeriod: string;
+  /** The ways a page writes "a day" after a count of times, for matching either form. */
+  perDay: string[];
+  /** "times" after a number ("3 times a day"). */
+  timesWord: string;
+  /** "every" before an interval ("every four hours"). */
+  every: string;
+  /** Units a dose is measured in ("mg", "drops"). Regex fragments. */
+  doseUnits: string[];
 }
 
 /** Rules for reading prose. Applied to text lowered with `Locale.lower` unless noted. */
@@ -190,6 +215,13 @@ export interface ProseRules {
    * public plan pays for. Same shape as `authorityClaim`.
    */
   coverageClaim: RegExp[];
+  /**
+   * A drug, an active ingredient or a kind of medicine named in a sentence
+   * ("hydrocortisone", "an antibiotic"). A dose, frequency or duration in the
+   * same sentence is dosing advice, a claim of its own. Applied to raw text,
+   * case-insensitive. Absent: dosing is not read in this language.
+   */
+  medication?: RegExp;
 }
 
 /** Headings and labels the product recognises. Matched in every supported language. */
@@ -562,8 +594,45 @@ const EN: LocaleRules = {
       String.raw`\b(?<from>from)\s+(?<ca>[€$£])?\s?(?<a>\d[\d.,]*)\s?(?<ua>[%€$£]|percent|hours?|days?|weeks?|months?|minutes?|seconds?)?\s+(?<to>to)\s+(?<cb>[€$£])?\s?(?<b>\d[\d.,]*)\s?(?<ub>[%€$£]|percent|hours?|days?|weeks?|months?|minutes?|seconds?)?`,
       "i",
     ),
+    spelled: {
+      words: {
+        one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+        eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+        eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60,
+        seventy: 70, eighty: 80, ninety: 90, hundred: 100,
+      },
+      times: { once: 1, twice: 2, thrice: 3 },
+      range: String.raw`(?:\s*[-–—]\s*|\s+(?:to|or)\s+)`,
+      perPeriod: String.raw`(?:(?:a|per|each|every)\s+(?:day|night|week|month)|daily|nightly|weekly)`,
+      perDay: ["a day", "per day", "daily", "each day"],
+      timesWord: "times",
+      every: "every",
+      doseUnits: [
+        "mg", "mcg", "µg", "ml", "g", "grams?", "milligrams?", "iu", "units?", "drops?", "tablets?", "capsules?", "pills?",
+        "puffs?", "sprays?", "teaspoons?", "tsp", "tablespoons?", "tbsp", "doses?", "applications?", "patch(?:es)?",
+      ],
+    },
   },
   prose: {
+    // Active ingredients a consumer article names, the suffixes most drug
+    // names end in, and the kinds of medicine ("an antibiotic", "a steroid
+    // cream"). A sentence naming none is not dosing advice: "post twice a
+    // week" is a schedule, "apply hydrocortisone twice a day" is a dose.
+    medication: new RegExp(
+      String.raw`(?<![\p{L}])(?:` +
+        [
+          "hydrocortisone", "cortisone", "ibuprofen", "acetaminophen", "paracetamol", "aspirin", "naproxen",
+          "zinc oxide", "nystatin", "lidocaine", "benzocaine", "diphenhydramine", "cetirizine", "loratadine",
+          "melatonin", "simethicone", "amoxicillin", "penicillin", "insulin", "metformin", "permethrin",
+          "benzoyl peroxide", "salicylic acid", "retinol", "tretinoin", "minoxidil", "iron supplements?",
+          "vitamin [a-k]\\d*",
+          String.raw`\p{L}{2,}(?:cillin|mycin|cycline|azole|olol|pril|sartan|statin|prazole|tidine|sone|olone|caine|floxacin|vir|mab)`,
+          "antibiotics?", "antifungals?", "antihistamines?", "(?:cortico)?steroids?", "medications?", "medicines?",
+          "drugs?", "painkillers?", "pain relievers?", "fever reducers?",
+        ].join("|") +
+        String.raw`)(?![\p{L}])`,
+      "iu",
+    ),
     attribution: [
       new RegExp(String.raw`\b[Aa]ccording to\s+(?:the\s+)?(${EN_NAME}(?:\s+${EN_NAME}){0,4})`, "u"),
       new RegExp(String.raw`\b(?:[Rr]eported|[Pp]ublished|[Cc]onducted|[Cc]ompiled)\s+by\s+(${EN_NAME}(?:\s+${EN_NAME}){0,4})`, "u"),

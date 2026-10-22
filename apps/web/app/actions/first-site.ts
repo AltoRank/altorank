@@ -15,13 +15,13 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
-import { workingAccountId } from "@/lib/queries/account";
+import { fallbackAccountName, workingAccountId } from "@/lib/queries/account";
 import { getScopedWorkspaceId, SCOPE_COOKIE } from "@/lib/workspace-scope";
 import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/domain/shape";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
 import { insertWorkspaceAsServer } from "@/lib/workspaces/insert";
-import { FIRST_SITE_PATH, firstSiteRow } from "@/lib/workspaces/first-site";
+import { FIRST_SITE_PATH, firstSiteRow, nameAccountAfterSite } from "@/lib/workspaces/first-site";
 import { recordOnboardingStep } from "@/lib/onboarding/step-events";
 
 /** Back to the domain question with a sentence to show, the domain kept. */
@@ -59,6 +59,11 @@ export async function addFirstSite(formData: FormData): Promise<void> {
   // Owner or admin with every site, checked inside, as for any added site.
   const inserted = await insertWorkspaceAsServer(supabase, user.id, accountId, firstSiteRow(domain));
   if (!inserted.ok) back(inserted.error, domain);
+
+  // An account made for a person, not a site (the sign-in code's signups, the
+  // membership fallback) is still called after their email. Signup names it
+  // after the domain; so does this, unless someone has renamed it since.
+  await nameAccountAfterSite(accountId, fallbackAccountName(user.user_metadata ?? {}, user.email), domain);
 
   // The step the funnel was missing: without it this person's first event
   // was the wizard opening on a site with no record of where it came from.
