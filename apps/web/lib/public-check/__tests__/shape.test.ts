@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { ReadinessFinding, ReadinessResult } from "@/lib/audit/agent-readiness";
-import { shapePublicCheck, badgeText, CHECK_ORDER, shareUrlFor, scoreLabel } from "../shape";
+import { shapePublicCheck, badgeText, CHECK_ORDER, shareUrlFor, signupHrefFor, scoreLabel } from "../shape";
+import { parseSignupSource } from "@/lib/auth/signup-source";
 
 const AT = new Date("2026-09-04T10:00:00Z");
 
@@ -132,5 +133,29 @@ describe("helpers", () => {
     expect(scoreLabel(null)).toBe("Not measured");
     expect(scoreLabel(100)).toBe("Readable");
     expect(scoreLabel(10)).toBe("Hard to read");
+  });
+});
+
+describe("signupHrefFor", () => {
+  const read = (href: string) => new URL(href, "https://app.altorank.co");
+
+  it("links /signup with the domain and the share page as `src`", () => {
+    const url = read(signupHrefFor("acme.com"));
+    expect(url.pathname).toBe("/signup");
+    expect(url.searchParams.get("domain")).toBe("acme.com");
+    expect(url.searchParams.get("src")).toBe("/check/acme.com");
+    // What /signup will read back from it.
+    expect(parseSignupSource(Object.fromEntries(url.searchParams))).toEqual({ src: "/check/acme.com" });
+  });
+
+  it("adds the site the share was opened from", () => {
+    const url = read(signupHrefFor("acme.com", { ref: "t.co" }));
+    expect(parseSignupSource(Object.fromEntries(url.searchParams))).toEqual({ src: "/check/acme.com", ref: "t.co" });
+  });
+
+  it("keeps an IDN's src as the encoded path, which /signup accepts", () => {
+    const url = read(signupHrefFor("bücher.example"));
+    expect(url.searchParams.get("domain")).toBe("bücher.example");
+    expect(parseSignupSource(Object.fromEntries(url.searchParams)).src).toBe("/check/b%C3%BCcher.example");
   });
 });

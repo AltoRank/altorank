@@ -15,18 +15,22 @@ const LABEL = "text-[12.5px] font-medium text-ink-2";
  * an account made since code signup has no password it knows, and the
  * password one tap away for everyone who has one. The tap swaps the form in
  * place, keeping the address typed; without JavaScript it is a link to
- * `?method=password`, the same form from the server.
+ * `?method=password`, the same form from the server. `source` is where the
+ * visitor came from (lib/auth/signup-source.ts), carried through both: a
+ * code for an address with no account makes one, and the signup records it.
  */
 export function SignInForm({
   next,
   initialMethod,
   error,
+  source = [],
   requestCode,
   signIn,
 }: {
   next: string | null;
   initialMethod: SignInMethod;
   error?: string;
+  source?: ReadonlyArray<readonly [string, string]>;
   requestCode: (formData: FormData) => Promise<void>;
   signIn: (formData: FormData) => Promise<void>;
 }) {
@@ -40,6 +44,9 @@ export function SignInForm({
   return (
     <form action={password ? signIn : requestCode} className="space-y-4">
       {next && <input type="hidden" name="next" value={next} />}
+      {source.map(([name, value]) => (
+        <input key={name} type="hidden" name={name} value={value} />
+      ))}
       {error && (
         <div role="alert" className="text-sm text-err-ink bg-err-soft px-3 py-2 rounded-lg">
           {error}
@@ -67,7 +74,7 @@ export function SignInForm({
       <SubmitButton pendingLabel={password ? "Signing in…" : "Sending…"}>{password ? "Sign in" : "Email me a sign-in code"}</SubmitButton>
       <p className="m-0 text-center text-[12.5px] text-ink-3">
         <Link
-          href={signinPath("/signin", next, other === "password" ? { method: "password" } : undefined)}
+          href={signinPath("/signin", next, { ...(other === "password" ? { method: "password" } : {}), ...Object.fromEntries(source) })}
           onClick={(e) => {
             e.preventDefault();
             setMethod(other);

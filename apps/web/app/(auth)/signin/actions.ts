@@ -19,25 +19,30 @@ import { normalizeCode } from "@/lib/auth/pending-signup";
 import { PENDING_SIGNIN_COOKIE, PENDING_SIGNIN_MAX_AGE } from "@/lib/auth/pending-signin";
 import { signinPath } from "@/lib/auth/signin-path";
 import { recordSignIn } from "@/lib/auth/signin-event";
+import { parseSignupSource, signupSourceFields } from "@/lib/auth/signup-source";
 
 /**
  * Sign in without a password: an email code, typed on /signin/code. The same
  * answer whether or not the address has an account, so the form cannot be
- * used to find out which ones do.
+ * used to find out which ones do. Where the visitor came from arrives in
+ * hidden inputs (lib/auth/signup-source.ts): recorded if this code makes the
+ * account, and kept across a retry.
  */
 export async function requestSignInCode(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const next = safeNextPath(formData.get("next"));
-  if (!email.includes("@")) redirect(signinPath("/signin", next, { error: "Enter your email address." }));
+  const source = parseSignupSource(formData);
+  const carry = Object.fromEntries(signupSourceFields(source));
+  if (!email.includes("@")) redirect(signinPath("/signin", next, { error: "Enter your email address.", ...carry }));
   try {
     const { createdUserId } = await sendSignInCode(email, next ?? DEFAULT_AFTER_SIGN_IN);
     // An address with no user got one, made by Supabase to receive this code:
     // a signup by the sign-in door, counted and given its account here
     // (lib/auth/signin-code-signup.ts). The page says the same either way.
-    if (createdUserId) await startSigninCodeSignup(createdUserId, email);
+    if (createdUserId) await startSigninCodeSignup(createdUserId, email, source);
   } catch (e) {
     console.error(`[signin] code for an address failed: ${e instanceof Error ? e.message : String(e)}`);
-    redirect(signinPath("/signin", next, { error: "The code could not be sent. Try again in a minute." }));
+    redirect(signinPath("/signin", next, { error: "The code could not be sent. Try again in a minute.", ...carry }));
   }
   (await cookies()).set(PENDING_SIGNIN_COOKIE, email, {
     httpOnly: true,
@@ -76,8 +81,10 @@ export async function signInWithPassword(formData: FormData) {
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) {
     // Back on the password form, with `next`: a mistyped password must not
-    // cost the reader the article the email was about.
-    redirect(signinPath("/signin", next, { method: "password", error: authErrorMessage(error.message) }));
+    // cost the reader the article the email was about. So is where they came
+    // from: the next step may be "Sign up" after all.
+    const carry = Object.fromEntries(signupSourceFields(parseSignupSource(formData)));
+    redirect(signinPath("/signin", next, { method: "password", error: authErrorMessage(error.message), ...carry }));
   }
   await recordSignIn("password", data.user?.id);
   redirect(next ?? DEFAULT_AFTER_SIGN_IN);

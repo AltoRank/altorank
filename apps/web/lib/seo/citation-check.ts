@@ -28,6 +28,7 @@ import { stripTags } from "@/lib/audit/html-utils";
 import { isUnsafeHost } from "@/lib/seo/link-check";
 import { until } from "@/lib/onboarding/deadline";
 import { bareHost, isBlockedSource, type SourceReview } from "@/lib/seo/source-classes";
+import { aboutTopic } from "@/lib/seo/source-figures";
 import type { ExtractedClaim, FactCheckReport } from "@/lib/ai/fact-check";
 import { ENTITY_KINDS, summarise } from "@/lib/ai/fact-check";
 import {
@@ -48,6 +49,13 @@ export interface VerifyCitationsOptions {
    * whatever its page says, and its page is not opened.
    */
   sourceReview?: SourceReview | null;
+  /**
+   * What the article is about (`research.keyword`). A figure found on its
+   * page is `verified` only when the page's own sentence carrying it is
+   * about this (`aboutTopic`, `figureOnTopic`); otherwise it stays
+   * `needs_verification`, for a person to read.
+   */
+  topic?: string | null;
   fetcher?: PageFetcher;
   timeoutMs?: number;
   concurrency?: number;
@@ -90,6 +98,44 @@ export const defaultPageFetcher = (timeoutMs: number): PageFetcher => async (url
 };
 
 /** Page text as one lower-case line, entities resolved, for substring search. */
+/**
+ * The page's sentences, read the way `readablePageText` reads the page. A
+ * block (paragraph, heading, list item, cell) always ends a sentence, so a
+ * heading that names the topic is never read as part of the line under it.
+ */
+export function readableSentences(html: string): string[] {
+  return html
+    .split(/<\/(?:p|h[1-6]|li|td|th|dt|dd|div|section|article|blockquote|figcaption|caption)>|<br\s*\/?>/i)
+    .map(readablePageText)
+    .flatMap((block) => block.split(/(?<=[.!?])\s+/))
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Whether every figure in a claim is stated, somewhere on the cited page, in
+ * a sentence about `topic`. The page's sentence is the one judged, not the
+ * article's: the article's says what the writer made of the figure, and the
+ * writer can frame anything as on topic. A diaper-cream draft (2026-10-22)
+ * linked "Consumer Reports' guide to choosing a diaper cream" around the
+ * magazine's "100% of the fees we collect are used to support our nonprofit
+ * mission"; the anchor text named the topic, and the sentence the figure
+ * came from does not. A figure the sentences cannot place (split across
+ * blocks, say) falls back to the article's sentence.
+ */
+export function figureOnTopic(
+  pageSentences: string[],
+  claim: { figures: string[]; sentence: string },
+  topic: string | null | undefined,
+  language?: string | null,
+): boolean {
+  if (!topic) return true;
+  return claim.figures.every((f) => {
+    const carrying = pageSentences.filter((t) => pageHasFigure(t, f, language));
+    return carrying.length ? carrying.some((t) => aboutTopic(t, topic)) : aboutTopic(claim.sentence, topic);
+  });
+}
+
 export function readablePageText(html: string): string {
   return stripTags(html)
     .replace(/&nbsp;|&#160;/gi, " ")
@@ -300,6 +346,7 @@ export async function verifyCitedFigures(
 
   const urls = [...new Set(checkable.map((c) => c.sourceUrl!))].slice(0, MAX_CITED_PAGES);
   const pages = new Map<string, string | null>();
+  const sentences = new Map<string, string[]>();
 
   const signal = opts.signal ?? null;
   const read = async (url: string): Promise<void> => {
@@ -311,6 +358,7 @@ export async function verifyCitedFigures(
       const { status, body } = signal ? await until(fetcher(url), signal, "fact check") : await fetcher(url);
       const text = status >= 200 && status < 300 ? readablePageText(body) : "";
       pages.set(url, text.length >= MIN_READABLE_CHARS ? text : null);
+      if (text.length >= MIN_READABLE_CHARS && opts.topic) sentences.set(url, readableSentences(body));
     } catch {
       pages.set(url, null);
     }
@@ -354,6 +402,24 @@ export async function verifyCitedFigures(
     }
 
     const missing = c.figures.filter((f) => !pageHasFigure(text, f, language));
+    // The number is on the page, and the page's sentence carrying it is not
+    // about the article's subject: the citation is real and proves nothing
+    // here. Kept at
+    // `needs_verification` rather than a status of its own, because that is
+    // already the state every surface (review panel, auto-approve, evals)
+    // reads as "a person decides"; a new status would need each of them to
+    // learn it. It only stops a green tick: the verdict becomes `review`.
+    if (missing.length === 0 && !figureOnTopic(sentences.get(c.sourceUrl!) ?? [], c, opts.topic, language)) {
+      return {
+        ...c,
+        status: "needs_verification" as const,
+        severity: "medium" as const,
+        note:
+          `The page it cites (${c.sourceUrl}) carries this figure, but in a sentence that is not about ` +
+          `${opts.topic}. A figure about something else is not evidence for this article: cut it, ` +
+          `or replace it with one about the subject.`,
+      };
+    }
     if (missing.length === 0) {
       return {
         ...c,

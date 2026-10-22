@@ -22,6 +22,13 @@ describe("decideFirstLook", () => {
     });
   });
 
+  it("settles a refused site whose keywords were judged against its business profile", () => {
+    // A bot-walled signup, 2026-10-21: every page refused, keywords stored from
+    // the wizard's profile, and the next nightly look would have bought the
+    // same keyword discovery again.
+    expect(decideFirstLook({ ...blip, judgedFromProfile: true })).toEqual({ attempts: 1, settled: true, reason: "profile" });
+  });
+
   it("does not settle a run whose crawl failed for a reason that clears on its own", () => {
     // A real signup, 2026-09-09: one audit, pages_crawled 0, first_analysed_at
     // stamped anyway - which is what removed it from the first-look queue for

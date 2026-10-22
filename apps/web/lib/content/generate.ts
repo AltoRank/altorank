@@ -875,7 +875,11 @@ async function writeArticle(
     // is to keep the page, not to add a pitch to it.
     const siteFactsPending = refreshOf
       ? null
-      : loadSiteFacts(supabase, workspaceId, workspace.domain, workspace.business_profile);
+      : loadSiteFacts(supabase, workspaceId, workspace.domain, workspace.business_profile, {
+          // The brief's page for this article's product, offered to the writer
+          // as a link when it checks out (or the site refuses every read).
+          brief: topicBrief ? { conversionPath: topicBrief.conversionPath ?? null, offering: topicBrief.offering ?? null } : null,
+        });
 
     // In outline mode the related-keyword lookup is not on the way to the
     // outline: it is started here and awaited only before the writer, which
@@ -1431,6 +1435,7 @@ async function writeArticle(
     // marked it, for a person to open.
     const factCheck = await timed("fact_check", () => verifyCitedFigures(factCheckArticle(processedHtml, research, workspace.language), {
       sourceReview: research.sourceReview,
+      topic: research.keyword,
       signal: deadline.signal(DRAFT_FACT_CHECK_MS, DRAFT_SAVE_MS),
     }));
 
