@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { buildSiteFacts, conversionCandidates, loadSiteFacts, READ_PAGE_FILTER, resolveConversionPage, type SitePageRow } from "../site-facts";
+import { buildSiteFacts, conversionCandidates, loadSiteFacts, READ_PAGE_FILTER, resolveBriefPage, resolveConversionPage, type SitePageRow } from "../site-facts";
 import { extractSitePage } from "@/lib/audit/site-extract";
-import { buildSystemPrompt, buildSiteFactsSection } from "@/lib/ai/prompts";
+import { buildSystemPrompt, buildSiteFactsSection, siteFactUrls } from "@/lib/ai/prompts";
 import { fakeFetch } from "@/lib/public-tools/__tests__/fake-fetch";
 
 // A real signup, 2026-09-22 (Turkish web/mobile agency): the first article
@@ -298,5 +298,83 @@ describe("resolveConversionPage — the note", () => {
     const out = await resolveConversionPage({ stored: null, candidates: [`${O}/iletisim`, `${O}/teklif-al`], domain: DOMAIN, fetch });
     expect(out.conversion?.url).toBe(`${O}/teklif-al`);
     expect(out.note).not.toMatch(/saved conversion page/);
+  });
+});
+
+// A real store, 2026-10-21: its own Cloudflare challenge refused every read,
+// so the brief and the profile came from search results nobody confirmed. The
+// draft asserted product claims from them, matched a product to an ingredient
+// checklist, and named the product without linking the brief's page. The
+// store below is invented.
+describe("a site no page of which was read, with an unconfirmed profile", () => {
+  const SHOP = "babyshop.example";
+  const S = `https://${SHOP}`;
+  const site = {
+    name: "Baby Shop",
+    description: "Every product is dermatologist tested and free of parabens. Loved by the BS fam.",
+    audiences: ["new parents"],
+    offerings: ["Gentle Balm"],
+    confirmed: false,
+  };
+
+  it("offers the brief's product page when the site refuses the check, and says it was not checked", async () => {
+    const fetch = fakeFetch({ [`${S}/products/gentle-balm`]: { status: 403, headers: { server: "cloudflare", "cf-mitigated": "challenge" } } });
+    const { page, note } = await resolveBriefPage({ path: "/products/gentle-balm", offering: "Gentle Balm", domain: SHOP, siteRead: false, fetch });
+    expect(page).toMatchObject({ url: `${S}/products/gentle-balm`, offering: "Gentle Balm" });
+    expect(page?.check).toMatch(/^named in the approved brief; not checked, because the site refuses our reader/);
+    expect(note).toMatch(/could not be checked/);
+  });
+
+  it("does not offer it when the site was read and only this page refused, or when it is gone", async () => {
+    const refused = fakeFetch({ [`${S}/products/gentle-balm`]: { status: 429 } });
+    expect((await resolveBriefPage({ path: "/products/gentle-balm", domain: SHOP, siteRead: true, fetch: refused })).page).toBeNull();
+    const gone = fakeFetch({ [`${S}/products/gentle-balm`]: { status: 404 } });
+    const out = await resolveBriefPage({ path: "/products/gentle-balm", domain: SHOP, siteRead: false, fetch: gone });
+    expect(out.page).toBeNull();
+    expect(out.note).toMatch(/answered HTTP 404/);
+  });
+
+  it("uses a page that answers, and never offers the homepage or another host", async () => {
+    const fetch = fakeFetch({ [`${S}/products/gentle-balm`]: { status: 200 } });
+    expect((await resolveBriefPage({ path: `${S}/products/gentle-balm`, domain: SHOP, siteRead: true, fetch })).page?.check).toBe("answered HTTP 200 when this draft was written");
+    expect((await resolveBriefPage({ path: `${S}/`, domain: SHOP, siteRead: false, fetch })).page).toBeNull();
+    expect((await resolveBriefPage({ path: "https://other.example/p", domain: SHOP, siteRead: false, fetch })).page).toBeNull();
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads the brief's page into the facts, so a link to it survives the unknown-link check", async () => {
+    const db = { from: () => ({ select: () => ({ eq() { return this; }, or() { return this; }, limit: async () => ({ data: [], error: null }) }) }) } as never;
+    const fetch = fakeFetch({ [`${S}/products/gentle-balm`]: { status: 403 } });
+    const { facts } = await loadSiteFacts(db, "ws-1", SHOP, { confirmedAt: null }, { fetch, brief: { conversionPath: "/products/gentle-balm", offering: "Gentle Balm" } });
+    expect(facts.pagesRead).toBe(0);
+    expect(facts.conversion).toBeNull();
+    expect(facts.briefPage?.url).toBe(`${S}/products/gentle-balm`);
+    expect(siteFactUrls(facts)).toContain(`${S}/products/gentle-balm`);
+  });
+
+  it("tells the writer the profile is unverified, forbids product claims and criteria matches, and asks for the product link", () => {
+    const facts = buildSiteFacts([], SHOP);
+    facts.briefPage = { url: `${S}/products/gentle-balm`, offering: "Gentle Balm", check: "named in the approved brief; not checked" };
+    const p = buildSystemPrompt({ keyword: "baby eczema cream ingredients", site, siteFacts: facts });
+    expect(p).toContain("ABOUT THE SITE THIS ARTICLE IS FOR (UNVERIFIED:");
+    expect(p).toContain("- What it does (unverified): Every product is dermatologist tested");
+    expect(p).toContain("- What people buy from it (unverified; use only as the names of what it sells): Gentle Balm");
+    expect(p).toContain("not the offering or\n  reason in the approved brief");
+    expect(p).toMatch(/Do not state, imply or attribute to the business any quality, safety, testing, certification,\n  ingredient/);
+    expect(p).toMatch(/meets, matches, contains, passes/);
+    expect(p).toContain("community nicknames");
+    expect(p).not.toContain("This profile was read from the site by a model");
+    expect(p).toContain(`The page the approved brief sends this article's reader to, for Gentle Balm: ${S}/products/gentle-balm`);
+    expect(p).toContain(`time, to ${S}/products/gentle-balm exactly as written.`);
+    expect(p).toContain("or to the brief's page below.");
+  });
+
+  it("keeps the old wording when the owner confirmed the profile, or the site's pages were read", () => {
+    const confirmed = buildSystemPrompt({ keyword: "k", site: { ...site, confirmed: true }, siteFacts: buildSiteFacts([], SHOP) });
+    expect(confirmed).not.toContain("UNVERIFIED");
+    expect(confirmed).toContain("in the owner's confirmed words: Gentle Balm");
+    const read = buildSystemPrompt({ keyword: "k", site, siteFacts: buildSiteFacts(ROWS, DOMAIN) });
+    expect(read).not.toContain("UNVERIFIED");
+    expect(read).toContain("assert only what its own pages below say");
   });
 });
