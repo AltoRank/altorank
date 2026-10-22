@@ -428,9 +428,10 @@ export function refreshLengthBudget(existingHtml: string): { current: number; ma
 
 /**
  * The figure rules of WRITTEN TO BE QUOTED, which depend on what research
- * found. With figures: two or three of them, cited in the sentence - the
- * AEO check (`quotableStatistics`) rewards three, and the fact check opens
- * each cited page to confirm the number. Without: none, said plainly, so an
+ * found. With figures: up to three of them, cited in the sentence and about
+ * the article's subject - the AEO check (`quotableStatistics`) rewards
+ * three, but an off-topic figure is worse than none, and the fact check
+ * opens each cited page to confirm the number. Without: none, said plainly, so an
  * honest draft is not pushed into inventing one. Exported for tests.
  */
 export function figureRules(research: ArticleResearch | undefined, opts: { refresh?: boolean } = {}): string[] {
@@ -446,12 +447,20 @@ export function figureRules(research: ArticleResearch | undefined, opts: { refre
   }
   if (research?.sourceFigures?.length) {
     return [
-      "- Use two or three specific figures from FIGURES FROM THE PAGES RESEARCHED:",
+      "- Use up to three specific figures from FIGURES FROM THE PAGES RESEARCHED:",
       "  the ones that change the reader's decision. Quote each figure exactly as",
       "  its page states it, name the source in the sentence and link that page",
       "  inside the same sentence. These, and figures the business's own pages",
       "  state, are the only figures you may use: never a number from memory.",
       "  Never a price from another country or in another currency than the reader's.",
+      // 2026-10-21: a diaper-cream draft quoted a magazine's "100% of the fees
+      // we collect support our nonprofit mission" because it was on the list
+      // and the brief asked for two or three. A figure is evidence only for
+      // what its sentence is about.
+      "- Use a figure only when its sentence is about this article's subject. A figure about",
+      "  the page that states it (its fees, mission, readers, testing, awards) or about another",
+      "  subject is not evidence for anything here: leave it out. No figure is better than an",
+      "  off-topic one, and fewer than three is fine.",
     ];
   }
   return [

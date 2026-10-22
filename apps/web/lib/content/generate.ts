@@ -1435,6 +1435,7 @@ async function writeArticle(
     // marked it, for a person to open.
     const factCheck = await timed("fact_check", () => verifyCitedFigures(factCheckArticle(processedHtml, research, workspace.language), {
       sourceReview: research.sourceReview,
+      topic: research.keyword,
       signal: deadline.signal(DRAFT_FACT_CHECK_MS, DRAFT_SAVE_MS),
     }));
 

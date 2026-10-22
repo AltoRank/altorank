@@ -28,6 +28,7 @@ import { stripTags } from "@/lib/audit/html-utils";
 import { isUnsafeHost } from "@/lib/seo/link-check";
 import { until } from "@/lib/onboarding/deadline";
 import { bareHost, isBlockedSource, type SourceReview } from "@/lib/seo/source-classes";
+import { aboutTopic } from "@/lib/seo/source-figures";
 import type { ExtractedClaim, FactCheckReport } from "@/lib/ai/fact-check";
 import { ENTITY_KINDS, summarise } from "@/lib/ai/fact-check";
 import {
@@ -48,6 +49,12 @@ export interface VerifyCitationsOptions {
    * whatever its page says, and its page is not opened.
    */
   sourceReview?: SourceReview | null;
+  /**
+   * What the article is about (`research.keyword`). A figure found on its
+   * page is `verified` only when its sentence is about this (`aboutTopic`);
+   * otherwise it stays `needs_verification`, for a person to read.
+   */
+  topic?: string | null;
   fetcher?: PageFetcher;
   timeoutMs?: number;
   concurrency?: number;
@@ -354,6 +361,23 @@ export async function verifyCitedFigures(
     }
 
     const missing = c.figures.filter((f) => !pageHasFigure(text, f, language));
+    // The number is on the page, and the sentence is not about the article's
+    // subject: the citation is real and proves nothing here. Kept at
+    // `needs_verification` rather than a status of its own, because that is
+    // already the state every surface (review panel, auto-approve, evals)
+    // reads as "a person decides"; a new status would need each of them to
+    // learn it. It only stops a green tick: the verdict becomes `review`.
+    if (missing.length === 0 && !aboutTopic(c.sentence, opts.topic)) {
+      return {
+        ...c,
+        status: "needs_verification" as const,
+        severity: "medium" as const,
+        note:
+          `The page it cites (${c.sourceUrl}) carries this figure, but the sentence is not about ` +
+          `${opts.topic}. A figure about something else is not evidence for this article: cut it, ` +
+          `or replace it with one about the subject.`,
+      };
+    }
     if (missing.length === 0) {
       return {
         ...c,

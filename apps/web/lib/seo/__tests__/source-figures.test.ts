@@ -98,7 +98,8 @@ describe("the writer is asked for two or three sourced figures, or told there ar
     });
     expect(p).toContain("FIGURES FROM THE PAGES RESEARCHED");
     expect(p).toContain('- "About 62% of sports injuries were sprains." (https://a.example/x)');
-    expect(p).toContain("Use two or three specific figures");
+    expect(p).toContain("Use up to three specific figures");
+    expect(p).toContain("No figure is better than an");
     expect(p).toContain("never a number from memory");
     expect(p).not.toContain("There is no minimum number of statistics");
   });
