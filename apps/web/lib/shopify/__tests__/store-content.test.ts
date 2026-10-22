@@ -147,12 +147,31 @@ describe("installedStoreContent", () => {
     m.queryShopify.mockReset();
   });
 
-  it("does nothing for a site with no app-installed Shopify connection", async () => {
+  it("does nothing for a site with no Shopify connection", async () => {
     m.row = null;
     expect(await installedStoreContent(db(), "ws", "x.com", { fetchImpl: locked })).toBeNull();
-    m.row = { config: encryptConfig({ type: "shopify", storeUrl: "https://fern.myshopify.com", accessToken: "shpat_x" }) };
+    m.row = { config: encryptConfig({ type: "shopify", storeUrl: "https://fern.myshopify.com" }) };
     expect(await installedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked })).toBeNull();
     expect(m.queryShopify).not.toHaveBeenCalled();
+  });
+
+  it("reads through a merchant's own custom app too", async () => {
+    // A store connected from /connect, not the App Store: the way past a bot
+    // wall for a store the app is not listed for yet (lib/shopify/bot-wall.ts).
+    m.row = { config: encryptConfig({ type: "shopify", storeUrl: "https://fern.myshopify.com", accessToken: "shpat_x" }) };
+    m.queryShopify.mockResolvedValue(answer);
+    const c = await installedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: locked });
+    expect(c?.locked).toBe(true);
+    expect(m.queryShopify).toHaveBeenCalledWith("https://fern.myshopify.com", { accessToken: "shpat_x" }, expect.any(String));
+    m.queryShopify.mockReset();
+  });
+
+  it("treats a storefront behind its own bot wall as locked", async () => {
+    const walled = vi.fn(async () => new Response("Just a moment...", { status: 403, headers: { "cf-mitigated": "challenge" } })) as unknown as typeof fetch;
+    m.queryShopify.mockResolvedValue(answer);
+    const c = await installedStoreContent(db(), "ws", "fern.myshopify.com", { fetchImpl: walled });
+    expect(c?.locked).toBe(true);
+    m.queryShopify.mockReset();
   });
 
   it("falls back to the crawl when Shopify refuses or the store is empty", async () => {

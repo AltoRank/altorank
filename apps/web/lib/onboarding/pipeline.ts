@@ -30,6 +30,7 @@ import type { RankedKeyword } from "@/lib/seo/ranked-keywords";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readSiteText } from "./site-text";
 import { installedStoreContent } from "@/lib/shopify/store-content";
+import { looksLikeShopify } from "@/lib/shopify/bot-wall";
 import { ensureBusinessProfile, profileUsable, type BusinessFields } from "@/lib/keyword-research/business-context";
 import { withSiteReads } from "@/lib/seo/site-urls";
 import { checkDomainReachable } from "@/lib/domain/reachable";
@@ -868,7 +869,20 @@ async function readExistingPages(supabase: SupabaseClient, workspaceId: string, 
   if (domain && refusing(`https://${domain}/`)) {
     // More requests into a ban only extend it. The nightly pass reads the
     // pages when the host is not counting.
-    emit({ phase: "pages", status: "skipped", detail: "The site is rate-limiting us right now; the nightly pass reads your existing pages." });
+    //
+    // Unless it is a Shopify store behind its own bot wall, which no night
+    // will change and connecting the store gets past (lib/shopify/bot-wall.ts):
+    // say that, and the run screen offers the connection.
+    if (await looksLikeShopify(domain)) {
+      emit({
+        phase: "pages",
+        status: "skipped",
+        cause: "shopify_wall",
+        detail: "Your store turns automated readers away, so we could not read its pages. Connect your Shopify store and we read them through Shopify instead.",
+      });
+    } else {
+      emit({ phase: "pages", status: "skipped", detail: "The site is rate-limiting us right now; the nightly pass reads your existing pages." });
+    }
   } else if (!domain) {
     emit({ phase: "pages", status: "skipped", detail: "No domain to read pages from." });
   } else {

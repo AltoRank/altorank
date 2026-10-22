@@ -3,6 +3,20 @@ import type { CrawlResult } from "@/lib/audit/crawler";
 import { decryptConfig } from "@/lib/crypto";
 import { queryShopify } from "@/lib/cms/shopify";
 import { storefrontLocked } from "./first-look";
+import { storefrontWalled } from "./bot-wall";
+import type { ShopifyCredentials } from "@/lib/types";
+
+/** The connection's credential, whichever kind it is; null when it has none. */
+export function credentialsFrom(config: Record<string, unknown>): ShopifyCredentials | null {
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
+  const installationId = str(config.installationId);
+  if (installationId) return { installationId };
+  const accessToken = str(config.accessToken);
+  if (accessToken) return { accessToken };
+  const clientId = str(config.clientId);
+  const clientSecret = str(config.clientSecret);
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
 
 /**
  * A Shopify store's own words, read through the Admin API, for a first look
@@ -17,10 +31,12 @@ import { storefrontLocked } from "./first-look";
  * read here and shaped like crawled pages, so the topical profile, keyword
  * research and voice work as they do for any site.
  *
- * Only for a connection made by the App Store install (config.installationId).
- * The pages stand in for the crawl only when the storefront is actually
- * locked (`locked`): an open storefront is crawled as before, rendered pages
- * being the better evidence. Either way the catalogue is what the business
+ * For any Shopify connection: the App Store install (config.installationId)
+ * or a merchant's own custom app connected from /connect (an access token, or
+ * a client id and secret). The pages stand in for the crawl only when the
+ * storefront cannot be read (`locked`): behind Shopify's password page, or
+ * behind the store's own bot wall (lib/shopify/bot-wall.ts). An open
+ * storefront is crawled as before, rendered pages being the better evidence. Either way the catalogue is what the business
  * profile is inferred from, since an App Store install never saw the wizard
  * that would have asked (lib/onboarding/pipeline.ts).
  */
@@ -39,7 +55,7 @@ export interface StoreContent {
    * voice and plenty to say what is sold.
    */
   profileText: string;
-  /** The storefront answers with its password page: the pages replace the crawl. */
+  /** The storefront answers with its password page or refuses us: the pages replace the crawl. */
   locked: boolean;
 }
 
@@ -179,7 +195,7 @@ export function storeContentFrom(domain: string, data: StoreContentResponse): Om
 }
 
 /**
- * The store's content, or null: not an App Store installation, or the API
+ * The store's content, or null: no Shopify connection, or the API
  * refused. `locked` says whether it should replace the crawl.
  */
 export async function installedStoreContent(
@@ -212,15 +228,15 @@ async function readStoreContent(
     .maybeSingle();
   if (!conn) return null;
   const config = decryptConfig(conn.config as Record<string, unknown>);
-  const installationId = typeof config.installationId === "string" ? config.installationId : null;
   const storeUrl = typeof config.storeUrl === "string" ? config.storeUrl : null;
-  if (!installationId || !storeUrl) return null;
+  const credentials = credentialsFrom(config);
+  if (!credentials || !storeUrl) return null;
 
   try {
     const [locked, data, products] = await Promise.all([
-      storefrontLocked(domain, deps.fetchImpl),
-      queryShopify<StoreContentResponse>(storeUrl, { installationId }, STORE_CONTENT),
-      queryShopify<Pick<StoreContentResponse, "products">>(storeUrl, { installationId }, STORE_PRODUCTS).catch((err) => {
+      Promise.all([storefrontLocked(domain, deps.fetchImpl), storefrontWalled(domain, deps.fetchImpl)]).then(([pw, wall]) => pw || wall),
+      queryShopify<StoreContentResponse>(storeUrl, credentials, STORE_CONTENT),
+      queryShopify<Pick<StoreContentResponse, "products">>(storeUrl, credentials, STORE_PRODUCTS).catch((err) => {
         console.warn(`[first-look] products not readable (read_products not approved yet?): ${err instanceof Error ? err.message : err}`);
         return {};
       }),

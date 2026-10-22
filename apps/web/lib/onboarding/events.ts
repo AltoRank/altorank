@@ -172,10 +172,12 @@ export type OnboardingEvent =
  * Why a phase fell short, when it is something the person should be told
  * apart: `provider`, the search-data or model provider did not answer - a
  * problem on our side, which running setup again right away buys again
- * (UX audit 2026-10-12, #16). Stored on the row's phases (jsonb), so no
+ * (UX audit 2026-10-12, #16). `shopify_wall`, a Shopify store whose own bot
+ * wall refused every page: connecting the store gets past it, so the run
+ * screen offers that (lib/shopify/bot-wall.ts). Stored on the row's phases (jsonb), so no
  * migration; absent on every older row.
  */
-export type StepCause = "provider";
+export type StepCause = "provider" | "shopify_wall";
 
 export interface OnboardingStep {
   phase: OnboardingPhase;
@@ -426,7 +428,7 @@ export function stateFromRun(
     const p = known.get(phase);
     if (!p) return { phase, status: "pending" };
     const step: OnboardingStep = p.detail === undefined ? { phase, status: p.status } : { phase, status: p.status, detail: p.detail };
-    if (p.cause === "provider") step.cause = "provider";
+    if (p.cause === "provider" || p.cause === "shopify_wall") step.cause = p.cause;
     // The live check, only on a step that is still active in a run that is
     // still running (see PlanningCheck): a run cut off mid-planning keeps
     // its step "active" on the row, and a closed run names no searches.
