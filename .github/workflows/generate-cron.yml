@@ -63,12 +63,42 @@ jobs:
             APP_URL="https://app.altorank.co"
           fi
 
-          # --fail-with-body so a 4xx/5xx fails the job *and* still prints what
-          # the server said; a silent red X would tell us nothing.
-          code=$(curl --silent --show-error --fail-with-body \
+          # The response body names customer sites and this repository is public,
+          # so its Actions logs are too. The body goes to a temp file that is
+          # never printed; the log gets the status code and counts only. For
+          # the full body, run the curl in docs/deploy.md by hand.
+          body="${RUNNER_TEMP}/response.json"
+          set +e
+          code=$(curl --silent --output "${body}" \
             --max-time 300 \
             --header "x-cron-secret: ${CRON_SECRET}" \
-            --write-out '\n%{http_code}' \
-            "${APP_URL}/api/cron/generate" | tee /dev/stderr | tail -1)
+            --write-out '%{http_code}' \
+            "${APP_URL}/api/cron/generate")
+          rc=$?
+          set -e
 
           echo "HTTP ${code}"
+          if [ "${rc}" -ne 0 ]; then
+            echo "error=curl_exit_${rc}"
+            exit 1
+          fi
+          case "${code}" in
+            2??) ;;
+            *)
+              echo "error=http_${code}"
+              exit 1
+              ;;
+          esac
+
+          # Allow-listed aggregates only. Anything that is a list is printed as
+          # its length; a sub-step that failed prints "failed", not its message.
+          jq -r '
+            def count:
+              if type == "array" then length
+              elif type == "number" then .
+              elif type == "object" and has("error") then "failed"
+              else "n/a" end;
+            "checked=\(.checked|count) generated=\(.generated|count) skipped=\(.skipped|count) errors=\(.errors|count) results=\(.results|count)",
+            "pausesResumed=\(.pausesResumed|count) pauseReminders=\(.pauseReminders|count) pausedNotices=\(.pausedNotices|count) setupNotices=\(.setupNotices|count) unannounced=\(.unannounced|count)",
+            "owedBodies dispatched=\(.owedBodies.dispatched|count) gaveUp=\(.owedBodies.gaveUp|count)"
+          ' "${body}" 2>/dev/null || echo "response was not JSON"
