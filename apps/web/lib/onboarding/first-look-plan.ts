@@ -152,6 +152,8 @@ interface KeywordRow {
 /** A candidate as it moves through the ranking. */
 interface Candidate {
   topic: SuggestedTopic;
+  /** Where the model put it: best first. What breaks a tie. */
+  order: number;
   row: KeywordRow | null;
   volume: number | null;
   difficulty: number | null;
@@ -256,12 +258,12 @@ export async function planFirstLook(
   const reject = (why: HardReject) => { summary.rejected[why] = (summary.rejected[why] ?? 0) + 1; };
   const taken = new Set(rows.filter((r) => !offered(r)).map((r) => topicKey(r.term)));
   let candidates: Candidate[] = [];
-  for (const topic of topics) {
+  for (const [order, topic] of topics.entries()) {
     if (taken.has(topic.query)) continue;
     const why = rejectBeforeResults(topic, { domain, business });
     if (why) { reject(why); continue; }
     const row = byKey.get(topic.query) ?? null;
-    candidates.push({ topic, row, volume: row?.volume ?? null, difficulty: row?.difficulty ?? null, score: scoreTopic(topic, { volume: row?.volume ?? null, difficulty: row?.difficulty ?? null, authority: workspace.dr }) });
+    candidates.push({ topic, order, row, volume: row?.volume ?? null, difficulty: row?.difficulty ?? null, score: scoreTopic(topic, { volume: row?.volume ?? null, difficulty: row?.difficulty ?? null, authority: workspace.dr }) });
   }
 
   // Volumes for the searches the model added, in one lookup. Best effort: a
@@ -284,7 +286,7 @@ export async function planFirstLook(
   const named = namedBusinesses(business);
   const serpOf = opts.serp ?? ((term: string, at: typeof locale) => fetchAdvancedSerp(term, at, { rich: true }));
   const accepted: Candidate[] = [];
-  const unread = () => candidates.filter((c) => !c.page).sort((a, b) => bestCase(b.score) - bestCase(a.score) || b.score.total - a.score.total || a.topic.query.localeCompare(b.topic.query));
+  const unread = () => candidates.filter((c) => !c.page).sort((a, b) => bestCase(b.score) - bestCase(a.score) || b.score.total - a.score.total || a.order - b.order);
   const settledEnough = () => {
     if (accepted.length < room) return false;
     const floor = [...accepted].sort((a, b) => b.score.total - a.score.total)[room - 1].score.total;
@@ -327,7 +329,7 @@ export async function planFirstLook(
     }));
   }
 
-  accepted.sort((a, b) => b.score.total - a.score.total || a.topic.query.localeCompare(b.topic.query));
+  accepted.sort((a, b) => b.score.total - a.score.total || a.order - b.order);
   if (!accepted.length) {
     // Nothing read could be cited. When the provider answered none of the
     // pages, that is ours; otherwise every candidate read was one of the

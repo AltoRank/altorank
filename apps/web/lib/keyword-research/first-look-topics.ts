@@ -125,6 +125,7 @@ export function suggestTopicsPrompt(input: SuggestInput): string {
     "- fit, 1 to 5: 5 = the site's core readers ask this and the site can answer it with authority; 4 = its readers ask it and it leads to what the site offers; 3 = adjacent; 2 = a stretch; 1 = not this site's reader.",
     "- reader: who types it, in a few words. job: what they are trying to get done. offering: what on this site helps them next. angle: the article's headline, at most 90 characters, no year unless the search has one. shape: comparison, listicle, howTo, explainer or reference. why: one sentence on why this site should write it.",
     "- Health, money, legal and public-benefit topics: propose only what this site can answer responsibly from what it does; prefer explaining eligibility, steps and documents over advice.",
+    "- Order the topics best first: the article you would write first leads. Equal scores are broken by your order.",
     "",
     "Reply with JSON only, no prose: {\"topics\": [{\"query\", \"fromList\", \"reader\", \"job\", \"offering\", \"angle\", \"shape\", \"fit\", \"kind\", \"why\"}]}",
     "",
