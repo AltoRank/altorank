@@ -130,7 +130,7 @@ export interface OnboardingArticle {
  * Which stage of a first look left nothing to plan, and what the pool held.
  *
  * Written by the pipeline on the planning event when nothing was planned and
- * nothing failed (lib/onboarding/empty-pool.ts), from data the run already
+ * nothing failed (a first look before 2026-10-25), from data the run already
  * had: the keyword count and the verdicts on the site's keyword rows. On
  * 2026-09-28 both real signups ended here - 144 and 236 searches judged, none
  * qualified - and the row said `partial`, so they were emailed that setup

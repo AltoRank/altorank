@@ -15,7 +15,7 @@
 //   since it started - and settles on it instead of calling it a failure,
 //   leaves a run whose draft is still being written, and the reaper settles
 //   a first look cut off after it planned nothing as nothing_planned;
-// - the empty-pool tally reads the verdicts out of `keywords.opportunity`
+// - a run recorded with an empty pool (before 2026-10-25) settles as nothing_planned
 //   through the aliased jsonb select, paged.
 //
 // Seeds one account with invented names (acme-*.example) and deletes it at
@@ -27,7 +27,6 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { connectLocalStack } from "@/lib/__tests__/support/local-db";
 import { RunRecorder, failRun, latestRun, reapStaleRuns, startRun } from "../run-store";
 import { claimRun } from "../run-worker";
-import { readEmptyPool } from "../empty-pool";
 import { stateFromRun, onboardingOutcome, STALE_RUN_ERROR, type EmptyPool, type OnboardingEvent } from "../events";
 
 const STACK = await connectLocalStack();
@@ -79,19 +78,12 @@ describe.skipIf(!STACK)("onboarding run transitions on the local database", () =
     if (accountId) await db.from("accounts").delete().eq("id", accountId);
   }, 30_000);
 
+  // A first look no longer ends this way (it ranks its topics since
+  // 2026-10-25); a row recorded before that, with its empty pool, still
+  // settles and reads back as it did.
   it("stores a run that planned nothing as nothing_planned, with its empty pool, and reads it back as that outcome", async () => {
     const ws = await site();
-    // The pool as the pipeline would find it: judged, none qualified.
-    const rows = [
-      ...Array.from({ length: 5 }, (_, i) => ({ term: `acme widget ${TAG} ${i}`, opportunity: { status: "rejected", cause: "buyer_mismatch", reason: "r" } })),
-      { term: `acme widget ${TAG} page`, opportunity: { status: "rejected", cause: "needs_page", reason: "r" } },
-      { term: `acme widget ${TAG} open`, opportunity: null },
-    ].map((r) => ({ workspace_id: ws, ...r }));
-    const { error: kwError } = await db.from("keywords").insert(rows);
-    expect(kwError).toBeNull();
-
-    const pool = await readEmptyPool(db, ws);
-    expect(pool).toMatchObject({ stage: "qualification", cause: "buyer_mismatch", keywords: 7, qualified: 0, rejected: { buyer_mismatch: 5, needs_page: 1 }, pending: { unjudged: 1 } });
+    const pool = { stage: "qualification" as const, cause: "buyer_mismatch", keywords: 7, qualified: 0, rejected: { buyer_mismatch: 5, needs_page: 1 }, pending: { unjudged: 1 }, summary: "None of 7 searches qualified; the largest group: not a buyer search." };
 
     const runId = await newRun(ws);
     expect((await claimRun(db, runId)).outcome).toBe("claimed");

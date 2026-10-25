@@ -10,13 +10,14 @@
 // Two judge reads had written their spend rows; one of them never settled.
 //
 // This replays that run through the real pipeline - the run budget's claim
-// and settle functions in Postgres, the real buyer test, recommender, refill,
-// qualification and planner - with only the paid edges and the site replaced
-// by stand-ins that claim, bill and take as long as the real ones do (scaled
-// by STALL_LATENCY; 1 is production). It finishes when every call answers.
-// What it could not survive is a call whose answer never comes: the requests
-// in flight when the network dropped them (the "blip" below) are exactly the
-// claims the production row held, and the run waited on them for good.
+// and settle functions in Postgres, the real buyer test and, since
+// 2026-10-25, the first look's planner that replaced qualification (one
+// suggestion call, the results pages of the best few, the writes) - with
+// only the paid edges and the site replaced by stand-ins that claim, bill and
+// take as long as the real ones do (scaled by STALL_LATENCY; 1 is
+// production). It finishes when every call answers. What it could not
+// survive is a call whose answer never comes: the requests in flight when
+// the network dropped them (the "blip" below), and a save nothing can abort.
 //
 // Every bound is shortened (./time-limits.ts) so the test takes seconds.
 // Seeds one account (acme-*.example) and deletes it at the end.
@@ -44,14 +45,16 @@ const h = vi.hoisted(() => {
     latency: Number(process.env.STALL_LATENCY ?? "0.05"),
     /**
      * The network dropping requests, as it did in production: armed, it opens
-     * once the sixth results page has settled, and every budget settle and
-     * model call sent while it is open gets no answer (it rejects only when
-     * its own signal aborts, as a fetch on a dead socket does) until it has
-     * swallowed `settles` settles and `models` model calls.
+     * once `after` results pages have settled, and every
+     * budget settle and model call sent while it is open gets no answer (it
+     * rejects only when its own signal aborts, as a fetch on a dead socket
+     * does) until it has swallowed `settles` settles and `models` model calls.
      */
-    blip: { armed: false, open: false, pageSettles: 0, settles: 0, models: 0 },
-    /** One verdict's save that never answers and that nothing can abort. */
+    blip: { armed: false, open: false, after: 2, pageSettles: 0, settles: 0, models: 0 },
+    /** One topic's save that never answers and that nothing can abort. */
     stuckSave: { armed: false, used: false },
+    /** The plan's one suggestion call gets no answer, as on a dead socket. */
+    dropSuggestion: false,
     swallowed: [] as string[],
   };
   const realFetch = globalThis.fetch;
@@ -72,7 +75,7 @@ const h = vi.hoisted(() => {
         state.swallowed.push(`settle ${body}`);
         return never(init?.signal);
       }
-      if (b.armed && !b.open && body.includes('"p_stage":"results_pages"') && ++b.pageSettles === 6) {
+      if (b.armed && !b.open && body.includes('"p_stage":"results_pages"') && ++b.pageSettles === b.after) {
         b.armed = false;
         b.open = true;
       }
@@ -122,7 +125,7 @@ vi.mock("../site-assessment", () => ({ assessExistingPages: async () => ({ statu
 vi.mock("@/lib/linking/detect", () => ({ detectLinks: async () => ({ found: 0, added: 0 }) }));
 vi.mock("@/lib/content/generate", () => ({ generateArticle: async () => { throw new Error("the draft is dispatched, not written, in this test"); } }));
 // The model, billed and timed as measured: a 40-phrase buyer-test batch
-// $0.0244 in ~20s, a results-judge read ~$0.0104 in 4-9s.
+// $0.0244 in ~20s; the first look's suggestion about as long as a judge read.
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
     messages = {
@@ -136,6 +139,17 @@ vi.mock("@anthropic-ai/sdk", () => ({
           if (b.settles === 0 && b.models === 0) b.open = false;
           h.swallowed.push("model call");
           await h.never(options?.signal);
+        }
+        if (prompt.startsWith("You choose the first article for a website.")) {
+          if (h.dropSuggestion) {
+            h.swallowed.push("suggestion");
+            await h.never(options?.signal);
+          }
+          await sleep(6_000 + h.draw("suggest") * 6_000);
+          // The searches already found, as the prompt lists them: the first twenty, as asked.
+          const found = [...prompt.matchAll(/^- (model railway kit idea \d{4}) \(/gm)].map((m) => m[1]).slice(0, 20);
+          const topics = found.map((query) => ({ query, fromList: true, reader: "railway modellers", job: "choose a kit", offering: "model railway kits", angle: `How to choose ${query}`, shape: "explainer", fit: 4, kind: "question", why: "Modellers ask it before they buy." }));
+          return { content: [{ type: "text", text: JSON.stringify({ topics }) }], usage: { input_tokens: 4200, output_tokens: 120 * topics.length } };
         }
         const at = prompt.lastIndexOf("PHRASES\n");
         if (at !== -1) {
@@ -216,7 +230,6 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { connectLocalStack } from "@/lib/__tests__/support/local-db";
 import { runOnboarding } from "../pipeline";
 import { FIRST_LOOK_DRAFT_RESERVE_USD, firstLookReserves, readRunBudget } from "@/lib/billing/run-budget";
-import { firstLookTermUsd } from "@/lib/keyword-research/opportunity";
 import type { OnboardingEvent } from "../events";
 
 const STACK = await connectLocalStack();
@@ -270,8 +283,9 @@ describe.skipIf(!STACK)("the 2026-10-15 first-look stall, replayed", () => {
   }, 30_000);
 
   beforeEach(() => {
-    Object.assign(h.blip, { armed: false, open: false, pageSettles: 0, settles: 0, models: 0 });
+    Object.assign(h.blip, { armed: false, open: false, after: 2, pageSettles: 0, settles: 0, models: 0 });
     Object.assign(h.stuckSave, { armed: false, used: false });
+    h.dropSuggestion = false;
     h.swallowed.length = 0;
     discoveryClaims.length = 0;
   });
@@ -282,7 +296,7 @@ describe.skipIf(!STACK)("the 2026-10-15 first-look stall, replayed", () => {
     if (accountId) await db.from("accounts").delete().eq("id", accountId);
   }, 30_000);
 
-  it("replays the production row up to qualification, finishes, and plans what the room allows", async () => {
+  it("replays the production row up to the plan, finishes, and plans with one model call", async () => {
     const { outcome, events, budget } = await firstLook(7);
     expect(outcome).not.toBe("hung");
     settledEveryPhase(events);
@@ -296,27 +310,24 @@ describe.skipIf(!STACK)("the 2026-10-15 first-look stall, replayed", () => {
     const full = discoveryClaims.filter((c) => c.wantUsd > 0.08);
     expect(full.length).toBeGreaterThan(0);
     for (const c of full) expect(c.minUsd).toBeLessThan(c.wantUsd - 0.02);
-    // Qualification judged with the room the research left, and planned.
-    // How many terms that buys is not fixed: terms run side by side and a
-    // term's second judge read claims when it lands, so the same seed reads
-    // 8 to 11 results pages depending on when those reads arrive (production
-    // read 9). What the start rule guarantees is that judging stops only
-    // when the room left cannot start another term's whole chain.
+    // The plan asked one suggestion where qualification made a judge read,
+    // twice, per term (production made 5 before it stalled), and read the
+    // results pages of the best few with the room the research left.
+    expect(budget.stages.judge?.calls).toBe(1);
     expect(budget.stages.results_pages?.calls ?? 0).toBeGreaterThanOrEqual(3);
     const reserved = Object.values(firstLookReserves(budget.ceilingUsd)).reduce((sum, usd) => sum + (usd ?? 0), 0);
-    expect(budget.ceilingUsd - reserved - budget.committedUsd).toBeLessThan(firstLookTermUsd(true));
+    expect(budget.committedUsd).toBeLessThanOrEqual(budget.ceilingUsd - reserved + 1e-6);
     expect(last(events, "planning")?.status).toBe("done");
     expect(last(events, "planning")?.planned?.length ?? 0).toBeGreaterThanOrEqual(3);
     expect(outcome !== "hung" && outcome.pendingDraft?.term).toBeTruthy();
     expect(budget.committedUsd).toBeLessThanOrEqual(1 - FIRST_LOOK_DRAFT_RESERVE_USD + 1e-6);
   }, BOUND_MS + 60_000);
 
-  it("finishes when the network drops the calls production's row was left holding: 3 results pages' settles, 1 judge read's settle, 3 judge reads", async () => {
+  it("finishes when the network drops results pages' settles mid-plan, and plans", async () => {
     h.blip.armed = true;
-    h.blip.settles = 4;
-    h.blip.models = 3;
+    h.blip.settles = 2;
     const { outcome, events, ms, budget } = await firstLook(7);
-    expect(h.swallowed.length).toBe(7);
+    expect(h.swallowed.length).toBe(2);
     expect(outcome).not.toBe("hung");
     settledEveryPhase(events);
     // Each dropped call ended at its own bound, well inside the stage's.
@@ -331,7 +342,18 @@ describe.skipIf(!STACK)("the 2026-10-15 first-look stall, replayed", () => {
     expect(budget.committedUsd).toBeLessThanOrEqual(1 - FIRST_LOOK_DRAFT_RESERVE_USD + 1e-6);
   }, BOUND_MS + 60_000);
 
-  it("ends qualification at its deadline when a call nothing can abort never answers, and still plans", async () => {
+  it("ends at its own bound, ours not the site's, when the suggestion never answers", async () => {
+    h.dropSuggestion = true;
+    const { outcome, events, ms } = await firstLook(8);
+    expect(h.swallowed).toEqual(["suggestion"]);
+    expect(outcome).not.toBe("hung");
+    expect(ms).toBeLessThan(BOUND_MS);
+    settledEveryPhase(events);
+    expect(last(events, "planning")).toMatchObject({ status: "skipped", cause: "provider" });
+    expect(last(events, "planning")?.detail).toContain("a problem on our side, not your site");
+  }, BOUND_MS + 60_000);
+
+  it("ends the plan at its deadline when a save nothing can abort never answers, and still plans the next topic", async () => {
     h.stuckSave.armed = true;
     const { outcome, events, ms } = await firstLook(9);
     expect(h.swallowed).toHaveLength(1);
@@ -339,7 +361,7 @@ describe.skipIf(!STACK)("the 2026-10-15 first-look stall, replayed", () => {
     settledEveryPhase(events);
     const planning = first(events, "planning", "active")!.at;
     const planned = last(events, "planning")!;
-    // The stage's deadline (15s at the default latency), not the stuck call, decided when it ended.
+    // The plan's deadline (15s at the default latency), not the stuck save, decided when it ended.
     expect(planned.at - planning).toBeGreaterThanOrEqual(QUALIFY_MS - 20_000 * h.latency);
     expect(planned.at - planning).toBeLessThan(QUALIFY_MS + 200_000 * h.latency);
     expect(ms).toBeLessThan(BOUND_MS);

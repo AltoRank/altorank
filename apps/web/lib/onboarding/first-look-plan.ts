@@ -69,6 +69,8 @@ export const MAX_RESULTS_READS = 12;
 const RIVALS_READ = 3;
 /** How long the rival sitemaps may take, all together. Free reads; never in the way. */
 const RIVAL_READ_MS = 8_000;
+/** The least a write is given, even past the plan's deadline. */
+const SAVE_FLOOR_MS = 5_000;
 
 /** Where the plan went, for the run's funnel event (./funnel-event.ts). Counts and the chosen topic only. */
 export interface FirstLookSummary {
@@ -334,20 +336,30 @@ export async function planFirstLook(
   }
 
   // --- 4. Pick, and write it down --------------------------------------------
-  const picks = accepted.slice(0, room);
-  const ready = accepted.slice(room);
+  //
+  // Every write is bounded by the plan's deadline: a save that never answered
+  // held a production first look for 25 minutes (2026-10-15). A topic whose
+  // save does not land gives its place to the next one.
+  const within = <T>(work: PromiseLike<T>, what: string): Promise<T> => {
+    const left = Math.max(SAVE_FLOOR_MS, (opts.firstLook.deadline ?? Date.now() + SAVE_FLOOR_MS) - Date.now());
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    return Promise.race([
+      Promise.resolve(work),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${what} did not answer`)), left); }),
+    ]).finally(() => clearTimeout(timer));
+  };
   const intentOf = (term: string) => classifyIntent(term, workspace.language ?? "en").intent;
   const save = async (c: Candidate): Promise<string> => {
     if (c.row) {
-      const { error } = await supabase
+      const { error } = await within(supabase
         .from("keywords")
         .update({ opportunity: c.brief, status: "new", plan_excluded_at: null, ...(c.row.volume === null && c.volume !== null ? { volume: c.volume } : {}), ...(c.row.difficulty === null && c.difficulty !== null ? { difficulty: c.difficulty } : {}) })
         .eq("id", c.row.id)
-        .eq("workspace_id", workspaceId);
+        .eq("workspace_id", workspaceId), "Saving the first look's topic");
       if (error) throw new Error(`Could not save the first look's topic: ${error.message}`);
       return c.row.id;
     }
-    const { data, error } = await supabase
+    const { data, error } = await within(supabase
       .from("keywords")
       .insert({
         workspace_id: workspaceId, term: c.topic.query, volume: c.volume, difficulty: c.difficulty, cpc: null,
@@ -355,27 +367,32 @@ export async function planFirstLook(
         opportunity: c.brief,
       })
       .select("id")
-      .single();
+      .single(), "Saving the first look's topic");
     if (error || !data) throw new Error(`Could not save the first look's topic: ${error?.message ?? "no row"}`);
     return data.id as string;
   };
-  const pickIds: string[] = [];
-  for (const c of picks) pickIds.push(await save(c));
+  const picks: Array<Candidate & { id: string }> = [];
+  let next = 0;
+  let lastError: unknown = null;
+  for (; next < accepted.length && picks.length < room; next++) {
+    try { picks.push({ ...accepted[next], id: await save(accepted[next]) }); } catch (err) { lastError = err; console.warn(`[first look] ${err instanceof Error ? err.message : err}`); }
+  }
+  if (!picks.length) throw lastError instanceof Error ? lastError : new Error("Could not save the first look's topic.");
   // Kept with a brief and not planned: what the trial opens (./plan.ts
   // `heldTopics`), and what the nightly top-up plans next. Best effort.
-  for (const c of ready) {
+  for (const c of accepted.slice(next)) {
     try { await save(c); summary.ready++; } catch (err) { console.warn(`[first look] ${err instanceof Error ? err.message : err}`); }
   }
 
-  await supabase.from("calendar_entries").delete().eq("workspace_id", workspaceId).eq("status", "queue").is("article_id", null);
+  await within(supabase.from("calendar_entries").delete().eq("workspace_id", workspaceId).eq("status", "queue").is("article_id", null), "Clearing the calendar's queue");
   const dates = nextOpenDates(kept.map((e) => e.scheduled_date), Math.max(1, opts.weeklyLimit), picks.length, opts.now ?? new Date());
-  const plan: PlannedEntry[] = picks.slice(0, dates.length).map((c, i) => ({ keywordId: pickIds[i], term: c.topic.query, date: dates[i], brief: c.brief }));
+  const plan: PlannedEntry[] = picks.slice(0, dates.length).map((c, i) => ({ keywordId: c.id, term: c.topic.query, date: dates[i], brief: c.brief }));
   if (!plan.length) return nothing("full");
-  const { error: calError } = await supabase.from("calendar_entries").insert(plan.map((p) => ({
+  const { error: calError } = await within(supabase.from("calendar_entries").insert(plan.map((p) => ({
     workspace_id: workspaceId, keyword_id: p.keywordId, keyword: p.term, scheduled_date: p.date, status: "queue",
-  })));
+  }))), "Writing the calendar");
   if (calError) throw new Error(calError.message);
-  await supabase.from("keywords").update({ status: "planned" }).eq("workspace_id", workspaceId).eq("status", "new").in("id", plan.map((p) => p.keywordId));
+  await within(supabase.from("keywords").update({ status: "planned" }).eq("workspace_id", workspaceId).eq("status", "new").in("id", plan.map((p) => p.keywordId)), "Marking the topics planned");
   try {
     await decoratePlannedKeywords(supabase, workspaceId, plan.map((p) => p.keywordId), new Map(), opts.questionsInBackground);
   } catch (err) {

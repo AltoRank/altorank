@@ -87,10 +87,6 @@ vi.mock("../site-assessment", () => ({ assessExistingPages: (...a: unknown[]) =>
 // only that every run hands it over, and with what.
 const recordFunnel = vi.fn(async (_e: unknown) => undefined);
 vi.mock("../funnel-event", () => ({ recordPlanFunnel: (e: unknown) => recordFunnel(e) }));
-// The empty pool is no longer a first look's ending (2026-10-25): the
-// pipeline must not read it.
-const emptyPool = vi.fn(async (..._a: unknown[]) => null);
-vi.mock("../empty-pool", () => ({ readEmptyPool: (...a: unknown[]) => emptyPool(...a) }));
 
 import { runOnboarding } from "../pipeline";
 import { BudgetRefusedError, claimSpend, currentSpendScope, withStage } from "@/lib/billing/spend-scope";
@@ -328,7 +324,6 @@ describe("runOnboarding", () => {
   });
 
   it("blames the budget, not the site, when discovery's buyer test was refused and nothing was stored", async () => {
-    emptyPool.mockClear();
     const base = richClient(0) as unknown as { from: (t: string) => unknown };
     const budgetTable = { upsert: async () => ({ error: null }), select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) };
     // Every claim refused: the buyer test inside discovery buys nothing.
@@ -341,7 +336,7 @@ describe("runOnboarding", () => {
     await runOnboarding(db, WS, (e) => events.push(e), { firstDraft: "dispatch", runId: "run-6" });
     const keywords = events.find((e) => e.phase === "keywords" && "status" in e && e.status === "skipped");
     expect((keywords as { detail: string }).detail).toMatch(/budget ran out before its keyword research finished/);
-    expect(emptyPool).not.toHaveBeenCalled();
+    expect(plan).not.toHaveBeenCalled();
   });
 
   it("blames the budget, not a provider, when the refused buyer test leaves the keyword layer failed", async () => {
@@ -777,7 +772,6 @@ describe("runOnboarding: the first look's event", () => {
 // run never carries an empty pool, so it never ends as `nothing_planned`.
 describe("nothing planned", () => {
   beforeEach(() => {
-    emptyPool.mockClear();
     planHold.mockReset().mockResolvedValue(false);
     scheduled.mockReset().mockResolvedValue(0);
   });
@@ -797,13 +791,12 @@ describe("nothing planned", () => {
     expect(planningEvent(events).detail).toContain("No search volume is reported for it in your market yet (unmeasured), so it was chosen for how well it fits your readers.");
   });
 
-  it("carries no empty pool, and reads none, when nothing could be planned", async () => {
+  it("carries no empty pool when nothing could be planned", async () => {
     plan.mockResolvedValue(planned([], "none"));
     const events = await collect();
     expect(planningEvent(events)).toMatchObject({ status: "skipped" });
     expect(planningEvent(events).detail).toContain("won by shops' or providers' own pages");
     expect(planningEvent(events)).not.toHaveProperty("emptyPool");
-    expect(emptyPool).not.toHaveBeenCalled();
     expect(JSON.stringify(events)).not.toMatch(/24 hours|follows? up/);
   });
 
