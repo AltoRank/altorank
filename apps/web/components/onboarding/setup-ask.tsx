@@ -10,7 +10,9 @@
 // made once. On 2026-09-28 both real signups' first looks planned nothing and
 // were asked for a card over an empty calendar, under a heading that said
 // setup had finished. Nothing was broken; nothing cleared the bar. The screen
-// now says that, says a person has been told, and asks for nothing.
+// now says that and asks for nothing. Since 2026-10-25 a first look ranks its
+// topics instead of filtering them (lib/onboarding/first-look-plan.ts), so a
+// new run no longer ends here; a run recorded before that still renders it.
 
 import { MEMBER_CANNOT_BUY, TrialOffer, TrialPriceBox } from "@/components/billing/trial-offer";
 import { StartTrialButton } from "@/components/billing/start-trial-button";
@@ -30,32 +32,25 @@ export const NOTHING_PLANNED_HEADING = "We did not find a clear first topic yet"
  * decided (`judgedRows`), not every row in the pool: rows never reached were
  * not "checked", and a pool nobody could judge is never shown this at all
  * (`poolWasJudged`). The stage and the causes are for the operator, not for
- * a person deciding whether to trust us.
- *
- * `followUp`: the promise of a reply is made only when somebody will be told
- * (lib/auth/operators.ts `followUpPromised`). Without an operator address
- * there is no email and no digest, and the promise would be to nobody.
+ * a person deciding whether to trust us. No reply is promised: nobody is
+ * waiting to write one.
  */
-export function nothingPlannedLede(domain: string, pool: EmptyPool | null, followUp: boolean): string {
+export function nothingPlannedLede(domain: string, pool: EmptyPool | null): string {
   const site = domain || "your site";
   const judged = pool ? judgedRows(pool) : 0;
   const checked =
     judged > 0
       ? `We read ${site} and checked ${judged.toLocaleString("en-US")} ${judged === 1 ? "search" : "searches"} your buyers make, and none was clear enough to build a first article on yet.`
       : `We read ${site} and did not find a search clear enough to build a first article on yet.`;
-  return followUp
-    ? `${checked} Our team has been told, and you will hear back from us by email within 24 hours.`
-    : `${checked} Nothing has been charged.`;
+  return `${checked} Nothing has been charged.`;
 }
 
-export function NothingPlannedNote({ followUp }: { followUp: boolean }) {
+export function NothingPlannedNote() {
   return (
     <div className="rounded-lg border border-line bg-bg p-4" data-testid="nothing-planned-note">
       <p className="m-0 text-sm font-medium text-ink">What happens next</p>
       <p className="m-0 mt-1.5 text-[13px] leading-[1.6] text-ink-2">
-        {followUp
-          ? "A person on our team looks at what we found and writes to you within 24 hours. There is nothing to pay and nothing you need to do until then."
-          : "There is nothing to pay and nothing you need to do."}
+        There is nothing to pay and nothing you need to do.
       </p>
     </div>
   );
@@ -76,7 +71,6 @@ export interface GateOffer {
 export function SetupAsk({
   ending,
   canBuy,
-  followUp,
   returnTo = "/dashboard",
   offer,
   below,
@@ -84,7 +78,6 @@ export function SetupAsk({
 }: {
   ending: SetupEnding;
   canBuy: boolean;
-  followUp: boolean;
   returnTo?: string;
   /** The gate's price box; without it, the plain offer. */
   offer?: GateOffer;
@@ -110,14 +103,14 @@ export function SetupAsk({
     return (
       <>
         {shown}
-        <NothingPlannedNote followUp={false} />
+        <NothingPlannedNote />
       </>
     );
   if (!asksForCard(ending))
     return (
       <>
         {shown}
-        <NothingPlannedNote followUp={followUp} />
+        <NothingPlannedNote />
       </>
     );
   // No article to show for it: say nothing was charged first, and keep the

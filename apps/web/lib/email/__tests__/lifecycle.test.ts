@@ -578,12 +578,14 @@ describe("a first look planned nothing: the operators' email", () => {
 
   it("says whose site, whom to write to, and which stage emptied the pool", () => {
     const e = renderNothingPlannedOps({ runId: "run-1", domain: "acme-clinic.example", contacts: ["owner@acme-clinic.example"], pool, preTrial: true });
-    expect(e.subject).toBe("Follow up within 24 hours: nothing planned for acme-clinic.example");
+    expect(e.subject).toBe("Nothing planned for acme-clinic.example");
     expect(e.html).toContain("owner@acme-clinic.example");
     expect(e.html).toContain("Stage that emptied the pool: qualification (largest group: buyer_mismatch)");
     expect(e.html).toContain("144 keyword rows, 0 qualified");
     expect(e.html).toContain(pool.summary);
-    expect(e.html).toContain("within 24 hours");
+    // Nobody was promised a reply (2026-10-25).
+    expect(e.html).not.toContain("within 24 hours");
+    expect(e.html).toContain("no reply was promised");
     expect(e.html).toContain("run-1");
     expect(e.footerNote).toContain("ADMIN_EMAILS");
   });
@@ -591,7 +593,7 @@ describe("a first look planned nothing: the operators' email", () => {
   it("says no reply was promised to an account that never saw the trial step", () => {
     const e = renderNothingPlannedOps({ runId: "run-1", domain: "acme-clinic.example", contacts: [], pool, preTrial: false });
     expect(e.subject).toBe("Nothing planned for acme-clinic.example");
-    expect(e.html).toContain("was not promised a reply");
+    expect(e.html).toContain("no reply was promised");
     expect(e.html).not.toContain("was told the team would write");
     const unknown = renderNothingPlannedOps({ runId: "run-1", domain: "acme-clinic.example", contacts: [], pool, preTrial: null });
     expect(unknown.html).toContain("could not be read");

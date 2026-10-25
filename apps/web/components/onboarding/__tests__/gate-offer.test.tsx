@@ -32,7 +32,7 @@ const ARTICLE: FirstArticleCard = {
 
 function gate(article: FirstArticleCard, initialHtml: string | null = null) {
   return renderToStaticMarkup(
-    <GateTop workspaceId="ws1" canBuy ending="article" followUp={false} heading="" lede="" firstArticle={article} planned={[]} fullArticle initialHtml={initialHtml} offer={FACTS} />,
+    <GateTop workspaceId="ws1" canBuy ending="article" heading="" lede="" firstArticle={article} planned={[]} fullArticle initialHtml={initialHtml} offer={FACTS} />,
   );
 }
 

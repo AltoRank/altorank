@@ -89,34 +89,28 @@ describe("setupEnding: the one decision both setup screens read", () => {
 describe("SetupAsk", () => {
   it("renders the honest note, and no card ask, for a run that planned nothing", () => {
     const ending = setupEnding(stateFromRun(nothingPlannedRow, null), GATED);
-    const html = text(renderToStaticMarkup(<SetupAsk ending={ending} canBuy followUp />));
+    const html = text(renderToStaticMarkup(<SetupAsk ending={ending} canBuy />));
     expect(html).not.toContain("trial-offer");
     expect(html).not.toMatch(/trial/i);
-    expect(html).toContain("writes to you within 24 hours");
-    expect(html).toContain("nothing to pay");
-  });
-
-  it("promises no reply when nobody would be told (no operator address)", () => {
-    const html = text(renderToStaticMarkup(<SetupAsk ending="nothing-planned" canBuy followUp={false} />));
-    expect(html).not.toContain("trial-offer");
+    // No reply is promised: nobody is waiting to write one (2026-10-25).
     expect(html).not.toMatch(/24 hours|writes to you|our team/i);
     expect(html).toContain("nothing to pay");
   });
 
   it("asks for no card beside a retry, and says nothing was charged", () => {
-    const html = text(renderToStaticMarkup(<SetupAsk ending="retry" canBuy followUp />));
+    const html = text(renderToStaticMarkup(<SetupAsk ending="retry" canBuy />));
     expect(html).not.toContain("trial-offer");
     expect(html).not.toMatch(/trial|€/i);
     expect(html).toContain("Nothing has been charged");
   });
 
   it("renders the card ask beside an article", () => {
-    expect(renderToStaticMarkup(<SetupAsk ending="article" canBuy followUp />)).toContain("trial-offer");
+    expect(renderToStaticMarkup(<SetupAsk ending="article" canBuy />)).toContain("trial-offer");
   });
 
   it("with no article, says nothing was charged and keeps the trial to one quiet button", () => {
     for (const ending of ["first-failed", "no-article"] as const) {
-      const markup = renderToStaticMarkup(<SetupAsk ending={ending} canBuy followUp />);
+      const markup = renderToStaticMarkup(<SetupAsk ending={ending} canBuy />);
       expect(markup).toContain("quiet-trial-ask");
       expect(markup).not.toContain("trial-offer");
       expect(text(markup)).toContain("Nothing has been charged.");
@@ -131,21 +125,15 @@ describe("SetupAsk", () => {
     expect(asksWithOffer("writing")).toBe(true);
   });
 
-  it("the heading and lede say nothing cleared the bar, that the team knows, and when they will hear back", () => {
+  it("the heading and lede say nothing cleared the bar and promise no reply", () => {
     expect(NOTHING_PLANNED_HEADING).toBe("We did not find a clear first topic yet");
-    const lede = nothingPlannedLede("acme-clinic.example", POOL, true);
+    const lede = nothingPlannedLede("acme-clinic.example", POOL);
     // The 117 a judge decided, not the 27 it never reached.
     expect(lede).toContain("checked 117 searches");
-    expect(lede).toContain("Our team has been told");
-    expect(lede).toContain("by email within 24 hours");
-    expect(lede).not.toMatch(/trial|card/i);
-    expect(nothingPlannedLede("", null, true)).toContain("We read your site and did not find a search");
-  });
-
-  it("the lede makes no promise when nobody would be told", () => {
-    const lede = nothingPlannedLede("acme-clinic.example", POOL, false);
-    expect(lede).toContain("checked 117 searches");
+    expect(lede).toContain("Nothing has been charged");
     expect(lede).not.toMatch(/24 hours|our team|hear back/i);
+    expect(lede).not.toMatch(/trial|card/i);
+    expect(nothingPlannedLede("", null)).toContain("We read your site and did not find a search");
   });
 });
 
@@ -154,7 +142,7 @@ describe("SetupAsk says which ending was on screen (onboarding.step)", () => {
 
   it("on every branch, with the ending, for the site it ran for", () => {
     for (const ending of ["article", "writing", "retry", "first-failed", "no-article", "nothing-planned", "provider-down"] as const) {
-      const steps = stepsIn(renderToStaticMarkup(<SetupAsk ending={ending} canBuy followUp workspaceId="ws1" />));
+      const steps = stepsIn(renderToStaticMarkup(<SetupAsk ending={ending} canBuy workspaceId="ws1" />));
       expect(steps.filter((s) => s.step === "setup_ending_shown")).toEqual([{ step: "setup_ending_shown", ws: "ws1", props: { ending } }]);
       // The card ask is still only where a card is asked for: the full box,
       // or the quiet card for an ending with no article to show.
@@ -164,7 +152,7 @@ describe("SetupAsk says which ending was on screen (onboarding.step)", () => {
 
   it("says the ending on the quiet card too, the one no-article and first-failed get", () => {
     for (const ending of ["no-article", "first-failed"] as const) {
-      const html = renderToStaticMarkup(<SetupAsk ending={ending} canBuy followUp workspaceId="ws1" />);
+      const html = renderToStaticMarkup(<SetupAsk ending={ending} canBuy workspaceId="ws1" />);
       expect(html).toContain("quiet-trial-ask");
       expect(stepsIn(html).map((s) => s.step)).toEqual(["setup_ending_shown", "gate_shown"]);
     }
@@ -174,7 +162,7 @@ describe("SetupAsk says which ending was on screen (onboarding.step)", () => {
     track.mockClear();
     priceBox.onSeen = undefined;
     const offer = { interval: "month" as const, onInterval: () => undefined, facts: { trialEndsOn: "2026-10-26", vatAdded: false } as never, fullArticle: true };
-    renderToStaticMarkup(<SetupAsk ending="article" canBuy followUp offer={offer} workspaceId="ws1" />);
+    renderToStaticMarkup(<SetupAsk ending="article" canBuy offer={offer} workspaceId="ws1" />);
     expect(track).not.toHaveBeenCalledWith("offer_seen", expect.anything());
     vi.stubGlobal("window", { innerWidth: 800 });
     // Read through the hoisted object's type: the reset above narrowed it to undefined.

@@ -61,7 +61,7 @@ function gate(over: Partial<Parameters<typeof OnboardingWizard>[0]> = {}) {
       initialSite={{ sitemapUrl: "", blogRootUrl: "", exampleArticleUrls: [] }}
       askAttribution={false}
       offer={{ endsAt: "2026-10-19T12:00:00.000Z", taxAdded: false }}
-      preTrialSetup={{ setupAllowed: true, firstAttempted: false, followUp: false }}
+      preTrialSetup={{ setupAllowed: true, firstAttempted: false }}
       initialRun={{ run: run({}), article: null, stale: false }}
       {...over}
     />,
@@ -77,7 +77,7 @@ describe("the gate's way forward when setup planned nothing", () => {
   });
 
   it("offers nothing the server would refuse", () => {
-    const html = text(gate({ preTrialSetup: { setupAllowed: false, firstAttempted: false, followUp: false } }));
+    const html = text(gate({ preTrialSetup: { setupAllowed: false, firstAttempted: false } }));
     expect(html).not.toContain("Change what we found");
   });
 
@@ -137,7 +137,7 @@ describe("the provider-down ending", () => {
     expect(html).toContain("not with acme-shop.example");
     expect(html).toContain("We try again automatically");
     expect(html).not.toMatch(/Run setup again|Start 7-day trial|Change what we found|Setup did not finish/);
-    const refused = text(gate({ initialRun: { run: down, article: null, stale: false }, preTrialSetup: { setupAllowed: false, firstAttempted: false, followUp: false } }));
+    const refused = text(gate({ initialRun: { run: down, article: null, stale: false }, preTrialSetup: { setupAllowed: false, firstAttempted: false } }));
     expect(refused).not.toContain("We try again");
   });
 

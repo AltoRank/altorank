@@ -50,14 +50,11 @@ export function setupFellShort(state: OnboardingState): boolean {
  *                   /api/onboard/start asks before it starts one)
  *   firstAttempted  the one pre-trial article has been claimed: attempted,
  *                   whether or not it was written (claimPreTrialDraft)
- *   followUp        somebody will be told if the first look plans nothing
- *                   (lib/auth/operators.ts `followUpPromised`), so the screen
- *                   may promise the person a reply within 24 hours
  */
-export type PreTrialSetup = { setupAllowed: boolean; firstAttempted: boolean; followUp: boolean };
+export type PreTrialSetup = { setupAllowed: boolean; firstAttempted: boolean };
 
 /** Nothing about the trial stands in the way: self-host, a plan, an operator. */
-export const OPEN_SETUP: PreTrialSetup = { setupAllowed: true, firstAttempted: false, followUp: false };
+export const OPEN_SETUP: PreTrialSetup = { setupAllowed: true, firstAttempted: false };
 
 /**
  * Whether to offer running setup again.

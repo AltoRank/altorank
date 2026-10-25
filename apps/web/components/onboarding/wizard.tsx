@@ -976,7 +976,7 @@ const FIRST_ARTICLE_FAILED_LEDE =
  */
 function endingWords(
   ending: SetupEnding,
-  ctx: { domain: string; runState: Pick<OnboardingState, "steps" | "emptyPool"> | null; followUp: boolean; setupAllowed?: boolean },
+  ctx: { domain: string; runState: Pick<OnboardingState, "steps" | "emptyPool"> | null; setupAllowed?: boolean },
 ): { heading: string; lede: string } {
   const draftingDetail = ctx.runState?.steps.find((s) => s.phase === "drafting")?.detail ?? null;
   switch (ending) {
@@ -991,7 +991,7 @@ function endingWords(
     case "first-failed":
       return { heading: FIRST_ARTICLE_FAILED_HEADING, lede: FIRST_ARTICLE_FAILED_LEDE };
     case "nothing-planned":
-      return { heading: NOTHING_PLANNED_HEADING, lede: nothingPlannedLede(ctx.domain, ctx.runState?.emptyPool ?? null, ctx.followUp) };
+      return { heading: NOTHING_PLANNED_HEADING, lede: nothingPlannedLede(ctx.domain, ctx.runState?.emptyPool ?? null) };
     case "no-article":
       return {
         heading: "No article was written in setup",
@@ -1149,7 +1149,7 @@ function TrialGateScreen({
     // A run read back days later may be past the overnight retry's window.
     providerRetryOpen: providerRetryWindowOpen(run?.run?.finished_at),
   });
-  const words = endingWords(ending, { domain, runState, followUp: setup.followUp, setupAllowed: setup.setupAllowed });
+  const words = endingWords(ending, { domain, runState, setupAllowed: setup.setupAllowed });
   const written = firstArticle?.state === "written";
 
   return (
@@ -1158,7 +1158,6 @@ function TrialGateScreen({
         workspaceId={workspaceId}
         canBuy={canBuy}
         ending={ending}
-        followUp={setup.followUp}
         heading={words.heading}
         lede={words.lede}
         retry={
@@ -1385,7 +1384,7 @@ function RunScreen({
   };
 
   if (trialEligible) {
-    const words = ending ? endingWords(ending, { domain, runState: state, followUp: preTrialSetup.followUp, setupAllowed: preTrialSetup.setupAllowed }) : null;
+    const words = ending ? endingWords(ending, { domain, runState: state, setupAllowed: preTrialSetup.setupAllowed }) : null;
     const held = state?.held ?? null;
     const scheduled = planned.length > 0 ? (
       <div>
@@ -1430,7 +1429,6 @@ function RunScreen({
             workspaceId={workspaceId}
             canBuy={canBuy}
             ending={ending}
-            followUp={preTrialSetup.followUp}
             heading={words.heading}
             lede={words.lede}
             retry={

@@ -84,7 +84,7 @@ So:
 
 ## The `E2E_STUBS` switch
 
-One module, `lib/e2e/stubs.ts`, holds the fixtures. Eleven production files
+One module, `lib/e2e/stubs.ts`, holds the fixtures. Twelve production files
 check `e2eStubsEnabled()` (`process.env.E2E_STUBS === "1"`, read at call
 time) and return a fixture, or skip a fetch, instead. None of them sits in
 front of an auth check: the switch replaces what a call reaches, never who
@@ -101,6 +101,7 @@ may make it.
 | `lib/seo/client.ts` `hasDataForSEOCredentials` / `post` / `get` | `true`; every request throws |
 | `lib/audit/domain-analysis.ts` `analyseDomain` | eight keywords inserted for the workspace; nothing else measured |
 | `lib/keyword-research/opportunity.ts` | fixture "qualified" opportunities, only for a reserved test domain AND a loopback Supabase URL |
+| `lib/onboarding/first-look-plan.ts` `planFirstLook` | fixture topics from the stored keywords and a fixture results page of articles, no model call and no request; only for a reserved test domain AND a loopback Supabase URL |
 | `lib/voice/examples.ts` `readExampleArticles` | `""`; example articles are not fetched |
 | `lib/content/generate.ts` `generateArticle` | a short fixture draft, written through the same rows (`articles`, `generation_jobs`) and the same `review` gate |
 

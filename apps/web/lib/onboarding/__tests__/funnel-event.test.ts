@@ -108,5 +108,25 @@ describe("the first look's spend on the funnel event", () => {
     expect(e.message).not.toContain("Spent");
     expect(e.context).not.toHaveProperty("spend");
   });
-});
 
+  it("writes a first look's ranking: suggested, removed by which rule, pages read, and the chosen topic's score, with no term", () => {
+    const score = { total: 63.8, fit: 1, demand: 0.5, reach: 0.6, page: 1, demandMeasured: false, pageRead: true };
+    const e = planFunnelEvent({
+      runId: "run-2", workspaceId: WS, accountId: ACC, funnel: null,
+      firstLook: { suggested: 20, rejected: { brand: 2, needs_page: 1 }, resultsRead: 4, resultsFailed: 0, noEvidence: 0, planned: 1, ready: 3, modelCalls: 1, chosen: { term: "who qualifies for a housing grant", score, volume: null, line: "" } },
+    });
+    expect(e.level).toBe("info");
+    expect(e.message).toBe("First look: 20 suggested, removed 2 names a business, 1 results are product or service pages -> 4 results pages read -> 1 planned, chosen at 63.8/100: fit 1.00, demand unmeasured, reach 0.60, page 1.00");
+    expect(e.context).toMatchObject({ runId: "run-2", suggested: 20, planned: 1, ready: 3, modelCalls: 1, chosenScore: score });
+    expect(JSON.stringify(buildEventRow(e))).not.toContain("housing grant");
+  });
+
+  it("warns when a first look planned nothing, with the planning line", () => {
+    const e = planFunnelEvent({
+      runId: "run-3", workspaceId: WS, funnel: null, planningDetail: "Our search data or our model did not answer.",
+      firstLook: { suggested: 0, rejected: {}, resultsRead: 0, resultsFailed: 0, noEvidence: 0, planned: 0, ready: 0, modelCalls: 1 },
+    });
+    expect(e.level).toBe("warn");
+    expect(e.message).toBe("First look: 0 suggested -> 0 results pages read -> 0 planned: Our search data or our model did not answer.");
+  });
+});
