@@ -38,9 +38,11 @@ services:
         # baked into the image, so a default of localhost made every link on
         # a real host point at the reader's own machine.
         NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:?set it in docker/.env to the address people open the app at}
-        # Stripe's publishable key, public by design: with it the trial card
-        # is taken on the page (Embedded Checkout), without it on Stripe's.
+        # Stripe's publishable key, public by design. The trial card is taken
+        # on Stripe's hosted page unless both of these are set, which take it
+        # on the page instead (Embedded Checkout).
         NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+        NEXT_PUBLIC_STRIPE_EMBEDDED_CHECKOUT: ${NEXT_PUBLIC_STRIPE_EMBEDDED_CHECKOUT:-}
     ports:
       - "${PORT:-3000}:3000"
     # Docker Desktop provides host.docker.internal; Linux needs it mapped, so a

@@ -43,4 +43,7 @@ export const E2E_SERVER_ENV: Record<string, string> = {
   // their own Stripe.js (e2e/fixtures/fake-stripe.ts) so nothing reaches
   // Stripe. It also keeps a live key in .env.local out of the e2e bundle.
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_e2e_placeholder",
+  // Embedded Checkout is opt-in (components/billing/embedded-checkout.tsx);
+  // the specs that walk the sheet need it on.
+  NEXT_PUBLIC_STRIPE_EMBEDDED_CHECKOUT: "true",
 };
