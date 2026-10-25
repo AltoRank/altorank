@@ -10,8 +10,11 @@
 // `ui_mode: "embedded_page"`: Stripe renders its form in an iframe we mount,
 // wallets included, and comes back through the same /checkout/complete page.
 //
-// Without a publishable key (self-host, a deploy that has not set one) the
-// button falls back to the hosted redirect it always used.
+// It is opt-in. The default is Stripe's hosted page: it is the form Stripe
+// tests hardest, it shows wallets, and it sits on a stripe.com address people
+// trust with a card, so the step that takes money has no part of ours in it.
+// A deploy turns the embedded form on with a publishable key AND
+// NEXT_PUBLIC_STRIPE_EMBEDDED_CHECKOUT=true; anything else redirects.
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -24,8 +27,9 @@ import type { CheckoutFailure } from "@/lib/onboarding/step-props";
 
 const PUBLISHABLE_KEY = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";
 
-/** Whether this deploy can show Stripe's form on the page instead of redirecting. */
-export const embeddedCheckoutAvailable = PUBLISHABLE_KEY !== "";
+/** Whether this deploy shows Stripe's form on the page instead of redirecting: opt-in, see above. */
+export const embeddedCheckoutAvailable =
+  PUBLISHABLE_KEY !== "" && process.env.NEXT_PUBLIC_STRIPE_EMBEDDED_CHECKOUT === "true";
 
 let stripePromise: Promise<Stripe | null> | null = null;
 function stripe(): Promise<Stripe | null> {
