@@ -258,6 +258,12 @@ exits 0 rather than failing every run. Set the `APP_URL` repository
 back to the hosted URL; in any other repository the workflows refuse to run
 without `APP_URL`, so a fork never sends its secret to someone else's server.
 
+This repository is public and so are its Actions logs, so the workflows
+print only the HTTP status and counts (drafts generated, articles published,
+errors). The response body names customer sites and is never echoed; to see
+it, run the job by hand (below). A non-2xx still fails the job, with the
+status code and no body.
+
 GitHub runs scheduled workflows best-effort and can be minutes late under
 load. The generator is bounded by each workspace's weekly limit, not by
 landing on the hour, and the publisher publishes at most once per local day,
