@@ -407,6 +407,12 @@ export type PaymentFailedEmail = {
   graceEndsAt: string;
   /** Formatted amount, when Stripe gave one. Never invented. */
   amount: string | null;
+  /**
+   * The charge that ends the trial failed (lib/billing/dunning.ts,
+   * firstChargeFailed). There is no grace window, so `graceEndsAt` is not
+   * quoted and nothing promises the plan keeps working.
+   */
+  firstCharge?: boolean;
 };
 
 /**
@@ -423,6 +429,23 @@ export type PaymentFailedEmail = {
  */
 export function renderPaymentFailed(a: PaymentFailedEmail): RenderedEmail {
   const who = a.accountName ? `${a.accountName}'s ` : "your ";
+  if (a.firstCharge) {
+    return {
+      subject: `Your card was declined — the ${a.planLabel} plan is on hold`,
+      preheader: `The trial has ended and its first charge did not go through. Update the card to start the plan.`,
+      footerNote: `Sent because you manage billing for this AltoRank account.`,
+      html:
+        heading("The first payment did not go through") +
+        emailParagraph(
+          `The trial has ended, and the card on file was declined${a.amount ? ` for ${esc(a.amount)}` : ""}, so ${esc(who)}${esc(a.planLabel)} plan has not started.`,
+        ) +
+        emailParagraph(
+          `Until the card is updated, nothing new is drafted and approving and publishing wait for the plan. The workspaces, articles, keywords and history all stay, and nothing is deleted.`,
+        ) +
+        emailButton(appLink("/settings/billing"), "Update the card") +
+        emailParagraph(`Your bank may retry on its own; if it goes through, the plan starts and you can ignore this email.`),
+    };
+  }
   // `formatGraceDate` rather than this file's own formatter, so the string in
   // the inbox is character-for-character the string in the dunning banner.
   const ends = formatGraceDate(a.graceEndsAt);

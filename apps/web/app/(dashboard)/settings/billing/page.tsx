@@ -19,7 +19,7 @@ import { usageLine } from "@/lib/billing/usage-line";
 import { PlanCards, type PlanCard } from "./plan-cards";
 import { RetentionCard } from "./retention-card";
 import { DunningCard } from "./dunning-card";
-import { dunningInfo } from "@/lib/billing/dunning";
+import { dunningInfo, trialStillRunning } from "@/lib/billing/dunning";
 import { trialEndsLabel, trialThenLabel } from "@/lib/billing/trial";
 import { SettingsTabs } from "../settings-tabs";
 import { canManageBilling } from "@/lib/team/access";
@@ -55,7 +55,7 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
     await Promise.all([
       supabase
         .from("accounts")
-        .select("plan, plan_status, current_period_end, stripe_customer_id, stripe_subscription_id, cancels_at, payment_failed_at, billing_provider")
+        .select("plan, plan_status, current_period_end, stripe_customer_id, stripe_subscription_id, cancels_at, payment_failed_at, billing_provider, trial_ends_at")
         .eq("id", accountId)
         .single(),
       supabase
@@ -115,7 +115,12 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
   const dunning = preview?.plan || simulation?.plan ? null : dunningInfo(account ?? {});
 
   const isActive =
-    Boolean(preview?.plan) || Boolean(simulation?.plan) || status === "active" || status === "trialing";
+    Boolean(preview?.plan) ||
+    Boolean(simulation?.plan) ||
+    status === "active" ||
+    // A trial past its end is a webhook that never arrived, not a plan
+    // (lib/billing/dunning.ts), and the page says what the gates do.
+    (status === "trialing" && trialStillRunning(account ?? {}));
   // A self-hosted install runs with billing off (no STRIPE_SECRET_KEY): there
   // is no plan to buy and no bill. This page used to say "No plan" and offer
   // Choose Managed / Choose Agency, and every one of those clicks failed at

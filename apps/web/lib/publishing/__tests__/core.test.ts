@@ -25,6 +25,14 @@ vi.mock("@/lib/articles/body-read", () => ({
 const gate = vi.hoisted(() => ({ state: "open" as "open" | "gated" | "bypassed" }));
 vi.mock("@/lib/billing/body-lock", () => ({ workspaceTrialGate: async () => gate.state }));
 
+// The plan gate is asked about the article's site too; the real class, so the
+// cron can tell the refusal apart (lib/publishing/plan-gate.ts).
+const plan = vi.hoisted(() => ({ needed: false }));
+vi.mock("@/lib/publishing/plan-gate", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../plan-gate")>();
+  return { ...actual, siteNeedsPlanToPublish: async () => plan.needed };
+});
+
 // The status the publish leaves behind is written with the service role
 // (migration 109: a signed-in user's client may not set `live`). Here that
 // client is the same fake the test built, so its update is still observable.
@@ -35,6 +43,8 @@ import { publishArticleCore, PublishError } from "../core";
 import { resolveCMSAdapter } from "@/lib/cms/adapter";
 import { submitForIndexing } from "@/lib/seo/indexing";
 import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
+import { PlanRequiredError } from "../plan-gate";
+import { CHOOSE_PLAN_MESSAGE } from "@/lib/billing/quota";
 
 function mockSupabase(overrides: {
   article?: Record<string, unknown> | null;
@@ -177,6 +187,28 @@ describe("publishArticleCore", () => {
       expect(resolveCMSAdapter).not.toHaveBeenCalled();
     } finally {
       gate.state = "open";
+    }
+  });
+
+  it("refuses a scheduled article once the account holds no plan, before anything reaches the CMS", async () => {
+    // Approved and scheduled while the trial ran; the trial then ended, was
+    // cancelled, or its first charge failed. cron/publish sent it anyway.
+    plan.needed = true;
+    const publish = vi.fn();
+    (resolveCMSAdapter as ReturnType<typeof vi.fn>).mockReturnValue({ publish });
+    try {
+      const supabase = mockSupabase({
+        article: {
+          id: "a1", workspace_id: "w1", status: "scheduled", approved_by: "u1",
+          title: "T", slug: "t", content: { type: "doc", content: [] }, cms: "wordpress", meta_description: null,
+        },
+      });
+      const err = await publishArticleCore(supabase as never, "a1").catch((e) => e);
+      expect(err).toBeInstanceOf(PlanRequiredError);
+      expect(err.message).toBe(CHOOSE_PLAN_MESSAGE);
+      expect(publish).not.toHaveBeenCalled();
+    } finally {
+      plan.needed = false;
     }
   });
 

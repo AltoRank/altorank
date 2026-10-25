@@ -286,6 +286,21 @@ export async function canSpend(
     };
   }
 
+  // An account that has had its trial has no free drafts (getQuota,
+  // `trialEnded`): the refusal says the plan is gone rather than counting an
+  // allowance it never had.
+  if (quota.trialEnded) {
+    return {
+      allowed: false,
+      reason: "no-plan",
+      quota,
+      message:
+        action === "draft"
+          ? quotaExceededMessage(quota)
+          : `${ACTION_NOUN[action]} needs a plan, and there is none on this account any more. Reading everything already on the account stays free — your keywords, articles, audits and reports are all still there. Choose a plan on the Billing page to start again, or self-host AltoRank free.`,
+    };
+  }
+
   return {
     allowed: false,
     reason: quota.used > 0 ? "free-allowance-spent" : "no-plan",
@@ -324,6 +339,11 @@ export class SpendRefusedError extends Error {
  * here is how someone ends up paying for two subscriptions (2026-09-06).
  */
 function pastDueMessage(action: SpendAction, quota: Quota): string {
+  // The trial's first charge has no grace window (lib/billing/dunning.ts):
+  // nothing was ever paid, so there was no renewal and no period to end.
+  if (quota.dunning?.firstCharge) {
+    return `${ACTION_NOUN[action]} is paused: the first payment after the trial did not go through. Update the card on the Billing page and everything starts again — nothing has been cancelled and nothing has been deleted.`;
+  }
   const ended = quota.dunning?.graceEndsAt ? ` The grace period ended on ${formatGraceDate(quota.dunning.graceEndsAt)}.` : "";
   return `${ACTION_NOUN[action]} is paused: the last renewal payment did not go through.${ended} Update the card on the Billing page and everything starts again — nothing has been cancelled and nothing has been deleted.`;
 }

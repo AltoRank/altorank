@@ -211,6 +211,14 @@ describe("payment failed", () => {
     expect(renderPaymentFailed(base).html).toContain("€69.00");
     expect(renderPaymentFailed({ ...base, amount: null }).html).toContain("was declined, so");
   });
+
+  it("promises no grace week when the charge that failed was the trial's first", () => {
+    const e = renderPaymentFailed({ ...base, firstCharge: true });
+    expect(e.subject).not.toContain("September 8");
+    expect(e.html).not.toContain("Nothing has stopped");
+    expect(e.html).toContain("nothing new is drafted");
+    expect(e.html).toContain("https://app.altorank.co/settings/billing");
+  });
 });
 
 describe("subscription cancelled", () => {

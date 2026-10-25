@@ -90,6 +90,14 @@ export type Quota = {
    * rather than "Choose a plan".
    */
   trialEligible?: boolean;
+  /**
+   * Set on `reason: "no-plan"` for an account that has had its trial
+   * (`trial_ends_at` stamped) and holds no entitled plan: cancelled, expired,
+   * or its first charge failed. The trial was its free tier, so nothing is
+   * left to draft (`remaining: 0`), and the refusal says so rather than
+   * counting free drafts the account never used.
+   */
+  trialEnded?: boolean;
 };
 
 /**
@@ -268,7 +276,7 @@ export async function getQuota(
   // rest of this function was written against.
   const { data: account, error: accountError } = await counting
     .from("accounts")
-    .select("plan, plan_status, payment_failed_at, free_drafts_used, stripe_subscription_id, trial_ends_at, cancels_at")
+    .select("plan, plan_status, payment_failed_at, free_drafts_used, stripe_subscription_id, trial_ends_at, cancels_at, billing_provider")
     .eq("id", accountId)
     .maybeSingle();
   if (accountError) throw new Error(`quota: could not read this account's plan (${accountError.message})`);
@@ -330,16 +338,26 @@ export async function getQuota(
     // both and taking the larger means neither a delete nor a missed
     // increment can hand out an eighth free draft. `monthUsed` rides along so
     // the copy can explain a lock that lands mid-month (migration 083).
+    //
+    // An account that has had its trial gets none of them. The trial is the
+    // free tier now (lib/billing/trial.ts), and its end - cancelled, expired,
+    // or a first charge that failed - is where drafting stops: the
+    // cancellation email says "nothing new is drafted from now on" (#260).
+    // Counting the seven here instead let cron/generate draft whatever of
+    // them the trial week had not used, at the paid pace, after the trial
+    // was over (assessment 2026-10-25).
     const freeUsed = Math.max((account?.free_drafts_used as number | null) ?? 0, everUsed);
+    const trialEnded = Boolean(account?.trial_ends_at);
     return {
       limit: FREE_DRAFTS,
       used: freeUsed,
-      remaining: Math.max(0, FREE_DRAFTS - freeUsed),
+      remaining: trialEnded ? 0 : Math.max(0, FREE_DRAFTS - freeUsed),
       reason: "no-plan",
       plan: null,
       dunning,
       monthUsed: used,
       trialEligible: eligible,
+      ...(trialEnded ? { trialEnded: true } : {}),
     };
   }
 
@@ -425,6 +443,9 @@ export function freeAllowanceRuleChangeNote(q: Quota): string {
 
 /** Message for the moment generation is refused. Says what to do, not just no. */
 export function quotaExceededMessage(q: Quota, now: Date = new Date()): string {
+  // A card that lapsed is not a plan that ended: the spend gate names the card
+  // (lib/billing/spend-gate.ts), and this keeps the sentence it had.
+  if (q.reason === "no-plan" && q.trialEnded && !q.dunning) return PLAN_ENDED_MESSAGE;
   if (q.reason === "no-plan") {
     // No reset date on this branch any more. Waiting used to be a real third
     // option beside paying and self-hosting; it is not, and naming a date the
@@ -450,6 +471,15 @@ export function quotaExceededMessage(q: Quota, now: Date = new Date()): string {
   // Articles page is the door that does.
   return `This month's included ${q.limit} articles are used. Scheduled writing stops until ${resets}; upgrade on the Billing page, or start one yourself with New article on the Articles page, which is billed as overage.`;
 }
+
+/**
+ * The refusal for an account that has had its trial and holds no plan now: a
+ * trial cancelled or expired, or a paid plan that has since ended. Its free
+ * tier was the trial, so there is no allowance to count down, and the
+ * sentence names neither, because the row cannot always tell which.
+ */
+export const PLAN_ENDED_MESSAGE =
+  "There is no plan on this account any more, so nothing new is drafted. Everything already on the account stays readable: your keywords, articles, audits and reports. Choose a plan on the Billing page to start again, or self-host AltoRank free.";
 
 /**
  * Overage per additional article, in cents, exactly as the pricing page

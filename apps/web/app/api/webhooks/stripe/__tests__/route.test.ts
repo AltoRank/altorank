@@ -746,6 +746,33 @@ describe("invoice.payment_failed", () => {
     await deliver(invoiceEvent("payment_failed"));
     expect(writes).toHaveLength(0);
   });
+
+  it("tells a trial whose first charge failed that the plan is on hold, with no grace week", async () => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    accountRow = {
+      id: "account-1",
+      plan_status: "trialing",
+      payment_failed_at: null,
+      trial_ends_at: new Date((nowSec - 3600) * 1000).toISOString(),
+    };
+    await deliver(invoiceEvent("payment_failed", { created: nowSec }));
+    expect(accountWrite().row.plan_status).toBe("past_due");
+    expect(paymentFailedEmail).toHaveBeenCalledTimes(1);
+    expect(paymentFailedEmail.mock.calls[0][2]).toMatchObject({ firstCharge: true });
+  });
+
+  it("keeps the grace week in the email for a renewal after the trial was paid", async () => {
+    const nowSec = Math.floor(Date.now() / 1000);
+    accountRow = {
+      id: "account-1",
+      plan_status: "active",
+      payment_failed_at: null,
+      trial_ends_at: new Date((nowSec - 40 * 24 * 3600) * 1000).toISOString(),
+    };
+    await deliver(invoiceEvent("payment_failed", { created: nowSec }));
+    expect(paymentFailedEmail).toHaveBeenCalledTimes(1);
+    expect(paymentFailedEmail.mock.calls[0][2]).not.toHaveProperty("firstCharge");
+  });
 });
 
 describe("invoice.paid", () => {

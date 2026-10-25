@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { dunningInfo, dunningState, GRACE_DAYS, graceEndsAt, isPastDueStatus, planEntitled } from "../dunning";
+import {
+  dunningInfo,
+  dunningState,
+  firstChargeFailed,
+  GRACE_DAYS,
+  graceEndsAt,
+  isPastDueStatus,
+  planEntitled,
+  TRIAL_END_MARGIN_MS,
+} from "../dunning";
 import { subscriptionSwitchable } from "../plan-switch";
 
 // A failed renewal used to make the account a free one on the spot: past_due
@@ -62,6 +71,58 @@ describe("graceEndsAt / dunningInfo", () => {
       state: "lapsed",
       graceEndsAt: null,
     });
+  });
+});
+
+// Assessment 2026-10-25: a trial whose end webhook never arrived stayed
+// entitled forever, and a trial whose first charge failed got the paying
+// customer's week of grace.
+describe("planEntitled bounds a trial by its end date", () => {
+  const ends = "2026-10-20T10:00:00.000Z";
+  const at = (ms: number) => new Date(Date.parse(ends) + ms);
+  const trialing = { plan_status: "trialing", trial_ends_at: ends };
+
+  it("is entitled through the trial and the margin after it", () => {
+    expect(planEntitled(trialing, at(-3 * 24 * 60 * 60 * 1000))).toBe(true);
+    expect(planEntitled(trialing, at(TRIAL_END_MARGIN_MS - 1))).toBe(true);
+  });
+
+  it("is not entitled once the trial and the margin are over and the row still says trialing", () => {
+    expect(planEntitled(trialing, at(TRIAL_END_MARGIN_MS))).toBe(false);
+    expect(planEntitled(trialing, at(30 * 24 * 60 * 60 * 1000))).toBe(false);
+  });
+
+  it("leaves a Shopify trial and a trial with no end date alone", () => {
+    expect(planEntitled({ ...trialing, billing_provider: "shopify" }, at(30 * 24 * 60 * 60 * 1000))).toBe(true);
+    expect(planEntitled({ plan_status: "trialing", trial_ends_at: null }, at(30 * 24 * 60 * 60 * 1000))).toBe(true);
+  });
+});
+
+describe("a failed first charge gets no grace", () => {
+  const trialEnd = "2026-10-20T10:00:00.000Z";
+  const hours = (n: number) => new Date(Date.parse(trialEnd) + n * 60 * 60 * 1000).toISOString();
+
+  it("lapses at once when the charge that failed is the trial's conversion", () => {
+    const row = { plan_status: "past_due", trial_ends_at: trialEnd, payment_failed_at: hours(1) };
+    const now = new Date(hours(2));
+    expect(firstChargeFailed(row)).toBe(true);
+    expect(dunningState(row, now)).toBe("lapsed");
+    expect(planEntitled(row, now)).toBe(false);
+    expect(dunningInfo(row, now)).toEqual({ state: "lapsed", graceEndsAt: null, firstCharge: true });
+  });
+
+  it("keeps the grace window for a renewal that fails after a paid period", () => {
+    const row = { plan_status: "past_due", trial_ends_at: trialEnd, payment_failed_at: hours(24 * 31) };
+    const now = new Date(hours(24 * 32));
+    expect(firstChargeFailed(row)).toBe(false);
+    expect(dunningState(row, now)).toBe("grace");
+    expect(planEntitled(row, now)).toBe(true);
+  });
+
+  it("keeps the grace window for an account that never had a trial", () => {
+    const row = { plan_status: "past_due", trial_ends_at: null, payment_failed_at: hours(0) };
+    expect(firstChargeFailed(row)).toBe(false);
+    expect(planEntitled(row, new Date(hours(24)))).toBe(true);
   });
 });
 

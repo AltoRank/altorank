@@ -14,7 +14,7 @@ import { recordEvent } from "@/lib/observability/record";
 import { describe as describeError } from "@/lib/observability/event";
 import { paceOnDowngrade } from "@/lib/plan/pace-options";
 import { resumePausedWorkspaces } from "@/lib/billing/resume";
-import { graceEndsAt } from "@/lib/billing/dunning";
+import { firstChargeFailed, graceEndsAt } from "@/lib/billing/dunning";
 import { invoicePendingCharges, paymentMethodId } from "@/lib/billing/invoice-pending";
 import {
   notifyPaymentFailed,
@@ -101,6 +101,14 @@ async function emailPaymentFailed(
     // predates this email existing. "You have until <a date last week>" is
     // not a warning; the Billing page already says lapsed.
     if (ends.getTime() <= Date.now()) return;
+    // The trial's first charge has no grace window (lib/billing/dunning.ts):
+    // the account never paid, and the email must not say the plan keeps
+    // working for a week. `plan_status` is the state this failure leaves.
+    const firstCharge = firstChargeFailed({
+      plan_status: "past_due",
+      trial_ends_at: account.trial_ends_at ?? null,
+      payment_failed_at: episodeStart,
+    });
     await notifyPaymentFailed(
       supabase,
       account.id,
@@ -109,6 +117,7 @@ async function emailPaymentFailed(
         planLabel: PLAN_LABELS[(account.plan ?? "starter") as PlanTier] ?? "your",
         graceEndsAt: ends.toISOString(),
         amount: formatInvoiceAmount(invoice),
+        ...(firstCharge ? { firstCharge: true } : {}),
       },
       episodeStart,
     );
@@ -206,8 +215,11 @@ async function markPaymentFailed(
 ): Promise<void> {
   const updates: Record<string, unknown> = {};
   if (!account.payment_failed_at) updates.payment_failed_at = failedAt.toISOString();
-  // A paid plan goes past due; an account that never paid does not become
-  // one because its very first charge bounced.
+  // A paid plan goes past due, and so does a trial whose first charge
+  // bounced: Stripe holds it `past_due` while it retries. Only a renewal gets
+  // the grace window; a failure at the trial's end is lapsed at once
+  // (lib/billing/dunning.ts, firstChargeFailed), because nothing was ever
+  // paid. An `inactive` account that never subscribed does not become one.
   if (account.plan_status === "active" || account.plan_status === "trialing") updates.plan_status = "past_due";
   if (Object.keys(updates).length === 0) return;
   const { error } = await supabase.from("accounts").update(updates).eq("id", account.id);

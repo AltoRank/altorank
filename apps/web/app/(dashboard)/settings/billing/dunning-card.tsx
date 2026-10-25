@@ -54,6 +54,12 @@ export function DunningCard({
               {graceDate ? <> until <b>{graceDate}</b></> : <> for {GRACE_DAYS} days</>} while Stripe retries the
               card; after that the account drops to the free tier until it is updated. Nothing is deleted either way.
             </>
+          ) : dunning.firstCharge ? (
+            <>
+              The first charge after the trial did not go through, so the plan is on hold: nothing new is drafted,
+              and approving and publishing wait for the plan. Update the card and the {planLabel} plan starts with
+              the next successful charge. Nothing is deleted.
+            </>
           ) : (
             <>
               The card could not be charged and the grace period has ended, so the account is on the free tier:

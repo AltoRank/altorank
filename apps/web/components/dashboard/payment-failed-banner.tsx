@@ -55,6 +55,8 @@ export function PaymentFailedBanner({
             update your card{graceDate ? <> before <b className="font-semibold">{graceDate}</b></> : null} to keep
             your plan. Everything works until then.
           </>
+        ) : dunning.firstCharge ? (
+          <>the first charge after the trial did not go through, so the plan is on hold until the card is updated.</>
         ) : (
           <>your plan is on hold and the account is on the free tier until the card is updated.</>
         )}
