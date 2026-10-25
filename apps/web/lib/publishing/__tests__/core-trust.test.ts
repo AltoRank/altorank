@@ -10,6 +10,7 @@ vi.mock("@/lib/cms/adapter", () => ({ resolveCMSAdapter: vi.fn() }));
 vi.mock("@/lib/cms/html", () => ({ tiptapToHtml: vi.fn(() => "<h1>Physio vs AT</h1><p>Hello world</p>") }));
 vi.mock("@/lib/seo/indexing", () => ({ submitForIndexing: vi.fn().mockResolvedValue({ indexnow: "submitted", google: "not-connected" }) }));
 vi.mock("@/lib/billing/body-lock", () => ({ workspaceTrialGate: async () => "open" }));
+vi.mock("@/lib/publishing/plan-gate", () => ({ siteNeedsPlanToPublish: async () => false, PlanRequiredError: class extends Error {} }));
 vi.mock("@/lib/articles/body-read", () => ({
   readVisibleArticle: async (client: { article: unknown }) => client.article,
 }));

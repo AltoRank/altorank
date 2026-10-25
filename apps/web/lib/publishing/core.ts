@@ -7,6 +7,7 @@ import { decryptConfig } from "@/lib/crypto";
 import type { Article, CMSConfig } from "@/lib/types";
 import { workspaceTrialGate } from "@/lib/billing/body-lock";
 import { BODY_LOCKED_MESSAGE } from "@/lib/billing/trial-refusal";
+import { PlanRequiredError, siteNeedsPlanToPublish } from "@/lib/publishing/plan-gate";
 import { chooseDestination, toDestinations, type IntegrationRow } from "@/lib/publishing/destinations";
 import { settleExchangeForArticle } from "@/lib/seo/exchange";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -95,6 +96,14 @@ export async function publishArticleCore(
   // during setup. Publishing is handing the text out; the gate decides that.
   if ((await workspaceTrialGate(supabase, article.workspace_id)) === "gated") {
     throw new Error(BODY_LOCKED_MESSAGE);
+  }
+
+  // And the plan, for every account the trial gate does not cover: a trial
+  // that ended or was cancelled, a first charge that failed, a plan that
+  // lapsed. Their scheduled articles stayed scheduled and the cron sent
+  // them (lib/publishing/plan-gate.ts).
+  if (await siteNeedsPlanToPublish(supabase, article.workspace_id)) {
+    throw new PlanRequiredError();
   }
 
   return deliverArticle(supabase, article as DeliverableArticle, articleId, opts);

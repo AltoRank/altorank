@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isAuthorizedCron } from "@/lib/cron-auth";
 import { createServiceClient } from "@/lib/supabase/server";
 import { publishArticleCore, PublishError } from "@/lib/publishing/core";
+import { PlanRequiredError } from "@/lib/publishing/plan-gate";
 import { lastSuccessfulPushAt, recordPublish } from "@/lib/publishing/log";
 import { cadenceDueState, cadenceLocalDate, withoutPaused } from "@/lib/publishing/cadence";
 import type { PublishingCadence } from "@/lib/types";
@@ -82,72 +83,36 @@ async function run(request: Request) {
     autoApprovals = { error: err instanceof Error ? err.message : "unknown error" };
   }
 
+  // Sites whose account holds no plan, found this run. Their articles stay
+  // `scheduled` and ship when the plan comes back (lib/publishing/plan-gate.ts);
+  // marking them failed would lose the schedule and email a failure that is
+  // not one.
+  const needsPlan = new Set<string>();
+
   // ── Phase 1: per-article overrides (scheduled_at <= now) ──
-  const { data: overrideArticles, error: overrideError } = await supabase
-    .from("articles")
-    .select("id, workspace_id")
-    .eq("status", "scheduled")
-    .not("scheduled_at", "is", null)
-    .lte("scheduled_at", now.toISOString())
-    .order("scheduled_at", { ascending: true })
-    .limit(20);
+  //
+  // Read in rounds that leave out the sites found to need a plan: those
+  // articles stay due, and a batch that is all theirs would otherwise hold
+  // back every other site's article behind them, run after run.
+  const attempted = new Set<string>();
+  for (let round = 0; round < OVERRIDE_ROUNDS; round++) {
+    const { data: overrideArticles, error: overrideError } = await readDueOverrides(supabase, now, needsPlan);
 
-  // Publishing is the one cron whose "nothing to do" is indistinguishable from
-  // "the queue could not be read", and the cost of getting that wrong is a
-  // scheduled article that silently never ships.
-  if (overrideError) {
-    return NextResponse.json({ error: overrideError.message }, { status: 500 });
-  }
-
-  for (const article of withoutPaused(overrideArticles ?? [], pausedWorkspaceIds)) {
-    try {
-      const result = await publishArticleCore(supabase, article.id);
-      await recordPublish(supabase, {
-        articleId: article.id,
-        workspaceId: article.workspace_id,
-        status: "success",
-        triggeredBy: "cron",
-        destinationId: result.destinationId,
-        publishMode: result.publishMode,
-      });
-      results.push({
-        articleId: article.id,
-        workspaceId: article.workspace_id,
-        status: "success",
-        emailed: await announceSuccess(supabase, article.id),
-      });
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Unknown error";
-      // Which connection it was going through, so a retry can use the same one.
-      const context = err instanceof PublishError ? err.context : null;
-      await supabase
-        .from("articles")
-        .update({ status: "error", updated_at: now.toISOString() })
-        .eq("id", article.id);
-      await recordPublish(supabase, {
-        articleId: article.id,
-        workspaceId: article.workspace_id,
-        status: "error",
-        error: errorMsg,
-        triggeredBy: "cron",
-        destinationId: context?.destinationId,
-        publishMode: context?.publishMode,
-      });
-      results.push({
-        articleId: article.id,
-        workspaceId: article.workspace_id,
-        status: "error",
-        error: errorMsg,
-        emailed: await announcePublishFailed(supabase, {
-          articleId: article.id,
-          workspaceId: article.workspace_id,
-          reason: errorMsg,
-          // One email per failure, not per article: the same article failing
-          // again after somebody fixed the connection is news.
-          attemptKey: now.toISOString(),
-        }),
-      });
+    // Publishing is the one cron whose "nothing to do" is indistinguishable from
+    // "the queue could not be read", and the cost of getting that wrong is a
+    // scheduled article that silently never ships.
+    if (overrideError) {
+      return NextResponse.json({ error: overrideError.message }, { status: 500 });
     }
+
+    const refusedBefore = needsPlan.size;
+    for (const article of withoutPaused(overrideArticles ?? [], pausedWorkspaceIds)) {
+      if (attempted.has(article.id) || needsPlan.has(article.workspace_id)) continue;
+      attempted.add(article.id);
+      results.push(await publishScheduled(supabase, article, now, needsPlan));
+    }
+    // Another round only when this one found a site to leave out.
+    if (needsPlan.size === refusedBefore) break;
   }
 
   // ── Phase 2: workspace cadence (scheduled_at IS NULL) ──
@@ -222,52 +187,11 @@ async function run(request: Request) {
       continue;
     }
 
-    try {
-      const result = await publishArticleCore(supabase, article.id);
-      await recordPublish(supabase, {
-        articleId: article.id,
-        workspaceId: article.workspace_id,
-        status: "success",
-        triggeredBy: "cron",
-        destinationId: result.destinationId,
-        publishMode: result.publishMode,
-      });
-      results.push({
-        articleId: article.id,
-        workspaceId: article.workspace_id,
-        status: "success",
-        emailed: await announceSuccess(supabase, article.id),
-      });
-    } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : "Unknown error";
-      // Which connection it was going through, so a retry can use the same one.
-      const context = err instanceof PublishError ? err.context : null;
-      await supabase
-        .from("articles")
-        .update({ status: "error", updated_at: now.toISOString() })
-        .eq("id", article.id);
-      await recordPublish(supabase, {
-        articleId: article.id,
-        workspaceId: article.workspace_id,
-        status: "error",
-        error: errorMsg,
-        triggeredBy: "cron",
-        destinationId: context?.destinationId,
-        publishMode: context?.publishMode,
-      });
-      results.push({
-        articleId: article.id,
-        workspaceId: article.workspace_id,
-        status: "error",
-        error: errorMsg,
-        emailed: await announcePublishFailed(supabase, {
-          articleId: article.id,
-          workspaceId: article.workspace_id,
-          reason: errorMsg,
-          attemptKey: now.toISOString(),
-        }),
-      });
+    if (needsPlan.has(article.workspace_id)) {
+      results.push({ articleId: article.id, workspaceId: article.workspace_id, status: "skipped", detail: "needs a plan" });
+      continue;
     }
+    results.push(await publishScheduled(supabase, article, now, needsPlan));
   }
 
   // A paused workspace's cadence is skipped, and says so: a run that publishes
@@ -303,6 +227,91 @@ async function run(request: Request) {
     heldDigests,
     results,
   });
+}
+
+/** Due per-article overrides, oldest first, leaving out `leaveOut`'s sites. */
+function readDueOverrides(
+  supabase: SupabaseClient,
+  now: Date,
+  leaveOut: ReadonlySet<string>,
+): PromiseLike<{ data: { id: string; workspace_id: string }[] | null; error: { message: string } | null }> {
+  const due = supabase
+    .from("articles")
+    .select("id, workspace_id")
+    .eq("status", "scheduled")
+    .not("scheduled_at", "is", null)
+    .lte("scheduled_at", now.toISOString());
+  const kept = leaveOut.size ? due.not("workspace_id", "in", `(${[...leaveOut].join(",")})`) : due;
+  return kept.order("scheduled_at", { ascending: true }).limit(20);
+}
+
+/** Rounds phase 1 may read, each leaving out the sites found to need a plan. */
+const OVERRIDE_ROUNDS = 3;
+
+/**
+ * Publish one due article and record what happened. A site whose account
+ * needs a plan is a skip, not a failure: the article stays `scheduled`, no
+ * failure is logged or emailed, and the site is added to `needsPlan` so the
+ * rest of the run passes it over.
+ */
+async function publishScheduled(
+  supabase: SupabaseClient,
+  article: { id: string; workspace_id: string },
+  now: Date,
+  needsPlan: Set<string>,
+): Promise<Result> {
+  try {
+    const result = await publishArticleCore(supabase, article.id);
+    await recordPublish(supabase, {
+      articleId: article.id,
+      workspaceId: article.workspace_id,
+      status: "success",
+      triggeredBy: "cron",
+      destinationId: result.destinationId,
+      publishMode: result.publishMode,
+    });
+    return {
+      articleId: article.id,
+      workspaceId: article.workspace_id,
+      status: "success",
+      emailed: await announceSuccess(supabase, article.id),
+    };
+  } catch (err) {
+    if (err instanceof PlanRequiredError) {
+      needsPlan.add(article.workspace_id);
+      return { articleId: article.id, workspaceId: article.workspace_id, status: "skipped", detail: "needs a plan" };
+    }
+    const errorMsg = err instanceof Error ? err.message : "Unknown error";
+    // Which connection it was going through, so a retry can use the same one.
+    const context = err instanceof PublishError ? err.context : null;
+    await supabase
+      .from("articles")
+      .update({ status: "error", updated_at: now.toISOString() })
+      .eq("id", article.id);
+    await recordPublish(supabase, {
+      articleId: article.id,
+      workspaceId: article.workspace_id,
+      status: "error",
+      error: errorMsg,
+      triggeredBy: "cron",
+      destinationId: context?.destinationId,
+      publishMode: context?.publishMode,
+    });
+    return {
+      articleId: article.id,
+      workspaceId: article.workspace_id,
+      status: "error",
+      error: errorMsg,
+      emailed: await announcePublishFailed(supabase, {
+        articleId: article.id,
+        workspaceId: article.workspace_id,
+        reason: errorMsg,
+        // One email per failure, not per article: the same article failing
+        // again after somebody fixed the connection is news.
+        attemptKey: now.toISOString(),
+      }),
+    };
+  }
 }
 
 /** Passes before a pending URL is called unconfirmed. At a 15-minute cron, ~2 hours. */
