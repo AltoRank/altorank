@@ -29,6 +29,16 @@ export const EDITOR_FITS_QUERY = "(min-width: 768px)";
 /** Where the trial screen shows "Checkout was cancelled" and the offer again. */
 export const TRIAL_CANCELLED_PATH = "/onboarding?status=cancelled";
 
+/** The trial screen with no notice: back from the cancel page when nobody left Stripe's page. */
+export const TRIAL_GATE_PATH = "/onboarding";
+
+/**
+ * The `from` value on Stripe's back link (the hosted cancel_url). Only with it
+ * does /checkout/cancelled say the owner left checkout and record
+ * checkout_cancelled: the "Manage open checkout" link lands there too.
+ */
+export const STRIPE_CANCEL_MARK = "stripe";
+
 /**
  * Where "Cancel checkout and return" lands. The cancel page names it: the
  * trial screen for an account still behind the trial gate, Billing for
