@@ -111,10 +111,10 @@ describe("first purchase", () => {
     expect(subUpdate).not.toHaveBeenCalled();
   });
 
-  it("sends a cancelled checkout back with the destination it was opened for", async () => {
+  it("sends a cancelled checkout back with the destination it was opened for, marked as Stripe's back link", async () => {
     const { createCheckoutSession } = await import("../billing");
     await createCheckoutSession("growth", "month", "/connect/google");
-    expect(checkoutCreate.mock.calls[0][0].cancel_url).toMatch(/\/checkout\/cancelled\?next=%2Fconnect%2Fgoogle$/);
+    expect(checkoutCreate.mock.calls[0][0].cancel_url).toMatch(/\/checkout\/cancelled\?next=%2Fconnect%2Fgoogle&from=stripe$/);
   });
 
   it("opens Checkout again when the stored subscription is canceled", async () => {

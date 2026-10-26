@@ -26,6 +26,7 @@ beforeEach(() => {
 import {
   articleOutline,
   contentHtml,
+  firstArticleTitle,
   loadFirstArticle,
   sourcesCited,
   toFirstArticleCard,
@@ -303,5 +304,40 @@ describe("the run's closing line before the trial", () => {
     state.article = { id: "a1", title: "t", keyword: "x", wordCount: 10, verdict: "clean" };
     expect(onboardingOutcome(state, false, { preTrial: true }).line).toBe("Done. 1 article on the calendar and your first article is written.");
     expect(onboardingOutcome(state).line).toBe("Done. 1 article on the calendar and your first draft is in review.");
+  });
+});
+
+describe("firstArticleTitle", () => {
+  // The chain the title read makes, answering with `result`.
+  function titleClient(result: { data: unknown; error: unknown } | "throws") {
+    const calls: [string, ...unknown[]][] = [];
+    const q: Record<string, (...a: unknown[]) => unknown> = {};
+    for (const m of ["select", "eq", "in", "gt", "order", "limit"]) q[m] = (...a: unknown[]) => (calls.push([m, ...a]), q);
+    q.maybeSingle = async () => {
+      if (result === "throws") throw new Error("network");
+      return result;
+    };
+    return { client: { from: (t: string) => (calls.push(["from", t]), q) } as never, calls };
+  }
+
+  it("names the gate's article: the site's oldest written one, its title and nothing else", async () => {
+    const { client, calls } = titleClient({ data: { title: "  How to price a website redesign " }, error: null });
+    expect(await firstArticleTitle(client, "ws")).toBe("How to price a website redesign");
+    expect(calls).toEqual([
+      ["from", "articles"],
+      ["select", "title"],
+      ["eq", "workspace_id", "ws"],
+      ["in", "status", ["review", "approved", "scheduled", "live"]],
+      ["gt", "word_count", 0],
+      ["order", "created_at", { ascending: true }],
+      ["limit", 1],
+    ]);
+  });
+
+  it("is null with no written article, an empty title, or a read that failed", async () => {
+    expect(await firstArticleTitle(titleClient({ data: null, error: null }).client, "ws")).toBeNull();
+    expect(await firstArticleTitle(titleClient({ data: { title: " " }, error: null }).client, "ws")).toBeNull();
+    expect(await firstArticleTitle(titleClient({ data: { title: "t" }, error: { message: "timeout" } }).client, "ws")).toBeNull();
+    expect(await firstArticleTitle(titleClient("throws").client, "ws")).toBeNull();
   });
 });

@@ -10,7 +10,7 @@ import { billingFailure, type BillingRedirect } from "@/lib/billing/failure";
 import { priceIsTaxExclusive } from "@/lib/billing/tax-guard";
 
 import { createPendingCheckout } from "@/lib/billing/checkout-attempt";
-import { checkoutDestination } from "@/lib/billing/checkout-return";
+import { checkoutDestination, STRIPE_CANCEL_MARK } from "@/lib/billing/checkout-return";
 import { appUrl } from "@/lib/app-url";
 
 /**
@@ -200,8 +200,10 @@ async function openCheckout(
             success_url: `${appUrl()}/checkout/complete?session_id={CHECKOUT_SESSION_ID}&next=${encodeURIComponent(checkoutDestination(returnTo))}`,
             // The destination rides on the cancel link too, so leaving Stripe from
             // a Billing purchase goes back to Billing (with it), not to the trial
-            // screen every cancel used to land on.
-            cancel_url: `${appUrl()}/checkout/cancelled?next=${encodeURIComponent(checkoutDestination(returnTo))}`,
+            // screen every cancel used to land on. The marker says the page was
+            // reached from Stripe's back link: "Manage open checkout" under a
+            // checkout error lands on the same page without it.
+            cancel_url: `${appUrl()}/checkout/cancelled?next=${encodeURIComponent(checkoutDestination(returnTo))}&from=${STRIPE_CANCEL_MARK}`,
           }),
     });
   } catch (err) {

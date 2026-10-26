@@ -267,6 +267,30 @@ export async function loadFirstArticle(
 }
 
 /**
+ * The title of the article the gate shows (`loadFirstArticle`): the site's
+ * oldest written article, or null when it has none. Only the title, through
+ * the caller's client, so no body column is read. Never throws: a page that
+ * only names the article does without the name.
+ */
+export async function firstArticleTitle(supabase: SupabaseClient, workspaceId: string): Promise<string | null> {
+  try {
+    const { data, error } = await supabase
+      .from("articles")
+      .select("title")
+      .eq("workspace_id", workspaceId)
+      .in("status", WRITTEN)
+      .gt("word_count", 0)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    const title = error ? null : (data as { title?: unknown } | null)?.title;
+    return typeof title === "string" && title.trim() ? title.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The oldest article being written that carries an outline, as its card, or
  * null. Through the caller's client: the outline and the title are not body
  * columns (migration 097 withholds only the text and what quotes it).
