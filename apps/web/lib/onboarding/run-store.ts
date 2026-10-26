@@ -16,7 +16,6 @@ import { heldTopics } from "./plan";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { planHoldApplies } from "@/lib/billing/trial-hold";
 import { accountTrialGate } from "@/lib/billing/body-lock";
-import { followUpPromised } from "@/lib/auth/operators";
 import { providerRetryAllowed } from "./provider-retry-gate";
 import type { EmptyPool, OnboardingHeld } from "./events";
 import { STOPPED_TO_CHANGE, stoppableToChange } from "./stop-to-change";
@@ -639,11 +638,10 @@ async function announceOutcome(
  * warning with the stage that emptied the pool, and an email to the
  * operators now, per run.
  *
- * Whether the customer was promised a reply is said, not assumed. Only an
- * account before its trial sees the setup screen that promises one, and only
- * when there is somebody to be told (`followUpPromised`); a paying, self-host
- * or operator account is never asked for a card and never promised anything.
- * `reason` is set when the run was closed from outside its worker - cut off
+ * Nobody is promised a reply: the screen says nothing cleared the bar and
+ * that nothing was charged. Since 2026-10-25 a first look ranks its topics
+ * (lib/onboarding/first-look-plan.ts) and does not end here; a run closed
+ * from a row written before that still can. `reason` is set when the run was closed from outside its worker - cut off
  * or thrown after it had planned nothing.
  */
 async function announceNothingPlanned(
@@ -655,13 +653,12 @@ async function announceNothingPlanned(
 ): Promise<void> {
   // Unknown when the hold cannot be read; the event and the email say so.
   const preTrial = scope.workspaceId ? await planHoldApplies(supabase, scope.workspaceId).catch(() => null) : null;
-  const promised = preTrial === true && followUpPromised();
   await recordEvent(
     {
       level: "warn",
       source: "onboarding.nothing_planned",
       message:
-        `A first look planned nothing${promised ? "; the customer was told a person follows up within 24 hours" : ""}. ` +
+        "A first look planned nothing. " +
         `${pool?.summary ?? "The run did not record which stage emptied the pool."}` +
         (reason ? ` Closed from outside the worker: ${reason}` : ""),
       accountId: scope.accountId,
@@ -672,7 +669,6 @@ async function announceNothingPlanned(
         runId,
         status: "nothing_planned",
         preTrial,
-        promised,
         ...(reason ? { closedBecause: reason } : {}),
         ...(pool
           ? { stage: pool.stage, cause: pool.cause, rows: pool.keywords, qualified: pool.qualified, rejected: pool.rejected, pending: pool.pending }

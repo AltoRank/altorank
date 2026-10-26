@@ -6,14 +6,14 @@
 // $0.22 judging 360 phrases, and the $0.08 left could not pay for one batch's
 // claim (~$0.085, for a reply that costs ~$0.025) nor judge a results page,
 // so nothing was planned. This runs the real pipeline - the run budget's
-// claim and settle functions in Postgres, the buyer test, the recommender,
-// the refill, qualification and the planner - with only the paid edges and
-// the site replaced by stand-ins that claim, answer and bill as the real
-// ones do. It shows the run:
+// claim and settle functions in Postgres, the buyer test, the first look's
+// planner (its one suggestion call, the results pages, the writes) - with
+// only the paid edges and the site replaced by stand-ins that claim, answer
+// and bill as the real ones do. It shows the run:
 //
 // - finishes, in bounded time, with every phase settled;
-// - leaves qualification room after the research (`leavingRoom`), so results
-//   pages are judged and a plan is made;
+// - leaves the plan room after the research (`leavingRoom`), so the
+//   suggestion is asked, results pages are read and a plan is made;
 // - never commits past the research's share of the dollar.
 //
 // Seeds one account (acme-*.example) and deletes it at the end.
@@ -31,7 +31,7 @@ vi.mock("@/lib/voice/train", async () => {
 vi.mock("../site-assessment", () => ({ assessExistingPages: async () => ({ status: "done", detail: "Read 3 pages.", summary: null }) }));
 vi.mock("@/lib/linking/detect", () => ({ detectLinks: async () => ({ found: 0, added: 0 }) }));
 vi.mock("@/lib/content/generate", () => ({ generateArticle: async () => { throw new Error("the draft is dispatched, not written, in this test"); } }));
-// The model: the buyer test's and the results judge's answers, billed as measured.
+// The model: the buyer test's answers and the first look's suggestion, billed as measured.
 vi.mock("@anthropic-ai/sdk", () => ({
   default: class {
     messages = {
@@ -40,6 +40,12 @@ vi.mock("@anthropic-ai/sdk", () => ({
         const content = p.messages[0].content;
         const prompt = typeof content === "string" ? content : content.map((b) => b.text).join("");
         await new Promise((r) => setTimeout(r, 50 + h.rnd() * 400));
+        if (prompt.startsWith("You choose the first article for a website.")) {
+          // The searches already found, as the prompt lists them: the first twenty, as asked.
+          const found = [...prompt.matchAll(/^- (model railway kit idea \d{4}) \(/gm)].map((m) => m[1]).slice(0, 20);
+          const topics = found.map((query) => ({ query, fromList: true, reader: "railway modellers", job: "choose a kit", offering: "model railway kits", angle: `How to choose ${query}`, shape: "explainer", fit: 4, kind: "question", why: "Modellers ask it before they buy." }));
+          return { content: [{ type: "text", text: JSON.stringify({ topics }) }], usage: { input_tokens: 4200, output_tokens: 120 * topics.length } };
+        }
         const at = prompt.lastIndexOf("PHRASES\n");
         if (at !== -1) {
           const asked = JSON.parse(prompt.slice(at + "PHRASES\n".length)) as string[];
@@ -152,7 +158,7 @@ describe.skipIf(!STACK)("a first look whose budget runs short", () => {
     if (accountId) await db.from("accounts").delete().eq("id", accountId);
   }, 30_000);
 
-  it("finishes, judges results pages with the room the research left, and plans", async () => {
+  it("finishes, reads results pages with the room the research left, and plans", async () => {
     const { outcome, events, ms, budget } = await firstLook(11);
     expect(outcome).not.toBe("hung");
     expect(ms).toBeLessThan(BOUND_MS);
@@ -163,9 +169,9 @@ describe.skipIf(!STACK)("a first look whose budget runs short", () => {
     expect(outcome !== "hung" && outcome.pendingDraft?.term).toBeTruthy();
     // The buyer test stopped short of the whole pool, at its share.
     expect(budget.stages.buyer_fit?.calls).toBeGreaterThan(0);
-    // Qualification was not starved: results pages were bought and judged.
-    expect(budget.stages.results_pages?.calls ?? 0).toBeGreaterThanOrEqual(5);
-    expect(budget.stages.judge?.calls ?? 0).toBeGreaterThanOrEqual(5);
+    // The plan was not starved: its one suggestion was asked and results pages were read.
+    expect(budget.stages.judge?.calls).toBe(1);
+    expect(budget.stages.results_pages?.calls ?? 0).toBeGreaterThanOrEqual(3);
     expect((last(events, "planning") as { planned?: unknown[] }).planned?.length ?? 0).toBeGreaterThanOrEqual(3);
     // The research never touched the draft's reserve.
     expect(budget.committedUsd).toBeLessThanOrEqual(1 - FIRST_LOOK_DRAFT_RESERVE_USD + 1e-6);

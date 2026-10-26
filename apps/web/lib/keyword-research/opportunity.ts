@@ -122,6 +122,12 @@ export interface Opportunity {
    * Absent when the rule agreed with the judge.
    */
   overruled?: string;
+  /**
+   * A first look's topic (lib/keyword-research/first-look-topics.ts): the
+   * score it was chosen on, 0-100 with its parts, kept on the row so the
+   * choice can be read and argued with.
+   */
+  firstLookScore?: { total: number; fit: number; demand: number; reach: number; page: number; demandMeasured: boolean; pageRead: boolean };
 }
 /**
  * A first look's qualification (lib/onboarding/pipeline.ts): approvals are

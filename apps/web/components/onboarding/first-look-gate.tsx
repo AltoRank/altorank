@@ -73,7 +73,6 @@ export function GateTop({
   workspaceId,
   canBuy,
   ending,
-  followUp,
   heading,
   lede,
   retry = null,
@@ -91,7 +90,6 @@ export function GateTop({
   workspaceId: string;
   canBuy: boolean;
   ending: SetupEnding;
-  followUp: boolean;
   /** For an ending with no article; an article's own heading follows it being written. */
   heading: string;
   lede: string;
@@ -245,7 +243,6 @@ export function GateTop({
             <SetupAsk
               ending={ending}
               canBuy={canBuy}
-              followUp={followUp}
               returnTo={afterCheckout}
               offer={{ interval, onInterval: setInterval, plan, onPlan: setPlan, facts: offer, fullArticle, buttonRef }}
               workspaceId={workspaceId}

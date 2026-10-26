@@ -1194,29 +1194,25 @@ export type NothingPlannedOpsEmail = {
   /** The account's own addresses, so the operator can write back. */
   contacts: string[];
   pool: EmptyPool | null;
-  /**
-   * Whether the account was before its trial, which is what decides what the
-   * customer saw: only that setup screen promises a reply within 24 hours.
-   * Null when the hold could not be read.
-   */
+  /** Whether the account was before its trial. Null when the hold could not be read. */
   preTrial: boolean | null;
 };
 
 /** What the customer was told, in the operator's words. */
 function nothingPlannedPromise(preTrial: boolean | null): string {
-  if (preTrial === true)
-    return "The account is before its trial. The customer was not asked for a card and was told the team would write to them within 24 hours.";
-  if (preTrial === false)
-    return "The account is not waiting on a trial (it has a plan, is an operator's, or the gate is off). It was never asked for a card and was not promised a reply; its setup screen says only that nothing cleared the bar yet.";
-  return "Whether the account is before its trial could not be read, so it is not known whether the customer was promised a reply within 24 hours.";
+  const said = "Its setup screen says nothing cleared the bar yet and that nothing was charged; no reply was promised.";
+  if (preTrial === true) return `The account is before its trial and was not asked for a card. ${said}`;
+  if (preTrial === false) return `The account is not waiting on a trial (it has a plan, is an operator's, or the gate is off). ${said}`;
+  return `Whether the account is before its trial could not be read. ${said}`;
 }
 
 /**
  * To the operators, not the customer: a first look finished and nothing on
  * the site cleared the bar for an article.
  *
- * The customer's screen says the team has been told and that they will hear
- * back by email within 24 hours, so somebody has to actually be told. The
+ * A first look no longer ends this way (it ranks its topics since
+ * 2026-10-25, lib/onboarding/first-look-plan.ts), so this is now the alarm
+ * for a run that still did, read from an older row. The
  * daily digest (lib/observability/digest.ts) would carry the warning too, but
  * a digest is a count, not a prompt to write to one person, and it can land
  * most of a day late. This carries what the follow-up needs: whose site,
@@ -1232,7 +1228,7 @@ export function renderNothingPlannedOps(a: NothingPlannedOpsEmail): RenderedEmai
       ]
     : ["The run did not record which stage emptied the pool."];
   return {
-    subject: a.preTrial === true ? `Follow up within 24 hours: nothing planned for ${site}` : `Nothing planned for ${site}`,
+    subject: `Nothing planned for ${site}`,
     preheader: pool?.summary ?? "A first look finished with nothing to plan.",
     footerNote: `Sent because this address is in ADMIN_EMAILS.`,
     html:

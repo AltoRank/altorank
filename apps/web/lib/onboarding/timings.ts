@@ -56,6 +56,10 @@ export const TIMED_STAGES = [
   "pages",
   "link_pool",
   "plan",
+  // A first look's ranking (./first-look-plan.ts): the rivals' sitemaps, the one suggestion call, the volumes for what it added.
+  "rival_pages",
+  "suggest",
+  "suggest_metrics",
   "results_pages",
   "judge",
   "first_topic",

@@ -42,19 +42,16 @@ import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import { generateArticle } from "@/lib/content/generate";
 import { draftHoldReason, planHold } from "@/lib/billing/trial-hold";
 import { getQuota, quotaExceededMessage } from "@/lib/billing/quota";
-import { recommendKeywords, pickNextKeyword } from "@/lib/seo/recommendations";
 import { seedKeywordsFromSearchConsole } from "@/lib/gsc/seed";
 import { hasDataForSEOCredentials } from "@/lib/seo/client";
 import { spendClient } from "@/lib/billing/default-spend";
 import { currentSpendScope, isBudgetRefusal, watchRefusals, withSpendScope, withStage } from "@/lib/billing/spend-scope";
 import { draftBudgetShort, draftCanBuyLookup, firstLookCeiling, firstLookResearchLeave, leavingRoom, openFirstLookBudget, type RunBudgetState } from "@/lib/billing/run-budget";
 import { FIRST_LOOK_QUALIFY_MS } from "./time-limits";
-import { poolMostlyUnanswered, type EmptyPool, type OnboardingArticle, type OnboardingEvent, type PhaseStatus } from "./events";
-import { readEmptyPool } from "./empty-pool";
-import { modelAvailable } from "@/lib/keyword-research/buyer-model";
-import { countScheduled, heldTopics, schedulePlan, fulfilPlannedEntry, type PlannedEntry } from "./plan";
+import type { OnboardingArticle, OnboardingEvent, PhaseStatus } from "./events";
+import { countScheduled, heldTopics, fulfilPlannedEntry, readPlannedEntries, type PlannedEntry } from "./plan";
+import { planFirstLook, type FirstLookPlanResult, type FirstLookSummary } from "./first-look-plan";
 import { recordPlanFunnel } from "./funnel-event";
-import { withScreened, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 import type { FirstLook } from "@/lib/keyword-research/opportunity";
 import { timed, withRunClock, type RunClock } from "./timings";
 import { withDeadline } from "./deadline";
@@ -489,140 +486,97 @@ async function runPhases(
     return { pendingDraft: null, fanOutSettled: Promise.resolve(), tailSettled: Promise.all([speedSettled, questionsSettled]).then(() => undefined, () => undefined) };
   }
 
-  // --- Phase 4: schedule the month, then write the first draft ------------
+  // --- Phase 4: choose the first topic, then write it ---------------------
+  //
+  // Ranked, not filtered (./first-look-plan.ts): one model call proposes the
+  // searches the site's readers type, each is scored, and the best one whose
+  // results page an article can win is planned. Until 2026-10-25 this was a
+  // chain of vetoes with no minimum, and a site whose readers are citizens
+  // rather than shoppers planned nothing twice and never saw an article.
+  //
+  // It plans from the business profile when discovery stored nothing too: a
+  // site that was read is a site with readers to write for. Not when the
+  // site could not be read, the research could not look, or there is no
+  // search data on this install - the keyword phase has said which.
   emit({ phase: "planning", status: "active" });
-  // Qualification - the plan's and the first topic's - ends by this time,
-  // with what it has judged (lib/onboarding/time-limits.ts): a production
-  // first look whose calls stopped answering waited 25 minutes on them.
+  // Reading results pages ends by this time, with what it has read
+  // (lib/onboarding/time-limits.ts): a production first look whose calls
+  // stopped answering once waited 25 minutes on them.
   firstLook.deadline = Date.now() + FIRST_LOOK_QUALIFY_MS;
-  // Four batches of up to fifteen results pages: about $0.25 at most, once.
-  const FIRST_LOOK_QUALIFY_BATCHES = 4;
   let plan: PlannedEntry[] = [];
-  // Where every candidate went (./funnel-event.ts): written down for every
-  // run, planned or not, so an empty plan can be explained from one row.
-  let planFunnel: TopicFunnel | null = null;
+  let chosen: FirstLookSummary | null = null;
+  let selectionByTerm: FirstLookPlanResult["selection"] = new Map();
   let planningDetail: string | null = null;
-  if (keywordsFound === 0) {
+  if (keywordsFound === 0 && !researchFoundNothing) {
     planningDetail = "Nothing to schedule until there are keywords.";
-    // Only when the research looked and found nothing: a site that could not
-    // be read is a setup that fell short, and says so.
-    const emptyPool = researchFoundNothing ? await emptyPoolOrNull(supabase, workspace.id) : null;
-    emit({
-      phase: "planning",
-      status: "skipped",
-      detail: planningDetail,
-      ...(emptyPool ? { emptyPool } : {}),
-    });
+    emit({ phase: "planning", status: "skipped", detail: planningDetail });
   } else {
     try {
       // An account that will be asked for a card gets one article on the
       // calendar and the rest held: the trial is what opens the month. The
       // planner decides that itself (lib/billing/trial-hold.ts), and this
       // asks it the same question only to word the screen. The held topics
-      // are qualified rows with no calendar entry, read back by heldTopics
+      // are briefed rows with no calendar entry, read back by heldTopics
       // for the locked rows the screen shows. Everyone else - self-host,
-      // operator, paying - gets the month as before.
+      // operator, paying - gets up to five, and the nightly top-up the rest.
       const hold = await planHold(supabase, workspace.id);
       const gated = hold !== "open";
-      plan = await timed("plan", () => schedulePlan(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, {
-        maxEntries: 5,
-        qualifyBatches: FIRST_LOOK_QUALIFY_BATCHES,
+      const weeklyLimit = workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE;
+      const result = await timed("plan", () => planFirstLook(supabase, workspace.id, {
         firstLook,
-        onFunnel: (f) => { planFunnel = f; },
+        maxEntries: 5,
+        weeklyLimit,
         // The searches being checked, named on the screen while it happens.
         // The reducer keeps them only while the phase is active.
-        onQualifyProgress: (p) =>
-          emit({ phase: "planning", status: "active", checking: { terms: p.checking, judged: p.judged, qualified: p.qualified } }),
+        onProgress: (p) => emit({ phase: "planning", status: "active", checking: { terms: p.checking, judged: p.judged, qualified: p.qualified } }),
         // Not on the way to the gate: kept alive with the run's tail.
         questionsInBackground: (pending) => { questionsSettled = pending.then(() => undefined, () => undefined); },
       }));
+      plan = result.plan;
+      chosen = result.summary;
+      selectionByTerm = result.selection;
       const held = gated && plan.length
-        ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [] }))
+        ? await heldTopics(supabase, workspace.id, weeklyLimit, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [] }))
         : { count: 0, dates: [] };
-      // Searches the right buyer makes that no article can win: the plan
-      // leaves them out, and the person should hear about them, because the
-      // page that wins them is theirs to build.
-      let needsPage = 0;
-      try {
-        const { count } = await supabase
-          .from("keywords")
-          .select("id", { count: "exact", head: true })
-          .eq("workspace_id", workspace.id)
-          .eq("opportunity->>cause", "needs_page");
-        needsPage = count ?? 0;
-      } catch {
-        // A count is a courtesy; a plan is not held up for it.
-      }
-      // A results page or a judge read that failed on the provider's side
-      // (a 402 from an exhausted balance, an outage) leaves its term
-      // `provider_error`. When nothing was planned and some were, the empty
-      // plan is ours, not the site's: on 2026-10-12 every results page
-      // answered 402 and the screen said "No keyword clear enough to plan
-      // yet", as if the site had no topics.
-      let providerFailed = 0;
-      if (plan.length === 0) {
-        try {
-          const { count } = await supabase
-            .from("keywords")
-            .select("id", { count: "exact", head: true })
-            .eq("workspace_id", workspace.id)
-            .eq("opportunity->>cause", "provider_error");
-          providerFailed = count ?? 0;
-        } catch {
-          // As above: the wording waits on nothing.
-        }
-      }
-      const pageNote = needsPage
-        ? ` ${needsPage} search${needsPage === 1 ? "" : "es"} your buyers make want${needsPage === 1 ? "s" : ""} a landing page rather than an article; see Keywords.`
-        : "";
       // A second run for a held account plans nothing because the calendar
       // already holds its one article, which is not the same news as "no
-      // keyword is clear enough".
-      const firstAlreadyPlanned = gated && plan.length === 0 && (await countScheduled(supabase, workspace.id)) > 0;
-      // The labels the plan carries, said in the line as well as on the cards.
+      // topic was found".
+      const firstAlreadyPlanned = gated && plan.length === 0 && (result.outcome === "full" || result.outcome === "spent") && (await countScheduled(supabase, workspace.id)) > 0;
+      // Said plainly, in the line as well as on the card: a topic chosen on
+      // fit with no volume reported is not dressed up as a measured one.
       const lower = plan.filter((p) => p.brief?.confidence === "lower").length;
       const unmeasured = plan.filter((p) => p.brief?.demand === "unmeasured").length;
-      // A top-of-funnel topic's reader has the problem, and is not shopping
-      // yet: "a buyer" would be the wrong word for them.
-      const who = plan.some((p) => p.brief?.funnel === "audience") ? "a reader you serve" : "a buyer";
       const labelNote = [
-        lower ? ` ${lower === plan.length ? (plan.length === 1 ? "It is" : "They are") : `${lower} of them ${lower === 1 ? "is" : "are"}`} lower confidence: fewer than three topics cleared the bar, and fewer results for ${lower === 1 ? "that search" : "those searches"} are articles than we ask for.` : "",
+        lower ? ` ${lower === plan.length ? (plan.length === 1 ? "It is" : "They are") : `${lower} of them ${lower === 1 ? "is" : "are"}`} lower confidence: fewer articles rank for ${lower === 1 ? "that search" : "those searches"} than we usually ask for.` : "",
         unmeasured && unmeasured === plan.length
-          ? ` No search volume is reported for ${plan.length === 1 ? "it" : "them"} in your market yet (unmeasured).`
+          ? ` No search volume is reported for ${plan.length === 1 ? "it" : "them"} in your market yet (unmeasured), so ${plan.length === 1 ? "it was" : "they were"} chosen for how well ${plan.length === 1 ? "it fits" : "they fit"} your readers.`
           : unmeasured
-            ? ` ${unmeasured} of them ${unmeasured === 1 ? "has" : "have"} no search volume reported in your market yet (unmeasured); measured topics come first.`
+            ? ` ${unmeasured} of them ${unmeasured === 1 ? "has" : "have"} no search volume reported in your market yet (unmeasured).`
             : "",
       ].join("");
       planningDetail =
         plan.length > 0
           ? held.count > 0
-            ? `Scheduled your first article. ${held.count} more topic${held.count === 1 ? " is" : "s are"} ready, each with ${who} and supporting search evidence; the trial opens them.${labelNote}${pageNote}`
-            : `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has ${who} and supporting search evidence.${labelNote}${pageNote}`
+            ? `Scheduled your first article. ${held.count} more topic${held.count === 1 ? " is" : "s are"} ready, each with a reader you serve and supporting search evidence; the trial opens them.${labelNote}`
+            : `Prepared ${plan.length} article${plan.length === 1 ? "" : "s"} for your calendar. Each topic has a reader you serve and supporting search evidence.${labelNote}`
           : firstAlreadyPlanned
-            ? `Your first article is already on the calendar; the rest of the plan opens with the trial.${pageNote}`
-            : providerFailed > 0
-              ? `Could not check the search results for ${providerFailed} search${providerFailed === 1 ? "" : "es"}: a problem on our side, not your site. Nothing was planned yet.`
-              : firstLook.timedOut
-                // The deadline, not the site: say so.
-                ? "Checking the search results took longer than a first look allows, so nothing was planned yet: a problem on our side, not your site."
-                : `No keyword clear enough to plan yet.${pageNote}`;
-      // Nothing cleared the bar: which stage emptied the pool, for the row
-      // and the operator (lib/onboarding/empty-pool.ts). Not for a held
-      // account whose one article is already on the calendar - that site has
-      // a plan - and not for one whose pre-trial article was already spent
-      // (a second site): the planner returned nothing before it judged
-      // anything, and the hold, not the pool, is why (review, 2026-09-29).
-      const emptyPool =
-        plan.length === 0 && !firstAlreadyPlanned && hold !== "spent" ? await emptyPoolOrNull(supabase, workspace.id) : null;
+            ? "Your first article is already on the calendar; the rest of the plan opens with the trial."
+            : result.outcome === "spent"
+              ? "Your first article was already written; the rest of the plan opens with the trial."
+              : result.outcome === "full"
+                ? "Your calendar already holds this month's articles."
+                : result.outcome === "provider"
+                  ? firstLook.timedOut
+                    // The deadline, not the site: say so.
+                    ? "Checking the search results took longer than a first look allows, so nothing was planned yet: a problem on our side, not your site."
+                    : "Our search data or our model did not answer, so nothing was planned yet: a problem on our side, not your site."
+                  : "Every search we checked is won by shops' or providers' own pages, not by articles, so no article was planned yet.";
       emit({
         phase: "planning",
         status: plan.length > 0 ? "done" : "skipped",
         detail: planningDetail,
         planned: plan.map((p) => ({ term: p.term, date: p.date, brief: p.brief })),
-        ...(emptyPool ? { emptyPool } : {}),
-        // Nothing planned because the results pages could not be read: most
-        // of the pool went unanswered, not one search among many judged.
-        ...(plan.length === 0 && !firstAlreadyPlanned && providerFailed > 0 && (!emptyPool || poolMostlyUnanswered(emptyPool)) ? { cause: "provider" as const } : {}),
+        ...(result.outcome === "provider" ? { cause: "provider" as const } : {}),
       });
     } catch (err) {
       planningDetail = message(err);
@@ -681,11 +635,11 @@ async function runPhases(
         // Not 25: the list is cut after scoring across every action, and a
         // site with 25 page-one rankings filled it with skips before any
         // writable term appeared (lib/onboarding/plan.ts has the same note).
-        const recs = await timed("first_topic", () => recommendKeywords(supabase, workspace.id, { limit: 1000, qualify: true, firstLook }));
         // The first day of the plan is what the person just watched get
         // scheduled; writing anything else would contradict the calendar.
-        const first = plan[0];
-        const next = (first && recs.find((r) => r.term === first.term)) ?? pickNextKeyword(recs);
+        // With nothing planned this run (a calendar already holding its
+        // first article), the earliest entry still waiting for one.
+        const next = await firstTopic(supabase, workspace.id, plan, selectionByTerm);
 
         // The week's related keywords, in one paid task instead of seven.
         //
@@ -741,7 +695,7 @@ async function runPhases(
             supabase,
             workspaceId: workspace.id,
             keyword: next.term,
-            keywordId: next.keywordId,
+            keywordId: next.keywordId ?? undefined,
             autonomous: true,
             selection: { reasons: next.reasons, score: next.score, difficulty: next.difficulty, volume: next.volume },
             relatedKeywords: relatedFor(next.term),
@@ -796,7 +750,7 @@ async function runPhases(
   // after the drafting phase, whose own qualification buys reads too. In
   // dispatch mode the draft is still to come and its reserve is on the row.
   const spend = readSpend ? await readSpend() : null;
-  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: withScreened(planFunnel, screened), planningDetail, spend, draftIncluded: firstDraft === "inline", timings: clock?.toJSON() ?? null });
+  await recordPlanFunnel({ runId, workspaceId: workspace.id, accountId: workspace.account_id, funnel: null, firstLook: chosen, screened: screened ?? null, planningDetail, spend, draftIncluded: firstDraft === "inline", timings: clock?.toJSON() ?? null });
 
   // The rest of the week waits for a person.
   //
@@ -829,22 +783,41 @@ async function runPhases(
   return { pendingDraft, fanOutSettled, tailSettled: Promise.all([speedSettled, questionsSettled]).then(() => undefined, () => undefined) };
 }
 
+/** The first draft's topic and why it was chosen, as the draft records it. */
+interface NextTopic {
+  term: string;
+  keywordId: string | null;
+  reasons: string[];
+  score: number;
+  difficulty: number | null;
+  volume: number | null;
+}
+
 /**
- * The empty pool, or null when it cannot be read. Null leaves the run
- * `partial`, the status it had before this existed, rather than claiming a
- * reason nobody could read; the failure is logged.
+ * What the first draft is written on: the first entry this run planned, or,
+ * when it planned none (its calendar already held the first article), the
+ * earliest entry still waiting for one. Null when there is neither.
  */
-async function emptyPoolOrNull(supabase: SupabaseClient, workspaceId: string): Promise<EmptyPool | null> {
-  // No judge this run: whatever verdicts the rows carry are some earlier
-  // run's, and "nothing cleared the bar" would be a claim this run did not
-  // test. The same precondition qualification itself has (opportunity.ts).
-  if (!modelAvailable() || !hasDataForSEOCredentials()) return null;
-  try {
-    return await readEmptyPool(supabase, workspaceId);
-  } catch (err) {
-    console.error(`[onboarding] empty-pool report for ${workspaceId}: ${message(err)}`);
-    return null;
-  }
+async function firstTopic(
+  supabase: SupabaseClient,
+  workspaceId: string,
+  plan: readonly PlannedEntry[],
+  selection: FirstLookPlanResult["selection"],
+): Promise<NextTopic | null> {
+  const entry = plan[0] ?? (await readPlannedEntries(supabase, workspaceId))[0];
+  if (!entry) return null;
+  const chosen = selection.get(entry.term);
+  if (chosen) return { term: entry.term, keywordId: entry.keywordId, reasons: chosen.reasons, score: chosen.score, difficulty: chosen.difficulty, volume: chosen.volume };
+  const { data } = await supabase.from("keywords").select("volume, difficulty, opportunity").eq("id", entry.keywordId).maybeSingle();
+  const row = data as { volume: number | null; difficulty: number | null; opportunity: { reason?: string; firstLookScore?: { total?: number } } | null } | null;
+  return {
+    term: entry.term,
+    keywordId: entry.keywordId,
+    reasons: row?.opportunity?.reason ? [row.opportunity.reason] : ["Planned on your calendar."],
+    score: row?.opportunity?.firstLookScore?.total ?? 0,
+    difficulty: row?.difficulty ?? null,
+    volume: row?.volume ?? null,
+  };
 }
 
 /**

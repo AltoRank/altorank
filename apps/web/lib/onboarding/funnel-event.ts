@@ -18,6 +18,8 @@ import { recordEvent, type SystemEvent } from "@/lib/observability/record";
 import { describeFunnel, funnelDiscrepancy, type TopicFunnel } from "@/lib/keyword-research/topic-funnel";
 import type { RunBudgetState } from "@/lib/billing/run-budget";
 import { timingSummary, type RunTimings } from "./timings";
+import type { FirstLookSummary } from "./first-look-plan";
+import { describeScore, HARD_REJECT_WORDS, type HardReject } from "@/lib/keyword-research/first-look-topics";
 
 export const FUNNEL_EVENT_SOURCE = "onboarding.funnel";
 
@@ -27,6 +29,14 @@ export interface PlanFunnelEventInput {
   accountId?: string | null;
   /** Null when the planner never read candidates (a spent trial hold, a full calendar, no keywords). */
   funnel: TopicFunnel | null;
+  /**
+   * A first look's ranking (./first-look-plan.ts): suggested, removed by
+   * which rule, results pages read, planned, and the chosen topic's score.
+   * Takes the place of `funnel`, which a first look no longer has.
+   */
+  firstLook?: FirstLookSummary | null;
+  /** What discovery's hygiene dropped before storing anything. */
+  screened?: { generalRival: number; offProfile: number } | null;
   /** The planning phase's own sentence, for a run with no funnel to show. */
   planningDetail?: string | null;
   /**
@@ -96,6 +106,30 @@ function funnelEventOf(input: PlanFunnelEventInput): SystemEvent {
   const spend = spendContext(input.spend);
   const timings = timingSummary(input.timings);
   const f = input.funnel;
+  const look = input.firstLook;
+  if (look) {
+    const removed = Object.entries(look.rejected).map(([k, n]) => `${n} ${HARD_REJECT_WORDS[k as HardReject]}`).join(", ");
+    return {
+      ...base,
+      level: look.planned > 0 ? "info" : "warn",
+      message: `First look: ${look.suggested} suggested${removed ? `, removed ${removed}` : ""} -> ${look.resultsRead} results page${look.resultsRead === 1 ? "" : "s"} read -> ${look.planned} planned${look.chosen ? `, chosen at ${describeScore(look.chosen.score, look.chosen.volume)}` : input.planningDetail ? `: ${input.planningDetail}` : ""}${spendSentence(spend, input.draftIncluded === true)}`,
+      context: {
+        runId: input.runId ?? null,
+        suggested: look.suggested,
+        removed: look.rejected,
+        resultsRead: look.resultsRead,
+        ...(look.resultsFailed ? { resultsFailed: look.resultsFailed } : {}),
+        ...(look.noEvidence ? { noEvidence: look.noEvidence } : {}),
+        planned: look.planned,
+        ready: look.ready,
+        modelCalls: look.modelCalls,
+        ...(look.chosen ? { chosenScore: look.chosen.score, chosenVolume: look.chosen.volume } : {}),
+        ...(input.screened && (input.screened.generalRival || input.screened.offProfile) ? { screened: input.screened } : {}),
+        ...(spend ? { spend } : {}),
+        ...(timings ? { timings } : {}),
+      },
+    };
+  }
   if (!f) {
     return {
       ...base,
