@@ -63,6 +63,19 @@ export function usageLine(quota: Quota, now: Date = new Date()): UsageLine {
   const exhausted = used >= limit;
   const fraction = limit === 0 ? 1 : Math.min(1, used / limit);
 
+  // An account that has had its trial and holds no plan drafts nothing
+  // (getQuota gives it remaining 0). This branch counted down `limit - used`
+  // regardless and told it "5 left ... the drafts themselves do not [need a
+  // plan]". Same condition as quotaExceededMessage: a lapsed card is not this.
+  if (reason === "no-plan" && quota.trialEnded && !quota.dunning) {
+    return {
+      figure: String(used),
+      sentence: `articles generated on this account. There is no plan on it any more, so nothing new is drafted. Choose a plan to start again; self-hosting is free and unmetered.`,
+      fraction: 1,
+      exhausted: true,
+    };
+  }
+
   if (reason === "no-plan") {
     // No reset date on this branch since 2026-09-07: the free drafts are a
     // one-time seven, `used` is the lifetime count, and "wait until Oct 1"

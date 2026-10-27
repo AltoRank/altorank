@@ -48,6 +48,8 @@ type SidebarProps = {
     figure: string;
     fraction: number;
     noPlan: boolean;
+    /** Had its trial, holds no plan: drafts nothing, so no free count to show. */
+    planEnded?: boolean;
     /** May start the seven-day trial: the CTA says so instead of "Choose a plan". */
     trialEligible?: boolean;
     /** "Trial ends in 3 days", while the plan is a trial. */
@@ -381,7 +383,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
                 without ever seeing a plan). Pluralised off the limit, which
                 went 1 -> 7 on 2026-09-06 and left this reading "Free draft"
                 above "0 / 7". */}
-            <span>{quota.noPlan ? plural(quota.limit, "free draft") : "Articles this month"}</span>
+            <span>{quota.planEnded ? "Articles drafted" : quota.noPlan ? plural(quota.limit, "free draft") : "Articles this month"}</span>
             <span className="font-mono tabular-nums">{quota.figure}</span>
           </div>
           <div className="h-1 rounded-full bg-panel-2 overflow-hidden">

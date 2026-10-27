@@ -326,6 +326,7 @@ export default async function DashboardLayout({
                   // cannot disagree with the page it links to.
                   ...(({ figure, fraction }) => ({ figure, fraction: fraction ?? 0 }))(usageLine(quota)),
                   noPlan: quota.reason === "no-plan",
+                  planEnded: quota.reason === "no-plan" && Boolean(quota.trialEnded) && !quota.dunning,
                   trialEligible: Boolean(quota.trialEligible),
                   // The interval is on the Stripe subscription, which the layout
                   // does not fetch, so this names the plan rather than a price

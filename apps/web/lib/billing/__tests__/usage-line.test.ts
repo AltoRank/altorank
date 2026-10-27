@@ -55,6 +55,14 @@ describe("usageLine, free account", () => {
     expect(line.fraction).toBe(1);
   });
 
+  it("counts nothing down once the trial has ended (getQuota allows none)", () => {
+    const line = usageLine({ limit: 7, used: 2, remaining: 0, reason: "no-plan", plan: null, trialEnded: true }, NOW);
+    expect(line.figure).toBe("2");
+    expect(line.exhausted).toBe(true);
+    expect(line.sentence).not.toMatch(/left|do not/);
+    expect(line.sentence).toMatch(/nothing new is drafted/);
+  });
+
   it("does not read '150 / 7' after a cancellation", () => {
     // getQuota drops a cancelled account to FREE_DRAFTS while `used` stays
     // its lifetime count, so the two numbers stop being a ratio.
