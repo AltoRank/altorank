@@ -82,6 +82,7 @@ import { signOut } from "@/app/actions/auth";
 import { TRIAL_DAYS } from "@/lib/stripe";
 import type { TrialOfferFacts } from "@/lib/billing/trial-offer";
 import posthog from "posthog-js";
+import { EDITOR_FITS_QUERY, firstArticleReturn } from "@/lib/billing/checkout-return";
 
 export type Destination = { id: string; name: string; description: string | null };
 
@@ -1482,10 +1483,13 @@ function RunScreen({
     );
   }
 
+  // "Open my first draft" opens that draft, not /review (the filtered
+  // Articles list), on a screen the editor fits; a phone gets the dashboard,
+  // whose Next up links it, as after checkout (firstArticleReturn).
   const next = planned.length > 0
     ? { href: "/content", label: "Open my plan" }
     : draft
-      ? { href: "/review", label: "Open my first draft" }
+      ? { href: `/content/${draft.id}`, label: "Open my first draft", articleId: draft.id }
       : { href: "/dashboard", label: "Open the dashboard" };
   return (
     <div className="min-h-screen bg-bg">
@@ -1539,7 +1543,16 @@ function RunScreen({
                   invocations now and nothing on this page can cancel it.
                   Coming back to /onboarding resumes the screen. */}
               {finished ? (
-                <Button variant="accent" onClick={() => router.push(next.href)}>
+                <Button
+                  variant="accent"
+                  onClick={() =>
+                    router.push(
+                      "articleId" in next
+                        ? firstArticleReturn(next.articleId, window.matchMedia?.(EDITOR_FITS_QUERY).matches ?? true)
+                        : next.href,
+                    )
+                  }
+                >
                   {next.label}
                 </Button>
               ) : (
