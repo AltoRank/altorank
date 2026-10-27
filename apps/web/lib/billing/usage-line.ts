@@ -66,14 +66,13 @@ export function usageLine(quota: Quota, now: Date = new Date()): UsageLine {
   // An account that has had its trial and holds no plan drafts nothing
   // (getQuota gives it remaining 0). This branch counted down `limit - used`
   // regardless and told it "5 left ... the drafts themselves do not [need a
-  // plan]". Same condition as quotaExceededMessage: a lapsed card is not this.
-  if (reason === "no-plan" && quota.trialEnded && !quota.dunning) {
-    return {
-      figure: String(used),
-      sentence: `articles generated on this account. There is no plan on it any more, so nothing new is drafted. Choose a plan to start again; self-hosting is free and unmetered.`,
-      fraction: 1,
-      exhausted: true,
-    };
+  // plan]". A failed card lands here too, and is named as the card it is,
+  // as the spend gate does (pastDueMessage): it has a plan to get back to.
+  if (reason === "no-plan" && quota.trialEnded) {
+    const sentence = quota.dunning
+      ? `articles generated on this account. Drafting is paused: the ${quota.dunning.firstCharge ? "first payment after the trial" : "last renewal payment"} did not go through. Update the card on the Billing page and it starts again.`
+      : `articles generated on this account. There is no plan on it any more, so nothing new is drafted. Choose a plan to start again; self-hosting is free and unmetered.`;
+    return { figure: String(used), sentence, fraction: 1, exhausted: true };
   }
 
   if (reason === "no-plan") {

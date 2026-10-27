@@ -48,7 +48,7 @@ type SidebarProps = {
     figure: string;
     fraction: number;
     noPlan: boolean;
-    /** Had its trial, holds no plan: drafts nothing, so no free count to show. */
+    /** Had its trial, holds no plan or its card failed: drafts nothing, so no free count to show. */
     planEnded?: boolean;
     /** May start the seven-day trial: the CTA says so instead of "Choose a plan". */
     trialEligible?: boolean;
