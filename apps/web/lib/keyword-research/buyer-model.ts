@@ -65,6 +65,12 @@ export interface AskOptions {
    * unchanged: the two blocks are the prompt, split in two.
    */
   cachePrefix?: number;
+  /**
+   * Told why the reply stopped (`"max_tokens"` when it was cut off). The
+   * reply text alone cannot say: a cut-off answer and a refused one both
+   * fail to parse, and only one of them is the provider's fault.
+   */
+  onStop?: (reason: string | null) => void;
 }
 
 /**
@@ -196,6 +202,7 @@ export async function askStructured(
     // after it, and a paid answer is not lost to a slow write.
     if (options.spend) await atMost(recordSpend(options.spend.supabase, { ...entry, workspaceId: options.spend.workspaceId }), BUDGET_RPC_TIMEOUT_MS);
     else if (currentSpendScope()) recordSpendByDefault(entry);
+    options.onStop?.(response.stop_reason ?? null);
     return replyText(response.content);
   } catch (err) {
     // A call that ran out of time may still have been run and billed: its

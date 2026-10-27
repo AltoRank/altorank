@@ -570,7 +570,9 @@ async function runPhases(
                     // The deadline, not the site: say so.
                     ? "Checking the search results took longer than a first look allows, so nothing was planned yet: a problem on our side, not your site."
                     : "Our search data or our model did not answer, so nothing was planned yet: a problem on our side, not your site."
-                  : "Every search we checked is won by shops' or providers' own pages, not by articles, so no article was planned yet.";
+                  : result.outcome === "unreadable"
+                    ? "Our model's list of topics came back cut short, before it named one we could use, so nothing was planned yet: a problem on our side, not your site."
+                    : "Every search we checked is won by shops' or providers' own pages, not by articles, so no article was planned yet.";
       emit({
         phase: "planning",
         status: plan.length > 0 ? "done" : "skipped",
