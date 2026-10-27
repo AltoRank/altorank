@@ -3,6 +3,7 @@
 import type { SiteDetails } from "@/lib/onboarding/output-settings";
 import { Icons } from "@/components/ui";
 import { Field, inputClass } from "./fields";
+import { withExampleUrl } from "@/lib/onboarding/wizard-rules";
 
 /**
  * Sitemap, blog root, three example articles. Shared by the wizard's "Where
@@ -64,9 +65,7 @@ export function SiteFields({
             value={v}
             placeholder={i === 0 ? `https://${domain}/blog/an-article-you-like` : "https://…"}
             onChange={(e) => {
-              const next = [...examples];
-              next[i] = e.target.value;
-              setSite({ ...site, exampleArticleUrls: next.filter(Boolean) });
+              setSite({ ...site, exampleArticleUrls: withExampleUrl(examples, i, e.target.value) });
             }}
           />
         ))}

@@ -6,6 +6,7 @@ import {
   localeLine,
   preTickRival,
   siteSummary,
+  withExampleUrl,
   withPendingCompetitor,
   wizardExamples,
 } from "../wizard-rules";
@@ -81,6 +82,14 @@ describe("the collapsed lines", () => {
       badge: "found",
     });
     expect(siteSummary({ sitemapUrl: "", blogRootUrl: "", exampleArticleUrls: [] }, true, "acme.example").badge).toBe("looking");
+    expect(siteSummary({ sitemapUrl: "", blogRootUrl: "", exampleArticleUrls: ["", "x"] }, false, "acme.example").line).toBe("1 example post");
+  });
+
+  it("keeps an example typed into the second field in the second field", () => {
+    expect(withExampleUrl(["", "", ""], 1, "h")).toEqual(["", "h"]);
+    expect(withExampleUrl(["", "h", ""], 1, "ht")).toEqual(["", "ht"]);
+    expect(withExampleUrl(["a", "h", ""], 1, "")).toEqual(["a"]);
+    expect(withExampleUrl(["", "", ""], 0, "")).toEqual([]);
   });
 });
 
