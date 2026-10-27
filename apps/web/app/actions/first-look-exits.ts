@@ -30,7 +30,9 @@ import { wantsCategory } from "@/lib/email/categories";
 import { sendFirstArticleLink } from "@/lib/email/first-look-exits";
 import { getSimulation } from "@/lib/dev/simulation";
 
-export type ExitAnswer = { ok: true; email: string; already?: boolean } | { ok: false; message: string };
+// `retry`: asking again can work (the send failed, the article was still
+// being written), so the button stays beside the message.
+export type ExitAnswer = { ok: true; email: string; already?: boolean } | { ok: false; message: string; retry?: boolean };
 
 const OPTED_OUT = "You have turned off emails about drafts, so we will not send one. This page keeps your article: come back to it any time.";
 
@@ -68,7 +70,7 @@ export async function emailFirstArticle(workspaceId: string): Promise<ExitAnswer
   if (!article) return { ok: false, message: "There is no article to send yet." };
   // Sent once per article: never spent on an outline whose text is still
   // being written (the screen offers this only once it is written).
-  if (article.state !== "written") return { ok: false, message: "It is still being written. Ask again once it is." };
+  if (article.state !== "written") return { ok: false, message: "It is still being written. Ask again once it is.", retry: true };
   const out = await sendFirstArticleLink(createServiceClient(), who.email, {
     domain,
     title: article.title,
@@ -79,7 +81,7 @@ export async function emailFirstArticle(workspaceId: string): Promise<ExitAnswer
   if (out.sent > 0) return { ok: true, email: who.email };
   if (out.capped) return { ok: false, message: "We have sent you a few of these today already. Try again tomorrow." };
   if (out.skipped > 0) return { ok: true, email: who.email, already: true };
-  return { ok: false, message: "The email could not be sent just now. Try again in a minute." };
+  return { ok: false, message: "The email could not be sent just now. Try again in a minute.", retry: true };
 }
 
 /** "Email me when it's ready": whether the written-article email will reach this owner. */
