@@ -21,9 +21,15 @@ type Props = {
    * there, so for a scheduled article this picker is "Change date".
    */
   shipsAt?: string | null;
+  /**
+   * Unsaved edits in the editor. Scheduling, queueing and moving the date all
+   * ship the saved version, so they wait for Save like Approve and Publish do.
+   * Cancelling a schedule ships nothing and stays available.
+   */
+  locked?: boolean;
 };
 
-export function SchedulePicker({ article, cadence, shipsAt = null }: Props) {
+export function SchedulePicker({ article, cadence, shipsAt = null, locked = false }: Props) {
   const router = useRouter();
   const [expanded, setExpanded] = useState(false);
   const [date, setDate] = useState("");
@@ -51,7 +57,7 @@ export function SchedulePicker({ article, cadence, shipsAt = null }: Props) {
             onClick={() => {
               setExpanded(true);
             }}
-            disabled={isPending}
+            disabled={isPending || locked}
           >
             Change date
           </Button>
@@ -84,6 +90,7 @@ export function SchedulePicker({ article, cadence, shipsAt = null }: Props) {
             onDateChange={setDate}
             onTimeChange={setTime}
             isPending={isPending}
+            locked={locked}
             onSchedule={() => {
               if (!date) return toast.error("Pick a date");
               startTransition(async () => {
@@ -133,6 +140,7 @@ export function SchedulePicker({ article, cadence, shipsAt = null }: Props) {
           onDateChange={setDate}
           onTimeChange={setTime}
           isPending={isPending}
+          locked={locked}
           onSchedule={() => {
             if (!date) return toast.error("Pick a date");
             startTransition(async () => {
@@ -169,7 +177,7 @@ export function SchedulePicker({ article, cadence, shipsAt = null }: Props) {
               }
             });
           }}
-          disabled={isPending}
+          disabled={isPending || locked}
         >
           Add to queue
         </Button>
@@ -184,6 +192,7 @@ function ScheduleForm({
   onDateChange,
   onTimeChange,
   isPending,
+  locked = false,
   onSchedule,
 }: {
   date: string;
@@ -191,6 +200,7 @@ function ScheduleForm({
   onDateChange: (v: string) => void;
   onTimeChange: (v: string) => void;
   isPending: boolean;
+  locked?: boolean;
   onSchedule: () => void;
 }) {
   return (
@@ -213,7 +223,7 @@ function ScheduleForm({
         size="sm"
         className="w-full justify-center"
         onClick={onSchedule}
-        disabled={isPending}
+        disabled={isPending || locked}
       >
         {isPending ? "Scheduling…" : "Confirm"}
       </Button>

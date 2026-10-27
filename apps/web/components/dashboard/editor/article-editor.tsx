@@ -1034,7 +1034,7 @@ export function ArticleEditor({
                   </button>
                 </>
               )}
-              <SchedulePicker article={article} cadence={cadence ?? null} shipsAt={shipsAt} />
+              <SchedulePicker article={article} cadence={cadence ?? null} shipsAt={shipsAt} locked={unsaved} />
               {/* Approving takes the next slot now; this is the way out of
                   waiting for it, which the Publish button used to be. */}
               {article.status === "scheduled" && !needsPlan && !retryable && (
