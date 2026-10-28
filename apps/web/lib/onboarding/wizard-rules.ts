@@ -95,16 +95,31 @@ export function firstSentence(text: string | null | undefined): string {
 export type SiteBadge = "found" | "looking" | "optional";
 
 /**
+ * The example-article fields after typing `value` into field `i`. Each field
+ * keeps its slot while editing: filtering out empties here moved text typed
+ * into field 2 up into an empty field 1, mid-word. Only trailing empties go;
+ * saveSiteDetails drops the rest.
+ */
+export function withExampleUrl(fields: string[], i: number, value: string): string[] {
+  const next = [...fields];
+  next[i] = value;
+  while (next.length && !next[next.length - 1]) next.pop();
+  return next;
+}
+
+/**
  * "Where your content lives": what its collapsed line says. Optional, so a
  * site with no blog is said plainly and calmly - most small businesses have
  * none - never as a warning.
  */
 export function siteSummary(site: SiteDetails, looking: boolean, domain: string): { line: string; badge: SiteBadge } {
   if (looking) return { line: `Looking for a blog on ${domain}…`, badge: "looking" };
+  // A field left empty above a filled one is kept as "" while editing.
+  const examples = site.exampleArticleUrls.filter(Boolean).length;
   const parts = [
     site.blogRootUrl ? "Found your blog" : null,
     site.sitemapUrl ? (site.blogRootUrl ? "your sitemap" : "Found your sitemap") : null,
-    site.exampleArticleUrls.length ? `${site.exampleArticleUrls.length} example ${site.exampleArticleUrls.length === 1 ? "post" : "posts"}` : null,
+    examples ? `${examples} example ${examples === 1 ? "post" : "posts"}` : null,
   ].filter(Boolean);
   if (parts.length) return { line: parts.join(", "), badge: "found" };
   return { line: "No blog yet, and that is fine. You choose where articles go when you publish.", badge: "optional" };
