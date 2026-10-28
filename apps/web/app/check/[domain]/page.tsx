@@ -200,7 +200,7 @@ export default async function CheckPage(props: Props) {
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           <a href={signupHref} className="inline-flex h-10 items-center rounded-md bg-accent px-4 text-[13.5px] font-medium text-white hover:bg-accent-2">
-            Fix these with AltoRank
+            {failing.length === 0 ? "Add it to AltoRank" : failing.length === 1 ? "Fix this with AltoRank" : "Fix these with AltoRank"}
           </a>
           {OSS_REPO_PUBLIC && (
             <a
