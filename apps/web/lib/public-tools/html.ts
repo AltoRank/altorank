@@ -5,8 +5,8 @@
 // No DOM and no JavaScript, on purpose: what these tools report is what a
 // crawler that does not render sees. Tag matching tolerates attributes in
 // any order, either quote style, unquoted values and a `>` inside a quoted
-// value, which the older regexes in lib/tools/generate-health.ts do not
-// (they need `name` before `content`). Comments are removed first, so a
+// value, which the regexes of the old free-tools generators (removed
+// 2026-10-27) did not. Comments are removed first, so a
 // commented-out tag is not reported as present.
 
 import { decode, decodeEntities, stripTags } from "@/lib/audit/html-utils";

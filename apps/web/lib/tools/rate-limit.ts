@@ -3,10 +3,9 @@
 // ---------------------------------------------------------------------------
 //
 // Named for the free tools it was written for. Those tools now live on the
-// marketing site (altorank.co/tools, twelve of them); this app has no /tools
-// route, so app/actions/{brief,capture,clusters,gap,health,meta-gen,serp-tool}
-// .ts and components/tools/* are unreachable here and their calls into this
-// file are dead. See the wiring map for the removal decision.
+// marketing site (altorank.co/tools) and lib/public-tools; the old in-app
+// forms and their server actions were deleted on 2026-10-27. This file and
+// client-ip.ts stay: they are live.
 //
 // The callers that do run: /api/growth-plan and /api/growth-plan/lead,
 // /api/public/readiness, /check/[domain], the password-reset page, and the
