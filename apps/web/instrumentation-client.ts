@@ -19,6 +19,11 @@ if (!posthogProjectToken || !posthogHost) {
       `PostHog analytics are off: ${missingVariable} is not set. Set NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN and NEXT_PUBLIC_POSTHOG_HOST to send product analytics; nothing else depends on them.`,
     );
   }
+} else if (window.location.pathname.startsWith("/b/")) {
+  // A hosted blog (app/b/[slug]) is the customer's site, read by their
+  // readers, not by anyone using AltoRank: our analytics, cookies and replay
+  // have no business there. Once these pages are also served on the
+  // customer's own host, this check must match that host too.
 } else {
   posthog.init(posthogProjectToken, {
     api_host: posthogHost,

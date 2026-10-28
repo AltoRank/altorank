@@ -1,0 +1,98 @@
+/* The hosted blog (app/b/[slug]). The app's tokens and type (globals.css:
+   Archivo, JetBrains Mono, warm neutrals), with the site's own brand colour
+   as the one accent. The accent marks things (a dot, a rule, an underline)
+   and never sets text, so a pale brand colour cannot make a page unreadable
+   in either theme. Mobile first; one reading column. */
+
+.hosted-blog {
+  --blog-accent: var(--ink);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  border-top: 3px solid var(--blog-accent);
+}
+.hosted-blog a { color: inherit; text-decoration: none; }
+
+.hb-wrap { width: 100%; max-width: 44rem; margin: 0 auto; padding: 0 20px; box-sizing: border-box; }
+
+.hb-header { border-bottom: 1px solid var(--line-soft); }
+.hb-header-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 56px; }
+.hb-brand { display: inline-flex; align-items: center; gap: 10px; min-width: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.hb-brand-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hb-dot { flex: none; width: 9px; height: 9px; border-radius: 999px; background: var(--blog-accent); }
+.hosted-blog .hb-out { flex: none; font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); }
+.hosted-blog .hb-out:hover { color: var(--ink); }
+
+.hb-main { flex: 1; padding-top: 40px; padding-bottom: 64px; }
+
+.hb-intro { margin-bottom: 28px; }
+.hb-eyebrow { margin: 0 0 6px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.hb-title { margin: 0; font-size: 30px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; }
+
+.hb-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line-soft); }
+.hb-list > li { border-bottom: 1px solid var(--line-soft); }
+.hb-item { display: flex; flex-direction: column; gap: 6px; padding: 22px 0; }
+.hb-date { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); }
+.hb-item-title { margin: 0; font-size: 19px; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; }
+.hb-item:hover .hb-item-title { text-decoration: underline; text-decoration-color: var(--blog-accent); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.hb-excerpt { margin: 0; font-size: 15px; line-height: 1.55; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.hb-empty { color: var(--ink-3); }
+
+.hb-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 28px; font-size: 14px; }
+.hb-pager a { font-weight: 500; }
+.hb-pager a:hover { text-decoration: underline; text-decoration-color: var(--blog-accent); text-underline-offset: 4px; }
+.hb-pager-count { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); }
+
+.hb-footer { display: flex; justify-content: space-between; gap: 16px; padding-top: 20px; padding-bottom: 28px; border-top: 1px solid var(--line-soft); font-size: 13px; color: var(--ink-3); }
+.hb-footer a:hover { color: var(--ink); }
+
+/* The article */
+.hb-crumbs { margin-bottom: 20px; font-size: 13px; color: var(--ink-3); }
+.hb-crumbs a:hover { color: var(--ink); }
+.hb-article-title { margin: 0; font-size: 30px; line-height: 1.15; font-weight: 600; letter-spacing: -0.02em; text-wrap: balance; }
+.hb-lede { margin: 14px 0 0; font-size: 18px; line-height: 1.5; color: var(--ink-2); }
+.hb-hero { display: block; width: 100%; height: auto; margin-top: 28px; border-radius: var(--radius-lg); }
+
+.hb-body { margin-top: 28px; font-size: 17px; line-height: 1.72; overflow-wrap: anywhere; }
+.hb-body > :first-child { margin-top: 0; }
+/* The dateline renderPublishedBody puts first (lib/content/trust.ts). */
+.hb-body > p:first-child { font-family: var(--font-mono); font-size: 12.5px; color: var(--ink-3); }
+.hb-body h2 { margin: 2em 0 0.6em; font-size: 23px; line-height: 1.3; font-weight: 600; letter-spacing: -0.015em; }
+.hb-body h3 { margin: 1.7em 0 0.5em; font-size: 19px; line-height: 1.35; font-weight: 600; }
+.hb-body h4 { margin: 1.5em 0 0.4em; font-size: 17px; font-weight: 600; }
+.hb-body p { margin: 1em 0; }
+.hb-body ul { margin: 1em 0; padding-left: 1.3em; list-style: disc; }
+.hb-body ol { margin: 1em 0; padding-left: 1.5em; list-style: decimal; }
+.hb-body li { margin: 0.35em 0; padding-left: 0.2em; }
+.hb-body li > p { margin: 0; }
+.hb-body li::marker { color: var(--ink-3); }
+.hb-body a { text-decoration: underline; text-decoration-color: var(--blog-accent); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.hb-body a:hover { text-decoration-thickness: 3px; }
+.hb-body a:not([href]) { text-decoration: none; }
+.hb-body strong, .hb-body b { font-weight: 600; }
+.hb-body blockquote { margin: 1.4em 0; padding-left: 1em; border-left: 3px solid var(--blog-accent); color: var(--ink-2); }
+.hb-body img, .hb-body svg, .hb-body video, .hb-body iframe { max-width: 100%; height: auto; border-radius: var(--radius); }
+.hb-body figure { margin: 1.6em 0; }
+.hb-body figcaption { margin-top: 8px; font-size: 13px; color: var(--ink-3); }
+.hb-body hr { margin: 2em 0; border: 0; border-top: 1px solid var(--line); }
+.hb-body code { font-family: var(--font-mono); font-size: 0.88em; padding: 0.1em 0.35em; border-radius: 4px; background: var(--panel-2); }
+.hb-body pre { overflow-x: auto; padding: 14px 16px; border-radius: var(--radius); background: var(--panel); font-size: 14px; line-height: 1.55; }
+.hb-body pre code { padding: 0; background: none; }
+.hb-body table { display: block; max-width: 100%; margin: 1.4em 0; overflow-x: auto; -webkit-overflow-scrolling: touch; border-collapse: collapse; font-size: 14.5px; line-height: 1.55; }
+.hb-body th, .hb-body td { min-width: 7.5rem; padding: 8px 12px; border: 1px solid var(--line); text-align: left; vertical-align: top; overflow-wrap: normal; }
+.hb-body th { background: var(--panel-2); font-weight: 600; }
+
+@media (min-width: 640px) {
+  .hb-wrap { padding: 0 32px; }
+  .hb-main { padding-top: 64px; padding-bottom: 96px; }
+  .hb-title { font-size: 38px; }
+  .hb-item { padding: 26px 0; }
+  .hb-item-title { font-size: 21px; }
+  .hb-article-title { font-size: 40px; }
+  .hb-lede { font-size: 19px; }
+  .hb-body { font-size: 18px; }
+  .hb-body h2 { font-size: 26px; }
+  .hb-body h3 { font-size: 20px; }
+}
