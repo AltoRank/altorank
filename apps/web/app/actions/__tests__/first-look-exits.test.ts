@@ -65,8 +65,15 @@ describe("Email me this article", () => {
 
   it("sends nothing for an article still being written: the one send is kept for the text", async () => {
     m.article = { id: "a1", title: "Acme kits", state: "outlined" };
-    expect(await emailFirstArticle("ws1")).toEqual({ ok: false, message: "It is still being written. Ask again once it is." });
+    expect(await emailFirstArticle("ws1")).toEqual({ ok: false, message: "It is still being written. Ask again once it is.", retry: true });
     expect(m.send).not.toHaveBeenCalled();
+  });
+
+  it("says a failed send can be asked again, and a capped one cannot", async () => {
+    m.send.mockResolvedValue({ sent: 0, skipped: 0, failed: 1 });
+    expect(await emailFirstArticle("ws1")).toMatchObject({ ok: false, retry: true });
+    m.send.mockResolvedValue({ sent: 0, skipped: 1, failed: 0, capped: true });
+    expect(await emailFirstArticle("ws1")).not.toHaveProperty("retry");
   });
 
   it("has nothing to send without an article", async () => {

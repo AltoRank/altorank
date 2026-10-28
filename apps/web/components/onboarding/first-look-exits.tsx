@@ -32,6 +32,10 @@ function ExitButton({
   className?: string;
 }) {
   const [said, setSaid] = useState<{ line: string; ok: boolean } | null>(null);
+  // A request that never reached an answer (network, server error), or an
+  // answer that says to ask again, keeps the button beside its line: the line
+  // says "try again", so there has to be something to press.
+  const [failed, setFailed] = useState<string | null>(null);
   const [pending, start] = useTransition();
   if (said) {
     return (
@@ -40,24 +44,35 @@ function ExitButton({
       </p>
     );
   }
-  return (
+  const button = (
     <button
       type="button"
       disabled={pending}
       onClick={() =>
         start(async () => {
+          setFailed(null);
           try {
             const answer = await run();
-            setSaid({ line: answerLine(answer, sentLine, alreadyLine), ok: answer.ok });
+            if (!answer.ok && answer.retry) setFailed(answer.message);
+            else setSaid({ line: answerLine(answer, sentLine, alreadyLine), ok: answer.ok });
           } catch {
-            setSaid({ line: "That did not go through. Try again in a minute.", ok: false });
+            setFailed("That did not go through. Try again in a minute.");
           }
         })
       }
-      className={`text-[12.5px] text-ink-2 underline decoration-line underline-offset-[3px] hover:text-ink disabled:opacity-50 ${className}`}
+      className={`text-[12.5px] text-ink-2 underline decoration-line underline-offset-[3px] hover:text-ink disabled:opacity-50 ${failed ? "" : className}`}
     >
       {pending ? "One moment…" : label}
     </button>
+  );
+  if (!failed) return button;
+  return (
+    <span className={`inline-flex flex-wrap items-baseline gap-x-2 ${className}`}>
+      {button}
+      <span role="status" className="text-[12.5px] leading-[1.5] text-ink-3">
+        {failed}
+      </span>
+    </span>
   );
 }
 
