@@ -29,7 +29,15 @@ export function Dialog({
 
   useEffect(() => setMounted(true), []);
 
-  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  // Callers pass inline handlers, so `onOpenChange` is a new function on every
+  // render. Read through a ref so the focus effect below runs when the dialog
+  // opens, not on every keystroke inside it: re-running it moved focus back to
+  // the first input 100ms after each character typed into a later field.
+  const onOpenChangeRef = useRef(onOpenChange);
+  useEffect(() => {
+    onOpenChangeRef.current = onOpenChange;
+  });
+  const close = useCallback(() => onOpenChangeRef.current(false), []);
 
   // Focus trap + ESC
   useEffect(() => {
