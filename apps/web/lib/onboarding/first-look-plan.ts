@@ -33,6 +33,7 @@ import {
   parseSuggestions,
   rejectBeforeResults,
   rejectOnResults,
+  salvageTopics,
   scoreTopic,
   selectionReasons,
   SUGGEST_MAX_TOKENS,
@@ -98,6 +99,8 @@ export type FirstLookOutcome =
   | "full"
   /** The model or the results provider did not answer: ours, not the site's. */
   | "provider"
+  /** The model answered, but cut off or unreadable before a whole topic: ours too, and not an outage. */
+  | "unreadable"
   /** Every candidate read was removed by a hard rule. */
   | "none";
 
@@ -242,14 +245,24 @@ export async function planFirstLook(
     });
     const ask = opts.ask ?? askStructured;
     summary.modelCalls++;
+    let stop: string | null = null;
     const raw = await timed("suggest", () => withStage("judge", () => ask("keyword-research/first-look-topics", prompt, {
       maxTokens: SUGGEST_MAX_TOKENS,
       minTokens: SUGGEST_MIN_TOKENS,
       tier: "decision",
       schema: SUGGEST_SCHEMA,
       cachePrefix: suggestCachePrefix(prompt),
+      onStop: (reason) => { stop = reason; },
     })));
     topics = parseSuggestions(extractJson<unknown>(raw, "{", "}") ?? extractJson<unknown>(raw, "[", "]"));
+    // A reply cut off at its token limit is not JSON, but the topics it
+    // finished are still topics: a run that lost all twenty to the last
+    // one's missing brace planned nothing (2026-10-27).
+    if (!topics.length && raw) topics = parseSuggestions(salvageTopics(raw));
+    if (stop === "max_tokens") console.warn(`[first look] topic suggestions cut off at their token limit; kept ${topics.length}`);
+    // An answer that came back and still named no topic is not the
+    // provider being down: it is not retried as one, nor described as one.
+    if (!topics.length && raw) return nothing("unreadable");
   }
   summary.suggested = topics.length;
   if (!topics.length) return nothing("provider");

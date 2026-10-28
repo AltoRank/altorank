@@ -8,6 +8,7 @@ import {
   reachScore,
   rejectBeforeResults,
   rejectOnResults,
+  salvageTopics,
   scoreTopic,
   selectionReasons,
   suggestCachePrefix,
@@ -81,6 +82,22 @@ describe("parseSuggestions", () => {
   it("is empty, not an error, for an unusable reply", () => {
     expect(parseSuggestions(null)).toEqual([]);
     expect(parseSuggestions({ topics: "no" })).toEqual([]);
+  });
+});
+
+describe("salvageTopics", () => {
+  const second = { ...TOPIC, query: "who qualifies for a housing grant", why: 'Says "eligible" {twice}, with braces' };
+  const whole = JSON.stringify({ topics: [TOPIC, second, { ...TOPIC, query: "grant deadlines" }] });
+  it("keeps the topics a cut-off reply finished, and not the one it stopped inside", () => {
+    const cut = whole.slice(0, whole.indexOf("grant deadlines") + 5);
+    const kept = parseSuggestions(salvageTopics(cut));
+    expect(kept.map((t) => t.query)).toEqual(["how to apply for a housing grant", "who qualifies for a housing grant"]);
+    expect(kept[1].why).toBe('Says "eligible" {twice}, with braces');
+  });
+  it("reads a whole reply the same as the parser, and nothing from no reply", () => {
+    expect(salvageTopics(whole)).toHaveLength(3);
+    expect(salvageTopics(null)).toEqual([]);
+    expect(salvageTopics('{"topics": [{"query": "how')).toEqual([]);
   });
 });
 

@@ -183,6 +183,18 @@ describe("planFirstLook", () => {
     expect(failing.summary.resultsFailed).toBe(1);
   });
 
+  it("plans from the topics a cut-off reply finished, and calls a reply with none unreadable, not an outage", async () => {
+    const whole = JSON.stringify({ topics: [topic("housing grant documents"), topic("housing grant appeal")] });
+    const cut = whole.slice(0, whole.indexOf("housing grant appeal") + 8);
+    const ask = vi.fn(async (_op: string, _p: string, o: { onStop?: (r: string | null) => void }) => { o.onStop?.("max_tokens"); return cut; });
+    const out = await planFirstLook(setup().db, "ws1", { ...base(), ask, serp: async (t) => articles(t) });
+    expect(out.outcome).toBe("planned");
+    expect(out.summary.suggested).toBe(1);
+    expect(out.plan.map((p) => p.term)).toEqual(["housing grant documents"]);
+    const none = await planFirstLook(setup().db, "ws1", { ...base(), ask: vi.fn(async () => '{"topics": [{"query": "housing') });
+    expect(none.outcome).toBe("unreadable");
+  });
+
   it("plans nothing new once the trial's one article is spent or the calendar is full", async () => {
     hold.mockResolvedValue("spent");
     const ask = reply([topic("housing grant documents")]);

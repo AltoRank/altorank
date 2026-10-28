@@ -175,8 +175,12 @@ export const SUGGEST_SCHEMA: Record<string, unknown> = {
   },
 };
 
-/** About 120 output tokens a topic, with room. */
-export const SUGGEST_MAX_TOKENS = 4_000;
+/**
+ * Twice what twenty topics take. Measured at about 200 output tokens a
+ * topic, not the 120 first guessed: on 2026-10-27 a reply used all 4,000,
+ * stopped inside the last topic, and the run planned nothing.
+ */
+export const SUGGEST_MAX_TOKENS = 8_000;
 export const SUGGEST_MIN_TOKENS = 2_000;
 
 /** The same search, however it was spaced or cased. */
@@ -186,8 +190,7 @@ const text = (v: unknown, max: number) => (typeof v === "string" ? v.trim().repl
 
 /**
  * The topics in a reply, each complete or dropped, first phrasing of a
- * search kept. Never throws: an unusable reply is an empty list, which the
- * caller treats as the model not answering.
+ * search kept. Never throws: an unusable reply is an empty list.
  */
 export function parseSuggestions(raw: unknown): SuggestedTopic[] {
   const list = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? (raw as { topics?: unknown }).topics : null;
@@ -218,6 +221,46 @@ export function parseSuggestions(raw: unknown): SuggestedTopic[] {
     if (!fit || !kind || !topic.reader || !topic.job || !topic.offering || !topic.why) continue;
     seen.add(query);
     out.push(topic);
+  }
+  return out;
+}
+
+/**
+ * The complete topics of a reply cut off before its JSON closed: each topic
+ * object that closed, in order, and nothing of the one it stopped inside.
+ * Whole JSON is `extractJson`'s job; this is only for what it cannot parse.
+ */
+export function salvageTopics(raw: string | null): unknown[] {
+  if (!raw) return [];
+  const key = raw.indexOf('"topics"');
+  const start = raw.indexOf("[", key === -1 ? 0 : key);
+  if (start === -1) return [];
+  const out: unknown[] = [];
+  let depth = 0;
+  let from = -1;
+  let inString = false;
+  let escaped = false;
+  for (let i = start + 1; i < raw.length; i++) {
+    const c = raw[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') inString = true;
+    else if (c === "{") {
+      if (depth++ === 0) from = i;
+    } else if (c === "}") {
+      if (--depth < 0) break;
+      if (depth === 0) {
+        try {
+          out.push(JSON.parse(raw.slice(from, i + 1)));
+        } catch {
+          // a malformed topic is dropped like an incomplete one
+        }
+      }
+    } else if (c === "]" && depth === 0) break;
   }
   return out;
 }
