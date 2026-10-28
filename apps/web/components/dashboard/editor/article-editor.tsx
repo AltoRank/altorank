@@ -370,6 +370,10 @@ export function ArticleEditor({
   );
   // Typed-but-unapplied edits count as one change: Save takes them too.
   const changes = pendingCount(pending) + (dirty ? 1 : 0);
+  // Approve, publish and retry send the saved version, not what is on screen.
+  // The header hides its shortcut while this is true; the rail disables its
+  // buttons and says why.
+  const unsaved = changes > 0 || saving;
   const getHtml = useCallback(() => editor?.getHTML() ?? "", [editor]);
 
   const handleAskAI = useCallback(async () => {
@@ -906,6 +910,11 @@ export function ArticleEditor({
             sections, a screen below the fold on a laptop. */}
         <div ref={publishRef} className="scroll-mt-14">
         <SidebarSection title="Publish to">
+          {unsaved && !foundOnSite && article.status !== "live" && (
+            <p className="mb-2.5 text-[12px] leading-[1.45] text-ink-2">
+              Save your edits first. Approving and publishing send the saved version.
+            </p>
+          )}
           {foundOnSite ? (
             <FoundOnSiteNotice
               view={foundOnSite}
@@ -995,7 +1004,7 @@ export function ArticleEditor({
                     size="sm"
                     className="w-full justify-center mt-2"
                     onClick={handleRetry}
-                    disabled={publishing}
+                    disabled={publishing || unsaved}
                   >
                     {publishing ? "Retrying…" : "Retry publish"}
                   </Button>
@@ -1008,7 +1017,7 @@ export function ArticleEditor({
                       size="sm"
                       className="w-full justify-center mt-3"
                       onClick={handlePublish}
-                      disabled={publishing}
+                      disabled={publishing || unsaved}
                     >
                       {publishing
                         ? destination?.publishMode === "draft" ? "Saving…" : "Publishing…"
@@ -1025,7 +1034,7 @@ export function ArticleEditor({
                   </button>
                 </>
               )}
-              <SchedulePicker article={article} cadence={cadence ?? null} shipsAt={shipsAt} />
+              <SchedulePicker article={article} cadence={cadence ?? null} shipsAt={shipsAt} locked={unsaved} />
               {/* Approving takes the next slot now; this is the way out of
                   waiting for it, which the Publish button used to be. */}
               {article.status === "scheduled" && !needsPlan && !retryable && (
@@ -1034,7 +1043,7 @@ export function ArticleEditor({
                   variant="ghost"
                   className="w-full justify-center mt-2"
                   onClick={handlePublish}
-                  disabled={publishing}
+                  disabled={publishing || unsaved}
                 >
                   {publishing
                     ? destination?.publishMode === "draft" ? "Saving…" : "Publishing…"
@@ -1100,7 +1109,7 @@ export function ArticleEditor({
                 size="sm"
                 className="w-full justify-center mt-3"
                 onClick={handleApprove}
-                disabled={publishing}
+                disabled={publishing || unsaved}
               >
                 {publishing ? "Approving…" : shipsAt ? `Approve · ships ${shipsAt}` : "Approve for publishing"}
               </Button>
