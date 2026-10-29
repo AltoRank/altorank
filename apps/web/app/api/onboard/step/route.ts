@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
 import { ownedCheckoutSession, recordOnboardingStep } from "@/lib/onboarding/step-events";
+import { recordGateVisit } from "@/lib/onboarding/gate-visits";
 import { isClientStep } from "@/lib/onboarding/step-names";
 import { ARTICLE_STEPS, CHECKOUT_STEPS, stepProps, uuidOrUndefined } from "@/lib/onboarding/step-props";
 import { getImpersonation } from "@/lib/auth/impersonation";
@@ -18,7 +19,8 @@ import { getImpersonation } from "@/lib/auth/impersonation";
 // may name its Stripe session, kept only when it is the account's own.
 // Written with the service role, once per step per workspace
 // (lib/onboarding/step-events.ts), with only the props on the step's lists
-// (lib/onboarding/step-props.ts).
+// (lib/onboarding/step-props.ts). `gate_shown` also records the day's visit
+// (lib/onboarding/gate-visits.ts), sent on every load of the gate.
 // Answers 204 whatever happens to the write: the caller does not wait for it
 // and has nothing to do with an error.
 
@@ -68,6 +70,12 @@ export async function POST(request: NextRequest) {
   // is the funnel's headline number, so a browser that says it earlier is
   // not believed. The run row is the server's (076: no client write).
   if (body.step === "gate_shown") {
+    // The visit first, whatever the run row says yet: the gate is on screen
+    // (the browser says this step only once the offer is), and the run's tail
+    // can still read "running" when it is. Dropped with the step, a first
+    // visit went unrecorded and the next day's return was not greeted
+    // (lib/onboarding/gate-visits.ts). Once per site per day.
+    await recordGateVisit(createServiceClient(), { workspaceId: workspace.id as string, accountId: workspace.account_id as string });
     const { data: run } = await supabase
       .from("onboarding_runs")
       .select("status")

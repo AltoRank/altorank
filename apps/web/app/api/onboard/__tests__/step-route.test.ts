@@ -33,6 +33,8 @@ vi.mock("@/lib/onboarding/step-events", () => ({
   recordOnboardingStep: (...a: unknown[]) => record(...(a as [])),
   ownedCheckoutSession: (...a: [unknown, string, unknown]) => owned(...a),
 }));
+const visit = vi.hoisted(() => vi.fn(async () => true));
+vi.mock("@/lib/onboarding/gate-visits", () => ({ recordGateVisit: (...a: unknown[]) => visit(...(a as [])) }));
 const impersonation = vi.hoisted(() => ({ value: null as null | { targetEmail: string } }));
 vi.mock("@/lib/auth/impersonation", () => ({ getImpersonation: async () => impersonation.value }));
 
@@ -53,6 +55,7 @@ beforeEach(() => {
   article.value = null;
   record.mockClear();
   owned.mockClear();
+  visit.mockClear();
 });
 
 describe("POST /api/onboard/step", () => {
@@ -93,6 +96,18 @@ describe("POST /api/onboard/step", () => {
     // Other steps are not held to the run.
     await post({ step: "wizard_opened" });
     expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  it("records the day's visit to the gate even while the run's tail still says running, and only for the gate", async () => {
+    run.value = { status: "running" };
+    await post({ step: "gate_shown" });
+    expect(visit).toHaveBeenCalledWith({ service: true }, { workspaceId: "ws1", accountId: "acc1" });
+    visit.mockClear();
+    await post({ step: "offer_seen" });
+    expect(visit).not.toHaveBeenCalled();
+    impersonation.value = { targetEmail: "owner@acme-agency.example" };
+    await post({ step: "gate_shown" });
+    expect(visit).not.toHaveBeenCalled();
   });
 
   it("carries a timed step's milliseconds and nothing the browser makes up", async () => {

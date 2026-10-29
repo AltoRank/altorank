@@ -16,24 +16,30 @@
 // is typed), the trial offer directly under it, then why this article. The
 // setup log, the calendar and the site report are folded below (the caller
 // renders them between `GateTop` and `GateBottom`, so the run's poller is
-// never remounted), and the one question about the person is last.
+// never remounted). The "where did you hear about us" question left the gate
+// on 2026-10-29: the Home card asks it once the trial has started.
+//
+// A return (a recorded visit 12 hours ago or more, lib/onboarding/
+// gate-visits.ts) or a cancelled checkout gets its own first screen: what
+// happened ("Welcome back. Your article is saved."), the article's title
+// with a way to read it, then the offer, and the article folded under them.
+// A return used to be shown the same wall as a first visit, with nothing to
+// say it had been here before (Codex review, 2026-10-28).
 //
 // One poller (./use-first-article-live.ts) answers "is it written yet" for
 // the heading, the card and the reader together; when the body lands the
 // page is read again for the real word count and sources.
 
-import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { saveAttribution } from "@/app/actions/attribution";
+import { Icons } from "@/components/ui";
 import { StartTrialButton } from "@/components/billing/start-trial-button";
 import type { FirstArticleCard } from "@/lib/onboarding/first-article";
 import type { OnboardingPlanned } from "@/lib/onboarding/events";
 import { asksWithOffer, type SetupEnding } from "@/lib/onboarding/setup-retry";
 import { TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
-import { stickyOfferLine, type TrialOfferFacts } from "@/lib/billing/trial-offer";
+import { priceLine, type TrialOfferFacts } from "@/lib/billing/trial-offer";
 import { EDITOR_FITS_QUERY, firstArticleReturn } from "@/lib/billing/checkout-return";
-import { EMPTY_ATTRIBUTION, attributionComplete, type AttributionDraft } from "./attribution-picker";
-import { ATTRIBUTION_NOTE_MAX, ATTRIBUTION_SOURCES } from "@/lib/attribution";
 import { FirstArticleCardView, type PendingFirstArticle } from "./first-article-card";
 import { EmailMeArticle } from "./first-look-exits";
 import { SetupAsk } from "./setup-ask";
@@ -69,6 +75,17 @@ export function articleHeading(written: boolean, fullArticle: boolean, held = 0)
 
 const sameTerm = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
+/** Why the gate opens on its return screen: a recorded earlier visit, or a checkout just cancelled. */
+export type GateWelcome = "returning" | "cancelled";
+
+/** The return screen's first line. A cancelled checkout says that first, whenever it was. */
+export function welcomeLine(welcome: GateWelcome): string {
+  return welcome === "cancelled" ? "Your trial hasn't started. Nothing was charged." : "Welcome back. Your article is saved.";
+}
+
+/** The sticky bar's height before it has been measured: one line of price over a full-width button. */
+const BAR_HEIGHT_GUESS = 104;
+
 export function GateTop({
   workspaceId,
   canBuy,
@@ -85,6 +102,8 @@ export function GateTop({
   notice = null,
   offer,
   held = 0,
+  nextArticles = [],
+  welcome = null,
   startedAt = null,
 }: {
   workspaceId: string;
@@ -108,6 +127,10 @@ export function GateTop({
   offer: TrialOfferFacts;
   /** Topics the plan found and held for the trial, counted: what "more" may promise. */
   held?: number;
+  /** The site's next topics by name, for the offer's "Your next articles" (lib/onboarding/next-articles.ts). */
+  nextArticles?: string[];
+  /** Opens on the return screen: the person has been here before, or just cancelled checkout. */
+  welcome?: GateWelcome | null;
   /** When the run started, on this browser's clock: the one clock carries on into the card. */
   startedAt?: number | null;
 }) {
@@ -143,6 +166,11 @@ export function GateTop({
   const settling = saved && fullArticle && !live.refused && (!live.html || revealing);
   const written = saved && !settling;
   const words = hasArticle && ending === "article" ? articleHeading(written, fullArticle, held) : { heading, lede };
+  // The return screen needs an article to come back to: a finished one,
+  // read off the row, so it does not flicker while the text loads.
+  const returnView = welcome !== null && ending === "article" && firstArticle?.state === "written";
+  const [articleOpen, setArticleOpen] = useState(!returnView);
+  const articleRef = useRef<HTMLDetailsElement | null>(null);
   const keyword = firstArticle?.keyword ?? pending?.keyword ?? "";
   const brief = keyword ? planned.find((p) => sameTerm(p.term, keyword))?.brief ?? null : null;
   useRefreshWhileRefused(live.refused && hasArticle && !saved, router);
@@ -154,26 +182,31 @@ export function GateTop({
   // So is the plan: Managed unless the owner switches to Agency in the box.
   const [plan, setPlan] = useState<SelfServePlan>("starter");
 
-  // The slim bar keeps the trial a click away whenever the box's own button
-  // is off screen - the whole time the article is being written, since the
-  // button sits under a text that grows (#10), and once it is written, after
-  // the person has read into the article or gone past the button. Shown
-  // whenever the button was merely below the fold, it covered the foot of a
-  // finished article from the gate's first frame (review, 2026-10-12).
+  // The slim bar keeps the trial a click away whenever the offer is off
+  // screen - the whole time the article is being written, since the offer
+  // sits under a text that grows (#10), and once it is written, after the
+  // person has read into the article or gone past the offer. It is hidden
+  // whenever any of the offer's box is in view above the bar, so there is
+  // never a second Start trial button on screen: watching only the box's
+  // button, 40px clear of the edge, showed both on a phone (Codex review,
+  // 2026-10-28). The bottom of the screen the bar covers - its height, safe
+  // area included, as measured - does not count as in view.
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const buttonRef = useRef<HTMLDivElement | null>(null);
-  const [buttonSeen, setButtonSeen] = useState<"in" | "below" | "above">("below");
+  const offerRef = useRef<HTMLDivElement | null>(null);
+  const barRef = useRef<HTMLDivElement | null>(null);
+  const [barHeight, setBarHeight] = useState(BAR_HEIGHT_GUESS);
+  const [offerSeen, setOfferSeen] = useState<"in" | "below" | "above">("below");
   const [intoArticle, setIntoArticle] = useState(false);
   useEffect(() => {
-    const button = buttonRef.current;
+    const offer = offerRef.current;
     const io =
-      button && typeof IntersectionObserver !== "undefined"
+      offer && typeof IntersectionObserver !== "undefined"
         ? new IntersectionObserver(
-            ([entry]) => setButtonSeen(entry.isIntersecting ? "in" : entry.boundingClientRect.top < 0 ? "above" : "below"),
-            { rootMargin: "0px 0px -40px 0px" },
+            ([entry]) => setOfferSeen(entry.isIntersecting ? "in" : entry.boundingClientRect.top < 0 ? "above" : "below"),
+            { rootMargin: `0px 0px -${Math.round(barHeight)}px 0px` },
           )
         : null;
-    if (io && button) io.observe(button);
+    if (io && offer) io.observe(offer);
     const measure = () => setIntoArticle((cardRef.current?.getBoundingClientRect().top ?? 1) < 0);
     measure();
     window.addEventListener("scroll", measure, { passive: true });
@@ -181,20 +214,63 @@ export function GateTop({
       io?.disconnect();
       window.removeEventListener("scroll", measure);
     };
-  }, [hasArticle, ending, canBuy]);
+  }, [hasArticle, ending, canBuy, barHeight]);
   const writing = hasArticle && !written;
-  const showBar = buttonSeen !== "in" && (writing || buttonSeen === "above" || intoArticle);
+  const showBar = offerSeen !== "in" && (writing || offerSeen === "above" || intoArticle);
   const asks = asksWithOffer(ending) && canBuy;
   const afterCheckout = firstArticleReturn(firstArticle?.id, useEditorFits());
+  // The bar's real height, once it is on screen: the line can wrap, and the
+  // safe area under a phone's home bar is part of what it covers.
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setBarHeight(bar.getBoundingClientRect().height || BAR_HEIGHT_GUESS));
+    ro.observe(bar);
+    return () => ro.disconnect();
+  }, [asks, showBar]);
+  const title = firstArticle?.title || firstArticle?.keyword || "";
+  const readArticle = () => {
+    setArticleOpen(true);
+    // After the fold has opened, so the scroll lands on its content.
+    requestAnimationFrame(() => articleRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
 
   // Said once to a screen reader when the gate replaces the loading screen,
   // and again when the article is written: the heading itself is not live,
   // and a live region filled before it is mounted is not read out.
   const [announced, setAnnounced] = useState("");
+  const shownHeading = returnView && welcome ? welcomeLine(welcome) : words.heading;
   useEffect(() => {
-    const t = setTimeout(() => setAnnounced(words.heading), 400);
+    const t = setTimeout(() => setAnnounced(shownHeading), 400);
     return () => clearTimeout(t);
-  }, [words.heading]);
+  }, [shownHeading]);
+
+  // The ask, held in view and scrolling on its own when taller than the
+  // screen: Stripe's form opens here at about 820px, and a pinned rail that
+  // tall hid its Start trial button until the article ran out. On the return
+  // screen it comes before the article, in the page as well as on a phone's
+  // screen; from lg it is the rail on the right either way.
+  const rail = (
+    <aside aria-label="Your trial" className={`flex flex-col gap-4 ${returnView ? "lg:order-last" : ""} lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:w-[var(--gate-rail)] lg:shrink-0 lg:overflow-y-auto lg:overscroll-contain [&>*]:shrink-0`}>
+      <div className="scroll-mt-6" id="start-trial" ref={offerRef}>
+        <SetupAsk
+          ending={ending}
+          canBuy={canBuy}
+          returnTo={afterCheckout}
+          offer={{ interval, onInterval: setInterval, plan, onPlan: setPlan, facts: offer, nextArticles }}
+          workspaceId={workspaceId}
+          // The soft exit, under the button and quieter than it: a link
+          // back by email, never the text (UX audit 2026-10-12, #3). Only
+          // once there is an article to come back to: offered from the
+          // gate's first frame it mailed "yours to read" for an outline,
+          // and the one send per article was spent before the text existed
+          // (review, 2026-10-12). While it is written, the long-run "Email
+          // me when it's ready" covers that need.
+          below={canBuy && hasArticle && written ? <EmailMeArticle workspaceId={workspaceId} className="mt-3 block w-full text-center" /> : null}
+        />
+      </div>
+    </aside>
+  );
 
   return (
     <>
@@ -202,10 +278,28 @@ export function GateTop({
       <p role="status" className="sr-only">
         {announced}
       </p>
-      <div className="mb-6 max-w-[640px]">
-        <h1 className="m-0 mb-1.5 text-[22px] font-semibold leading-tight [text-wrap:balance]">{words.heading}</h1>
-        <p className="m-0 text-[13.5px] leading-[1.6] text-ink-2 [text-wrap:balance]">{words.lede}</p>
-      </div>
+      {returnView && welcome ? (
+        <div className="mb-4 max-w-[640px]" data-testid="gate-return">
+          <h1 className="m-0 text-[22px] font-semibold leading-tight [text-wrap:balance]">{welcomeLine(welcome)}</h1>
+          <div className="mt-3 rounded-[10px] border border-line bg-panel px-4 py-3">
+            <p className="m-0 text-[11px] uppercase tracking-wide text-ink-3">Your first article</p>
+            <p className="m-0 mt-1 text-[15.5px] font-semibold leading-snug text-ink [text-wrap:balance]">{title}</p>
+            <button
+              type="button"
+              onClick={readArticle}
+              className="mt-2 inline-flex items-center gap-1 text-[13px] font-medium text-accent-ink underline decoration-accent/40 underline-offset-[3px] hover:decoration-accent"
+            >
+              Read your article
+              <Icons.arrow size={12} />
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="mb-6 max-w-[640px]">
+          <h1 className="m-0 mb-1.5 text-[22px] font-semibold leading-tight [text-wrap:balance]">{words.heading}</h1>
+          <p className="m-0 text-[13.5px] leading-[1.6] text-ink-2 [text-wrap:balance]">{words.lede}</p>
+        </div>
+      )}
       {/* Two columns from lg: the article, and beside it the ask and why this
           article, held in view while the article scrolls. The card form opens
           in that rail (Embedded Checkout, inline), beside the article and never
@@ -213,9 +307,38 @@ export function GateTop({
           the slim bar both open the same checkout in a sheet: one form at a
           time (components/billing/trial-offer.tsx INLINE_CHECKOUT_QUERY). */}
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
+        {returnView && rail}
         <div className="flex min-w-0 flex-col gap-4 lg:flex-1">
           {retry}
-          {hasArticle && (
+          {hasArticle && returnView && (
+            // The article, saved and whole, folded under the offer: opened
+            // by "Read your article" or its own summary. Never regenerated:
+            // it is the same card over the same row.
+            <details
+              ref={articleRef}
+              open={articleOpen}
+              onToggle={(e) => setArticleOpen(e.currentTarget.open)}
+              className="scroll-mt-4 rounded-[10px] border border-line bg-panel [&[open]]:border-transparent [&[open]]:bg-transparent"
+            >
+              <summary className="cursor-pointer list-none px-4 py-3 text-[13px] font-medium text-ink [&::-webkit-details-marker]:hidden [[open]>&]:sr-only">
+                Show the full article
+              </summary>
+              <div ref={cardRef}>
+                <FirstArticleCardView
+                  article={firstArticle}
+                  pending={null}
+                  brief={brief}
+                  live={live}
+                  readable={fullArticle}
+                  startedAt={startedAt}
+                  workspaceId={canBuy ? workspaceId : undefined}
+                  settling={settling}
+                  onRevealing={setRevealing}
+                />
+              </div>
+            </details>
+          )}
+          {hasArticle && !returnView && (
             <div ref={cardRef}>
               <FirstArticleCardView
                 article={firstArticle}
@@ -235,55 +358,24 @@ export function GateTop({
               2026-10-18, #4). */}
           <TopicBriefs planned={planned} only={keyword || undefined} />
         </div>
-        {/* Held in view, and scrolling on its own when taller than the screen:
-            Stripe's form opens here at about 820px, and a pinned rail that
-            tall hid its Start trial button until the article ran out. */}
-        <aside aria-label="Your trial" className="flex flex-col gap-4 lg:sticky lg:top-6 lg:max-h-[calc(100vh-3rem)] lg:w-[var(--gate-rail)] lg:shrink-0 lg:overflow-y-auto lg:overscroll-contain [&>*]:shrink-0">
-          <div className="scroll-mt-6" id="start-trial">
-            <SetupAsk
-              ending={ending}
-              canBuy={canBuy}
-              returnTo={afterCheckout}
-              offer={{ interval, onInterval: setInterval, plan, onPlan: setPlan, facts: offer, fullArticle, buttonRef }}
-              workspaceId={workspaceId}
-              // The soft exit, under the button and quieter than it: a link
-              // back by email, never the text (UX audit 2026-10-12, #3). Only
-              // once there is an article to come back to: offered from the
-              // gate's first frame it mailed "yours to read" for an outline,
-              // and the one send per article was spent before the text existed
-              // (review, 2026-10-12). While it is written, the long-run "Email
-              // me when it's ready" covers that need.
-              below={canBuy && hasArticle && written ? <EmailMeArticle workspaceId={workspaceId} className="mt-3 block w-full text-center" /> : null}
-            />
-          </div>
-        </aside>
+        {!returnView && rail}
       </div>
       {asks && showBar && (
-        <div className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-panel/95 backdrop-blur lg:hidden" data-testid="trial-bar">
-          <div className="mx-auto flex max-w-[680px] items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
-            <p className="m-0 min-w-0 text-[12.5px] leading-[1.4] text-ink-2">
-              {/* With the text on the page the lede has said what the trial
-                  is for; the bar keeps to the price. */}
-              {!fullArticle && <span className="hidden sm:inline">{stickyLine(written, fullArticle)} </span>}
-              <span>{stickyOfferLine(interval, plan)}</span>
-            </p>
-            <StartTrialButton returnTo={afterCheckout} plan={plan} interval={interval} surface="sticky_bar" className="shrink-0" />
+        <div
+          ref={barRef}
+          className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-panel/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+          data-testid="trial-bar"
+        >
+          {/* The price line over the button, as in the box: never a button
+              without what it costs right above it. */}
+          <div className="mx-auto max-w-[680px] px-4 pb-2.5 pt-2 sm:px-6">
+            <p className="m-0 text-[12px] leading-[1.4] text-ink-2">{priceLine(interval, offer, plan)}</p>
+            <StartTrialButton returnTo={afterCheckout} plan={plan} interval={interval} surface="sticky_bar" className="mt-1.5 w-full justify-center" />
           </div>
         </div>
       )}
     </>
   );
-}
-
-/**
- * The slim bar's sentence. With the full article on the gate the person is
- * reading it already, so the trial is for what they cannot do here: edit,
- * approve and publish (the lede and the lock line say the same). With it
- * off, the trial is what opens the text.
- */
-export function stickyLine(written: boolean, fullArticle: boolean): string {
-  if (fullArticle) return "Edit, approve and publish it with the trial.";
-  return written ? "Read it in full, approve it and publish it." : "Read it in full once it is written.";
 }
 
 /**
@@ -320,79 +412,4 @@ function useRefreshWhileRefused(active: boolean, router: { refresh: () => void }
     }, 20_000);
     return () => clearInterval(timer);
   }, [active, router]);
-}
-
-/**
- * The one question about the person, asked once, and last: after the
- * article, the ask and everything folded under them. A single select, not
- * ten brand tiles: the tiles were the loudest block on the page and competed
- * with the trial button (UX audit 2026-10-12). Picking an answer saves it;
- * "Other" asks for a few words first. Nothing on the screen waits for it.
- */
-export function AttributionAsk() {
-  const [value, setValue] = useState<AttributionDraft>(EMPTY_ATTRIBUTION);
-  const [saved, setSaved] = useState(false);
-  const [, start] = useTransition();
-  function save(next: AttributionDraft) {
-    if (!next.source || !attributionComplete(next)) return;
-    const source = next.source;
-    start(async () => {
-      try {
-        await saveAttribution(source, next.note);
-        setSaved(true);
-      } catch {
-        // Optional by design: a failed save is not a thing to interrupt the
-        // trial ask with.
-      }
-    });
-  }
-  if (saved) {
-    return <p className="m-0 text-center text-[12.5px] text-ink-3">Thanks. That is the one thing we asked about you.</p>;
-  }
-  return (
-    <div className="flex flex-col gap-2 text-[12.5px] text-ink-2 sm:flex-row sm:items-center sm:justify-center">
-      <label htmlFor="attribution-source" className="shrink-0">
-        Optional: where did you hear about us?
-      </label>
-      <select
-        id="attribution-source"
-        className="rounded-[7px] border border-line bg-panel px-2.5 py-1.5 text-base text-ink sm:text-[12.5px]"
-        value={value.source ?? ""}
-        onChange={(e) => {
-          const source = (e.target.value || null) as AttributionDraft["source"];
-          const next = { source, note: "" };
-          setValue(next);
-          if (source !== "other") save(next);
-        }}
-      >
-        <option value="">Choose one</option>
-        {ATTRIBUTION_SOURCES.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.label}
-          </option>
-        ))}
-      </select>
-      {value.source === "other" && (
-        <form
-          className="flex gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            save(value);
-          }}
-        >
-          <input
-            aria-label="Where? A few words is plenty."
-            className="min-w-0 flex-1 rounded-[7px] border border-line bg-panel px-2.5 py-1.5 text-base text-ink sm:text-[12.5px]"
-            placeholder="Where?"
-            maxLength={ATTRIBUTION_NOTE_MAX}
-            value={value.note}
-            onChange={(e) => setValue({ source: "other", note: e.target.value })}
-          />
-          <button type="submit" className="rounded-[7px] border border-line bg-bg px-2.5 py-1.5 text-[12.5px] text-ink hover:bg-panel-2">
-            Save
-          </button>
-        </form>
-      )}
-    </div>
-  );
 }

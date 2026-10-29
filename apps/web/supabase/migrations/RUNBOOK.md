@@ -15,7 +15,7 @@ pre-flight query below and each is `if not exists` / `if exists` throughout, so
 re-running one is safe — except 072, whose `create policy` statements are not
 guarded (see its note below).
 
-**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **102** (rows stay put, and the member-role guard), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **110** (Shopify installations), **111** (member scope guards), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server), **114** (blog keys), **115** (Search Console sync outcome), **116** (how often a paid door may be pressed, the Operations totals, and the customer's own last sign-in across "View as") and **117** (refresh engine bookkeeping) and **118** (Shopify billing), each with its section at the end. **101, 104, 105, 106, 107, 108, 110 and 118 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113, 114, 115, 116 and 117 go in AFTER**; **102 and 112 go in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
+**Head is 085**, plus **091** (public tool usage), **093** (draft claims), **094** (found on site), **095** (site pages extract), **097** (article text server-only), **098** (fact check unchecked), **099** (trial gate server writes), **100** (pre-trial spend bounds), **101** (account creator), **102** (rows stay put, and the member-role guard), **104** (onboarding nothing planned; 103 is taken by an open branch), **105** (publish_log found on site), **106** (run budgets), **107** (first-look timings, the streamed first body and the owed-body record), **108** (the first body's counts-only progress), **109** (approval written by server), **110** (Shopify installations), **111** (member scope guards), **112** (article images served by path, not listed), **113** (who pushed a reviewed rewrite, written by the server), **114** (blog keys), **115** (Search Console sync outcome), **116** (how often a paid door may be pressed, the Operations totals, and the customer's own last sign-in across "View as") and **117** (refresh engine bookkeeping) and **118** (Shopify billing) and **121** (pre-trial gate visits; 119 and 120 are taken by open branches), each with its section at the end. **101, 104, 105, 106, 107, 108, 110, 118 and 121 go in BEFORE their code is deployed; 097, 099, 100, 109, 111, 113, 114, 115, 116 and 117 go in AFTER**; **102 and 112 go in any time** - see §3. **086–090 are not in this runbook**: they shipped without entries; check each by hand before applying 091, which does not depend on any of them. The one-line-per-file list in §3 and the pre-flight query in §1
 both run to the head; `lib/__tests__/migration-runbook.test.ts` fails when a file is missing from either. **085 renames `agencies` → `accounts`** (and `agency_id`, `agency_members`, the RLS helpers); every pre-flight marker that named an old object now accepts either name, so the query reads correctly before and after it. **There is no 081**: it was left free for a track that never
 shipped it, and a gap is not a missing file — do not go looking for one. **083 is not
 listed here**: it shipped from another branch without a runbook entry; check it by
@@ -169,7 +169,8 @@ m(file, applied) as (values
   ('116_spend_doors',                        to_regclass('public.spend_door_uses') is not null and to_regprocedure('public.take_spend_door(uuid,uuid,text,jsonb)') is not null and to_regprocedure('public.provider_spend_summary(timestamptz)') is not null and exists (select 1 from col where t='admin_impersonations' and c='target_last_sign_in_at') and exists (select 1 from col where t='provider_spend' and c='job')),
   ('117_refresh_engine',                     exists (select 1 from col where t='refresh_tasks' and c='started_at') and exists (select 1 from col where t='refresh_candidates' and c='resolved_at')),
   ('110_shopify_installations',             exists (select 1 from col where t='shopify_installations' and c='refresh_token') and exists (select 1 from col where t='shopify_webhook_events' and c='webhook_id')),
-  ('118_shopify_billing',                   exists (select 1 from col where t='accounts' and c='billing_provider') and exists (select 1 from col where t='shopify_installations' and c='shop_gid'))
+  ('118_shopify_billing',                   exists (select 1 from col where t='accounts' and c='billing_provider') and exists (select 1 from col where t='shopify_installations' and c='shop_gid')),
+  ('121_gate_visits',                       to_regclass('public.gate_visits') is not null)
 )
 select file, applied from m order by file;
 ```
@@ -324,6 +325,7 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 116_spend_doors.sql   # AFTER its 
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 117_refresh_engine.sql   # AFTER its code is live; see its section
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 110_shopify_installations.sql   # BEFORE its code is deployed
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 118_shopify_billing.sql   # BEFORE its code is deployed (after 110)
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -1 -f 121_gate_visits.sql   # BEFORE its code is deployed; see its section
 ```
 
 Re-running a file that is already applied is safe from 048 on, with one
@@ -412,6 +414,7 @@ no code in the repo references either).
 | 117_refresh_engine.sql | `fix/refresh-engine` | 052; **its code deployed first** | yes | yes, see its section (loses the start times and which candidates a pass retired; the code works without both) |
 | 110_shopify_installations.sql | `shopify/app-install` | 001, 085; **applied before its code is deployed** | yes | yes: `drop table shopify_webhook_events, shopify_installations` (loses every store's tokens; each must reopen the app) |
 | 118_shopify_billing.sql | `shopify/app-billing` | **110**, 085; **applied before its code is deployed** | yes | yes: drop the trigger and function, then the three installation columns and `accounts.billing_provider` (Shopify-billed accounts would then read as Stripe) |
+| 121_gate_visits.sql | `fix/pretrial-gate-rework` | 001, 082, 085; **applied before its code is deployed** | yes | yes: `drop table gate_visits` (nobody is greeted as returning until visits are recorded again) |
 
 Bold dependencies cross PRs: **053 and 055 cannot be applied before 049.**
 If #75 or #70 merges before #60, the merged tree still contains 049 (both
@@ -2228,4 +2231,35 @@ drop function if exists public.accounts_guard_billing_provider();
 alter table shopify_installations drop column if exists plan_checked_at, drop column if exists plan_handle, drop column if exists shop_gid;
 alter table accounts drop constraint if exists accounts_billing_provider_check;
 alter table accounts drop column if exists billing_provider;
+```
+
+## 121 — pre-trial gate visits
+
+`121_gate_visits.sql`:
+
+- `gate_visits` (workspace, account, UTC day, first time seen that day), one
+  row per site per day the pre-trial gate was shown. The onboarding page
+  greets a return ("Welcome back. Your article is saved.") when the site has a
+  row from 12 hours ago or more, and the rows measure return conversion: the
+  `onboarding.step` events are kept once per site and cannot.
+- Server-only: RLS on, no policy, nothing granted to `anon` or `authenticated`.
+- Backfilled from each site's `gate_shown` events, so the owners who came
+  before it shipped are greeted on their next visit.
+
+**Apply BEFORE its code is deployed.** The code tolerates its absence (no
+visit is recorded and nobody is greeted as returning), but every visit before
+the apply is lost. Re-running is a no-op (`if not exists`, `on conflict do
+nothing`).
+
+Post-flight (expect `t`):
+
+```sql
+select to_regclass('public.gate_visits') is not null
+   and (select relrowsecurity from pg_class where oid = 'public.gate_visits'::regclass);
+```
+
+Rollback (nobody is greeted as returning until visits are recorded again):
+
+```sql
+drop table if exists public.gate_visits;
 ```

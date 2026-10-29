@@ -213,6 +213,8 @@ export const PLANNING_CHECK_TERMS = 6;
 export interface OnboardingHeld {
   count: number;
   dates: string[];
+  /** The held topics by name (lib/onboarding/plan.ts `heldTopics`). */
+  topics: string[];
 }
 
 export interface OnboardingState {

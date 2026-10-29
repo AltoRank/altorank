@@ -75,7 +75,8 @@ import type { FirstArticleCard } from "@/lib/onboarding/first-article";
 import { OPEN_SETUP, runStateOf, setupEnding, type PreTrialSetup, type SetupEnding } from "@/lib/onboarding/setup-retry";
 import { NOTHING_PLANNED_HEADING, nothingPlannedLede } from "@/components/onboarding/setup-ask";
 import { providerRetryWindowOpen } from "@/lib/onboarding/provider-retry-window";
-import { AttributionAsk, GateTop } from "@/components/onboarding/first-look-gate";
+import { GateTop, type GateWelcome } from "@/components/onboarding/first-look-gate";
+import { nextArticles } from "@/lib/onboarding/next-articles";
 import { WhatWeUnderstood } from "@/components/onboarding/what-we-understood";
 import { Fold } from "@/components/onboarding/fold";
 import { signOut } from "@/app/actions/auth";
@@ -97,7 +98,7 @@ export function OnboardingWizard({
   canBuy = false,
   initialProfile,
   initialSite,
-  askAttribution,
+  welcome = null,
   alreadyOnboarded = false,
   gatePlan = [],
   gateHeld = null,
@@ -149,8 +150,11 @@ export function OnboardingWizard({
   canBuy?: boolean;
   initialProfile: BusinessProfile | null;
   initialSite: SiteDetails;
-  /** Whether the account has yet to say where it heard of us; asked once, on the trial screen. */
-  askAttribution: boolean;
+  /**
+   * The gate opens on its return screen: a recorded visit 12 hours ago or
+   * more (lib/onboarding/gate-visits.ts), or a checkout just cancelled.
+   */
+  welcome?: GateWelcome | null;
   /**
    * The workspace's latest onboarding run, read by the page. A run still
    * going, or one that finished in the last hour, opens on the run screen
@@ -539,7 +543,7 @@ export function OnboardingWizard({
         workspaceId={workspaceId}
         setup={preTrialSetup}
         run={initialRun}
-        askAttribution={askAttribution}
+        welcome={welcome}
         userEmail={userEmail}
         otherSites={otherSites}
         offer={offer}
@@ -557,7 +561,6 @@ export function OnboardingWizard({
         domain={domain}
         freeDrafts={freeDrafts}
         trialEligible={trialEligible}
-        askAttribution={askAttribution}
         initialRun={runKey === 0 ? resumed : null}
         firstArticle={firstArticle}
         firstArticleWriting={firstArticleWriting}
@@ -1010,7 +1013,7 @@ function endingWords(
 function GateShell({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
   return (
     <div className="min-h-screen bg-bg [--gate-rail:340px]">
-      <div className={`mx-auto px-4 pb-28 pt-8 sm:px-6 sm:pt-10 lg:pb-16 ${wide ? "max-w-[1140px]" : "max-w-[680px]"}`}>{children}</div>
+      <div className={`mx-auto px-4 pb-36 pt-8 sm:px-6 sm:pt-10 lg:pb-16 ${wide ? "max-w-[1140px]" : "max-w-[680px]"}`}>{children}</div>
     </div>
   );
 }
@@ -1114,7 +1117,7 @@ function TrialGateScreen({
   workspaceId,
   setup,
   run,
-  askAttribution = false,
+  welcome = null,
   userEmail,
   otherSites = [],
   offer,
@@ -1135,7 +1138,7 @@ function TrialGateScreen({
   writing: boolean;
   setup: PreTrialSetup;
   run: OnboardingRunSnapshot | null;
-  askAttribution?: boolean;
+  welcome?: GateWelcome | null;
   userEmail?: string;
   otherSites?: OtherSite[];
 }) {
@@ -1179,6 +1182,8 @@ function TrialGateScreen({
         initialHtml={initialHtml}
         offer={offer}
         held={held?.count ?? 0}
+        nextArticles={nextArticles(planned, held?.topics, firstArticle?.keyword)}
+        welcome={welcome}
         startedAt={run?.run && Number.isFinite(Date.parse(run.run.started_at)) ? Date.parse(run.run.started_at) : null}
       />
 
@@ -1205,11 +1210,6 @@ function TrialGateScreen({
           </Fold>
         )}
       </div>
-      {askAttribution && (
-        <div className={`mt-6 ${gateColumn}`}>
-          <AttributionAsk />
-        </div>
-      )}
       <div className={gateColumn}>
         <SignOutLine email={userEmail} otherSites={otherSites} />
       </div>
@@ -1238,7 +1238,6 @@ function RunScreen({
   domain,
   freeDrafts,
   trialEligible,
-  askAttribution = false,
   initialRun,
   firstArticle,
   firstArticleWriting,
@@ -1262,7 +1261,6 @@ function RunScreen({
   domain: string;
   freeDrafts: number | null;
   trialEligible: boolean;
-  askAttribution?: boolean;
   initialRun: OnboardingRunSnapshot | null;
   firstArticle: FirstArticleCard | null;
   firstArticleWriting: boolean;
@@ -1447,6 +1445,7 @@ function RunScreen({
             onBodyDone={() => setBodyLanded((n) => n + 1)}
             offer={offer}
             held={held?.count ?? 0}
+            nextArticles={nextArticles(planned, held?.topics, firstArticle?.keyword ?? runDraft?.keyword)}
             startedAt={runStartedAt}
           />
         ) : null}
@@ -1469,11 +1468,6 @@ function RunScreen({
             articleExists={firstArticle?.state === "written"}
           />
         </div>
-        {trialStep && askAttribution ? (
-          <div className={`mt-6 ${gateColumn}`}>
-            <AttributionAsk />
-          </div>
-        ) : null}
         {trialStep ? (
           <div className={gateColumn}>
             <SignOutLine email={userEmail} otherSites={otherSites} />

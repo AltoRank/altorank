@@ -27,7 +27,7 @@
 // first-article.ts) and carries no text beyond the headings.
 
 import { Icons } from "@/components/ui";
-import type { FirstArticleCard } from "@/lib/onboarding/first-article";
+import type { FirstArticleCard, FirstArticleVerdict } from "@/lib/onboarding/first-article";
 import type { Opportunity } from "@/lib/keyword-research/opportunity";
 import { bodyFraction, clock, estimateLine, firstLookFraction, runningLong, type BodyStage } from "@/lib/onboarding/setup-progress";
 import { EmailWhenReady } from "./first-look-exits";
@@ -89,6 +89,19 @@ export function wordsLine(stage: BodyStage | null, words: number): string {
 export function writtenFor(brief: Pick<Opportunity, "audience"> | null | undefined): string | null {
   const audience = brief?.audience?.trim().replace(/\.$/, "");
   return audience ? audience : null;
+}
+
+/**
+ * What the fact check said, in one line, or nothing when it found nothing
+ * to flag. The badge said "Written" in green over every draft, checked or
+ * not (Codex review, 2026-10-28): it is "Draft ready" now, and this line
+ * says what is left before it can go out. A written draft with no verdict
+ * was never checked, and says so.
+ */
+export function verdictLine(verdict: FirstArticleVerdict | null): string | null {
+  if (verdict === "clean") return null;
+  if (verdict === "high_risk" || verdict === "review") return "Some claims need checking before you publish";
+  return "Facts have not been checked";
 }
 
 /**
@@ -159,6 +172,8 @@ export function FirstArticleCardView({
   const showText = readable && live && !live.refused;
   const liveWords = writing ? live?.words ?? 0 : 0;
   const badgeWritten = written && !settling;
+  // Only over a finished body whose check is on the row: an outline has none yet.
+  const verdict = badgeWritten && article?.state === "written" ? verdictLine(article.verdict) : null;
   // Running long, and nothing to read yet: only then is the owner told they
   // may leave. With the text on screen the article is finishing in front of
   // them, and "you can leave this page" invited them away at the moment the
@@ -170,48 +185,56 @@ export function FirstArticleCardView({
     <section aria-label="Your first article" className="rise-in rounded-[10px] border border-line bg-panel p-5">
       <div className="mb-2 flex items-center justify-between gap-3">
         <span className="text-[11px] uppercase tracking-wide text-ink-3">Your first article</span>
-        <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] ${badgeWritten ? "bg-ok-soft text-ok-ink" : "border border-line text-ink-2"}`}>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-2">
           {badgeWritten ? <Icons.check size={10} /> : <span className="h-1.5 w-1.5 rounded-full bg-accent motion-safe:animate-pulse" aria-hidden />}
-          {badgeWritten ? "Written" : "Being written"}
+          {badgeWritten ? "Draft ready" : "Being written"}
         </span>
       </div>
       <h2 className="m-0 text-[19px] font-semibold leading-snug text-ink">{title}</h2>
-      {purpose && (
-        <p className="m-0 mt-1.5 text-[13px] leading-[1.55] text-ink-2">
-          <span className="text-ink-3">Written for: </span>
-          {purpose}
+      {verdict && (
+        <p className="m-0 mt-1.5 flex items-center gap-1.5 text-[12.5px] leading-[1.5] text-ink-2" data-testid="first-article-verdict">
+          <Icons.alert size={12} />
+          {verdict}
         </p>
       )}
-      {/* No verdict labels here. Before the trial this card is the paywall,
+      {/* No topic labels here. Before the trial this card is the paywall,
           and "Early reader … not yet shopping", "Lower confidence" and
           "Unmeasured" in warning orange argued against buying the thing
           the page was selling (UX audit 2026-10-12, #8). The calendar
-          keeps the planner's own words once the trial starts. */}
-      <dl className="m-0 mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-[minmax(0,2fr)_repeat(3,minmax(0,1fr))]">
-        <Fact label="Target search" wide>{keyword || "—"}</Fact>
-        {/* Not a date: before the trial nothing publishes, and "Scheduled
-            for" today read as a promise the gate then broke, and later as a
-            day in the past (UX audit 2026-10-12). */}
-        <Fact label="Publishing">Ready when you approve it</Fact>
-        {/* One word figure on the card: the target only until the writer's
-            own count is in, then that count - "About 800 words" beside
-            "1,076 words so far" read as a contradiction (review,
-            2026-10-12). */}
-        <Fact label="Length">
-          {finalWords > 0
-            ? `${n(finalWords)} words`
-            : liveWords > 0
-              ? `${n(liveWords)} words so far`
-              : target > 0
-                ? `About ${n(target)} words`
-                : "—"}
-        </Fact>
-        {/* Counted from the article's own links once written; while it is
-            being written, the pages its outline plans to cite. A zero is
-            not printed: it read as "no research" (recorded 2026-10-12), and
-            neither is one or two, which read as thin. */}
-        {article && article.sources >= MIN_SOURCES_SHOWN && <Fact label={written && article.state === "written" ? "Sources cited" : "Sources planned"}>{n(article.sources)}</Fact>}
-      </dl>
+          keeps the planner's own words once the trial starts.
+
+          Who it is for, the search, the length and the sources sit in one
+          fold: four facts above the article pushed its first line, and the
+          offer, below a phone's first screen (Codex review, 2026-10-28).
+          "Publishing: Ready when you approve it" was said on every card,
+          checked or not, and is gone. */}
+      <details className="mt-3">
+        <summary className="cursor-pointer list-none text-[12.5px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink-2 [&::-webkit-details-marker]:hidden">
+          Article details
+        </summary>
+        <dl className="m-0 mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2.5 sm:grid-cols-[minmax(0,2fr)_repeat(2,minmax(0,1fr))]">
+          {purpose && <Fact label="Written for" wide>{purpose}</Fact>}
+          <Fact label="Target search" wide>{keyword || "—"}</Fact>
+          {/* One word figure on the card: the target only until the writer's
+              own count is in, then that count - "About 800 words" beside
+              "1,076 words so far" read as a contradiction (review,
+              2026-10-12). */}
+          <Fact label="Length">
+            {finalWords > 0
+              ? `${n(finalWords)} words`
+              : liveWords > 0
+                ? `${n(liveWords)} words so far`
+                : target > 0
+                  ? `About ${n(target)} words`
+                  : "—"}
+          </Fact>
+          {/* Counted from the article's own links once written; while it is
+              being written, the pages its outline plans to cite. A zero is
+              not printed: it read as "no research" (recorded 2026-10-12), and
+              neither is one or two, which read as thin. */}
+          {article && article.sources >= MIN_SOURCES_SHOWN && <Fact label={written && article.state === "written" ? "Sources cited" : "Sources planned"}>{n(article.sources)}</Fact>}
+        </dl>
+      </details>
 
       {writing && (
         <div className="mt-4 flex flex-col gap-1.5">

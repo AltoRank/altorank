@@ -614,6 +614,8 @@ export interface HeldTopics {
   count: number;
   /** YYYY-MM-DD, one per held topic, on the pace grid after what is scheduled. */
   dates: string[];
+  /** The held topics' searches, one per search, in the order counted: what the gate names as "Your next articles". */
+  topics: string[];
 }
 
 /**
@@ -656,8 +658,17 @@ export async function heldTopics(
     term: r.term, organicUrls: storedSerp(r.opportunity), stage: "candidate" as const,
   }));
   const repeats = clusterByIntent([...leaders, ...held], language);
-  const n = Math.min(held.filter((h) => !repeats.has(h)).length, PLAN_MAX_ENTRIES);
-  return { count: n, dates: n ? nextOpenDates(occupied, Math.max(1, weeklyLimit), n, from) : [] };
+  // Named as well as counted: the gate lists the next articles by name, and
+  // a name it lists is one the trial will write, so the same filter holds.
+  // Two spellings the intent check let through are still one line on screen.
+  const topics: string[] = [];
+  for (const h of held) {
+    const term = h.term.trim();
+    if (!term || repeats.has(h) || topics.some((t) => t.toLowerCase() === term.toLowerCase())) continue;
+    topics.push(term);
+  }
+  const n = Math.min(topics.length, PLAN_MAX_ENTRIES);
+  return { count: n, dates: n ? nextOpenDates(occupied, Math.max(1, weeklyLimit), n, from) : [], topics: topics.slice(0, n) };
 }
 
 /** The planner's taxonomy for the shape the results page was won by, when a qualified brief carries one. */
