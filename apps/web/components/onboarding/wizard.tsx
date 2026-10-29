@@ -637,7 +637,7 @@ export function OnboardingWizard({
   );
   const next = editing
     ? { full: "We read your site again with what you changed and look for a first article, in about 3 minutes. Nothing is charged.", short: "One more free try, about 3 minutes." }
-    : wizardNextLine({ preTrial: trialEligible, canRead: fullArticle, freeDrafts });
+    : wizardNextLine({ preTrial: trialEligible, canRead: fullArticle, freeDrafts, unread });
 
   return (
     <div className="min-h-screen bg-bg">

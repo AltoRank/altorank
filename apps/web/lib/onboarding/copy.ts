@@ -51,10 +51,12 @@ import { FIRST_LOOK_MINUTES } from "./setup-progress";
  *
  * `short` is the one line a phone has room for beside a full-width button.
  */
-export function wizardNextLine(opts: { preTrial: boolean; canRead: boolean; freeDrafts: number | null }): { full: string; short: string } {
+export function wizardNextLine(opts: { preTrial: boolean; canRead: boolean; freeDrafts: number | null; unread?: boolean }): { full: string; short: string } {
   const minutes = `about ${FIRST_LOOK_MINUTES} minutes`;
+  // Under "We couldn't read your website", the line does not promise to read it.
+  const start = opts.unread ? "Next: from what you tell us, we pick" : "Next: we read your site, pick";
   if (opts.preTrial) {
-    const lead = `Next: we read your site, pick your first topic and write your first article while you watch, in ${minutes}.`;
+    const lead = `${start} your first topic and write your first article while you watch, in ${minutes}.`;
     return opts.canRead
       ? {
           full: `${lead} Read it free; the ${TRIAL_DAYS}-day trial lets you publish it and writes the rest.`,
@@ -67,7 +69,7 @@ export function wizardNextLine(opts: { preTrial: boolean; canRead: boolean; free
   }
   const clause = freeAllowanceClause(opts.freeDrafts);
   return {
-    full: `Next: we read your site, pick your first topics and write your first article while you watch, in ${minutes}.${clause ? ` ${clause}` : ""}`,
+    full: `${start} your first topics and write your first article while you watch, in ${minutes}.${clause ? ` ${clause}` : ""}`,
     short: `About ${FIRST_LOOK_MINUTES} minutes. Watch your first article being written.`,
   };
 }
