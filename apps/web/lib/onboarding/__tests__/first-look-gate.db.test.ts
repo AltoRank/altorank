@@ -180,15 +180,18 @@ describe.skipIf(!STACK)("the first look's gate on the local database", () => {
     if (saved.ok) expect(saved.html).toContain(`Saved ${SECRET}`);
   });
 
-  it("refuses another account's owner, a member who is not the owner, and a site whose run points elsewhere", async () => {
+  it("refuses another account's owner and a member who is not the owner, and reads the card's article whatever the run points at", async () => {
     expect(await readFirstArticleBody(users.bOwner.client, users.bOwner.id, siteA, { env: ON, service: admin })).toEqual({ ok: false, reason: "not-found" });
     expect(await readFirstArticleBody(users.aEditor.client, users.aEditor.id, siteA, { env: ON, service: admin })).toEqual({ ok: false, reason: "not-owner" });
     // B's own site: its run has no first article, so nothing - not A's.
     expect(await readFirstArticleBody(users.bOwner.client, users.bOwner.id, siteB, { env: ON, service: admin })).toEqual({ ok: false, reason: "no-first-article" });
-    // A run pointing at an article that is not the site's first is refused.
+    // The run's pointer does not choose the article: a partial run has none
+    // and cron writes the first one later. The reader reads the card's.
     await admin.from("articles").update({ status: "review" }).eq("id", laterA);
     await admin.from("onboarding_runs").update({ article_id: laterA }).eq("id", runA);
-    expect(await readFirstArticleBody(users.aOwner.client, users.aOwner.id, siteA, { env: ON, service: admin })).toEqual({ ok: false, reason: "no-first-article" });
+    const card = await loadFirstArticle(users.aOwner.client, siteA, `acme-${TAG}-a.example`);
+    expect(card.article?.id).toBe(articleA);
+    expect(await readFirstArticleBody(users.aOwner.client, users.aOwner.id, siteA, { env: ON, service: admin })).toMatchObject({ ok: true, articleId: articleA });
     await admin.from("onboarding_runs").update({ article_id: articleA }).eq("id", runA);
   });
 

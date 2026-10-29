@@ -62,7 +62,7 @@ describe("deployed before migration 108", () => {
         let columns = "";
         const q = {
           select(c: string) { columns = c; return q; },
-          eq() { return q; }, neq() { return q; }, order() { return q; }, limit() { return q; },
+          eq() { return q; }, neq() { return q; }, in() { return q; }, gt() { return q; }, order() { return q; }, limit() { return q; },
           async maybeSingle() { asked.push(`${table}:${columns}`); return answer(table, columns); },
         };
         return q;
@@ -97,5 +97,92 @@ describe("deployed before migration 108", () => {
   it("answers the progress route with no ticks rather than a 404", async () => {
     const read = await readFirstArticleProgress(person as never, "u1", "ws1", { service: noColumn() as never });
     expect(read).toMatchObject({ ok: true, done: false, stage: null, sectionsDone: [], words: 0 });
+  });
+});
+
+describe("a setup run that ended partial, its first article written later by cron", () => {
+  // Rows filtered for real: eq / in / gt / order by created_at, so which
+  // article answers is decided by the same rules as the database's.
+  type Row = Record<string, unknown>;
+  function table(rows: Record<string, Row[]>) {
+    return {
+      from(name: string) {
+        let out = [...(rows[name] ?? [])];
+        let columns = "";
+        const q = {
+          select(c: string) { columns = c; return q; },
+          eq(k: string, v: unknown) { out = out.filter((r) => r[k] === v); return q; },
+          neq(k: string, v: unknown) { out = out.filter((r) => r[k] !== v); return q; },
+          in(k: string, vs: unknown[]) { out = out.filter((r) => vs.includes(r[k])); return q; },
+          gt(k: string, v: number) { out = out.filter((r) => Number(r[k]) > v); return q; },
+          order(k: string, o: { ascending: boolean }) {
+            out.sort((a, b) => String(a[k]).localeCompare(String(b[k])) * (o.ascending ? 1 : -1));
+            return q;
+          },
+          limit(n: number) { out = out.slice(0, n); return q; },
+          async maybeSingle() {
+            const row = out[0];
+            if (!row) return { data: null, error: null };
+            return { data: columns === "*" ? row : Object.fromEntries(columns.split(/,\s*/).map((c) => [c, row[c] ?? null])), error: null };
+          },
+        };
+        return q;
+      },
+    };
+  }
+  const owner = table({
+    workspaces: [{ id: "ws1", account_id: "acc1" }],
+    account_members: [{ account_id: "acc1", user_id: "u1", role: "owner" }],
+    // Partial: the run never got an article id.
+    onboarding_runs: [{ workspace_id: "ws1", article_id: null, started_at: "2026-10-20T10:00:00Z" }],
+  });
+  const cronWrote = {
+    id: "cron1", workspace_id: "ws1", status: "review", word_count: 1200, created_at: "2026-10-21T03:00:00Z",
+    content: "<p>Written by the cron.</p>", body_stream: null, body_progress: null, instructions_snapshot: null,
+  };
+  const ON = { PRETRIAL_FULL_ARTICLE: "1" };
+
+  it("reads the article the card shows instead of refusing", async () => {
+    const service = table({
+      articles: [
+        // Errored and empty rows the card skips, older than the one it shows.
+        { id: "err", workspace_id: "ws1", status: "error", word_count: 0, created_at: "2026-10-20T10:05:00Z" },
+        cronWrote,
+        { id: "next", workspace_id: "ws1", status: "review", word_count: 900, created_at: "2026-10-22T03:00:00Z", content: "<p>Not this one.</p>" },
+        // Another site's older article never answers.
+        { id: "other", workspace_id: "ws2", status: "live", word_count: 800, created_at: "2026-10-01T00:00:00Z", content: "<p>Theirs.</p>" },
+      ],
+    });
+    const read = await readFirstArticleBody(owner as never, "u1", "ws1", { env: ON, service: service as never });
+    expect(read).toMatchObject({ ok: true, articleId: "cron1", done: true });
+    if (read.ok) expect(read.html).toBe("<p>Written by the cron.</p>");
+    expect(await readFirstArticleProgress(owner as never, "u1", "ws1", { service: service as never })).toMatchObject({ ok: true, articleId: "cron1", done: true, words: 1200 });
+  });
+
+  it("prefers a written article over an older one still being written, as the card does", async () => {
+    const service = table({
+      articles: [
+        { id: "drafting", workspace_id: "ws1", status: "drafting", word_count: 0, created_at: "2026-10-20T10:05:00Z", body_stream: "<p>Half</p>" },
+        cronWrote,
+      ],
+    });
+    expect(await readFirstArticleBody(owner as never, "u1", "ws1", { env: ON, service: service as never })).toMatchObject({ ok: true, articleId: "cron1" });
+  });
+
+  it("streams the article being written while nothing is written yet", async () => {
+    const service = table({
+      articles: [{ id: "drafting", workspace_id: "ws1", status: "drafting", word_count: 0, created_at: "2026-10-20T10:05:00Z", content: null, body_stream: "<p>Half</p>", body_progress: null, instructions_snapshot: null }],
+    });
+    expect(await readFirstArticleBody(owner as never, "u1", "ws1", { env: ON, service: service as never })).toMatchObject({ ok: true, articleId: "drafting", done: false, html: "<p>Half</p>" });
+  });
+
+  it("still refuses a member who is not the owner, and a site with no article", async () => {
+    const editor = table({
+      workspaces: [{ id: "ws1", account_id: "acc1" }],
+      account_members: [{ account_id: "acc1", user_id: "u2", role: "editor" }],
+    });
+    const service = table({ articles: [cronWrote] });
+    expect(await readFirstArticleBody(editor as never, "u2", "ws1", { env: ON, service: service as never })).toEqual({ ok: false, reason: "not-owner" });
+    expect(await readFirstArticleBody(owner as never, "u1", "ws1", { env: ON, service: table({ articles: [] }) as never })).toEqual({ ok: false, reason: "no-first-article" });
   });
 });
