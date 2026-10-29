@@ -536,8 +536,8 @@ async function runPhases(
       chosen = result.summary;
       selectionByTerm = result.selection;
       const held = gated && plan.length
-        ? await heldTopics(supabase, workspace.id, weeklyLimit, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [] }))
-        : { count: 0, dates: [] };
+        ? await heldTopics(supabase, workspace.id, weeklyLimit, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [], topics: [] }))
+        : { count: 0, dates: [], topics: [] };
       // A second run for a held account plans nothing because the calendar
       // already holds its one article, which is not the same news as "no
       // topic was found".

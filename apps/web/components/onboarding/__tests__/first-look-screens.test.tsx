@@ -9,8 +9,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: () => undefined, push: () => undefined }) }));
 
 import { pagesLine, phaseDetail } from "../setup-loading";
-import { FirstArticleCardView, stageLine, wordsLine, writtenFor } from "../first-article-card";
-import { articleHeading, stickyLine } from "../first-look-gate";
+import { FirstArticleCardView, stageLine, verdictLine, wordsLine, writtenFor } from "../first-article-card";
+import { articleHeading, welcomeLine } from "../first-look-gate";
 import { plainTopicLabel, topicLabels } from "@/lib/keyword-research/topic-labels";
 import type { FirstArticleCard } from "@/lib/onboarding/first-article";
 import type { FirstArticleLive } from "../use-first-article-live";
@@ -97,7 +97,8 @@ describe("the gate's article card", () => {
   it("says written, with the real count, once the body is saved", () => {
     const written: FirstArticleCard = { ...OUTLINED, state: "written", wordCount: 1381, sources: 4 };
     const html = text(renderToStaticMarkup(<FirstArticleCardView article={written} live={live({ done: true })} />));
-    expect(html).toContain("Written");
+    expect(html).toContain("Draft ready");
+    expect(html).not.toMatch(/\bWritten\b(?! for)/);
     expect(html).toContain("1,381 words");
     expect(html).toContain("Sources cited 4");
     expect(html).not.toContain("About 1,700");
@@ -109,10 +110,31 @@ describe("the gate's article card", () => {
     expect(text(renderToStaticMarkup(<FirstArticleCardView article={{ ...written, sources: 3 }} live={live({ done: true })} />))).toContain("Sources cited 3");
   });
 
-  it("promises no date before the trial: ready when you approve it", () => {
+  it("promises no date and no readiness before the trial", () => {
     const html = text(renderToStaticMarkup(<FirstArticleCardView article={OUTLINED} live={live()} />));
-    expect(html).toContain("Publishing Ready when you approve it");
-    expect(html).not.toMatch(/Scheduled for|Oct 12/);
+    expect(html).not.toMatch(/Scheduled for|Oct 12|Ready when you approve it|Publishing/);
+  });
+
+  it("says what the fact check left to do, under a badge that is not green", () => {
+    const written = (verdict: FirstArticleCard["verdict"]): string =>
+      renderToStaticMarkup(<FirstArticleCardView article={{ ...OUTLINED, state: "written", wordCount: 1381, verdict }} live={live({ done: true })} />);
+    expect(text(written("high_risk"))).toContain("Some claims need checking before you publish");
+    expect(text(written("review"))).toContain("Some claims need checking before you publish");
+    expect(text(written("unchecked"))).toContain("Facts have not been checked");
+    expect(text(written(null))).toContain("Facts have not been checked");
+    expect(text(written("clean"))).not.toMatch(/claims need checking|not been checked/);
+    const clean = written("clean");
+    expect(clean.slice(clean.lastIndexOf("<span", clean.indexOf("Draft ready")), clean.indexOf("Draft ready"))).not.toContain("bg-ok-soft");
+    // An outline has no check yet, and says nothing about one.
+    expect(verdictLine("clean")).toBeNull();
+    expect(text(renderToStaticMarkup(<FirstArticleCardView article={OUTLINED} live={live()} />))).not.toMatch(/checked|checking before/);
+  });
+
+  it("folds who it is for, the search, the length and the sources into Article details", () => {
+    const markup = renderToStaticMarkup(<FirstArticleCardView article={OUTLINED} live={live()} brief={{ audience: "Home decorators" } as never} />);
+    const fold = markup.slice(markup.indexOf("<details"), markup.indexOf("</details>"));
+    expect(text(fold)).toContain("Article details");
+    for (const fact of ["Written for", "Target search", "Length"]) expect(text(fold)).toContain(fact);
   });
 
   it("shows no verdict labels on the paywall: no funnel stage, no warning-orange confidence", () => {
@@ -146,7 +168,7 @@ describe("the gate's article card", () => {
     const html = text(renderToStaticMarkup(
       <FirstArticleCardView article={OUTLINED} live={live()} brief={{ audience: "Home decorators looking for ideas", buyingJob: "Source kits and ideas" } as never} />,
     ));
-    expect(html).toContain("Written for: Home decorators looking for ideas");
+    expect(html).toContain("Written for Home decorators looking for ideas");
     expect(html).not.toContain("Source kits");
   });
 
@@ -165,10 +187,9 @@ describe("the gate's article card", () => {
     expect(label.explain).not.toMatch(/funnel|providers/i);
   });
 
-  it("the slim trial bar never offers to let them read what they are reading", () => {
-    expect(stickyLine(false, true)).toBe("Edit, approve and publish it with the trial.");
-    expect(stickyLine(true, true)).not.toMatch(/read it/i);
-    expect(stickyLine(false, false)).toBe("Read it in full once it is written.");
+  it("opens a return with what happened: back, or a checkout that charged nothing", () => {
+    expect(welcomeLine("returning")).toBe("Welcome back. Your article is saved.");
+    expect(welcomeLine("cancelled")).toBe("Your trial hasn't started. Nothing was charged.");
   });
 
   it("words the heading by how far the article has got", () => {

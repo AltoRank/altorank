@@ -59,7 +59,6 @@ function gate(over: Partial<Parameters<typeof OnboardingWizard>[0]> = {}) {
       alreadyOnboarded
       initialProfile={{ ...EMPTY_PROFILE, name: "Acme", offerings: ["kits"] }}
       initialSite={{ sitemapUrl: "", blogRootUrl: "", exampleArticleUrls: [] }}
-      askAttribution={false}
       offer={{ endsAt: "2026-10-19T12:00:00.000Z", taxAdded: false }}
       preTrialSetup={{ setupAllowed: true, firstAttempted: false }}
       initialRun={{ run: run({}), article: null, stale: false }}
@@ -101,16 +100,16 @@ describe("the soft exit under the trial button", () => {
   it("is offered to the owner with an article, below the button and quieter than it", () => {
     const markup = gate({ firstArticle: ARTICLE, initialRun: null, initialHtml: "<p>One.</p>" });
     const html = text(markup);
-    expect(html).toContain("Not ready yet? Email me this article");
-    expect(markup.indexOf("Start 7-day trial")).toBeLessThan(markup.indexOf("Email me this article"));
+    expect(html).toContain("Not ready yet? Email me a link to this article");
+    expect(markup.indexOf("Start 7-day trial")).toBeLessThan(markup.indexOf("Email me a link to this article"));
   });
 
   it("is not offered while the article is still being written: the one send would go on an outline", () => {
-    expect(text(gate({ firstArticle: { ...ARTICLE, state: "outlined" }, initialRun: null }))).not.toContain("Email me this article");
+    expect(text(gate({ firstArticle: { ...ARTICLE, state: "outlined" }, initialRun: null }))).not.toContain("Email me a link to this article");
   });
 
   it("is not offered to a member who cannot start the trial", () => {
-    expect(text(gate({ firstArticle: ARTICLE, initialRun: null, canBuy: false }))).not.toContain("Email me this article");
+    expect(text(gate({ firstArticle: ARTICLE, initialRun: null, canBuy: false }))).not.toContain("Email me a link to this article");
   });
 });
 

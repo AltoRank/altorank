@@ -45,8 +45,8 @@ test("one clock to the gate, a price box that sells, a bar on the same plan, and
   // The gate: the article, and under it the price box.
   await expect(page.getByRole("heading", { name: /Your first article is (written|being written)/ })).toBeVisible({ timeout: 45_000 });
   const box = page.locator("section", { has: page.getByRole("heading", { name: /Start your free 7-day trial/ }) });
-  await expect(box).toContainText("Nothing publishes until you approve it");
-  await expect(box.getByTestId("trial-charge-line")).toHaveText(/^€0 today, then €69\/month from [A-Z][a-z]+ \d{1,2}\.$/);
+  await expect(box).toContainText("Review each article, then copy it to your website.");
+  await expect(box.getByTestId("trial-charge-line")).toHaveText(/^Card required\. €0 today\. Then €69\/month from [A-Z][a-z]+ \d{1,2} unless you cancel\.$/);
   await expect(box).toContainText("We email you 3 days before the trial ends");
   await expect(box).toContainText("Cancel in Settings › Billing before the trial ends and nothing is charged.");
   await expect(box).not.toContainText(/renewal/i);
@@ -55,10 +55,11 @@ test("one clock to the gate, a price box that sells, a bar on the same plan, and
   const boxWidth = (await box.boundingBox())!.width;
   expect((await start.boundingBox())!.width).toBeGreaterThan(boxWidth - 60);
 
-  // Yearly, quietly behind "Other plans", with its real saving; the bar then quotes the same plan.
-  await box.getByText("Other plans", { exact: true }).click();
+  // Yearly, quietly behind "Plan details", with its real saving; the bar then quotes the same plan.
+  await box.getByText("Plan details", { exact: true }).click();
+  await expect(box).toContainText("Nothing publishes until you approve it");
   await box.getByRole("button", { name: /Or pay yearly: €690\/year, two months free \(save €138\)/ }).click();
-  await expect(box.getByTestId("trial-charge-line")).toHaveText(/^€0 today, then €690\/year from /);
+  await expect(box.getByTestId("trial-charge-line")).toHaveText(/^Card required\. €0 today\. Then €690\/year from /);
   // Past the button, it off screen above: the bar, on the same plan. From lg
   // the rail beside the article holds the button and the bar is phone-only.
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
@@ -66,14 +67,14 @@ test("one clock to the gate, a price box that sells, a bar on the same plan, and
   const narrow = page.viewportSize()!.width < 1024;
   if (narrow && (!(await start.isVisible()) || (await start.boundingBox())!.y + 20 < 0)) {
     await expect(bar).toBeVisible();
-    await expect(bar).toContainText("7 days free, then €690/year");
+    await expect(bar).toContainText("Then €690/year from");
   }
   await page.evaluate(() => window.scrollTo(0, 0));
   await shot(page, "b17-gate-1280");
 
   // The soft exit, under the button: a link back by email, once.
   await page.evaluate(() => document.getElementById("start-trial")?.scrollIntoView({ block: "center" }));
-  await page.getByRole("button", { name: "Not ready yet? Email me this article" }).click();
+  await page.getByRole("button", { name: "Not ready yet? Email me a link to this article" }).click();
   await expect(page.getByRole("status").filter({ hasText: /Sent to|could not be sent|turned off/ })).toBeVisible();
 
   // The setup log points nowhere a person before the trial cannot go.

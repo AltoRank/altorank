@@ -39,9 +39,16 @@ describe("heldTopics", () => {
     expect(out.dates).toHaveLength(3);
     expect(out.dates[0] > "2026-09-21").toBe(true);
     expect(new Set(out.dates).size).toBe(3);
+    expect(out.topics).toEqual(["held topic 0", "held topic 1", "held topic 2"]);
+  });
+  it("names each held search once, whatever its spelling's case", async () => {
+    const held: Row[] = ["Kitchen tiles", "kitchen tiles ", "Bathroom tiles"].map((term, i) => ({ id: `h${i}`, term, opportunity: { status: "qualified" } }));
+    const out = await heldTopics(client(held), "ws", 3, []);
+    expect(out.topics).toEqual(["Kitchen tiles", "Bathroom tiles"]);
+    expect(out.count).toBe(2);
   });
   it("is empty when nothing is held", async () => {
-    expect(await heldTopics(client(0), "ws", 3, [])).toEqual({ count: 0, dates: [] });
+    expect(await heldTopics(client(0), "ws", 3, [])).toEqual({ count: 0, dates: [], topics: [] });
   });
   it("never promises an article for a search already drafted or held twice (a real signup, 2026-09-22)", async () => {
     // One search, three spellings: drafted, then two more held for the
@@ -92,7 +99,8 @@ describe("heldTopics", () => {
 describe("stateFromRun", () => {
   const run = { id: "r", workspace_id: "ws", status: "done" as const, phases: [], planned: [{ term: "x", date: "2026-09-21" }], keywords_found: 1, article_id: null, error: null, started_at: "2026-09-21T00:00:00Z", updated_at: "2026-09-21T00:00:00Z", finished_at: null };
   it("carries the held topics the snapshot read", () => {
-    expect(stateFromRun(run, null, { held: { count: 2, dates: ["2026-09-23", "2026-09-25"] } }).held).toEqual({ count: 2, dates: ["2026-09-23", "2026-09-25"] });
+    const held = { count: 2, dates: ["2026-09-23", "2026-09-25"], topics: ["a", "b"] };
+    expect(stateFromRun(run, null, { held }).held).toEqual(held);
     expect(stateFromRun(run, null).held).toBeNull();
   });
 });

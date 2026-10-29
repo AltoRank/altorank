@@ -51,7 +51,7 @@ describe("TrialOffer", () => {
 // first, leaving the box an empty frame with only "Not now".
 describe("TrialPriceBox: one checkout at a time", () => {
   const FACTS = { endsAt: "2026-10-19T09:30:00.000Z", taxAdded: false };
-  const box = () => renderToStaticMarkup(<TrialPriceBox canBuy interval="month" onInterval={() => undefined} facts={FACTS} fullArticle />);
+  const box = () => renderToStaticMarkup(<TrialPriceBox canBuy interval="month" onInterval={() => undefined} facts={FACTS} />);
 
   it("asks for the width at Tailwind's lg, where the gate gets its rail", () => {
     expect(INLINE_CHECKOUT_QUERY).toBe("(min-width: 1024px)");
