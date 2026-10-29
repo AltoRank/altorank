@@ -14,8 +14,34 @@ import { trackNextUpClicked } from "@/lib/onboarding/article-events";
  * button on the page. A client component only for the click: the funnel's
  * step after an approval (onboarding.step `next_up_clicked`).
  */
-export function NextUp({ draft, waiting }: { draft: { id: string; title: string }; waiting: number }) {
+export function NextUp({
+  draft,
+  waiting,
+  autoApprove,
+  first = false,
+}: {
+  draft: { id: string; title: string };
+  waiting: number;
+  /** The workspace's own setting: with it on, a draft does not wait for anyone. */
+  autoApprove: boolean;
+  /**
+   * The trial's first days, with nothing approved yet: the page leads with
+   * the one draft and puts everything else under "More tools".
+   */
+  first?: boolean;
+}) {
   const others = waiting - 1;
+  const rule = autoApprove
+    ? "Auto-approve is on: it goes out on its own once it passes our checks, unless you hold it."
+    : "Nothing publishes until you approve it.";
+  const more = others > 0 && (
+    <>
+      {" "}
+      <Link href="/articles?status=review" onClick={() => trackNextUpClicked(draft.id, "more")} className="text-ink-2 underline underline-offset-2 hover:text-accent-ink">
+        {plural(others, "more draft")} waiting
+      </Link>
+    </>
+  );
   return (
     <section
       aria-label="Next up"
@@ -23,23 +49,23 @@ export function NextUp({ draft, waiting }: { draft: { id: string; title: string 
     >
       <div className="min-w-0">
         <div className="mb-1 font-mono text-[10.5px] uppercase tracking-[0.08em] text-accent-ink">Next up</div>
-        <h2 className="m-0 text-[17px] font-semibold leading-snug [text-wrap:balance]">
-          <span className="text-ink">{draft.title}</span> <span className="font-normal text-ink-2">is ready for your yes</span>
-        </h2>
+        {first ? (
+          <>
+            <h2 className="m-0 text-[17px] font-semibold leading-snug">Review your first article</h2>
+            <p className="m-0 mt-1 text-[14px] leading-snug text-ink [text-wrap:balance]">{draft.title}</p>
+          </>
+        ) : (
+          <h2 className="m-0 text-[17px] font-semibold leading-snug [text-wrap:balance]">
+            <span className="text-ink">{draft.title}</span> <span className="font-normal text-ink-2">is ready for your yes</span>
+          </h2>
+        )}
         <p className="m-0 mt-1 text-[12.5px] text-ink-3">
-          Nothing publishes until you approve it.
-          {others > 0 && (
-            <>
-              {" "}
-              <Link href="/articles?status=review" onClick={() => trackNextUpClicked(draft.id, "more")} className="text-ink-2 underline underline-offset-2 hover:text-accent-ink">
-                {plural(others, "more draft")} waiting
-              </Link>
-            </>
-          )}
+          {rule}
+          {more}
         </p>
       </div>
       <Link href={`/content/${draft.id}`} onClick={() => trackNextUpClicked(draft.id, "draft")} className="shrink-0">
-        <Button variant="accent">Read and approve</Button>
+        <Button variant="accent">{first ? "Review draft" : "Read and approve"}</Button>
       </Link>
     </section>
   );

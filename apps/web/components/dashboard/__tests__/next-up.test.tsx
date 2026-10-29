@@ -27,22 +27,38 @@ beforeEach(() => clicked.mockClear());
 
 describe("NextUp", () => {
   it("says the draft was followed from Next up", () => {
-    links(NextUp({ draft: DRAFT, waiting: 1 })).get(`/content/${DRAFT.id}`)!.props.onClick!();
+    links(NextUp({ draft: DRAFT, waiting: 1, autoApprove: false })).get(`/content/${DRAFT.id}`)!.props.onClick!();
     expect(clicked).toHaveBeenCalledWith(DRAFT.id, "draft");
   });
 
   it("says the rest of the queue was followed instead, when there is more waiting", () => {
-    const found = links(NextUp({ draft: DRAFT, waiting: 3 }));
+    const found = links(NextUp({ draft: DRAFT, waiting: 3, autoApprove: false }));
     found.get("/articles?status=review")!.props.onClick!();
     expect(clicked).toHaveBeenCalledWith(DRAFT.id, "more");
-    expect(links(NextUp({ draft: DRAFT, waiting: 1 })).has("/articles?status=review")).toBe(false);
+    expect(links(NextUp({ draft: DRAFT, waiting: 1, autoApprove: false })).has("/articles?status=review")).toBe(false);
   });
 
   it("still renders as it did: the title, the one accent button", () => {
-    const html = renderToStaticMarkup(<NextUp draft={DRAFT} waiting={3} />);
+    const html = renderToStaticMarkup(<NextUp draft={DRAFT} waiting={3} autoApprove={false} />);
     expect(html).toContain("How to pick a dental clinic");
     expect(html).toContain("Read and approve");
     expect(html).toContain("2 more drafts");
     expect(clicked).not.toHaveBeenCalled();
+  });
+
+  it("does not promise a wait for approval on a site that approves on its own", () => {
+    expect(renderToStaticMarkup(<NextUp draft={DRAFT} waiting={1} autoApprove={false} />)).toContain("Nothing publishes until you approve it.");
+    const auto = renderToStaticMarkup(<NextUp draft={DRAFT} waiting={1} autoApprove />);
+    expect(auto).not.toContain("Nothing publishes until you approve it");
+    expect(auto).toContain("Auto-approve is on");
+  });
+
+  it("in the trial's first days, asks for the first article with one button", () => {
+    const html = renderToStaticMarkup(<NextUp draft={DRAFT} waiting={8} autoApprove={false} first />);
+    expect(html).toContain("Review your first article");
+    expect(html).toContain("How to pick a dental clinic");
+    expect(html).toContain("Review draft");
+    expect(html).not.toContain("Read and approve");
+    expect(html.match(/<button/g)).toHaveLength(1);
   });
 });

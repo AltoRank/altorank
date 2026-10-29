@@ -28,6 +28,13 @@ export interface DashboardState {
    */
   keywordCount: number;
   /**
+   * Drafts already written and not yet published (in review or approved).
+   * With the calendar's open entries all written, `scheduledCount` is 0 and
+   * the plan is not empty: it is used up. The card said "Nothing is
+   * scheduled. An empty plan..." beside eight fresh drafts.
+   */
+  draftsWritten?: number;
+  /**
    * The wizard was opened for this site and never finished or skipped.
    *
    * The layout only bounces to /onboarding while the workspace has no
@@ -136,14 +143,22 @@ export function recommendedActions(state: DashboardState): RecommendedAction[] {
             cta: "Research",
             href: "/keywords",
           }
-        : {
-            id: "plan-month",
-            title: "Nothing is scheduled",
-            consequence:
-              "An empty plan means no draft is written on any day; plan your month so the calendar has something to keep.",
-            cta: "Plan",
-            run: "plan",
-          },
+        : (state.draftsWritten ?? 0) > 0
+          ? {
+              id: "plan-month",
+              title: "No more articles queued",
+              consequence: `Everything on the plan is written: ${state.draftsWritten === 1 ? "1 draft is" : `${state.draftsWritten} drafts are`} with you. Plan the next ones so a new draft keeps arriving after them.`,
+              cta: "Plan",
+              run: "plan",
+            }
+          : {
+              id: "plan-month",
+              title: "Nothing is scheduled",
+              consequence:
+                "An empty plan means no draft is written on any day; plan your month so the calendar has something to keep.",
+              cta: "Plan",
+              run: "plan",
+            },
     );
   }
   if (!state.gscConnected) {
