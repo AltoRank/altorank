@@ -91,15 +91,42 @@ describe("proposeProfile", () => {
     expect(inferScopes).toEqual(["ws-1"]);
   });
 
-  it("does not keep a failed read, so Try again reads again, until the limit", async () => {
+  it("keeps a failed read too, so a reload spends nothing", async () => {
+    infer.mockResolvedValue({ profile: null, reason: "unreadable", source: "none", htmlLang: "it" });
+    const first = await proposeProfile("ws-1");
+    for (let i = 0; i < 5; i++) expect(await proposeProfile("ws-1")).toEqual(first);
+    expect(infer).toHaveBeenCalledTimes(1);
+    expect(first).toMatchObject({ profile: null, reason: "unreadable", localeGuess: expect.objectContaining({ language: "Italian" }) });
+  });
+
+  it("joins a read already running instead of buying a second", async () => {
+    let finish!: (v: unknown) => void;
+    infer.mockReturnValue(new Promise((r) => (finish = r)));
+    const both = Promise.all([proposeProfile("ws-1"), proposeProfile("ws-1")]);
+    await new Promise((r) => setTimeout(r, 0));
+    finish({ profile: { ...PROFILE }, reason: "ok", source: "html" });
+    const [a, b] = await both;
+    expect(infer).toHaveBeenCalledTimes(1);
+    expect(b).toEqual(a);
+  });
+
+  it("Try again reads a kept failure again, until the limit, and the refusal blames nobody", async () => {
     infer.mockResolvedValue({ profile: null, reason: "unreadable", source: "none" });
     const perSite = DOOR_LIMITS["wizard-site-read"][0].limit;
-    for (let i = 0; i < perSite; i++) expect((await proposeProfile("ws-1")).reason).toBe("unreadable");
+    await proposeProfile("ws-1");
+    for (let i = 1; i < perSite; i++) expect((await proposeProfile("ws-1", { again: true })).reason).toBe("unreadable");
     expect(infer).toHaveBeenCalledTimes(perSite);
-    const refused = await proposeProfile("ws-1");
-    expect(refused).toMatchObject({ profile: null, reason: "limited", message: expect.stringContaining("as many times as setup allows") });
+    const refused = await proposeProfile("ws-1", { again: true });
+    expect(refused).toMatchObject({ profile: null, reason: "limited", message: expect.stringContaining("could not get in") });
+    expect(refused.message).not.toMatch(/as many times|allows/);
     expect(refused).toHaveProperty("localeGuess");
     expect(infer).toHaveBeenCalledTimes(perSite);
+  });
+
+  it("Try again after a read that worked hands back the read", async () => {
+    await proposeProfile("ws-1");
+    expect((await proposeProfile("ws-1", { again: true })).profile?.name).toBe("Acme");
+    expect(infer).toHaveBeenCalledTimes(1);
   });
 
   it("says the gate's own sentence when the account cannot spend, and reads nothing", async () => {
@@ -111,7 +138,7 @@ describe("proposeProfile", () => {
   it("does not count a self-hosted install", async () => {
     canSpend.mockResolvedValue({ allowed: true, reason: "self-host", message: null, quota: { reason: "self-host" } });
     infer.mockResolvedValue({ profile: null, reason: "unreadable", source: "none" });
-    for (let i = 0; i < 6; i++) await proposeProfile("ws-1");
+    for (let i = 0; i < 6; i++) await proposeProfile("ws-1", { again: true });
     expect(infer).toHaveBeenCalledTimes(6);
   });
 });

@@ -55,18 +55,20 @@ export function AudienceList({
   profile,
   patch,
   heading = true,
+  title = "Target audiences",
 }: {
   profile: BusinessProfile;
   patch: (p: Partial<BusinessProfile>) => void;
   /** Off when the list sits under a collapsible section that already names it. */
   heading?: boolean;
+  title?: string;
 }) {
   const doubted = doubtedAudiences(profile.audiences);
   const quote = (xs: string[]) => xs.map((x) => `“${x}”`).join(", ");
   const examples = wizardExamples(profile);
   return (
     <>
-      {heading && <CountedHeading title="Target audiences" count={profile.audiences.length} max={MAX_AUDIENCES} />}
+      {heading && <CountedHeading title={title} count={profile.audiences.length} max={MAX_AUDIENCES} />}
       <ChipList
         items={profile.audiences}
         onChange={(audiences) => patch({ audiences })}
