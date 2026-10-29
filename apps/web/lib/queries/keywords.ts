@@ -70,18 +70,25 @@ export async function getKeywordSourceYields(workspaceId: string): Promise<Keywo
   const [kw, art, cal] = await Promise.all([
     supabase.from("keywords").select("id, source_type, source_ref").eq("workspace_id", workspaceId),
     supabase.from("articles").select("keyword_id").eq("workspace_id", workspaceId).not("keyword_id", "is", null),
+    // Every entry that names a keyword: one with its article attached counts
+    // the keyword as written. The drafts setup writes carry their keyword on
+    // the calendar entry only, so reading `articles.keyword_id` alone put a
+    // site's whole first week under "Stored: tracked, not on the plan".
     supabase
       .from("calendar_entries")
-      .select("keyword_id")
+      .select("keyword_id, article_id, status")
       .eq("workspace_id", workspaceId)
-      .in("status", ["queue", "scheduled"])
-      .is("article_id", null),
+      .not("keyword_id", "is", null),
   ]);
   if (kw.error) throw new Error(kw.error.message);
+  const entries = (cal.data ?? []) as Array<{ keyword_id: string | null; article_id: string | null; status: string | null }>;
   return rollupSourceYields(
     (kw.data ?? []) as Array<{ id: string; source_type: string | null; source_ref: string | null }>,
-    ((art.data ?? []) as Array<{ keyword_id: string | null }>).map((a) => a.keyword_id),
-    ((cal.data ?? []) as Array<{ keyword_id: string | null }>).map((c) => c.keyword_id),
+    [
+      ...((art.data ?? []) as Array<{ keyword_id: string | null }>).map((a) => a.keyword_id),
+      ...entries.filter((c) => c.article_id).map((c) => c.keyword_id),
+    ],
+    entries.filter((c) => !c.article_id && (c.status === "queue" || c.status === "scheduled")).map((c) => c.keyword_id),
   );
 }
 

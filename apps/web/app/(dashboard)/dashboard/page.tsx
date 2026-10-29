@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -43,6 +44,7 @@ import type { BusinessProfile } from "@/lib/onboarding/business-profile";
 import type { Workspace } from "@/lib/types";
 import { plural } from "@/lib/utils";
 import { getScopedWorkspaceId } from "@/lib/workspace-scope";
+import { getRequestQuota } from "@/lib/queries/quota";
 import { FIRST_SITE_PATH } from "@/lib/workspaces/first-site";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -82,15 +84,18 @@ export default async function DashboardPage() {
     .select("id, integration:integrations(tag)");
   if (scopeId) cmsQuery = cmsQuery.eq("workspace_id", scopeId);
 
-  let plannedQuery = gscSupabase
+  // The calendar's open entries, each with whether its article is written.
+  // Counted here, from the entries themselves, rather than from keyword
+  // statuses: "8 in the content plan" sat beside "Nothing is scheduled"
+  // because one read keyword statuses and the other only unwritten entries.
+  const planQuery = gscSupabase
     .from("calendar_entries")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "queue")
-    .is("article_id", null);
-  if (scopeId) plannedQuery = plannedQuery.eq("workspace_id", scopeId);
+    .select("keyword_id, article_id, status")
+    .eq("workspace_id", scopeId)
+    .in("status", ["queue", "scheduled", "run"]);
 
   const now = new Date();
-  const [workspaces, allArticles, recent, gscRows, keywords, { count: gscCount }, bing, cmsRes, { count: plannedEntries }, yields, profileRes, health, knownPages, shareFacts, value] =
+  const [workspaces, allArticles, recent, gscRows, keywords, { count: gscCount }, bing, cmsRes, planRes, yields, profileRes, health, knownPages, shareFacts, value, { data: auth }] =
     await Promise.all([
       getWorkspaces(),
       getArticles(scopeId ?? undefined),
@@ -104,7 +109,7 @@ export default async function DashboardPage() {
       // one line would be a number that describes neither.
       getBingSummary(scopeId ?? undefined),
       cmsQuery,
-      plannedQuery,
+      planQuery,
       scopeId ? getKeywordSourceYields(scopeId) : Promise.resolve<KeywordSourceYields | null>(null),
       scopeId
         ? gscSupabase.from("workspaces").select("business_profile").eq("id", scopeId).maybeSingle()
@@ -118,6 +123,7 @@ export default async function DashboardPage() {
       // The same clicks as the chart, priced. The one figure on this page
       // that is an estimate, and its label and tooltip say so.
       getTrafficValue(scopeId ?? undefined),
+      gscSupabase.auth.getUser(),
     ]);
   // The days Search Console history covers: one site's recorded sync range,
   // or, across sites, what the rows show (a site connected last week must not
@@ -152,7 +158,10 @@ export default async function DashboardPage() {
   // "with rank data": that would be a different query against keyword_rankings,
   // and a delta that does not measure what it says is how this codebase keeps
   // ending up with numbers nobody can trace.
-  const plannedCount = keywords.filter((k) => k.status !== "new").length;
+  const openEntries = (planRes.data ?? []) as Array<{ keyword_id: string | null; article_id: string | null; status: string }>;
+  const plannedCount = new Set(openEntries.map((e) => e.keyword_id).filter(Boolean)).size;
+  // Entries still to be written: what the plan has left.
+  const unwrittenEntries = openEntries.filter((e) => !e.article_id).length;
 
   // Build per-workspace article counts
   const wsCounts = new Map<string, { total: number; live: number }>();
@@ -166,6 +175,7 @@ export default async function DashboardPage() {
   const totalArticles = allArticles.length;
   const totalLive = allArticles.filter((a) => a.status === "live").length;
   const pendingReviews = allArticles.filter((a) => a.status === "review").length;
+  const approvedOrLive = allArticles.filter((a) => a.status === "scheduled" || a.status === "live").length;
 
   // Plain object for client component (Maps aren't serializable)
   const wsCountsObj = Object.fromEntries(wsCounts);
@@ -193,8 +203,9 @@ export default async function DashboardPage() {
     cmsConnected,
     gscConnected,
     pendingReviews,
-    scheduledCount: plannedEntries ?? 0,
+    scheduledCount: unwrittenEntries,
     keywordCount,
+    draftsWritten: pendingReviews + allArticles.filter((a) => a.status === "scheduled").length,
     setupUnfinished: Boolean(
       scopedWorkspace && !scopedWorkspace.onboarded_at && !scopedWorkspace.onboarding_skipped_at,
     ),
@@ -206,6 +217,13 @@ export default async function DashboardPage() {
   const setupCard = actions.some((a) => a.id === "finish-setup");
   const nextUp = oldestReview && !setupCard ? oldestReview : null;
   const otherActions = nextUp ? actions.filter((a) => a.id !== "review-drafts") : actions;
+  // A trial's first days, before anything is approved: one draft, one
+  // button. The first Home after checkout asked for four things at once
+  // (the draft, publishing, the plan, Search Console) beside a keyword
+  // breakdown nobody had a use for yet. Those wait under "More tools" until
+  // the first article is approved, which is what the trial is for.
+  const quota = scopedWorkspace ? await getRequestQuota(scopedWorkspace.account_id, auth.user?.email ?? null) : null;
+  const firstDays = Boolean(quota?.trial) && approvedOrLive === 0 && nextUp !== null;
   const competitorYields = yields ? yieldsForInputs(profile?.competitors ?? [], "competitor", yields) : [];
   const audienceYields = yields ? yieldsForInputs(profile?.audiences ?? [], "audience", yields) : [];
   // Audience research only records provenance since the drawer started
@@ -315,7 +333,8 @@ export default async function DashboardPage() {
       />
 
       <div className="flex-1 overflow-y-auto px-8 py-6 scroll">
-        {nextUp && <NextUp draft={nextUp} waiting={pendingReviews} />}
+        {nextUp && <NextUp draft={nextUp} waiting={pendingReviews} autoApprove={Boolean(scopedWorkspace?.auto_approve)} first={firstDays} />}
+        <MoreTools collapsed={firstDays}>
         <RecommendedActionsStrip actions={otherActions} />
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
           {/* Traffic chart, full width: the review queue that sat beside it
@@ -421,8 +440,8 @@ export default async function DashboardPage() {
                     <div className="text-ink-3">No competitors named in the business profile, and no keyword came from one.</div>
                   ) : !competitorMeasured ? (
                     <div className="text-ink-3">
-                      Not measured yet: no keyword on this workspace has been researched from a competitor. Run Generate with a
-                      competitor selected in the research drawer and this list fills in.
+                      Not measured yet: no keyword here has come from a competitor. Research keywords from a competitor on the
+                      Keywords page and this list fills in.
                     </div>
                   ) : (
                     <ul className="space-y-1">
@@ -443,8 +462,8 @@ export default async function DashboardPage() {
                     <div className="text-ink-3">No audiences named in the business profile, and no keyword came from one.</div>
                   ) : !audienceMeasured ? (
                     <div className="text-ink-3">
-                      Not measured yet: no keyword on this workspace has been researched from an audience. Run Generate with an
-                      audience selected in the research drawer and this list fills in.
+                      Not measured yet: no keyword here has come from an audience. Research keywords for an audience on the
+                      Keywords page and this list fills in.
                     </div>
                   ) : (
                     <ul className="space-y-1">
@@ -537,7 +556,27 @@ export default async function DashboardPage() {
           </Card>
 
         </div>
+        </MoreTools>
       </div>
     </>
+  );
+}
+
+/**
+ * Everything below Next up, folded away during the trial's first days and
+ * left as it is after. `<details>`, so it opens without script and stays the
+ * person's to open.
+ */
+function MoreTools({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
+  if (!collapsed) return <>{children}</>;
+  return (
+    <details className="group mt-2">
+      <summary className="mb-4 inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md text-[12.5px] text-ink-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 [&::-webkit-details-marker]:hidden">
+        <span className="transition-transform group-open:rotate-90">›</span>
+        More tools
+        <span className="text-ink-3">publishing, Search Console, keyword sources, recent articles</span>
+      </summary>
+      {children}
+    </details>
   );
 }

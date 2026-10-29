@@ -30,6 +30,13 @@ describe("recommendedActions", () => {
     expect(recommendedActions({ ...healthy, pendingReviews: 3, reviewDraftId: "d1" })[0].href).toBe("/articles?status=review");
     expect(recommendedActions({ ...healthy, pendingReviews: 1 })[0].href).toBe("/articles?status=review");
   });
+  it("says a used-up plan is used up, not empty, when its drafts are written", () => {
+    const [card] = recommendedActions({ ...healthy, scheduledCount: 0, draftsWritten: 8 });
+    expect(card).toMatchObject({ id: "plan-month", title: "No more articles queued", run: "plan" });
+    expect(card.consequence).toContain("8 drafts are with you");
+    expect(card.consequence).not.toMatch(/empty plan/i);
+    expect(recommendedActions({ ...healthy, scheduledCount: 0 })[0].title).toBe("Nothing is scheduled");
+  });
   it("offers to plan only when the calendar is empty", () => {
     expect(recommendedActions({ ...healthy, scheduledCount: 0 }).map((a) => a.id)).toEqual(["plan-month"]);
     expect(recommendedActions({ ...healthy, scheduledCount: 1 })).toEqual([]);
