@@ -106,7 +106,18 @@ const REFUSAL: Record<SpendDoor, string> = {
   "wizard-rival-resolve": "Competitors have been looked up as many times as setup allows",
 };
 
+/**
+ * The site read's refusal, said as what happened to the site rather than as
+ * something the owner used up: by the time a site is refused, every read of
+ * it has failed, since a read that worked is kept and handed back.
+ */
+const SITE_READ_REFUSAL = {
+  window: "We tried to read your website a few times and could not get in, so we will not try again today. Tell us about your business below and we will write from that.",
+  lifetime: "We tried to read your website a few times and could not get in. Tell us about your business below and we will write from that.",
+};
+
 export function doorRefusal(door: SpendDoor, limit: DoorLimit): string {
+  if (door === "wizard-site-read") return limit.windowSeconds === null ? SITE_READ_REFUSAL.lifetime : SITE_READ_REFUSAL.window;
   const when =
     limit.windowSeconds === null
       ? " before the trial. Start the trial to look again, or fill this in by hand."
@@ -252,6 +263,92 @@ export async function keepDoorResult(
   } catch {
     // The memory copy above still serves this instance.
   }
+}
+
+// --- Reads in flight ------------------------------------------------------------
+//
+// The wizard asks for its read when it mounts, so a reload, a second tab, or
+// React mounting effects twice in development asked again while the first
+// read was still running, and each one was counted. Two layers: the same
+// process shares the promise; another instance finds the first press's row,
+// marked with its key and no result yet, and waits for the result instead
+// of buying its own.
+
+const inFlight = new Map<string, Promise<unknown>>();
+
+/** Run `work` once per door, site and input in this process; a second caller gets the same promise. */
+export function onceInFlight<T>(door: SpendDoor, workspaceId: string, key: string, work: () => Promise<T>): Promise<T> {
+  const k = memoryKey(door, workspaceId, key);
+  const running = inFlight.get(k) as Promise<T> | undefined;
+  if (running) return running;
+  const started = work().finally(() => inFlight.delete(k));
+  inFlight.set(k, started);
+  return started;
+}
+
+/** How long a counted press with no result yet is taken to be still running. */
+export const IN_FLIGHT_SECONDS = 120;
+
+/** Say a counted press is running for `key`, so another instance waits for it. Never throws. */
+export async function markDoorInFlight(useId: string | null, key: string, deps: DoorDeps = {}): Promise<void> {
+  const db = dbOf(deps);
+  if (!db || !useId) return;
+  try {
+    await db.from("spend_door_uses").update({ cache_key: key }).eq("id", useId);
+  } catch {
+    // Unmarked: a concurrent press elsewhere buys its own read, as before.
+  }
+}
+
+/** A press that threw is no longer running: unmark it, so nobody waits for it. Never throws. */
+export async function clearDoorInFlight(useId: string | null, deps: DoorDeps = {}): Promise<void> {
+  const db = dbOf(deps);
+  if (!db || !useId) return;
+  try {
+    await db.from("spend_door_uses").update({ cache_key: null }).eq("id", useId).is("result", null);
+  } catch {
+    // It ages out after IN_FLIGHT_SECONDS.
+  }
+}
+
+/**
+ * When another instance is already reading this input, wait for what it
+ * buys, up to `waitMs`; null when nothing is running or it did not finish in
+ * time (the caller then reads for itself). Never throws.
+ */
+export async function awaitDoorInFlight<T>(
+  door: SpendDoor,
+  workspaceId: string,
+  key: string,
+  opts: { waitMs?: number; pollMs?: number } = {},
+  deps: DoorDeps = {},
+): Promise<T | null> {
+  const db = dbOf(deps);
+  if (!db) return null;
+  const now = deps.now ?? Date.now;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  try {
+    const { data, error } = await db
+      .from("spend_door_uses")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("door", door)
+      .eq("cache_key", key)
+      .is("result", null)
+      .gte("used_at", new Date(now() - IN_FLIGHT_SECONDS * 1000).toISOString())
+      .limit(1)
+      .maybeSingle();
+    if (error || !data) return null;
+  } catch {
+    return null;
+  }
+  const until = now() + (opts.waitMs ?? 90_000);
+  while (now() < until) {
+    await sleep(opts.pollMs ?? 2000);
+    const kept = await readDoorCache<T>(door, workspaceId, key, IN_FLIGHT_SECONDS, deps);
+    if (kept) return kept;
+  }
+  return null;
 }
 
 /**

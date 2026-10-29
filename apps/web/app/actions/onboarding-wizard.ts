@@ -19,7 +19,17 @@ import { trainVoiceProfile } from "@/lib/voice/train";
 import { createClient } from "@/lib/supabase/server";
 import { requireAuth } from "@/lib/auth/require-auth";
 import { canSpend } from "@/lib/billing/spend-gate";
-import { inputKey, keepDoorResult, readDoorCache, takeDoor, type SpendDoor } from "@/lib/billing/spend-doors";
+import {
+  awaitDoorInFlight,
+  clearDoorInFlight,
+  inputKey,
+  keepDoorResult,
+  markDoorInFlight,
+  onceInFlight,
+  readDoorCache,
+  takeDoor,
+  type SpendDoor,
+} from "@/lib/billing/spend-doors";
 import { withSpendScope } from "@/lib/billing/spend-scope";
 import { trialGateApplies } from "@/lib/billing/trial";
 import { refusedWhileViewingAs } from "@/lib/auth/impersonation";
@@ -98,48 +108,68 @@ async function wizardDoor(
 /**
  * Read the site and propose a profile, with the reason when it cannot.
  * The wizard renders the reason; it never renders blanks as a success.
+ *
+ * What a read bought is kept and handed back, a failure included: the wizard
+ * asks on every mount, and a site behind a bot wall used to be read again on
+ * each reload until the day's reads were gone, when the owner was told they
+ * had used them up. `again` is the owner pressing "Try again" (or Settings'
+ * autocomplete): a kept failure is read again then, and that press is counted.
  */
-export async function proposeProfile(workspaceId: string): Promise<InferenceResult> {
+export async function proposeProfile(workspaceId: string, opts: { again?: boolean } = {}): Promise<InferenceResult> {
   const { supabase, workspace } = await assertWorkspace(workspaceId);
   if (!workspace.domain) return { profile: null, reason: "unreadable", source: "none" };
-  // A read this site already paid for, handed back: reloading the wizard
-  // used to buy the crawl and the model call again every time.
-  const key = inputKey({ domain: workspace.domain });
-  const kept = await readDoorCache<InferenceResult>("wizard-site-read", workspaceId, key);
-  if (kept?.profile) return kept;
-  // One model call per press, and "Try again" is right there on the screen.
-  // A new account is inside its free allowance and never sees the gate; a
-  // lapsed one that comes back to add a site does.
-  const { refusal, reason, useId } = await wizardDoor(supabase, workspaceId, "wizard-site-read");
-  if (refusal) {
-    return {
-      profile: null,
-      reason,
-      source: "none",
-      message: refusal,
-      localeGuess: guessLocale({ domain: workspace.domain }),
-    };
-  }
-  // Checked: a conversion page the site does not have comes back empty with
-  // the reason, never as the guess (lib/onboarding/observed-facts.ts).
   const domain = workspace.domain;
-  const result = await withSpendScope({ workspaceId, job: "onboarding" }, () => inferVerifiedBusinessProfile(domain));
-  // A failed read still says which language the page is in and which
-  // country's domain it is on: the wizard starts from that, not English /
-  // Global (lib/onboarding/locale-guess.ts). A failure is not kept: "Try
-  // again" is for a site that would not load the first time.
-  if (!result.profile) return { ...result, localeGuess: guessLocale({ htmlLang: result.htmlLang, domain }) };
-  // The model names rivals ("trainerize"); keyword research reads domains.
-  // Resolved here, not in business-profile.ts, because the client wizard
-  // imports that file and the resolver needs node:dns. A name nothing can
-  // place is dropped, so no chip is shown that research cannot read.
-  if (result.profile?.competitors.length) {
-    const own = domain.replace(/^www\./, "").toLowerCase();
-    const { domains } = await resolveCompetitorDomains(result.profile.competitors);
-    result.profile.competitors = domains.filter((d) => d !== own);
-  }
-  await keepDoorResult("wizard-site-read", workspaceId, key, useId, result);
-  return result;
+  const key = inputKey({ domain });
+  // One read per site at a time: a reload or a second tab joins the read
+  // already running instead of buying its own.
+  return onceInFlight("wizard-site-read", workspaceId, key, async () => {
+    const kept = await readDoorCache<InferenceResult>("wizard-site-read", workspaceId, key);
+    if (kept?.profile || (kept && !opts.again)) return kept;
+    if (!opts.again) {
+      const waited = await awaitDoorInFlight<InferenceResult>("wizard-site-read", workspaceId, key);
+      if (waited) return waited;
+    }
+    // One model call per press. A new account is inside its free allowance
+    // and never sees the gate; a lapsed one that comes back to add a site does.
+    const { refusal, reason, useId } = await wizardDoor(supabase, workspaceId, "wizard-site-read");
+    if (refusal) {
+      return {
+        profile: null,
+        reason,
+        source: "none",
+        message: refusal,
+        localeGuess: guessLocale({ domain }),
+      };
+    }
+    await markDoorInFlight(useId, key);
+    try {
+      // Checked: a conversion page the site does not have comes back empty
+      // with the reason, never as the guess (lib/onboarding/observed-facts.ts).
+      const result = await withSpendScope({ workspaceId, job: "onboarding" }, () => inferVerifiedBusinessProfile(domain));
+      if (!result.profile) {
+        // A failed read still says which language the page is in and which
+        // country's domain it is on: the wizard starts from that, not
+        // English / Global (lib/onboarding/locale-guess.ts).
+        const failed: InferenceResult = { ...result, localeGuess: guessLocale({ htmlLang: result.htmlLang, domain }) };
+        await keepDoorResult("wizard-site-read", workspaceId, key, useId, failed);
+        return failed;
+      }
+      // The model names rivals ("trainerize"); keyword research reads domains.
+      // Resolved here, not in business-profile.ts, because the client wizard
+      // imports that file and the resolver needs node:dns. A name nothing can
+      // place is dropped, so no chip is shown that research cannot read.
+      if (result.profile.competitors.length) {
+        const own = domain.replace(/^www\./, "").toLowerCase();
+        const { domains } = await resolveCompetitorDomains(result.profile.competitors);
+        result.profile.competitors = domains.filter((d) => d !== own);
+      }
+      await keepDoorResult("wizard-site-read", workspaceId, key, useId, result);
+      return result;
+    } catch (err) {
+      await clearDoorInFlight(useId);
+      throw err;
+    }
+  });
 }
 
 /** The profile as a cache key: everything the lookup reads, never the confirmation stamp. */

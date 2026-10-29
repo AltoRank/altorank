@@ -212,6 +212,9 @@ export function OnboardingWizard({
   const [reading, setReading] = useState(initialProfile === null);
   const [readFailure, setReadFailure] = useState<InferenceReason | null>(null);
   const [readFailureMessage, setReadFailureMessage] = useState<string | null>(null);
+  // "Try again" pressed: the next read skips a kept failure and is counted.
+  // Every other read (the mount, a reload) is handed what is kept.
+  const readAgain = useRef(false);
   // Language and market were guessed from the page's `lang` and its country
   // domain because the read failed: said beside them.
   const [localeGuessed, setLocaleGuessed] = useState(false);
@@ -348,7 +351,9 @@ export function OnboardingWizard({
     let cancelled = false;
     const readStarted = Date.now();
     trackStep("site_read_started", { workspaceId });
-    proposeProfile(workspaceId)
+    const again = readAgain.current;
+    readAgain.current = false;
+    proposeProfile(workspaceId, again ? { again } : {})
       .then((r) => {
         trackStep(r.profile ? "site_read_finished" : "site_read_failed", { workspaceId, ms: Date.now() - readStarted });
         if (cancelled) return;
@@ -589,22 +594,63 @@ export function OnboardingWizard({
   const looking = discovery === "pending" && !alreadyOnboarded;
   const siteLine = siteSummary(site, looking, domain);
   const audienceLine = profile.audiences.length ? profile.audiences.join(", ") : "None yet";
+  // The site could not be read: the screen asks only for what a first
+  // article cannot be written without (what is sold, and to whom). The
+  // rivals and the publishing settings were asked here too, and on a site
+  // that showed us nothing every one of them was a blank to fill in;
+  // Settings has them for later.
+  const unread = readFailure !== null && readFailure !== "needs_plan" && !editing;
+  const failureBox = readFailure && (
+    <div className="flex flex-col items-start gap-3 rounded-[8px] border border-line bg-bg p-4 sm:flex-row sm:justify-between sm:gap-4">
+      <p className="m-0 text-[12.5px] leading-[1.6] text-ink-2">{readFailureMessage ?? FAILURE_COPY[readFailure]}</p>
+      {readFailure !== "no_model" && readFailure !== "needs_plan" && readFailure !== "limited" && (
+        <Button
+          size="sm"
+          onClick={() => {
+            readAgain.current = true;
+            setReadFailure(null);
+            setReadFailureMessage(null);
+            setReading(true);
+          }}
+        >
+          Try again
+        </Button>
+      )}
+    </div>
+  );
+  const localeFooter = (open: () => void) => (
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12px] text-ink-2">
+      <span className="text-ink-3">Language and market:</span>
+      <span className="font-medium text-ink">{localeLine(profile)}</span>
+      {localeGuessed && <span className="text-ink-3">(guessed from your site)</span>}
+      <button
+        type="button"
+        className="rounded-md px-1 text-accent-ink underline decoration-line underline-offset-[3px] hover:decoration-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
+        onClick={() => {
+          open();
+          requestAnimationFrame(() => document.getElementById(LANGUAGE_SELECT_ID)?.focus());
+        }}
+      >
+        Change
+      </button>
+    </div>
+  );
   const next = editing
     ? { full: "We read your site again with what you changed and look for a first article, in about 3 minutes. Nothing is charged.", short: "One more free try, about 3 minutes." }
-    : wizardNextLine({ preTrial: trialEligible, canRead: fullArticle, freeDrafts });
+    : wizardNextLine({ preTrial: trialEligible, canRead: fullArticle, freeDrafts, unread });
 
   return (
     <div className="min-h-screen bg-bg">
       <div className="mx-auto max-w-[720px] px-4 pt-10 sm:px-6" style={{ paddingBottom: (barHeight ?? 112) + 24 }}>
         <div className="mb-6 text-center">
-          <h1 className="mb-1.5 text-[21px] font-semibold">{editing ? "Change what we found" : "Check what we found"}</h1>
+          <h1 className="mb-1.5 text-[21px] font-semibold">{editing ? "Change what we found" : unread ? "We couldn’t read your website" : "Check what we found"}</h1>
           <p className="text-[13px] text-ink-2 [text-wrap:balance]">
-            {editing
+            {unread
+              ? "Tell us what you sell and who buys it. That is enough to write your first article."
+              : editing
               ? `Correct what we got wrong about ${domain || "your site"} - what you sell, who buys it, who you compete with - then try again. You get one more free try before the trial.`
-              : readFailure
-              ? readFailure === "needs_plan"
-                ? "This needs a plan."
-                : `We could not fill this in from ${domain}.`
+              : readFailure === "needs_plan"
+              ? "This needs a plan."
               : initialProfile
                 ? `Here is what we have for ${domain}. Check the two lists below; the rest only needs a glance.`
                 : "Based on your website, we've filled this in. Check the two lists below; the rest only needs a glance."}
@@ -614,47 +660,38 @@ export function OnboardingWizard({
           </p>
         </div>
 
+        {unread ? (
+          <div className="flex flex-col gap-3">
+            {failureBox}
+            <div className="rounded-[10px] border border-accent/40 bg-panel p-4 sm:p-5">
+              <OfferingList profile={profile} patch={patch} inputId={OFFERINGS_INPUT_ID} />
+            </div>
+            <div className="rounded-[10px] border border-accent/40 bg-panel p-4 sm:p-5">
+              <AudienceList profile={profile} patch={patch} title="Who buys from you" />
+            </div>
+            <Section
+              title="More about your business"
+              line={businessLine(profile) || "Name and description. Optional."}
+              initialOpen={false}
+              state="optional"
+              footer={localeFooter}
+            >
+              <BusinessFields profile={profile} patch={patch} />
+            </Section>
+            <p className="m-0 px-1 text-[12px] leading-[1.6] text-ink-3">
+              Competitors and where you publish can wait. Add them in Settings once your first article is written.
+            </p>
+          </div>
+        ) : (
         <div className="flex flex-col gap-3">
           <Section
             title="About your business"
             line={businessLine(profile) || "Nothing read yet"}
             initialOpen={readFailure !== null || !profile.name}
             state={readFailure || !profile.name ? "attention" : "found"}
-            footer={(open) => (
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[12px] text-ink-2">
-                <span className="text-ink-3">Language and market:</span>
-                <span className="font-medium text-ink">{localeLine(profile)}</span>
-                {localeGuessed && <span className="text-ink-3">(guessed from your site)</span>}
-                <button
-                  type="button"
-                  className="rounded-md px-1 text-accent-ink underline decoration-line underline-offset-[3px] hover:decoration-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
-                  onClick={() => {
-                    open();
-                    requestAnimationFrame(() => document.getElementById(LANGUAGE_SELECT_ID)?.focus());
-                  }}
-                >
-                  Change
-                </button>
-              </div>
-            )}
+            footer={localeFooter}
           >
-            {readFailure && (
-              <div className="mb-4 flex flex-col items-start gap-3 rounded-[8px] border border-line bg-bg p-4 sm:flex-row sm:justify-between sm:gap-4">
-                <p className="m-0 text-[12.5px] leading-[1.6] text-ink-2">{readFailureMessage ?? FAILURE_COPY[readFailure]}</p>
-                {readFailure !== "no_model" && readFailure !== "needs_plan" && readFailure !== "limited" && (
-                  <Button
-                    size="sm"
-                    onClick={() => {
-                      setReadFailure(null);
-                      setReadFailureMessage(null);
-                      setReading(true);
-                    }}
-                  >
-                    Try again
-                  </Button>
-                )}
-              </div>
-            )}
+            {readFailure && <div className="mb-4">{failureBox}</div>}
             <BusinessFields profile={profile} patch={patch} />
           </Section>
 
@@ -713,6 +750,7 @@ export function OnboardingWizard({
             </SiteFields>
           </Section>
         </div>
+        )}
       </div>
 
       {/* Fixed, so the button is never a scroll away. One button: there is no
@@ -875,14 +913,14 @@ const FAILURE_COPY: Record<InferenceReason, string> = {
   ok: "",
   no_model: "No model is configured on this install, so nothing could be proposed. Fill this in by hand.",
   unreadable:
-    "We could not read enough of this site to describe it. That usually means the page is built with JavaScript, or it blocks crawlers. Fill this in by hand, or try again.",
-  model_failed: "The site was read but the proposal failed. Try again, or fill this in by hand.",
+    "Your site did not let us read it. Some sites turn automated visitors away, or build every page with JavaScript. Try again in a minute, or fill in the two lists below.",
+  model_failed: "We read your site but could not turn it into a description. Try again, or fill in the two lists below.",
   // Never rendered: `needs_plan` always carries its own sentence, because the
   // reason depends on the account (out of free drafts, paused, card declined).
   needs_plan: "",
   // Always carries its own sentence (which limit, or that an operator is
   // viewing); this is only the fallback.
-  limited: "This site has been read as many times as setup allows for now. Fill this in by hand.",
+  limited: "We tried to read your website a few times and could not get in. Tell us about your business below and we will write from that.",
 };
 
 /** "Sep 7" from a YYYY-MM-DD, in UTC so the day the planner wrote is the day shown. */
