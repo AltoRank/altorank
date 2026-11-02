@@ -8,15 +8,20 @@ import { test, expect } from "./fixtures/test";
 test.use({ accountShape: { workspaces: [{ domain: "unreadable.e2e.altorank.test" }] } });
 
 test("an unreadable site is reported as one, with a retry", async ({ page, signedIn }) => {
-  const domain = signedIn.workspaces[0].domain;
+  void signedIn;
   await expect(page).toHaveURL(/\/onboarding$/);
-  await expect(page.getByRole("heading", { name: "About your business" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "We couldn’t read your website" })).toBeVisible();
 
-  await expect(page.getByText(`We could not fill this in from ${domain}.`)).toBeVisible();
-  await expect(page.getByText("We could not read enough of this site to describe it.", { exact: false })).toBeVisible();
+  await expect(page.getByText("Your site did not let us read it.", { exact: false })).toBeVisible();
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 
+  // Only what a first article needs is asked; rivals and publishing wait for Settings.
+  await expect(page.getByRole("heading", { name: "Who buys from you" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Where your content lives" })).toHaveCount(0);
+
   await expect(page.getByText("we've filled this in", { exact: false })).toHaveCount(0);
+  const more = page.locator("details", { has: page.getByRole("heading", { name: "More about your business" }) });
+  await more.locator(":scope > summary").click();
   await expect(page.getByLabel("Business name")).toHaveValue("");
   await expect(page.getByLabel(/^Description/)).toHaveValue("");
 });
