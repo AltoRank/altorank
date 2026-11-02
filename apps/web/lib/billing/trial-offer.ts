@@ -25,6 +25,7 @@
 //                        account is past the gate (lib/billing/trial.ts) and
 //                        the Billing page offers cancelling to any subscription
 //   VAT                  added at checkout only with STRIPE_TAX_ENABLED
+//   card required        checkout always takes a card (app/actions/billing.ts)
 //   what it includes     PLAN_ARTICLE_LIMITS and the publish gate
 //                        (lib/publishing/core.ts refuses anything without an
 //                        approval; auto-approve is off unless the owner turns it
@@ -77,30 +78,44 @@ export const CANCEL_LINE = "Cancel in Settings › Billing before the trial ends
 /** The plan the gate offers first, by name: Managed. Agency is the quiet second choice. */
 export const TRIAL_PLAN = PLAN_LABELS.starter;
 
+/** The heading over the topics the trial would write next. */
+export const NEXT_ARTICLES_HEADING = "Your next articles";
+
+/** How many of them the offer names: enough to be real, few enough for a phone's first screen. */
+export const NEXT_ARTICLES_SHOWN = 3;
+
 /**
- * What the trial includes, in the buyer's words. `fullArticle`: the owner has
- * read the article already, so the trial is for editing, approving and
- * publishing it; otherwise it is also what opens the text.
+ * What the trial is for, under the topics it names. Four generic benefits
+ * ("Nothing publishes until you approve it", "No extra costs") sold nothing
+ * (Codex review of the gate, 2026-10-28); what owners have done with the
+ * first article is copy it onto their own site, so the offer
+ * names the next ones and says that. Without a topic to name, the same
+ * sentence about articles for the site.
  */
-export function trialIncludes(fullArticle: boolean, plan: SelfServePlan = "starter"): string[] {
+export function nextArticlesLine(named: boolean): string {
+  return named
+    ? "Start your trial to have these written. Review each article, then copy it to your website."
+    : "Start your trial to have articles written for your site. Review each article, then copy it to your website.";
+}
+
+/** The plan's terms, folded under "Plan details": true in code (see the header). */
+export function planDetails(plan: SelfServePlan = "starter"): string[] {
   return [
-    // How publishing works today: no CMS has a self-serve Connect button
-    // (lib/cms/connectable.ts), so it is a copy, or a connection we set up on
-    // request (review, 2026-10-12). With the full article on the gate, the
-    // lede already says the trial is for editing, approving and publishing
-    // it; this line says only how it reaches the site.
-    fullArticle
-      ? "Copy each article to your site, or we connect your site for you"
-      : "Read this article in full, approve it, then copy it to your site or ask us to connect your site",
     `Up to ${PLAN_ARTICLE_LIMITS[plan]} articles a month, written at the pace you set`,
     "Nothing publishes until you approve it",
-    "No extra costs: the writing and the research are included",
+    "Writing and topic research included",
   ];
 }
 
-/** "€0 today, then €69/month from October 19." The first charge, said as one. */
-export function chargeLine(interval: BillingInterval, facts: TrialOfferFacts, plan: SelfServePlan = "starter"): string {
-  return `€0 today, then ${priceLabel(interval, plan)} from ${formatTrialDate(facts.endsAt)}${facts.taxAdded ? ", plus VAT where it applies" : ""}.`;
+/**
+ * The line directly above every trial button: that a card is asked for,
+ * what today costs, and the first charge with its date. The card is the
+ * surprise this used to leave for Stripe's form (UX clarity audit
+ * 2026-10-18; Codex review 2026-10-28: no price in the phone's first screen).
+ */
+export function priceLine(interval: BillingInterval, facts: TrialOfferFacts, plan: SelfServePlan = "starter"): string {
+  const price = `${priceLabel(interval, plan)}${facts.taxAdded ? " (plus VAT where it applies)" : ""}`;
+  return `Card required. €0 today. Then ${price} from ${formatTrialDate(facts.endsAt)} unless you cancel.`;
 }
 
 /** The reminder and the way out, both true in code (see the header). */

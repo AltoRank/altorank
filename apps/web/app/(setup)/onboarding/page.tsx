@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getSimulation } from "@/lib/dev/simulation";
 import { loadFirstLookReport } from "@/lib/onboarding/first-look-report";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getScopedWorkspaceId, openSitesOutside } from "@/lib/workspace-scope";
 import { OnboardingWizard } from "@/components/onboarding/wizard";
 import type { BusinessProfile } from "@/lib/onboarding/business-profile";
@@ -21,6 +21,7 @@ import { fullArticleOn, readFirstArticleBody } from "@/lib/onboarding/first-arti
 import { trialOfferFacts } from "@/lib/billing/trial-offer";
 import { stripeTaxEnabled } from "@/lib/stripe";
 import { FIRST_SITE_PATH } from "@/lib/workspaces/first-site";
+import { returningToGate } from "@/lib/onboarding/gate-visits";
 
 export const metadata: Metadata = { title: "Set up your site" };
 
@@ -58,10 +59,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   const authRead = requireAuth(undefined, { workspaceId: scopeId });
   const workspaceRead = supabase
     .from("workspaces")
-    // The account's answer rides along on the workspace's own account row,
-    // so the question is asked of the account that owns this site, once, and
-    // not again for its second site.
-    .select("id, account_id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, auto_approve, onboarded_at, onboarding_skipped_at, accounts(attribution_source)")
+    .select("id, account_id, domain, business_profile, sitemap_url, blog_root_url, example_article_urls, auto_generate_weekly_limit, auto_approve, onboarded_at, onboarding_skipped_at")
     .eq("id", scopeId)
     .single();
   const quotaRead = Promise.all([workspaceRead, authRead]).then(([{ data: ws }, { user }]) =>
@@ -79,11 +77,6 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   ]);
   if (!workspace || !quotaOrNull) redirect("/workspaces");
   const quota = quotaOrNull;
-
-  // A many-to-one embed comes back as one object; the untyped client can only
-  // promise an array, so both shapes are read rather than one asserted.
-  const account = workspace.accounts as { attribution_source: string | null } | { attribution_source: string | null }[] | null;
-  const answered = Boolean((Array.isArray(account) ? account[0] : account)?.attribution_source);
 
   // Whether this account sees the pre-trial view: the first article with no
   // preview and the card, instead of the plain finish. The same answer the
@@ -153,11 +146,26 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
   const gateHeld = gateShown && gatePlan.length
     ? await heldTopics(supabase, workspace.id, workspace.auto_generate_weekly_limit ?? FREE_TIER_PACE, gatePlan.map((p) => p.date)).catch(() => null)
     : null;
+  // A return to the gate: a visit recorded 12 hours ago or more, read by the
+  // server for this site (read through the person's client above) from the
+  // service-only gate_visits. A checkout just cancelled says so instead.
+  // Either opens the gate on its return screen, when there is a written
+  // article to come back to (components/onboarding/first-look-gate.tsx).
+  const welcome = !gateShown
+    ? null
+    : status === "cancelled"
+      ? ("cancelled" as const)
+      : (await returningToGate(createServiceClient(), workspace.id as string))
+        ? ("returning" as const)
+        : null;
+  // The return screen carries the cancellation in its first line; without
+  // an article to come back to, the plain notice says it.
+  const welcomeShown = welcome !== null && firstArticle?.article?.state === "written";
 
   return (
     <>
     {status === "cancelled" && <TrackStep step="checkout_cancelled" workspaceId={workspace.id as string} />}
-    {status === "cancelled" && <p role="status" className="p-4 text-center text-sm">Checkout was cancelled. Nothing was charged, and your first article and plan are saved. Start the trial below whenever you are ready.</p>}
+    {status === "cancelled" && !welcomeShown && <p role="status" className="p-4 text-center text-sm">Checkout was cancelled. Nothing was charged, and your first article and plan are saved. Start the trial below whenever you are ready.</p>}
     <OnboardingWizard
       canBuy={auth.role === "owner"}
       workspaceId={workspace.id}
@@ -189,7 +197,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
         blogRootUrl: workspace.blog_root_url ?? "",
         exampleArticleUrls: (workspace.example_article_urls as string[] | null) ?? [],
       }}
-      askAttribution={!answered}
+      welcome={welcome}
       // Already through setup once. The dashboard gate sends such a person
       // here for the card, and without this they would be handed the wizard
       // from its first screen - and "Finish" at the end of it starts a whole

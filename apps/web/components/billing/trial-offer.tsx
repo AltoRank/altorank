@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Icons } from "@/components/ui";
 import { StartTrialButton } from "./start-trial-button";
 import { PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
-import { CANCEL_LINE, chargeLine, otherIntervalLine, otherPlanLine, reassuranceLine, trialIncludes, type TrialOfferFacts } from "@/lib/billing/trial-offer";
+import { CANCEL_LINE, NEXT_ARTICLES_HEADING, NEXT_ARTICLES_SHOWN, nextArticlesLine, otherIntervalLine, otherPlanLine, planDetails, priceLine, reassuranceLine, type TrialOfferFacts } from "@/lib/billing/trial-offer";
 import { observeSeenOnce } from "@/lib/onboarding/seen-once";
 import type { TrialSurface } from "@/lib/onboarding/step-props";
 import { useMediaQuery } from "@/lib/hooks/use-media-query";
@@ -60,13 +60,13 @@ export function TrialOffer({ canBuy = true, returnTo = "/dashboard", secondary, 
 }
 
 /**
- * The gate's price box (UX audit 2026-10-12, #6): what the trial includes,
- * "€0 today, then €69/month from <date>", the reminder and the way out, one
- * full-width button, and yearly as a quiet second option with its real
- * saving. The interval is the gate's, not this box's: the sticky bar's
- * button opens the same checkout (#9: it always opened a monthly one).
- * Every line comes from lib/billing/trial-offer.ts, where each is checked
- * against the code that makes it true.
+ * The gate's price box: the next articles the trial writes, by name, what to
+ * do with them, the price line directly above the one full-width button,
+ * the reminder and the way out, and the plan's terms, yearly and Agency
+ * folded under "Plan details". The interval is the gate's, not this box's:
+ * the sticky bar's button opens the same checkout (#9: it always opened a
+ * monthly one). Every line comes from lib/billing/trial-offer.ts, where each
+ * is checked against the code that makes it true.
  */
 export function TrialPriceBox({
   canBuy,
@@ -75,10 +75,9 @@ export function TrialPriceBox({
   plan = "starter",
   onPlan,
   facts,
-  fullArticle,
+  nextArticles = [],
   returnTo = "/dashboard",
   onSeen,
-  buttonRef,
 }: {
   canBuy: boolean;
   interval: BillingInterval;
@@ -87,12 +86,11 @@ export function TrialPriceBox({
   plan?: SelfServePlan;
   onPlan?: (next: SelfServePlan) => void;
   facts: TrialOfferFacts;
-  fullArticle: boolean;
+  /** The site's next topics, by name, that the trial would write (lib/onboarding/next-articles.ts). */
+  nextArticles?: string[];
   returnTo?: string;
   /** Told once, the first time the box is actually on screen (lib/onboarding/seen-once.ts). */
   onSeen?: () => void;
-  /** Wraps the button, so the gate can tell when it is on screen. */
-  buttonRef?: React.Ref<HTMLDivElement>;
 }) {
   const [error, setError] = useState<string | null>(null);
   const inline = useMediaQuery(INLINE_CHECKOUT_QUERY);
@@ -104,6 +102,7 @@ export function TrialPriceBox({
   useEffect(() => (canBuy ? observeSeenOnce(box.current, () => seen.current?.()) : undefined), [canBuy]);
   if (!canBuy) return <p className="m-0 rounded-[10px] border border-line bg-panel p-5 text-[13px] leading-[1.6] text-ink-2">{MEMBER_CANNOT_BUY}</p>;
   const other: BillingInterval = interval === "month" ? "year" : "month";
+  const named = nextArticles.slice(0, NEXT_ARTICLES_SHOWN);
   return (
     <section ref={box} aria-labelledby="trial-offer-heading" className="rounded-[10px] border border-line bg-panel p-5">
       {/* The plan's name means nothing yet to someone on their first visit,
@@ -113,20 +112,29 @@ export function TrialPriceBox({
       <h2 id="trial-offer-heading" className="m-0 text-[16px] font-semibold leading-snug text-ink">
         Start your free {TRIAL_DAYS}-day trial
       </h2>
-      <ul className="m-0 mt-3 flex list-none flex-col gap-1.5 p-0" aria-label="What the trial includes">
-        {trialIncludes(fullArticle, plan).map((line) => (
-          <li key={line} className="flex items-start gap-2 text-[13px] leading-[1.5] text-ink-2">
-            <span className="mt-[3px] shrink-0 text-ok-ink" aria-hidden>
-              <Icons.check size={12} />
-            </span>
-            {line}
-          </li>
-        ))}
-      </ul>
-      <p className="m-0 mt-4 text-[14px] font-medium leading-[1.5] text-ink" data-testid="trial-charge-line">
-        {chargeLine(interval, facts, plan)}
+      {named.length > 0 && (
+        <>
+          <p className="m-0 mt-3 text-[11px] uppercase tracking-wide text-ink-3" id="next-articles-heading">
+            {NEXT_ARTICLES_HEADING}
+          </p>
+          <ul className="m-0 mt-1.5 flex list-none flex-col gap-1.5 p-0" aria-labelledby="next-articles-heading">
+            {named.map((topic) => (
+              <li key={topic} className="flex items-start gap-2 text-[13.5px] leading-[1.45] text-ink">
+                <span className="mt-[2px] shrink-0 text-ink-3" aria-hidden>
+                  <Icons.articles size={12} />
+                </span>
+                <span className="min-w-0 break-words">{topic}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+      <p className="m-0 mt-3 text-[13px] leading-[1.55] text-ink-2">{nextArticlesLine(named.length > 0)}</p>
+      {/* The price, directly above the button it is the price of. */}
+      <p className="m-0 mt-4 text-[13.5px] font-medium leading-[1.5] text-ink" data-testid="trial-charge-line">
+        {priceLine(interval, facts, plan)}
       </p>
-      <div ref={buttonRef} className="mt-3">
+      <div className="mt-2.5">
         <StartTrialButton
           plan={plan}
           interval={interval}
@@ -141,12 +149,22 @@ export function TrialPriceBox({
         />
       </div>
       <p className="m-0 mt-2.5 text-[12.5px] leading-[1.55] text-ink-2">{reassuranceLine()}</p>
-      {/* Yearly and Agency are two more decisions; one quiet "Other plans"
-          holds both, open once either has been picked. */}
+      {/* The plan's terms, yearly and Agency: one quiet "Plan details", open
+          once another interval or plan has been picked. */}
       <details className="mt-2" open={interval !== "month" || plan !== "starter" || undefined}>
         <summary className="cursor-pointer list-none text-[12.5px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink-2 [&::-webkit-details-marker]:hidden">
-          Other plans
+          Plan details
         </summary>
+        <ul className="m-0 mt-2 flex list-none flex-col gap-1 p-0" aria-label="What the plan includes">
+          {planDetails(plan).map((line) => (
+            <li key={line} className="flex items-start gap-2 text-[12.5px] leading-[1.5] text-ink-2">
+              <span className="mt-[3px] shrink-0 text-ok-ink" aria-hidden>
+                <Icons.check size={11} />
+              </span>
+              {line}
+            </li>
+          ))}
+        </ul>
         <button
           type="button"
           onClick={() => {

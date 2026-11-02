@@ -37,49 +37,54 @@ function gate(article: FirstArticleCard, initialHtml: string | null = null) {
 }
 
 describe("the price box", () => {
-  it("says what the trial includes, €0 today and the first charge's date, the reminder and the way out", () => {
-    const html = text(renderToStaticMarkup(<TrialPriceBox canBuy interval="month" onInterval={() => undefined} facts={FACTS} fullArticle />));
+  it("names the next articles, then the price line over the button, the reminder and the way out", () => {
+    const markup = renderToStaticMarkup(<TrialPriceBox canBuy interval="month" onInterval={() => undefined} facts={FACTS} nextArticles={["Kitchen tiles", "Bathroom tiles", "Floor tiles", "Wall tiles"]} />);
+    const html = text(markup);
     expect(html).toContain("Start your free 7-day trial");
     // No plan name over the default offer: it means nothing on a first visit.
     expect(html).not.toContain("Managed plan");
-    expect(html).toContain("Copy each article to your site, or we connect your site for you");
-    expect(html).toContain(`€0 today, then ${PLAN_PRICES.starter}/month from October 19.`);
+    expect(html).toContain("Your next articles Kitchen tiles Bathroom tiles Floor tiles Start your trial to have these written. Review each article, then copy it to your website.");
+    expect(html).not.toContain("Wall tiles");
+    expect(html).toContain(`Card required. €0 today. Then ${PLAN_PRICES.starter}/month from October 19 unless you cancel. Start 7-day trial`);
+    expect(html).not.toMatch(/No extra costs/);
     expect(html).toContain("We email you 3 days before the trial ends");
     expect(html).toContain("Cancel in Settings › Billing before the trial ends and nothing is charged.");
-    expect(html).toContain("Other plans");
+    expect(html).toContain("Plan details Up to 100 articles a month, written at the pace you set Nothing publishes until you approve it Writing and topic research included");
     expect(html).toContain(`Or pay yearly: ${PLAN_YEARLY_PRICES.starter}/year, two months free`);
     expect(html).not.toMatch(/renewal/i);
   });
 
   it("makes the trial button the full-width primary, and yearly a quiet link", () => {
-    const markup = renderToStaticMarkup(<TrialPriceBox canBuy interval="year" onInterval={() => undefined} facts={FACTS} fullArticle />);
+    const markup = renderToStaticMarkup(<TrialPriceBox canBuy interval="year" onInterval={() => undefined} facts={FACTS} />);
     expect(markup).toMatch(/<button[^>]*class="[^"]*w-full[^"]*"[^>]*>Start 7-day trial<\/button>/);
-    expect(text(markup)).toContain(`€0 today, then ${PLAN_YEARLY_PRICES.starter}/year from October 19.`);
+    expect(text(markup)).toContain(`Then ${PLAN_YEARLY_PRICES.starter}/year from October 19 unless you cancel.`);
     expect(text(markup)).toContain("Switch back to monthly");
   });
 
   it("offers Agency as a quiet switch under Managed, and quotes Agency's price once chosen (#280)", () => {
-    const managed = text(renderToStaticMarkup(<TrialPriceBox canBuy interval="month" onInterval={() => undefined} plan="starter" onPlan={() => undefined} facts={FACTS} fullArticle />));
+    const managed = text(renderToStaticMarkup(<TrialPriceBox canBuy interval="month" onInterval={() => undefined} plan="starter" onPlan={() => undefined} facts={FACTS} />));
     expect(managed).not.toContain("Managed plan");
     expect(managed).toContain(`Try Agency instead: ${PLAN_PRICES.growth}/month`);
-    const agency = text(renderToStaticMarkup(<TrialPriceBox canBuy interval="month" onInterval={() => undefined} plan="growth" onPlan={() => undefined} facts={FACTS} fullArticle />));
+    const agency = text(renderToStaticMarkup(<TrialPriceBox canBuy interval="month" onInterval={() => undefined} plan="growth" onPlan={() => undefined} facts={FACTS} />));
     expect(agency).toContain("Agency plan");
-    expect(agency).toContain(`€0 today, then ${PLAN_PRICES.growth}/month from October 19.`);
+    expect(agency).toContain(`Then ${PLAN_PRICES.growth}/month from October 19 unless you cancel.`);
     expect(agency).toContain(`Back to Managed: ${PLAN_PRICES.starter}/month`);
   });
 
   it("tells a member who is not the owner who can start it, with no price", () => {
-    const html = text(renderToStaticMarkup(<TrialPriceBox canBuy={false} interval="month" onInterval={() => undefined} facts={FACTS} fullArticle />));
+    const html = text(renderToStaticMarkup(<TrialPriceBox canBuy={false} interval="month" onInterval={() => undefined} facts={FACTS} />));
     expect(html).toContain("Only the account owner can start the trial");
     expect(html).not.toContain("€");
   });
 });
 
 describe("the slim bar", () => {
-  it("is on screen while the article is being written, with the box's price", () => {
+  it("is on screen while the article is being written, with the box's price line above its button", () => {
     const markup = gate(ARTICLE);
     expect(markup).toContain('data-testid="trial-bar"');
-    expect(text(markup.slice(markup.indexOf('data-testid="trial-bar"')))).toContain(`7 days free, then ${PLAN_PRICES.starter}/month`);
+    expect(text(markup.slice(markup.indexOf('data-testid="trial-bar"')))).toContain(`Card required. €0 today. Then ${PLAN_PRICES.starter}/month from October 19 unless you cancel. Start 7-day trial`);
+    // Clear of a phone's home bar.
+    expect(markup).toContain("pb-[env(safe-area-inset-bottom)]");
   });
 
   it("is not drawn over a finished article from the first frame", () => {
@@ -92,6 +97,37 @@ describe("the slim bar", () => {
     const markup = gate({ ...ARTICLE, state: "written", wordCount: 1400 }, null);
     expect(markup).toContain('data-testid="trial-bar"');
     expect(text(markup)).toContain("Your first article is being written");
-    expect(text(markup)).not.toContain("Email me this article");
+    expect(text(markup)).not.toContain("Email me a link to this article");
+  });
+});
+
+describe("the return screen", () => {
+  const WRITTEN: FirstArticleCard = { ...ARTICLE, state: "written", wordCount: 1400, verdict: "clean" };
+  const back = (welcome: "returning" | "cancelled" | null, article: FirstArticleCard = WRITTEN) =>
+    renderToStaticMarkup(
+      <GateTop workspaceId="ws1" canBuy ending="article" heading="" lede="" firstArticle={article} planned={[]} fullArticle initialHtml="<p>The text.</p>" offer={FACTS} welcome={welcome} nextArticles={["Kitchen tiles", "Bathroom tiles"]} />,
+    );
+
+  it("says welcome back, the title and a way to read it, then the next articles, the price and the button, the article folded below", () => {
+    const html = text(back("returning"));
+    const order = ["Welcome back. Your article is saved.", "Acme kits: how to choose one", "Read your article", "Your next articles", "Kitchen tiles", "Card required. €0 today.", "Start 7-day trial", "Show the full article"];
+    let at = -1;
+    for (const line of order) {
+      const i = html.indexOf(line, at + 1);
+      expect(i, line).toBeGreaterThan(at);
+      at = i;
+    }
+    expect(html).not.toContain("Your first article is written");
+  });
+
+  it("says nothing was charged after a cancelled checkout", () => {
+    const html = text(back("cancelled"));
+    expect(html).toContain("Your trial hasn't started. Nothing was charged.");
+    expect(html).not.toContain("Welcome back");
+  });
+
+  it("is the usual gate without a finished article to come back to", () => {
+    expect(text(back("returning", ARTICLE))).not.toContain("Welcome back");
+    expect(text(back(null))).not.toContain("Welcome back");
   });
 });

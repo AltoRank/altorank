@@ -17,7 +17,7 @@
 import { MEMBER_CANNOT_BUY, TrialOffer, TrialPriceBox } from "@/components/billing/trial-offer";
 import { StartTrialButton } from "@/components/billing/start-trial-button";
 import type { BillingInterval, SelfServePlan } from "@/lib/stripe";
-import { chargeLine, stickyOfferLine, type TrialOfferFacts } from "@/lib/billing/trial-offer";
+import { priceLine, stickyOfferLine, type TrialOfferFacts } from "@/lib/billing/trial-offer";
 import { asksForCard, asksWithOffer, type SetupEnding } from "@/lib/onboarding/setup-retry";
 import { TRIAL_DAYS } from "@/lib/stripe";
 import { judgedRows, type EmptyPool } from "@/lib/onboarding/events";
@@ -63,8 +63,8 @@ export interface GateOffer {
   plan?: SelfServePlan;
   onPlan?: (next: SelfServePlan) => void;
   facts: TrialOfferFacts;
-  fullArticle: boolean;
-  buttonRef?: React.Ref<HTMLDivElement>;
+  /** The site's next topics by name, for "Your next articles". */
+  nextArticles?: string[];
 }
 
 /** The card ask, or, when setup planned nothing, the note that replaces it. */
@@ -134,7 +134,7 @@ export function SetupAsk({
               )}
               {/* The price before the click, as the full box says it. */}
               <p className="m-0 mt-1.5 text-[13px] leading-[1.6] text-ink-2" data-testid="quiet-trial-price">
-                {offer ? chargeLine("month", offer.facts) : stickyOfferLine("month")}
+                {offer ? priceLine("month", offer.facts) : stickyOfferLine("month")}
               </p>
               <div className="mt-3">
                 <StartTrialButton returnTo={returnTo} variant="default" surface="quiet_box" />
@@ -161,11 +161,10 @@ export function SetupAsk({
           plan={offer.plan}
           onPlan={offer.onPlan}
           facts={offer.facts}
-          fullArticle={offer.fullArticle}
+          nextArticles={offer.nextArticles}
           returnTo={returnTo}
           // Rendered is not seen: below lg the box sits under the article.
           onSeen={() => trackStep("offer_seen", { ...(workspaceId ? { workspaceId } : {}), props: { viewport: currentViewport() } })}
-          buttonRef={offer.buttonRef}
         />
       ) : (
         <TrialOffer canBuy={canBuy} returnTo={returnTo} surface="price_box" />

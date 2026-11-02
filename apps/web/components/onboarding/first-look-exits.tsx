@@ -1,7 +1,7 @@
 "use client";
 
 // ---------------------------------------------------------------------------
-// The soft exits on the first look: "Email me when it's ready", "Email me this article"
+// The soft exits on the first look: "Email me when it's ready", "Email me a link to this article"
 // ---------------------------------------------------------------------------
 //
 // Small, quiet controls beside the screen's one primary action, never
@@ -92,7 +92,7 @@ export function EmailWhenReady({ workspaceId, className }: { workspaceId: string
 export function EmailMeArticle({ workspaceId, className }: { workspaceId: string; className?: string }) {
   return (
     <ExitButton
-      label="Not ready yet? Email me this article"
+      label="Not ready yet? Email me a link to this article"
       run={() => emailFirstArticle(workspaceId)}
       sentLine={(email) => `Sent to ${email}: a link back to this article, which stays here.`}
       alreadyLine={(email) => `We already sent the link to ${email}. The article stays here.`}

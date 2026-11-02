@@ -55,7 +55,6 @@ function wizard(over: Partial<Parameters<typeof OnboardingWizard>[0]> = {}) {
       fullArticle
       initialProfile={PROFILE}
       initialSite={{ sitemapUrl: "", blogRootUrl: "https://acme-physio.example/blog/", exampleArticleUrls: [] }}
-      askAttribution={false}
       offer={{ endsAt: "2026-10-19T12:00:00.000Z", taxAdded: false }}
       {...over}
     />,

@@ -26,6 +26,7 @@ const SCOPED_TABLES = new Set([
   "backlinks",
   "calendar_entries",
   "domain_audits",
+  "gate_visits",
   "generation_jobs",
   "geo_prompts",
   "geo_results",
