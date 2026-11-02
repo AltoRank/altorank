@@ -23,7 +23,8 @@ import { billingReturnPath, checkoutDestination, STRIPE_CANCEL_MARK, TRIAL_CANCE
  * "Manage open checkout" link under a checkout error lands here without it,
  * so only the marker says "You left checkout" and records checkout_cancelled.
  * Either way the trial script has one way back: to the article on the trial
- * screen, closing the open checkout on the way for an owner.
+ * screen, closing the open checkout on the way for an owner - and, when that
+ * close is refused, a plain link to the same place under the reason.
  */
 export default async function CheckoutCancelled(props: { searchParams?: Promise<{ next?: string; from?: string }> }) {
   const { role, accountId, user } = await requireAuth();
@@ -56,7 +57,7 @@ export default async function CheckoutCancelled(props: { searchParams?: Promise<
         </div>
       )}
       {role === "owner" ? (
-        <CloseCheckoutForm next={back} label={label} />
+        <CloseCheckoutForm next={back} label={label} leave={title ? "Go to my article without closing it" : "Go back without closing it"} />
       ) : (
         <Link
           href={back}
