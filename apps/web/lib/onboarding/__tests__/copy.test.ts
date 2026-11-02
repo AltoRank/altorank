@@ -82,4 +82,12 @@ describe("wizardNextLine", () => {
       expect(wizardNextLine({ preTrial, canRead, freeDrafts: null }).short.length).toBeLessThanOrEqual(60);
     }
   });
+
+  it("does not promise to read a site it just could not read", () => {
+    for (const preTrial of [true, false]) {
+      const { full } = wizardNextLine({ preTrial, canRead: true, freeDrafts: null, unread: true });
+      expect(full).not.toMatch(/read your site/);
+      expect(full).toMatch(/^Next: from what you tell us/);
+    }
+  });
 });
