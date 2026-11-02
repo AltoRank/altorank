@@ -66,9 +66,10 @@ export type CheckoutFailure = (typeof CHECKOUT_FAILURES)[number];
  * Which checkout a trial button opens: Stripe's own page (hosted), or
  * Stripe's form on our page (embedded, only with a publishable key:
  * components/billing/embedded-checkout.tsx). Billing's plan cards always
- * open the hosted page.
+ * open the hosted page. `cardless`: no checkout at all, the trial starts
+ * from the press (lib/billing/cardless-trial.ts).
  */
-export const CHECKOUT_UIS = ["hosted", "embedded"] as const;
+export const CHECKOUT_UIS = ["hosted", "embedded", "cardless"] as const;
 export type CheckoutUi = (typeof CHECKOUT_UIS)[number];
 
 /** The props each step may carry, and the list each value must be on. */

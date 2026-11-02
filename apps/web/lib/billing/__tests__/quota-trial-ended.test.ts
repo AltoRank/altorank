@@ -43,20 +43,23 @@ function client(account: Record<string, unknown>) {
 }
 
 describe("an account that has had its trial has no free drafts", () => {
-  it("a cancelled trial that has ended: nothing to draft, and the refusal says the plan is gone", async () => {
-    const { getQuota, quotaExceededMessage, PLAN_ENDED_MESSAGE } = await import("../quota");
+  // Since the card-less trial (2026-11-02) the end of a trial is the Free
+  // floor, not nothing: one new article a calendar month, counted by the
+  // month, never the seven free drafts the trial week did not use.
+  it("a cancelled trial that has ended: the Free floor, and this month's article is written", async () => {
+    const { getQuota, quotaExceededMessage, freeFloorUsedMessage } = await import("../quota");
     const { canSpend } = await import("../spend-gate");
     const db = client({ plan: "starter", plan_status: "canceled", trial_ends_at: ago(2), free_drafts_used: 1 });
 
     const q = await getQuota(db, "acc", null);
-    expect(q).toMatchObject({ reason: "no-plan", remaining: 0, trialEnded: true });
-    expect(quotaExceededMessage(q)).toBe(PLAN_ENDED_MESSAGE);
+    expect(q).toMatchObject({ reason: "no-plan", limit: 1, used: 2, remaining: 0, trialEnded: true, freeFloor: true });
+    expect(quotaExceededMessage(q)).toBe(freeFloorUsedMessage());
 
     const scheduled = await canSpend(db, "acc", { userEmail: null, workspaceId: "w1", action: "scheduled-work" });
     expect(scheduled).toMatchObject({ allowed: false, reason: "no-plan" });
     expect(scheduled.message).toMatch(/none on this account any more/);
     const draft = await canSpend(db, "acc", { userEmail: null, workspaceId: "w1", action: "draft" });
-    expect(draft).toMatchObject({ allowed: false, message: PLAN_ENDED_MESSAGE });
+    expect(draft).toMatchObject({ allowed: false, message: freeFloorUsedMessage() });
   });
 
   it("a trial whose end webhook never arrived: no longer a plan, and no free drafts either", async () => {

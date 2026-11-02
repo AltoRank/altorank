@@ -141,7 +141,7 @@ describe("the checkout a trial step was about", () => {
   const click = (checkout?: string) => ({ props: stepProps("trial_clicked", { surface: "price_box", plan: "starter", interval: "month", checkout }) });
 
   it("is kept from its closed list on the click and the failure, and dropped anywhere else", () => {
-    expect(CHECKOUT_UIS).toEqual(["hosted", "embedded"]);
+    expect(CHECKOUT_UIS).toEqual(["hosted", "embedded", "cardless"]);
     expect(stepProps("trial_clicked", { surface: "price_box", plan: "starter", interval: "month", checkout: "hosted" })).toEqual({ surface: "price_box", plan: "starter", interval: "month", checkout: "hosted" });
     expect(stepProps("checkout_failed", { stage: "create", surface: "billing", checkout: "hosted" })).toEqual({ stage: "create", surface: "billing", checkout: "hosted" });
     expect(stepProps("checkout_failed", { stage: "load", surface: "price_box", checkout: "embedded" })).toEqual({ stage: "load", surface: "price_box", checkout: "embedded" });

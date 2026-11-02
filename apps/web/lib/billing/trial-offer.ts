@@ -35,6 +35,7 @@
 
 import { PLAN_ARTICLE_LIMITS, PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
 import { formatTrialDate } from "./trial";
+import { CARDLESS_TRIAL_ARTICLES } from "./cardless-trial";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -44,11 +45,13 @@ export interface TrialOfferFacts {
   endsAt: string;
   /** Checkout adds VAT (STRIPE_TAX_ENABLED). */
   taxAdded: boolean;
+  /** The trial starts with no card (lib/billing/cardless-trial.ts): the button starts it, no checkout. */
+  cardless?: boolean;
 }
 
 /** The facts for a trial started at `now`. */
-export function trialOfferFacts(now: Date, taxAdded: boolean): TrialOfferFacts {
-  return { endsAt: new Date(now.getTime() + TRIAL_DAYS * DAY_MS).toISOString(), taxAdded };
+export function trialOfferFacts(now: Date, taxAdded: boolean, cardless = false): TrialOfferFacts {
+  return { endsAt: new Date(now.getTime() + TRIAL_DAYS * DAY_MS).toISOString(), taxAdded, ...(cardless ? { cardless: true } : {}) };
 }
 
 /** "€69" to 69. */
@@ -115,11 +118,17 @@ export function planDetails(plan: SelfServePlan = "starter"): string[] {
  */
 export function priceLine(interval: BillingInterval, facts: TrialOfferFacts, plan: SelfServePlan = "starter"): string {
   const price = `${priceLabel(interval, plan)}${facts.taxAdded ? " (plus VAT where it applies)" : ""}`;
+  // No card: nothing to charge, so the line says what happens on the last
+  // day instead of what it costs (lib/billing/cardless-trial.ts).
+  if (facts.cardless) return `No card needed. Free until ${formatTrialDate(facts.endsAt)}. Then add a card to keep going at ${priceLabel("month", "starter")}, or stay on Free.`;
   return `Card required. €0 today. Then ${price} from ${formatTrialDate(facts.endsAt)} unless you cancel.`;
 }
 
 /** The reminder and the way out, both true in code (see the header). */
-export function reassuranceLine(): string {
+export function reassuranceLine(facts?: Pick<TrialOfferFacts, "cardless">): string {
+  if (facts?.cardless) {
+    return `The trial writes up to ${CARDLESS_TRIAL_ARTICLES} articles. Without a card it ends by itself: nothing to cancel, and every article stays yours.`;
+  }
   return `We email you 3 days before the trial ends. ${CANCEL_LINE}`;
 }
 

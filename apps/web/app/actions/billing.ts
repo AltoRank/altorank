@@ -4,6 +4,7 @@ import { requireAuth } from "@/lib/auth/require-auth";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { getStripe, PLAN_PRICE_IDS, stripeTaxEnabled, TRIAL_DAYS } from "@/lib/stripe";
 import { trialEligible } from "@/lib/billing/trial";
+import { checkoutTrialEnd } from "@/lib/billing/cardless-trial";
 import type { SelfServePlan, BillingInterval } from "@/lib/stripe";
 import { subscriptionSwitchable } from "@/lib/billing/plan-switch";
 import { billingFailure, type BillingRedirect } from "@/lib/billing/failure";
@@ -129,7 +130,13 @@ async function openCheckout(
   // day eight, and `missing_payment_method: "cancel"` is the matching belt for
   // a card that somehow was not saved. An account that already trialed pays
   // from today (lib/billing/trial.ts).
-  const withTrial = trialEligible(account);
+  //
+  // A card added during a card-less trial keeps that trial's end: the
+  // subscription trials until then and charges after (lib/billing/
+  // cardless-trial.ts). Without this the account had trialed already and
+  // would have been charged today.
+  const cardlessEnd = checkoutTrialEnd(account);
+  const withTrial = trialEligible(account) || cardlessEnd !== null;
 
   let session;
   try {
@@ -155,7 +162,7 @@ async function openCheckout(
         metadata: { account_id: accountId, plan, interval },
         ...(withTrial
           ? {
-              trial_period_days: TRIAL_DAYS,
+              ...(cardlessEnd !== null ? { trial_end: cardlessEnd } : { trial_period_days: TRIAL_DAYS }),
               trial_settings: { end_behavior: { missing_payment_method: "cancel" as const } },
             }
           : {}),

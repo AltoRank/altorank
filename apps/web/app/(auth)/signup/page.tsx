@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
 import { createServiceClient } from "@/lib/supabase/server";
 import { sendSignupConfirmation } from "@/lib/email/auth-emails";
+import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from "@/lib/auth/disposable-email";
 import { authErrorMessage } from "@/lib/auth/errors";
 import { firstSiteRow } from "@/lib/workspaces/first-site";
 import { accountNameFromDomain } from "@/lib/domain/account-name";
@@ -71,6 +72,11 @@ async function signUp(formData: FormData) {
   // anything else is asked, and the form comes back on the email.
   if (!email?.trim()) {
     redirect("/signup?domain=" + encodeURIComponent(domain) + carry);
+  }
+  // The trial needs no card, so a throwaway inbox would be a free trial per
+  // hour (lib/auth/disposable-email.ts).
+  if (isDisposableEmail(email)) {
+    redirect("/signup?error=" + encodeURIComponent(DISPOSABLE_EMAIL_MESSAGE) + "&domain=" + encodeURIComponent(domain) + carry);
   }
 
   // The account's name, from the domain, because asking for both is asking
