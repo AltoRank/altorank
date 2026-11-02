@@ -171,10 +171,11 @@ test.describe("on a phone", () => {
     expect(await page.evaluate(() => Array.from(document.body.children).some((el) => el.hasAttribute("inert")))).toBe(false);
 
     // The bar, once the box's button is off screen: the same sheet, one form.
-    // A short phone screen, so reading into the article puts the button
-    // below the fold: at 740px the fixture's whole article and the button
-    // share one screen, and the bar rightly never shows.
-    await page.setViewportSize({ width: 375, height: 560 });
+    // An article of a real length, so reading into it puts the whole offer
+    // below the fold. The fixture's 168 words leave part of the offer on the
+    // screen from anywhere in the article, and the bar rightly stays away
+    // while any of it is in view.
+    await page.addStyleTag({ content: '[aria-label="Your first article"] { padding-bottom: 1600px; }' });
     const bar = page.getByTestId("trial-bar");
     await page.evaluate(() => window.scrollTo(0, 0));
     for (let i = 0; i < 40 && !(await bar.isVisible()); i++) await page.evaluate(() => window.scrollBy(0, 150));
