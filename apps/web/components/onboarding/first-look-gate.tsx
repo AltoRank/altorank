@@ -13,10 +13,12 @@
 //
 // Now, top to bottom: the article (title, who it is for, its outline ticking
 // off as it is written - or, with PRETRIAL_FULL_ARTICLE on, its text as it
-// is typed), the trial offer directly under it, then why this article. The
-// setup log, the calendar and the site report are folded below (the caller
-// renders them between `GateTop` and `GateBottom`, so the run's poller is
-// never remounted). The "where did you hear about us" question left the gate
+// is typed), the trial offer directly under it. Why this article, the plan,
+// the setup log and the site report are folds in the rail under the offer
+// (2026-11-02): under the article they sat past its last line, where nobody
+// who had not already decided ever got to. The caller hands its folds in as
+// `railExtra`, or portals them into `railSlot` so the run's poller is never
+// remounted. The "where did you hear about us" question left the gate
 // on 2026-10-29: the Home card asks it once the trial has started.
 //
 // A return (a recorded visit 12 hours ago or more, lib/onboarding/
@@ -105,6 +107,8 @@ export function GateTop({
   nextArticles = [],
   welcome = null,
   startedAt = null,
+  railExtra = null,
+  railSlot,
 }: {
   workspaceId: string;
   canBuy: boolean;
@@ -133,6 +137,10 @@ export function GateTop({
   welcome?: GateWelcome | null;
   /** When the run started, on this browser's clock: the one clock carries on into the card. */
   startedAt?: number | null;
+  /** Folds for the rail, under the offer and why this article (the plan, the site report). */
+  railExtra?: React.ReactNode;
+  /** A node in the rail, after `railExtra`, for a caller that portals its folds in. */
+  railSlot?: (node: HTMLDivElement | null) => void;
 }) {
   const router = useRouter();
   const hasArticle = firstArticle !== null || pending !== null;
@@ -269,6 +277,14 @@ export function GateTop({
           below={canBuy && hasArticle && written ? <EmailMeArticle workspaceId={workspaceId} className="mt-3 block w-full text-center" /> : null}
         />
       </div>
+      {/* Under the offer, folded and quieter than it: as an h2 beside the
+          offer, why this article outranked it (UX clarity audit 2026-10-18,
+          #4); as a fold under it, it does not. */}
+      <div className="flex flex-col gap-2">
+        <TopicBriefs planned={planned} only={keyword || undefined} folded />
+        {railExtra}
+        <div ref={railSlot} className="empty:hidden" />
+      </div>
     </aside>
   );
 
@@ -353,10 +369,6 @@ export function GateTop({
               />
             </div>
           )}
-          {/* Why this article sits under it, not in the rail: its heading
-              outranked the trial offer's beside it (UX clarity audit
-              2026-10-18, #4). */}
-          <TopicBriefs planned={planned} only={keyword || undefined} />
         </div>
         {!returnView && rail}
       </div>

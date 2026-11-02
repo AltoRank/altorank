@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { FirstLookReportView } from "./first-look-report";
 import { PollRefusedLine, SetupLoading } from "./setup-loading";
@@ -62,6 +63,7 @@ export function OnboardingProgress({
   onRun,
   understood,
   articleExists = false,
+  foldsInto = null,
 }: {
   workspaceId: string;
   domain: string;
@@ -93,6 +95,12 @@ export function OnboardingProgress({
    * over, the same three folded away under the gate.
    */
   variant?: "log" | "first-look";
+  /**
+   * Where the finished first look's folds go: the gate's rail, under the
+   * trial offer. A portal, so this component - and the run's poller in it -
+   * stays where it is in the tree and is never remounted when the gate opens.
+   */
+  foldsInto?: HTMLElement | null;
   /**
    * Bumped by the gate when the first article's body lands after the run
    * ended at its outline: the row is read once more, so the log says what
@@ -335,7 +343,7 @@ export function OnboardingProgress({
     }
     const scheduledCount = state.planned.length;
     const heldCount = lockHeld ? state.held?.count ?? 0 : 0;
-    return (
+    const folds = (
       <div className="flex flex-col gap-2">
         <Fold title="How setup went" line={outcome.line} tone={outcome.tone === "error" ? "err" : undefined}>
           <RunLog steps={state.steps} preTrial={preTrial} />
@@ -357,6 +365,7 @@ export function OnboardingProgress({
         )}
       </div>
     );
+    return foldsInto ? createPortal(folds, foldsInto) : folds;
   }
 
   return (
