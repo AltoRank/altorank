@@ -175,7 +175,9 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
               <span>
                 {/* A trial has not renewed anything and has charged nothing:
                     say when it ends and what the card pays then. */}
-                {quota.trial && !dunning
+                {quota.trial?.cardless && !dunning
+                  ? trialThenLabel(quota.trial, `the ${PLAN_LABELS[plan]} plan`)
+                  : quota.trial && !dunning
                   ? trialThenLabel(quota.trial, priceForInterval({ monthly: PLAN_PRICES[plan], yearly: PLAN_YEARLY_PRICES[plan] }, interval, { sales: plan === "scale" }))
                   : <>
                       {priceForInterval({ monthly: PLAN_PRICES[plan], yearly: PLAN_YEARLY_PRICES[plan] }, interval, { sales: plan === "scale" })}
