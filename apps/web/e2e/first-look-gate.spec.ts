@@ -171,6 +171,10 @@ test.describe("on a phone", () => {
     expect(await page.evaluate(() => Array.from(document.body.children).some((el) => el.hasAttribute("inert")))).toBe(false);
 
     // The bar, once the box's button is off screen: the same sheet, one form.
+    // A short phone screen, so reading into the article puts the button
+    // below the fold: at 740px the fixture's whole article and the button
+    // share one screen, and the bar rightly never shows.
+    await page.setViewportSize({ width: 375, height: 560 });
     const bar = page.getByTestId("trial-bar");
     await page.evaluate(() => window.scrollTo(0, 0));
     for (let i = 0; i < 40 && !(await bar.isVisible()); i++) await page.evaluate(() => window.scrollBy(0, 150));

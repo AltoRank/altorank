@@ -50,7 +50,7 @@ export function AutocompleteButton({
   function run() {
     start(async () => {
       try {
-        const r = await proposeProfile(workspaceId);
+        const r = await proposeProfile(workspaceId, { again: true });
         if (!r.profile) {
           // `message` wins when it is there: the billing refusal names this
           // account's actual state, which the static map cannot.

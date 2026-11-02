@@ -61,17 +61,35 @@ test("a section stays open while typing, its badge waits for blur, and answers r
   try {
     await signIn(page, account.email);
     await expect(page).toHaveURL(/\/onboarding$/);
-    await expect(page.getByText("We could not read enough of this site", { exact: false })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "We couldn’t read your website" })).toBeVisible();
 
     // Language and market from the country domain, said as a guess, with a Change link.
-    const business = page.locator("details", { has: page.getByRole("heading", { name: "About your business" }) });
-    await expect(business).toHaveAttribute("open", "");
-    await business.locator(":scope > summary").click();
+    const business = page.locator("details", { has: page.getByRole("heading", { name: "More about your business" }) });
+    await expect(business).not.toHaveAttribute("open", "");
     await expect(page.getByText("Italian · Italy")).toBeVisible();
     await expect(page.getByText("(guessed from your site)")).toBeVisible();
     await page.getByRole("button", { name: "Change" }).click();
     await expect(business).toHaveAttribute("open", "");
     await expect(page.getByLabel("Language")).toBeFocused();
+    await expect(page.getByLabel("Language")).toHaveValue("Italian");
+    await expect(page.getByLabel(/^Market/)).toHaveValue("Italy");
+
+    // One offering, then the draft is on disk, unconfirmed.
+    await page.getByLabel("Add something people buy from you").fill("guided walks");
+    await page.getByLabel("Add something people buy from you").press("Enter");
+    await expect(page.getByText("Your answers are saved as you go.")).toBeVisible();
+    const { data: first } = await admin().from("workspaces").select("business_profile, onboarded_at").eq("id", account.workspaces[0].id).single();
+    const draft = first?.business_profile as { offerings: string[]; language: string; country: string; confirmedAt?: string };
+    expect(draft.offerings).toEqual(["guided walks"]);
+    expect([draft.language, draft.country]).toEqual(["Italian", "Italy"]);
+    expect(draft.confirmedAt).toBeUndefined();
+    expect(first?.onboarded_at).toBeNull();
+
+    // A reload resumes it, without reading the site again: the full screen,
+    // on the saved language and market.
+    await page.reload();
+    await expect(page.getByText("Here is what we have for", { exact: false })).toBeVisible();
+    await expect(page.getByText("guided walks", { exact: true })).toBeVisible();
     await expect(page.getByLabel("Language")).toHaveValue("Italian");
     await expect(page.getByLabel(/^Market/)).toHaveValue("Italy");
 
@@ -96,26 +114,8 @@ test("a section stays open while typing, its badge waits for blur, and answers r
     await expect(content.locator(":scope > summary")).toContainText("Optional");
     await page.getByRole("heading", { name: "Check what we found" }).click();
     await expect(content.locator(":scope > summary")).toContainText("Found");
-
-    // One offering, then the draft is on disk, unconfirmed.
-    await page.getByLabel("Add something people buy from you").fill("guided walks");
-    await page.getByLabel("Add something people buy from you").press("Enter");
     await expect(page.getByText("Your answers are saved as you go.")).toBeVisible();
-    const { data } = await admin().from("workspaces").select("business_profile, sitemap_url, onboarded_at").eq("id", account.workspaces[0].id).single();
-    const draft = data?.business_profile as { offerings: string[]; language: string; country: string; confirmedAt?: string };
-    expect(draft.offerings).toEqual(["guided walks"]);
-    expect([draft.language, draft.country]).toEqual(["Italian", "Italy"]);
-    expect(draft.confirmedAt).toBeUndefined();
-    expect(data?.sitemap_url).toBe(url);
-    expect(data?.onboarded_at).toBeNull();
-
-    // A reload resumes it, without reading the site again.
-    await page.reload();
-    await expect(page.getByText("Here is what we have for", { exact: false })).toBeVisible();
-    await expect(page.getByText("guided walks", { exact: true })).toBeVisible();
-    // No name yet, so the business section opens, on the saved language and market.
-    await expect(page.getByLabel("Language")).toHaveValue("Italian");
-    await expect(page.getByLabel(/^Market/)).toHaveValue("Italy");
+    await expect.poll(async () => (await admin().from("workspaces").select("sitemap_url").eq("id", account.workspaces[0].id).single()).data?.sitemap_url).toBe(url);
   } finally {
     await destroyAccount(account);
   }

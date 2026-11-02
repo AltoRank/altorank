@@ -25,7 +25,8 @@ const titleRead = vi.hoisted(() => vi.fn(async (_db: unknown, _ws: string) => st
 vi.mock("@/lib/onboarding/first-article", () => ({ firstArticleTitle: (db: unknown, ws: string) => titleRead(db, ws) }));
 vi.mock("@/components/onboarding/track-step", () => ({ TrackStep: ({ step }: { step: string }) => `[step ${step}]` }));
 vi.mock("@/components/billing/close-checkout-form", () => ({
-  CloseCheckoutForm: ({ next, label, look = "button" }: { next: string; label: string; look?: string }) => `[form ${look} ${next} "${label}"]`,
+  CloseCheckoutForm: ({ next, label, look = "button", leave }: { next: string; label: string; look?: string; leave?: string }) =>
+    `[form ${look} ${next} "${label}"${leave ? ` leave "${leave}"` : ""}]`,
 }));
 vi.mock("next/link", () => ({ default: ({ href, children }: { href: string; children: unknown }) => `[link ${href} "${children as string}"]` }));
 
@@ -50,7 +51,7 @@ describe("/checkout/cancelled from Stripe's back link, before the trial", () => 
     expect(page).toContain("You left checkout.");
     expect(page).toContain("Nothing was charged. Your article is still here.");
     expect(page).toContain("Your first article How to price a website redesign");
-    expect(page).toContain('[form button /onboarding?status=cancelled "Back to my article"]');
+    expect(page).toContain('[form button /onboarding?status=cancelled "Back to my article" leave "Go to my article without closing it"]');
     expect(page).toContain("[step checkout_cancelled]");
     expect(titleRead).toHaveBeenCalledWith({}, "ws-1");
     // One control, and none of the old copy.
@@ -62,7 +63,7 @@ describe("/checkout/cancelled from Stripe's back link, before the trial", () => 
     state.gate = "bypassed";
     const page = text(await render({ from: "stripe" }));
     expect(page).toContain("Nothing was charged. Your article is still here.");
-    expect(page).toContain('[form button /onboarding?status=cancelled "Back to my article"]');
+    expect(page).toContain('[form button /onboarding?status=cancelled "Back to my article" leave "Go to my article without closing it"]');
     expect(page).toContain("[step checkout_cancelled]");
   });
 
@@ -79,7 +80,7 @@ describe("/checkout/cancelled from Stripe's back link, before the trial", () => 
     const page = text(await render({ from: "stripe" }));
     expect(page).toContain("You left checkout.");
     expect(page).not.toMatch(/still here|my article|Your first article/);
-    expect(page).toContain('[form button /onboarding?status=cancelled "Go back"]');
+    expect(page).toContain('[form button /onboarding?status=cancelled "Go back" leave "Go back without closing it"]');
   });
 
   it("reads no title when there is no site in scope", async () => {
@@ -97,13 +98,13 @@ describe("/checkout/cancelled from anywhere else, before the trial", () => {
     expect(page).not.toContain("You left checkout");
     expect(page).toContain("Nothing was charged.");
     expect(page).toContain("Going back closes any checkout that is still open, so you can start the trial again from your article.");
-    expect(page).toContain('[form button /onboarding "Back to my article"]');
+    expect(page).toContain('[form button /onboarding "Back to my article" leave "Go to my article without closing it"]');
   });
 
   it("treats a marker that is not Stripe's as no marker", async () => {
     const page = text(await render({ from: "email" }));
     expect(page).not.toContain("[step");
-    expect(page).toContain('[form button /onboarding "Back to my article"]');
+    expect(page).toContain('[form button /onboarding "Back to my article" leave "Go to my article without closing it"]');
   });
 });
 

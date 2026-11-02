@@ -20,8 +20,11 @@
 //   the person     signed in, and the OWNER of the account the site is in -
 //                  asked through their own client, so RLS decides whether
 //                  they can see the site at all
-//   the article    the one the site's latest onboarding run points at, and
-//                  the site's first article (its oldest that is not errored)
+//   the article    the one the gate's card shows (`loadFirstArticle`): the
+//                  site's oldest written article, or, before one is written,
+//                  its oldest being written. Not the onboarding run's: a
+//                  run that ends partial has no article, and the one cron
+//                  writes later is still the owner's first (2026-10-28).
 //
 // Anything else - another account, another article, a member who is not the
 // owner, the switch off - is refused with nothing read.
@@ -62,8 +65,8 @@ export { readableHtml };
 type Refusal = "not-found" | "not-owner" | "no-first-article";
 
 /**
- * The run's first article on this site, if the person asking owns the
- * account the site is in, or why not. Every read of the first article on the
+ * The site's first article - the one the card shows - if the person asking
+ * owns the account the site is in, or why not. Every read of the first article on the
  * gate - its text, its progress - asks this first.
  */
 async function ownersFirstArticle(
@@ -82,26 +85,32 @@ async function ownersFirstArticle(
     .eq("user_id", userId)
     .maybeSingle();
   if ((member as { role?: string } | null)?.role !== "owner") return { ok: false, reason: "not-owner" };
-  const { data: run } = await client
-    .from("onboarding_runs")
-    .select("article_id")
-    .eq("workspace_id", workspaceId)
-    .order("started_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const articleId = (run as { article_id?: string | null } | null)?.article_id ?? null;
-  if (!articleId) return { ok: false, reason: "no-first-article" };
-  // The site's first article, and the run's: the oldest that is not errored.
-  const { data: first } = await service
+  // The card's article (lib/onboarding/first-article.ts, loadFirstArticle):
+  // the oldest written one, else the oldest being written. Ids and counts
+  // only; the body is read after, here, on the service role.
+  const { data: written } = await service
     .from("articles")
     .select("id")
     .eq("workspace_id", workspaceId)
-    .neq("status", "error")
+    .in("status", [...WRITTEN])
+    .gt("word_count", 0)
     .order("created_at", { ascending: true })
     .order("id", { ascending: true })
     .limit(1)
     .maybeSingle();
-  if ((first as { id?: string } | null)?.id !== articleId) return { ok: false, reason: "no-first-article" };
+  const { data: writing } = written
+    ? { data: null }
+    : await service
+        .from("articles")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .eq("status", "drafting")
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+  const articleId = ((written ?? writing) as { id?: string } | null)?.id ?? null;
+  if (!articleId) return { ok: false, reason: "no-first-article" };
   return { ok: true, articleId };
 }
 
