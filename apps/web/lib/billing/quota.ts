@@ -51,7 +51,6 @@ import { accountCountingClient } from "@/lib/billing/account-client";
 import { dunningInfo, planEntitled, type DunningInfo } from "@/lib/billing/dunning";
 import { plural } from "@/lib/utils";
 import { trialEligible, trialInfo, type TrialInfo } from "@/lib/billing/trial";
-import { CARDLESS_TRIAL_ARTICLES } from "@/lib/billing/cardless-trial";
 
 export type Quota = {
   /** Null means unmetered. */
@@ -362,20 +361,6 @@ export async function getQuota(
     };
   }
 
-  // A trial with no card is capped for its whole length, not per month: it
-  // is what a signup costs before anyone has paid (lib/billing/cardless-trial.ts).
-  if (trial?.cardless && !simulation?.plan) {
-    return {
-      limit: CARDLESS_TRIAL_ARTICLES,
-      used: everUsed,
-      remaining: Math.max(0, CARDLESS_TRIAL_ARTICLES - everUsed),
-      reason: "plan",
-      plan,
-      dunning,
-      trial,
-    };
-  }
-
   const limit = PLAN_ARTICLE_LIMITS[plan];
   if (limit === null) {
     return { limit: null, used, remaining: null, reason: "plan", plan, dunning, trial };
@@ -460,7 +445,6 @@ export function freeAllowanceRuleChangeNote(q: Quota): string {
 export function quotaExceededMessage(q: Quota, now: Date = new Date()): string {
   // A card that lapsed is not a plan that ended: the spend gate names the card
   // (lib/billing/spend-gate.ts), and this keeps the sentence it had.
-  if (q.reason === "plan" && q.trial?.cardless) return cardlessCapMessage(q.trial.endsAt);
   if (q.reason === "no-plan" && q.trialEnded && !q.dunning) return PLAN_ENDED_MESSAGE;
   if (q.reason === "no-plan") {
     // No reset date on this branch any more. Waiting used to be a real third
@@ -487,13 +471,6 @@ export function quotaExceededMessage(q: Quota, now: Date = new Date()): string {
   // Articles page is the door that does.
   return `This month's included ${q.limit} articles are used. Scheduled writing stops until ${resets}; upgrade on the Billing page, or start one yourself with New article on the Articles page, which is billed as overage.`;
 }
-
-/** The card-less trial's articles are written: the card is what writes more. */
-export function cardlessCapMessage(endsAt: string): string {
-  const ends = new Date(endsAt).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
-  return `Your free trial includes ${plural(CARDLESS_TRIAL_ARTICLES, "article")}, and they are written. Add a card on the Billing page to keep writing at your pace: nothing is charged until ${ends}.`;
-}
-
 
 /**
  * The refusal for an account that has had its trial and holds no plan now: a

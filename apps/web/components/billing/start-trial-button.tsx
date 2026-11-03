@@ -4,7 +4,6 @@ import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui";
 import { createCheckoutSession } from "@/app/actions/billing";
-import { startFreeTrial } from "@/app/actions/cardless-trial";
 import { PLAN_LABELS, PLAN_PRICES, PLAN_YEARLY_PRICES, TRIAL_DAYS, type BillingInterval, type SelfServePlan } from "@/lib/stripe";
 import { CheckoutSheet, EmbeddedCheckoutForm, embeddedCheckoutAvailable } from "./embedded-checkout";
 import { CANCEL_LINE } from "@/lib/billing/trial-offer";
@@ -33,7 +32,6 @@ export function StartTrialButton({
   onError,
   surface,
   embed = "sheet",
-  cardless = false,
 }: {
   /** Same-origin path to land on after the card is taken. */
   returnTo?: string;
@@ -59,12 +57,6 @@ export function StartTrialButton({
   surface?: TrialSurface;
   /** Where Stripe's form opens when it can open on the page: a sheet, or in place of the button. */
   embed?: "sheet" | "inline";
-  /**
-   * The trial starts with no card (lib/billing/cardless-trial.ts): the press
-   * starts it and opens the product, with no checkout. A site that has had its
-   * trial already is told so and the next press opens checkout.
-   */
-  cardless?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [open, setOpen] = useState(false);
@@ -76,8 +68,7 @@ export function StartTrialButton({
   // Which checkout this button opens, said on the press and on a failure:
   // Stripe's form on this page when there is a publishable key, else
   // Stripe's own page. The same test picks the branch below.
-  const [noCard, setNoCard] = useState(cardless);
-  const checkout: CheckoutUi = noCard ? "cardless" : embeddedCheckoutAvailable ? "embedded" : "hosted";
+  const checkout: CheckoutUi = embeddedCheckoutAvailable ? "embedded" : "hosted";
   const pressed = () => {
     session.current = undefined;
     if (surface) trackStep("trial_clicked", { props: { surface, plan, interval, checkout } });
@@ -95,39 +86,6 @@ export function StartTrialButton({
     toast.error(message);
     setOpen(false);
   };
-
-  if (noCard) {
-    return (
-      <Button
-        variant={variant}
-        disabled={pending}
-        className={className}
-        onClick={() => {
-          pressed();
-          start(async () => {
-            try {
-              const result = await startFreeTrial();
-              if (result.ok) {
-                window.location.assign(returnTo ?? "/dashboard");
-                return;
-              }
-              if (result.needsCard) setNoCard(false);
-              failed("create");
-              onError?.(result.error);
-              toast.error(result.error);
-            } catch {
-              failed("create");
-              const message = "The trial could not be started. Nothing was charged; try again.";
-              onError?.(message);
-              toast.error(message);
-            }
-          });
-        }}
-      >
-        {pending ? "Starting your trial…" : label}
-      </Button>
-    );
-  }
 
   if (checkout === "embedded") {
     const price = interval === "month" ? `${PLAN_PRICES[plan]} per month` : `${PLAN_YEARLY_PRICES[plan]} per year`;

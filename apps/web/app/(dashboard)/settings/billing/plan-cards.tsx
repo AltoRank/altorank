@@ -45,7 +45,6 @@ export function PlanCards({
   cancelHandledBelow = false,
   trialEligible = false,
   trialEndsLabel = null,
-  cardlessEndsOn = null,
 }: {
   plans: PlanCard[];
   /** The tier actually being paid for, or null when nothing is. */
@@ -94,11 +93,6 @@ export function PlanCards({
   trialEligible?: boolean;
   /** "Trial ends in 3 days" while the current plan is a trial, else null. */
   trialEndsLabel?: string | null;
-  /**
-   * "November 9" during a trial with no card (lib/billing/cardless-trial.ts):
-   * every plan's button adds the card, and the plan starts when the trial ends.
-   */
-  cardlessEndsOn?: string | null;
 }) {
   const [pending, start] = useTransition();
   const locked = canManage === false;
@@ -268,7 +262,7 @@ export function PlanCards({
                     disabled={pending}
                     className="w-full justify-center"
                   >
-                    {cardlessEndsOn ? `Add a card for ${p.label}` : isActive ? `Switch to ${p.label}` : trialEligible ? `Try ${p.label} free for 7 days` : `Choose ${p.label}`}
+                    {isActive ? `Switch to ${p.label}` : trialEligible ? `Try ${p.label} free for 7 days` : `Choose ${p.label}`}
                   </Button>
                 )}
               </div>
@@ -298,13 +292,6 @@ export function PlanCards({
               end. Your workspaces, articles and history stay readable afterwards.
             </>
           )
-        ) : cardlessEndsOn ? (
-          <>
-            Your free trial ends on {cardlessEndsOn}. Add a card to keep writing
-            from then: nothing is charged before that day, and you can cancel
-            from this page. Without a card the trial just ends: nothing is
-            charged, and every article stays in the account.
-          </>
         ) : trialEligible ? (
           <>
             Seven days free with a card, then the plan price. Cancel from this

@@ -70,9 +70,4 @@ export const SCHEDULED_JOBS: Record<string, ScheduledJob> = {
     does: "Reads each installed Shopify store's plan from the Partner API and records it on the account. No provider spend.",
     drivers: "—",
   },
-  "/api/cron/trials": {
-    key: null,
-    does: "Emails a trial with no card two days before it ends, and closes the ones that ended. No provider spend.",
-    drivers: "—",
-  },
 };

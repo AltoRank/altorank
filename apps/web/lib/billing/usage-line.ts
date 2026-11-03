@@ -113,19 +113,6 @@ export function usageLine(quota: Quota, now: Date = new Date()): UsageLine {
     };
   }
 
-  // A card-less trial is capped for its whole length, and nothing past the
-  // cap is billed: there is no card to bill (lib/billing/cardless-trial.ts).
-  if (quota.trial?.cardless) {
-    return {
-      figure: `${Math.min(used, limit)} / ${limit}`,
-      sentence: exhausted
-        ? "trial articles written. Add a card to keep writing at your pace."
-        : "trial articles written. Add a card any time to keep writing after the trial.",
-      fraction,
-      exhausted,
-    };
-  }
-
   // A downgrade keeps the month's real count while the included volume drops,
   // so `used` can be well past `limit` on a paid tier too - "150 / 100" is the
   // same unreadable arithmetic the free branch above already refuses to print,

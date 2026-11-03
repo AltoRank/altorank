@@ -18,7 +18,6 @@
 // subscription's `trial_end` and which nothing ever clears.
 
 import { TRIAL_DAYS } from "@/lib/stripe";
-import { isCardlessTrial } from "@/lib/billing/cardless-trial";
 
 export type TrialRow = {
   plan_status?: string | null;
@@ -26,7 +25,6 @@ export type TrialRow = {
   trial_ends_at?: string | null;
   /** When the subscription is set to end; null when it renews. */
   cancels_at?: string | null;
-  billing_provider?: string | null;
 };
 
 /**
@@ -52,8 +50,6 @@ export type TrialInfo = {
    * (lib/billing/trial-hold.ts, trialCancelledReason).
    */
   cancelsAt?: string | null;
-  /** No card behind it (lib/billing/cardless-trial.ts): capped, and it ends with nothing charged unless a card is added. */
-  cardless?: boolean;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -67,7 +63,6 @@ export function trialInfo(account: TrialRow | null | undefined, now: Date = new 
     endsAt: account.trial_ends_at,
     daysLeft: Math.max(0, Math.ceil((ends - now.getTime()) / DAY_MS)),
     cancelsAt: account.cancels_at ?? null,
-    ...(isCardlessTrial(account) ? { cardless: true } : {}),
   };
 }
 
@@ -92,7 +87,6 @@ export function trialThenLabel(info: TrialInfo, then: string): string {
   if (!Number.isNaN(cancels) && !Number.isNaN(ends) && cancels <= ends) {
     return `${trialEndsLabel(info)}; cancelled, so nothing is charged`;
   }
-  if (info.cardless) return `${trialEndsLabel(info)}. Add a card to keep ${then}`;
   return `${trialEndsLabel(info)}, then ${then}`;
 }
 
