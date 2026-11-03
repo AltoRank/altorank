@@ -328,7 +328,6 @@ export default async function DashboardLayout({
                   noPlan: quota.reason === "no-plan",
                   planEnded: quota.reason === "no-plan" && Boolean(quota.trialEnded),
                   trialEligible: Boolean(quota.trialEligible),
-                  cardless: Boolean(quota.trial?.cardless),
                   // The interval is on the Stripe subscription, which the layout
                   // does not fetch, so this names the plan rather than a price
                   // that could be the monthly one on a yearly card.

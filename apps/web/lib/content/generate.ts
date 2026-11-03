@@ -543,8 +543,7 @@ async function writeArticle(
   let recordOverage: ((articleId: string | null) => Promise<void>) | null = null;
   const targetCounted = await writesIntoCountedRow(supabase, workspaceId, articleId, Boolean(refreshOf));
   if (pastIncludedVolume(quota, { targetCounted })) {
-    // A card-less trial has no card to bill an overage to: its cap is a stop.
-    if (quota.reason === "no-plan" || autonomous || quota.trial?.cardless) {
+    if (quota.reason === "no-plan" || autonomous) {
       throw new Error(quotaExceededMessage(quota));
     }
     const regenerating = regeneratingText || (Boolean(articleId) && !refreshOf && (await articleHasText(supabase, articleId as string)));
@@ -737,7 +736,7 @@ async function writeArticle(
       // Only where the gate refuses at zero (an autonomous draft, or an account
       // with no plan). A person writing past the limit is billed the overage
       // above and is not a burst.
-      if (quota.limit !== null && (quota.reason === "no-plan" || autonomous || quota.trial?.cardless)) {
+      if (quota.limit !== null && (quota.reason === "no-plan" || autonomous)) {
         const after = await getQuota(supabase, billedAccountId, callerEmail);
         // The trial hold, by the same argument: two first drafts racing (two
         // sites onboarding at once, or a retried dispatch beside the one it

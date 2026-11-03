@@ -19,7 +19,6 @@ import { OPEN_SETUP, type PreTrialSetup } from "@/lib/onboarding/setup-retry";
 import { TrackStep } from "@/components/onboarding/track-step";
 import { fullArticleOn, readFirstArticleBody } from "@/lib/onboarding/first-article-body";
 import { trialOfferFacts } from "@/lib/billing/trial-offer";
-import { cardlessTrialOn, domainAlreadyTrialed } from "@/lib/billing/cardless-trial";
 import { stripeTaxEnabled } from "@/lib/stripe";
 import { FIRST_SITE_PATH } from "@/lib/workspaces/first-site";
 import { returningToGate } from "@/lib/onboarding/gate-visits";
@@ -159,12 +158,6 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       : (await returningToGate(createServiceClient(), workspace.id as string))
         ? ("returning" as const)
         : null;
-  // The trial needs no card, unless this site has had a trial on another
-  // account (lib/billing/cardless-trial.ts). Asked on the gate only.
-  const cardless =
-    gateShown && cardlessTrialOn()
-      ? !(await domainAlreadyTrialed(createServiceClient(), workspace.account_id as string, (workspace.domain as string | null) ?? ""))
-      : false;
   // The return screen carries the cancellation in its first line; without
   // an article to come back to, the plain notice says it.
   const welcomeShown = welcome !== null && firstArticle?.article?.state === "written";
@@ -218,7 +211,7 @@ export default async function OnboardingPage({ searchParams }: { searchParams: P
       otherSites={otherSites}
       // When a trial started now would end, on the server's clock, and
       // whether checkout adds VAT: the two facts the price box states.
-      offer={trialOfferFacts(new Date(), stripeTaxEnabled, cardless)}
+      offer={trialOfferFacts(new Date(), stripeTaxEnabled)}
       // The run starts as soon as the site read lands, with what was read
       // shown beside it (components/onboarding/what-we-understood.tsx). On
       // unless ONBOARDING_AUTOSTART=0 puts the check screen back first.

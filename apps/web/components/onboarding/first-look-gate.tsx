@@ -370,7 +370,7 @@ export function GateTop({
               without what it costs right above it. */}
           <div className="mx-auto max-w-[680px] px-4 pb-2.5 pt-2 sm:px-6">
             <p className="m-0 text-[12px] leading-[1.4] text-ink-2">{priceLine(interval, offer, plan)}</p>
-            <StartTrialButton returnTo={afterCheckout} plan={plan} interval={interval} surface="sticky_bar" cardless={offer.cardless} label={offer.cardless ? "Start free trial" : undefined} className="mt-1.5 w-full justify-center" />
+            <StartTrialButton returnTo={afterCheckout} plan={plan} interval={interval} surface="sticky_bar" className="mt-1.5 w-full justify-center" />
           </div>
         </div>
       )}
