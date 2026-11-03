@@ -68,18 +68,6 @@ export function usageLine(quota: Quota, now: Date = new Date()): UsageLine {
   // regardless and told it "5 left ... the drafts themselves do not [need a
   // plan]". A failed card lands here too, and is named as the card it is,
   // as the spend gate does (pastDueMessage): it has a plan to get back to.
-  // The Free floor: a handful a month, by hand, after a trial without a card.
-  if (reason === "no-plan" && quota.freeFloor) {
-    return {
-      figure: `${used} / ${limit}`,
-      sentence: exhausted
-        ? `new article this month on Free, written. The next one opens on ${formatReset(now)}; choose a plan to write at your pace again.`
-        : `new article this month on Free. Everything already written stays yours to read and copy; choose a plan to write at your pace again.`,
-      fraction,
-      exhausted,
-    };
-  }
-
   if (reason === "no-plan" && quota.trialEnded) {
     const sentence = quota.dunning
       ? `articles generated on this account. Drafting is paused: the ${quota.dunning.firstCharge ? "first payment after the trial" : "last renewal payment"} did not go through. Update the card on the Billing page and it starts again.`

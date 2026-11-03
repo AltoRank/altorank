@@ -52,7 +52,7 @@ export type TrialInfo = {
    * (lib/billing/trial-hold.ts, trialCancelledReason).
    */
   cancelsAt?: string | null;
-  /** No card behind it (lib/billing/cardless-trial.ts): capped, and Free when it ends unless a card is added. */
+  /** No card behind it (lib/billing/cardless-trial.ts): capped, and it ends with nothing charged unless a card is added. */
   cardless?: boolean;
 };
 

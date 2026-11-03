@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeAll, afterEach } from "vitest";
 
 /**
  * The card-less trial (lib/billing/cardless-trial.ts): seven days of Managed
- * with no card, capped, then the Free floor. The row is the card trial's
+ * with no card, capped, and closed on its end date. The row is the card trial's
  * without a subscription, so these pin the places that tell the two apart.
  */
 
@@ -147,10 +147,11 @@ describe("what the trial and the floor allow", () => {
     expect(q.trial?.cardless).toBeUndefined();
   });
 
-  it("after the trial: Free, one new article a calendar month", async () => {
-    const { getQuota } = await import("../quota");
+  it("after the trial: nothing new is written, as after a card trial", async () => {
+    const { getQuota, quotaExceededMessage, PLAN_ENDED_MESSAGE } = await import("../quota");
     const q = await getQuota(client({ ...cardless, plan_status: "inactive", trial_ends_at: inDays(-1) }, 0), "acc", null);
-    expect(q).toMatchObject({ reason: "no-plan", limit: 1, used: 0, remaining: 1, trialEnded: true, freeFloor: true });
+    expect(q).toMatchObject({ reason: "no-plan", remaining: 0, trialEnded: true });
+    expect(quotaExceededMessage(q)).toBe(PLAN_ENDED_MESSAGE);
   });
 });
 
@@ -158,7 +159,7 @@ describe("what the offer says", () => {
   it("no card: the line says so, and what happens on the last day", async () => {
     const { priceLine, reassuranceLine, trialOfferFacts } = await import("../trial-offer");
     const facts = trialOfferFacts(new Date("2026-11-02T12:00:00Z"), false, true);
-    expect(priceLine("month", facts)).toBe("No card needed. Free until November 9. Then add a card to keep going at €69/month, or stay on Free.");
+    expect(priceLine("month", facts)).toBe("No card needed. Free until November 9. Add a card to keep going at €69/month; without one it just ends.");
     expect(reassuranceLine(facts)).toMatch(/^The trial writes up to 4 articles\. Without a card it ends by itself/);
     expect(priceLine("month", trialOfferFacts(new Date("2026-11-02T12:00:00Z"), false))).toMatch(/^Card required\./);
   });

@@ -17,7 +17,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  *   ending in 2 days   the ask for the card, by email, once per trial
  *   ended              `plan_status` back to `inactive`, so the row stops
  *                      reading as a trial anywhere it is counted, and the
- *                      Free email, once
+ *                      trial-ended email, once
  *
  * Entitlement never waited for this: planEntitled closes a trial on its end
  * date (lib/billing/dunning.ts). This tidies the row and says so.

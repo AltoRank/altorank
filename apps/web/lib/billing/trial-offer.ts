@@ -120,7 +120,7 @@ export function priceLine(interval: BillingInterval, facts: TrialOfferFacts, pla
   const price = `${priceLabel(interval, plan)}${facts.taxAdded ? " (plus VAT where it applies)" : ""}`;
   // No card: nothing to charge, so the line says what happens on the last
   // day instead of what it costs (lib/billing/cardless-trial.ts).
-  if (facts.cardless) return `No card needed. Free until ${formatTrialDate(facts.endsAt)}. Then add a card to keep going at ${priceLabel("month", "starter")}, or stay on Free.`;
+  if (facts.cardless) return `No card needed. Free until ${formatTrialDate(facts.endsAt)}. Add a card to keep going at ${priceLabel("month", "starter")}; without one it just ends.`;
   return `Card required. €0 today. Then ${price} from ${formatTrialDate(facts.endsAt)} unless you cancel.`;
 }
 

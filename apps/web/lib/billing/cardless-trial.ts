@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// The card-less trial: seven days of Managed without a card, then Free
+// The card-less trial: seven days of Managed without a card
 // ---------------------------------------------------------------------------
 //
 // The card trial (lib/billing/trial.ts) asked for a card on the gate, under
@@ -7,9 +7,9 @@
 // price and left, or pressed and left at the card form. The trial now starts
 // from the same button with no card. It is a reverse trial: Managed for TRIAL_DAYS, capped
 // at CARDLESS_TRIAL_ARTICLES articles. The card is asked for when the cap or
-// the end comes, to keep the pace. Without a card the account lands on the
-// Free floor (`FREE_FLOOR_MONTHLY`, lib/billing/quota.ts) and keeps everything
-// already written.
+// the end comes, to keep the pace. Without a card the trial ends as a card
+// trial cancelled in time does: nothing charged, nothing new written, and
+// everything already written stays readable.
 //
 // The row is the one the card trial uses, minus Stripe: `plan_status =
 // 'trialing'`, `plan = 'starter'`, `trial_ends_at` stamped, and no
@@ -39,9 +39,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Articles a card-less trial writes in all, the first one included. */
 export const CARDLESS_TRIAL_ARTICLES = 4;
-
-/** New articles a month on the Free floor, once a trial has ended without a card. */
-export const FREE_FLOOR_MONTHLY = 1;
 
 /**
  * Stripe Checkout refuses a `trial_end` closer than 48 hours. A card added

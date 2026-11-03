@@ -56,8 +56,6 @@ type SidebarProps = {
     trialLabel?: string | null;
     /** A trial with no card (lib/billing/cardless-trial.ts): the meter is its cap, and the pill asks for the card. */
     cardless?: boolean;
-    /** On the Free floor after a trial: the meter is this month's Free article. */
-    freeFloor?: boolean;
     limit: number;
   } | null;
   /** How many sites the plan allows, for the switcher's Add row. Null renders a dash. */
@@ -387,7 +385,7 @@ export function Sidebar({ badges, hidden = [], userName = "Account", userInitial
                 without ever seeing a plan). Pluralised off the limit, which
                 went 1 -> 7 on 2026-09-06 and left this reading "Free draft"
                 above "0 / 7". */}
-            <span>{quota.cardless ? "Trial articles" : quota.freeFloor ? "Free this month" : quota.planEnded ? "Articles drafted" : quota.noPlan ? plural(quota.limit, "free draft") : "Articles this month"}</span>
+            <span>{quota.cardless ? "Trial articles" : quota.planEnded ? "Articles drafted" : quota.noPlan ? plural(quota.limit, "free draft") : "Articles this month"}</span>
             <span className="font-mono tabular-nums">{quota.figure}</span>
           </div>
           <div className="h-1 rounded-full bg-panel-2 overflow-hidden">

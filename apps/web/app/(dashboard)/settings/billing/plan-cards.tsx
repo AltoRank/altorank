@@ -302,8 +302,8 @@ export function PlanCards({
           <>
             Your free trial ends on {cardlessEndsOn}. Add a card to keep writing
             from then: nothing is charged before that day, and you can cancel
-            from this page. Without a card the account moves to Free and keeps
-            every article.
+            from this page. Without a card the trial just ends: nothing is
+            charged, and every article stays in the account.
           </>
         ) : trialEligible ? (
           <>

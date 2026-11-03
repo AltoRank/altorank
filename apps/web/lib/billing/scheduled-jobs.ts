@@ -72,7 +72,7 @@ export const SCHEDULED_JOBS: Record<string, ScheduledJob> = {
   },
   "/api/cron/trials": {
     key: null,
-    does: "Emails a trial with no card two days before it ends, and closes the ones that ended (Free). No provider spend.",
+    does: "Emails a trial with no card two days before it ends, and closes the ones that ended. No provider spend.",
     drivers: "—",
   },
 };

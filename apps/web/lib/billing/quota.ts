@@ -51,7 +51,7 @@ import { accountCountingClient } from "@/lib/billing/account-client";
 import { dunningInfo, planEntitled, type DunningInfo } from "@/lib/billing/dunning";
 import { plural } from "@/lib/utils";
 import { trialEligible, trialInfo, type TrialInfo } from "@/lib/billing/trial";
-import { CARDLESS_TRIAL_ARTICLES, FREE_FLOOR_MONTHLY } from "@/lib/billing/cardless-trial";
+import { CARDLESS_TRIAL_ARTICLES } from "@/lib/billing/cardless-trial";
 
 export type Quota = {
   /** Null means unmetered. */
@@ -99,13 +99,6 @@ export type Quota = {
    * counting free drafts the account never used.
    */
   trialEnded?: boolean;
-  /**
-   * Set beside `trialEnded` when the account is on the Free floor: a trial
-   * that ended without a card, or a plan that ended since. FREE_FLOOR_MONTHLY
-   * new articles a calendar month, written by hand (no scheduled work runs on
-   * `no-plan`), and everything already written stays readable.
-   */
-  freeFloor?: boolean;
 };
 
 /**
@@ -356,24 +349,6 @@ export async function getQuota(
     // was over (assessment 2026-10-25).
     const freeUsed = Math.max((account?.free_drafts_used as number | null) ?? 0, everUsed);
     const trialEnded = Boolean(account?.trial_ends_at);
-    // The Free floor (lib/billing/cardless-trial.ts): after a trial, a
-    // handful of articles a month rather than none, counted by the month. A
-    // card that lapsed is not on it: that account has a plan to get back to,
-    // and the dunning copy says so.
-    if (trialEnded && !dunning) {
-      return {
-        limit: FREE_FLOOR_MONTHLY,
-        used,
-        remaining: Math.max(0, FREE_FLOOR_MONTHLY - used),
-        reason: "no-plan",
-        plan: null,
-        dunning,
-        monthUsed: used,
-        trialEligible: eligible,
-        trialEnded: true,
-        freeFloor: true,
-      };
-    }
     return {
       limit: FREE_DRAFTS,
       used: freeUsed,
@@ -486,7 +461,6 @@ export function quotaExceededMessage(q: Quota, now: Date = new Date()): string {
   // A card that lapsed is not a plan that ended: the spend gate names the card
   // (lib/billing/spend-gate.ts), and this keeps the sentence it had.
   if (q.reason === "plan" && q.trial?.cardless) return cardlessCapMessage(q.trial.endsAt);
-  if (q.reason === "no-plan" && q.freeFloor) return freeFloorUsedMessage(now);
   if (q.reason === "no-plan" && q.trialEnded && !q.dunning) return PLAN_ENDED_MESSAGE;
   if (q.reason === "no-plan") {
     // No reset date on this branch any more. Waiting used to be a real third
@@ -520,11 +494,6 @@ export function cardlessCapMessage(endsAt: string): string {
   return `Your free trial includes ${plural(CARDLESS_TRIAL_ARTICLES, "article")}, and they are written. Add a card on the Billing page to keep writing at your pace: nothing is charged until ${ends}.`;
 }
 
-/** This month's Free article is written. */
-export function freeFloorUsedMessage(now: Date = new Date()): string {
-  const next = nextResetDate(now).toLocaleDateString("en-US", { month: "long", day: "numeric", timeZone: "UTC" });
-  return `Free includes ${plural(FREE_FLOOR_MONTHLY, "new article")} a month, and this month's is written. The next one opens on ${next}. Choose a plan on the Billing page to write at your pace again; everything already written stays yours to read and copy.`;
-}
 
 /**
  * The refusal for an account that has had its trial and holds no plan now: a

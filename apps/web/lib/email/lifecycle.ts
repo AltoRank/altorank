@@ -741,28 +741,28 @@ export function renderCardlessTrialEnding(a: CardlessTrialEmail): RenderedEmail 
   const ends = formatTrialDate(a.endsAt);
   return {
     subject: `Your free trial ends on ${ends}`,
-    preheader: `Add a card to keep writing, or move to Free and keep every article.`,
+    preheader: `Add a card to keep writing. Without one it ends and every article stays yours.`,
     footerNote: `Sent because you manage billing for this AltoRank account.`,
     html:
       heading(`Your free trial ends on ${ends}`) +
       emailParagraph(
         `To keep articles coming at your pace, add a card before then. Nothing is charged until ${esc(ends)}; from then it is <strong>${esc(a.planPrice)}</strong>, and you can cancel from the Billing page.`,
       ) +
-      emailParagraph(`Without a card nothing is charged and nothing is lost: the account moves to Free, keeps every article, and writes one new one a month.`) +
+      emailParagraph(`Without a card nothing is charged and nothing is lost: the trial ends and every article stays in your account.`) +
       emailButton(appLink("/settings/billing"), "Add a card"),
   };
 }
 
-/** The day after a trial with no card ended: what Free keeps, and the way back. */
+/** The day after a trial with no card ended: what stays, and the way back. */
 export function renderCardlessTrialEnded(a: CardlessTrialEmail): RenderedEmail {
   return {
-    subject: `Your free trial has ended: you're on Free`,
-    preheader: `Every article stays yours, and one new one a month is written.`,
+    subject: `Your free trial has ended`,
+    preheader: `Nothing was charged, and every article stays yours.`,
     footerNote: `Sent because you manage billing for this AltoRank account.`,
     html:
-      heading(`You're on Free`) +
+      heading(`Your free trial has ended`) +
       emailParagraph(`Your free trial ended and no card was added, so nothing was charged. Every article written in the trial is still in your account, to read and copy to your site.`) +
-      emailParagraph(`On Free, one new article is written a month. To go back to writing at your pace, add a card: it is <strong>${esc(a.planPrice)}</strong> from that day.`) +
+      emailParagraph(`To start writing again, add a card: it is <strong>${esc(a.planPrice)}</strong> from that day.`) +
       emailButton(appLink("/settings/billing"), "Add a card"),
   };
 }
