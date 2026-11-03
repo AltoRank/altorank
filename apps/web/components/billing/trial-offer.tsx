@@ -141,14 +141,15 @@ export function TrialPriceBox({
           returnTo={returnTo}
           onError={setError}
           surface="price_box"
-          label={`Start ${TRIAL_DAYS}-day trial`}
+          cardless={facts.cardless}
+          label={facts.cardless ? "Start free trial" : `Start ${TRIAL_DAYS}-day trial`}
           className="w-full justify-center py-2.5 text-[14px]"
           // From lg the form opens in place of the button, in the rail
           // beside the article; below lg in the sheet, like the bar's.
           embed={inline ? "inline" : "sheet"}
         />
       </div>
-      <p className="m-0 mt-2.5 text-[12.5px] leading-[1.55] text-ink-2">{reassuranceLine()}</p>
+      <p className="m-0 mt-2.5 text-[12.5px] leading-[1.55] text-ink-2">{reassuranceLine(facts)}</p>
       {/* The plan's terms, yearly and Agency: one quiet "Plan details", open
           once another interval or plan has been picked. */}
       <details className="mt-2" open={interval !== "month" || plan !== "starter" || undefined}>
@@ -165,7 +166,9 @@ export function TrialPriceBox({
             </li>
           ))}
         </ul>
-        <button
+        {/* The card-less trial is Managed, monthly; yearly and Agency are a
+            card's to choose, on Billing. */}
+        {!facts.cardless && <button
           type="button"
           onClick={() => {
             onInterval(other);
@@ -174,8 +177,8 @@ export function TrialPriceBox({
           className="mt-2 block text-left text-[12.5px] text-ink-3 underline decoration-line underline-offset-[3px] hover:text-ink-2"
         >
           {otherIntervalLine(interval, plan)}
-        </button>
-        {onPlan && (
+        </button>}
+        {onPlan && !facts.cardless && (
           <button
             type="button"
             onClick={() => {

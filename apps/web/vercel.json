@@ -62,6 +62,10 @@
     {
       "path": "/api/cron/shopify-billing",
       "schedule": "30 8 * * *"
+    },
+    {
+      "path": "/api/cron/trials",
+      "schedule": "15 8 * * *"
     }
   ]
 }

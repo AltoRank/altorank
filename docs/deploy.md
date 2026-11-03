@@ -154,7 +154,7 @@ build args, not runtime env.
 | `PUBLIC_TOOLS_DAILY_CAP_CENTS`, `PUBLIC_TOOLS_MODEL` | the paid public tools (`/api/public/tools/<slug>`, no sign-in) spend at most this many US cents a day of your Anthropic and DataForSEO keys. Unset means **0 with billing off** (the paid tools are off on a self-host until you set a budget) and 500 with billing on |
 | `EMAIL_UNSUBSCRIBE_SECRET` | the service role key signs unsubscribe and Hold links instead |
 | `ALTORANK_ALLOW_PRIVATE_FETCH` | audits refuse private and local addresses. Set `1` to audit sites on your own network |
-| `TRIAL_GATE_DISABLED`, `TRIAL_GATE_BYPASS_EMAILS`, `PRETRIAL_FULL_ARTICLE` | billing only: the card-trial step before the dashboard, addresses that skip it, and whether an owner can read their first draft in full before the trial |
+| `TRIAL_GATE_DISABLED`, `TRIAL_GATE_BYPASS_EMAILS`, `PRETRIAL_FULL_ARTICLE`, `CARDLESS_TRIAL_DISABLED` | billing only: the trial step before the dashboard, addresses that skip it, whether an owner can read their first draft in full before the trial, and whether the trial asks for a card at the start (it does not by default) |
 | `DOGFOOD_EMAIL` | only read by `scripts/dogfood.ts`; irrelevant to a deployment |
 | the two `NEXT_PUBLIC_POSTHOG_*` variables (project token, host) | no product analytics; `npm run dev` logs one console warning. Read at build time; `docker/compose.yml` does not pass them, so the Docker image never sends analytics |
 

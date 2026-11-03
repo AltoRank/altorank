@@ -725,6 +725,48 @@ export function renderTrialEnding(a: TrialEndingEmail): RenderedEmail {
   };
 }
 
+export type CardlessTrialEmail = {
+  /** ISO end of the trial. */
+  endsAt: string;
+  /** "€69/month": what a card keeps after it. */
+  planPrice: string;
+};
+
+/**
+ * Two days before a trial with no card ends (lib/billing/cardless-trial.ts).
+ * No Stripe event exists for it: the trials cron sends it. The one ask for
+ * the card that reaches someone who has not come back.
+ */
+export function renderCardlessTrialEnding(a: CardlessTrialEmail): RenderedEmail {
+  const ends = formatTrialDate(a.endsAt);
+  return {
+    subject: `Your free trial ends on ${ends}`,
+    preheader: `Add a card to keep writing. Without one it ends and every article stays yours.`,
+    footerNote: `Sent because you manage billing for this AltoRank account.`,
+    html:
+      heading(`Your free trial ends on ${ends}`) +
+      emailParagraph(
+        `To keep articles coming at your pace, add a card before then. Nothing is charged until ${esc(ends)}; from then it is <strong>${esc(a.planPrice)}</strong>, and you can cancel from the Billing page.`,
+      ) +
+      emailParagraph(`Without a card nothing is charged and nothing is lost: the trial ends and every article stays in your account.`) +
+      emailButton(appLink("/settings/billing"), "Add a card"),
+  };
+}
+
+/** The day after a trial with no card ended: what stays, and the way back. */
+export function renderCardlessTrialEnded(a: CardlessTrialEmail): RenderedEmail {
+  return {
+    subject: `Your free trial has ended`,
+    preheader: `Nothing was charged, and every article stays yours.`,
+    footerNote: `Sent because you manage billing for this AltoRank account.`,
+    html:
+      heading(`Your free trial has ended`) +
+      emailParagraph(`Your free trial ended and no card was added, so nothing was charged. Every article written in the trial is still in your account, to read and copy to your site.`) +
+      emailParagraph(`To start writing again, add a card: it is <strong>${esc(a.planPrice)}</strong> from that day.`) +
+      emailButton(appLink("/settings/billing"), "Add a card"),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Account
 // ---------------------------------------------------------------------------
@@ -1503,6 +1545,34 @@ export async function notifyTrialEnding(
     to,
     { type: "trial_ending", subjectId: `${accountId}:${subscriptionId}`, category: "billing", accountId },
     () => renderTrialEnding(data),
+  );
+}
+
+export async function notifyCardlessTrialEnding(
+  supabase: SupabaseClient,
+  accountId: string,
+  data: CardlessTrialEmail,
+): Promise<SendOnceOutcome> {
+  const to = await accountBillingRecipients(supabase, accountId);
+  return sendOnce(
+    supabase,
+    to,
+    { type: "cardless_trial_ending", subjectId: `${accountId}:${data.endsAt}`, category: "billing", accountId },
+    () => renderCardlessTrialEnding(data),
+  );
+}
+
+export async function notifyCardlessTrialEnded(
+  supabase: SupabaseClient,
+  accountId: string,
+  data: CardlessTrialEmail,
+): Promise<SendOnceOutcome> {
+  const to = await accountBillingRecipients(supabase, accountId);
+  return sendOnce(
+    supabase,
+    to,
+    { type: "cardless_trial_ended", subjectId: `${accountId}:${data.endsAt}`, category: "billing", accountId },
+    () => renderCardlessTrialEnded(data),
   );
 }
 

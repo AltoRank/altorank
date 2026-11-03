@@ -205,6 +205,12 @@ export async function canSpend(
     if (DRAFTING_ACTIONS.has(action)) {
       const cancelled = trialCancelledReason(quota);
       if (cancelled) return { allowed: false, reason: "trial-cancelled", quota, message: cancelled };
+      // A card-less trial's cap (lib/billing/cardless-trial.ts) stops drafting
+      // here as well as in generateArticle, so the week's burst and the
+      // scheduled writer never start research for an article they cannot write.
+      if (quota.trial?.cardless && (quota.remaining ?? 0) <= 0) {
+        return { allowed: false, reason: "trial-required", quota, message: quotaExceededMessage(quota) };
+      }
     }
     // `getQuota` has already folded the grace window into `plan` (dunning.ts),
     // so a card failing at renewal keeps working here. The distinction is kept

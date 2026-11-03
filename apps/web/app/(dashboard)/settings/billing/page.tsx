@@ -20,7 +20,7 @@ import { PlanCards, type PlanCard } from "./plan-cards";
 import { RetentionCard } from "./retention-card";
 import { DunningCard } from "./dunning-card";
 import { dunningInfo, trialStillRunning } from "@/lib/billing/dunning";
-import { trialEndsLabel, trialThenLabel } from "@/lib/billing/trial";
+import { formatTrialDate, trialEndsLabel, trialThenLabel } from "@/lib/billing/trial";
 import { SettingsTabs } from "../settings-tabs";
 import { canManageBilling } from "@/lib/team/access";
 import { priceForInterval } from "@/lib/billing/plan-interval";
@@ -134,6 +134,8 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
   // Owner only, like every other change to what the account pays, and only
   // when there is a subscription to pause or end.
   const showRetention = canManage && isActive && Boolean(account?.stripe_subscription_id);
+  // A trial with no card has nothing to pause or cancel: the plan cards add the card.
+  const cardless = Boolean(quota.trial?.cardless);
   const euros = (n: number | string | null) =>
     new Intl.NumberFormat("en-IE", {
       style: "currency",
@@ -173,7 +175,9 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
               <span>
                 {/* A trial has not renewed anything and has charged nothing:
                     say when it ends and what the card pays then. */}
-                {quota.trial && !dunning
+                {quota.trial?.cardless && !dunning
+                  ? trialThenLabel(quota.trial, `the ${PLAN_LABELS[plan]} plan`)
+                  : quota.trial && !dunning
                   ? trialThenLabel(quota.trial, priceForInterval({ monthly: PLAN_PRICES[plan], yearly: PLAN_YEARLY_PRICES[plan] }, interval, { sales: plan === "scale" }))
                   : <>
                       {priceForInterval({ monthly: PLAN_PRICES[plan], yearly: PLAN_YEARLY_PRICES[plan] }, interval, { sales: plan === "scale" })}
@@ -239,16 +243,17 @@ export default async function BillingPage(props: { searchParams?: Promise<{ retu
                 /* Null unless something is actually being paid for: `plan`
                    defaults to "starter" on an empty row, and this page has
                    already once presented that default as a purchase. */
-                currentTier={isActive ? plan : null}
-                currentInterval={isActive ? interval : null}
-                isActive={isActive}
+                currentTier={isActive && !cardless ? plan : null}
+                currentInterval={isActive && !cardless ? interval : null}
+                isActive={isActive && !cardless}
                 hasCustomer={!!account?.stripe_customer_id}
                 hasSubscription={!!account?.stripe_subscription_id}
                 returnTo={returnTo}
                 canManage={canManage}
                 cancelHandledBelow={showRetention}
                 trialEligible={Boolean(quota.trialEligible)}
-                trialEndsLabel={quota.trial ? trialEndsLabel(quota.trial) : null}
+                trialEndsLabel={quota.trial && !cardless ? trialEndsLabel(quota.trial) : null}
+                cardlessEndsOn={cardless && quota.trial ? formatTrialDate(quota.trial.endsAt) : null}
               />
             </div>
           </Card>
