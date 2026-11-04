@@ -25,7 +25,7 @@ export type RateCard = {
   dfsPerArticle: number;
   /** Model cost per article, from anthropic rows with an article_id. */
   modelPerArticle: number;
-  /** One LLM Responses probe with web search, cron/geo. */
+  /** One sampled answer from a consumer AI surface on the standard queue, cron/geo. */
   geoProbe: number;
   /** One full first look, cron/analyze - one-off per workspace. */
   firstLook: number;
@@ -37,15 +37,17 @@ export const DEFAULT_RATES: RateCard = {
   backlinksSync: 0.05,
   dfsPerArticle: 0.002 + 0.09,
   modelPerArticle: 0.16,
-  geoProbe: 0.066,
+  geoProbe: 0.0012,
   firstLook: 0.12,
 };
 
-/** How many engines cron/geo asks per prompt. Mirrors AI_ENGINES. */
-export const GEO_ENGINES = 4;
+/** How many surfaces cron/geo asks per prompt. Mirrors GEO_SURFACES. */
+export const GEO_ENGINES = 3;
+/** workspaces.geo_samples when a row predates it. */
+export const GEO_DEFAULT_SAMPLES = 5;
 /** cron/serp tracks at most this many keywords per workspace. */
 export const TRACK_CAP = 200;
-/** cron/geo probes at most this many workspaces per weekly run. */
+/** cron/geo starts at most this many sweeps a day. */
 export const GEO_WORKSPACES_PER_RUN = 3;
 
 export type WorkspaceDrivers = {
@@ -58,6 +60,8 @@ export type WorkspaceDrivers = {
   weeklyLimit: number | null;
   geoTracking: boolean;
   enabledPrompts: number;
+  /** workspaces.geo_samples: answers per prompt per surface in each weekly sweep. */
+  geoSamples?: number | null;
   needsFirstLook: boolean;
 };
 
@@ -88,11 +92,11 @@ export function forecastWorkspace(w: WorkspaceDrivers, rates: RateCard = DEFAULT
   const perWeek = w.autoGenerate ? (w.weeklyLimit ?? 2) : 0;
   const generate = perWeek * WEEKS * (rates.dfsPerArticle + rates.modelPerArticle);
 
-  // cron/geo: every enabled prompt across every engine, weekly, opt-in, and
-  // only when there is something to ask - the code refuses an empty prompt
-  // set on purpose.
+  // cron/geo: every enabled prompt on every surface, sampled geo_samples
+  // times, weekly, opt-in, and only when there is something to ask - the code
+  // refuses an empty prompt set on purpose.
   const geo = w.geoTracking && w.enabledPrompts > 0
-    ? w.enabledPrompts * GEO_ENGINES * rates.geoProbe * WEEKS
+    ? w.enabledPrompts * GEO_ENGINES * (w.geoSamples ?? GEO_DEFAULT_SAMPLES) * rates.geoProbe * WEEKS
     : 0;
 
   const oneOff = w.needsFirstLook ? rates.firstLook : 0;
@@ -129,6 +133,11 @@ export function forecastAll(workspaces: WorkspaceDrivers[], rates: RateCard = DE
     monthlyTotal: byJob.serp + byJob.backlinks + byJob.generate + byJob.geo,
     geoBacklog: Math.max(0, geoOptIns - GEO_WORKSPACES_PER_RUN),
   };
+}
+
+/** A call cron/geo makes: the app scrapers, AI Mode, and the old llm_responses probes. */
+function isGeoOperation(operation: string): boolean {
+  return operation.startsWith("/ai_optimization/") || operation.startsWith("/serp/google/ai_mode/");
 }
 
 /** provider_spend.job, as the schedule files it. A job not named here is not a scheduled one. */
@@ -178,7 +187,7 @@ export function jobForSpend(row: {
   if (row.operation.startsWith("/serp/google/organic/task_")) return "serp";
   if (row.operation.startsWith("/serp/google/organic/tasks_ready")) return "serp";
   if (row.operation.startsWith("/backlinks/")) return "backlinks";
-  if (row.operation.startsWith("/ai_optimization/")) return "geo";
+  if (isGeoOperation(row.operation)) return "geo";
   if (row.operation.startsWith("/serp/google/organic/live/advanced")) return "generate";
   if (row.operation.startsWith("/keywords_data/google_ads/keywords_for_keywords")) return "generate";
   return null;
@@ -250,7 +259,9 @@ export function measuredRatesFromGroups(
 
   set("serpQueued", avg((o) => o.operation.startsWith("/serp/google/organic/task_get/")));
   set("backlinksSync", avg((o) => o.operation.startsWith("/backlinks/backlinks")));
-  set("geoProbe", avg((o) => o.operation.startsWith("/ai_optimization/")));
+  // The posts only: a sample is billed at task_post, and its free task_get
+  // would halve the average.
+  set("geoProbe", avg((o) => isGeoOperation(o.operation) && o.operation.includes("/task_post")));
 
   const serpAdv = avg((o) => o.operation.startsWith("/serp/google/organic/live/advanced"));
   const kfk = avg((o) => o.operation.startsWith("/keywords_data/google_ads/keywords_for_keywords"));

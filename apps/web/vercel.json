@@ -45,7 +45,7 @@
     },
     {
       "path": "/api/cron/geo",
-      "schedule": "0 8 * * 1"
+      "schedule": "0 8 * * *"
     },
     {
       "path": "/api/cron/refresh",

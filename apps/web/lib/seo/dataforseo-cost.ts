@@ -52,6 +52,9 @@ function perTask(endpoint: string, task: Task): number {
     return 0.02 + 0.00006 * Math.max(rows(task, 100), targets);
   }
   if (endpoint.startsWith("/on_page/instant_pages")) return 0.006;
+  // The ChatGPT and Gemini app scrapers (cron/geo): $0.0012 a task on the
+  // standard queue, $0.004 live (dataforseo.com/pricing, 2026-11-04).
+  if (endpoint.includes("/llm_scraper/")) return endpoint.includes("/task_post") ? 0.0012 : 0.004;
   return UNLISTED_TASK_USD;
 }
 

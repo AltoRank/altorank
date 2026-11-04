@@ -275,7 +275,7 @@ The mapping, as committed in `wrangler.jsonc` and `cloudflare/worker.mjs`:
     "0 6 1 * *",          // /api/cron/reports
     "0 1,7,13,19 * * *",  // /api/cron/generate
     "30 7 * * *",         // /api/cron/refresh
-    "0 8 * * 1",          // /api/cron/geo
+    "0 8 * * *",          // /api/cron/geo
     "0 10 * * *",         // /api/cron/site-pages
     "0 11 * * *"          // /api/cron/ops-digest
   ]

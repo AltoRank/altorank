@@ -50,6 +50,13 @@ function isInfrastructure(domain: string): boolean {
   return INFRASTRUCTURE.some((d) => domain === d || domain.endsWith(`.${d}`));
 }
 
+/** The most frequent values, most frequent first. */
+function topOf(values: string[], n: number): string[] {
+  const counts = new Map<string, number>();
+  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map(([v]) => v);
+}
+
 /**
  * Derive the next moves from one visibility sweep.
  *
@@ -64,7 +71,8 @@ export function deriveGeoActions(options: {
   readinessScore?: number | null;
 }): GeoAction[] {
   const { rows, brandDomain, readinessScore } = options;
-  const ok = rows.filter((r) => !r.error);
+  // Answers only: a pending sample is not one yet, a failed one never was.
+  const ok = rows.filter((r) => r.status === "ok" && !r.error);
   if (!ok.length) return [];
 
   const actions: GeoAction[] = [];
@@ -82,26 +90,31 @@ export function deriveGeoActions(options: {
     if (named === 0) {
       // Who won this specific question, rather than in aggregate. The pages an
       // engine cited for one prompt are the brief for beating it.
-      const winners = [
-        ...new Set(results.flatMap((r) => r.competitor_domains ?? []).filter((d) => !isInfrastructure(d))),
-      ].slice(0, 3);
+      const winners = topOf(results.flatMap((r) => (r.competitor_domains ?? []).filter((d) => !isInfrastructure(d))), 3);
+      const namedInstead = topOf(results.flatMap((r) => r.brands ?? []), 3);
+      const instead = namedInstead.length ? ` The answers named ${namedInstead.join(", ")} instead.` : "";
 
       actions.push({
         kind: "cover_prompt",
         title: `Publish an answer to "${prompt}"`,
         detail: winners.length
-          ? `No engine named this brand for this question. ${winners.join(", ")} were cited instead, so those pages are the standard to beat. Generate a page that answers it directly and completely.`
-          : "No engine named this brand for this question, and none cited a clear source, which usually means the answer is being assembled from general knowledge. A single direct, well-structured answer can claim it.",
+          ? `No engine named this brand for this question.${instead} The pages they cited most were ${winners.join(", ")}, so those are the standard to beat. Generate a page that answers it directly and completely.`
+          : `No engine named this brand for this question, and none cited a clear source, which usually means the answer is being assembled from general knowledge.${instead} A single direct, well-structured answer can claim it.`,
         evidence: `Named in 0 of ${results.length} answers across ${new Set(results.map((r) => r.engine)).size} engines`,
         priority: 100,
         automatable: true,
       });
-    } else if (named < results.length) {
-      const missing = results.filter((r) => !r.mentioned).map((r) => r.engine);
+    } else {
+      // Per engine, not per answer: with several samples an engine that named
+      // the brand in one of five answers is low there, not absent, and only
+      // an engine that never named it is a gap to close.
+      const engines = [...new Set(results.map((r) => r.engine))];
+      const missing = engines.filter((e) => !results.some((r) => r.engine === e && r.mentioned));
+      if (!missing.length) continue;
       actions.push({
         kind: "defend_position",
         title: `Close the gap on ${missing.join(" and ")}`,
-        detail: `The brand is named for this question on some engines but not all. Engines differ in what they index and how recently, so this is usually a freshness or structured-data gap rather than a content gap.`,
+        detail: `The brand is named for this question on some engines and never on these. Each engine grounds its answer in its own search, so the gap is usually retrieval: that engine's search did not surface a page that names the brand. Look at what it cited instead.`,
         evidence: `Named in ${named} of ${results.length} answers; missing on ${missing.join(", ")}`,
         priority: 60,
         automatable: false,

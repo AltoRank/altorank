@@ -47,8 +47,8 @@ export const SCHEDULED_JOBS: Record<string, ScheduledJob> = {
   "/api/cron/reports": { key: null, does: "Monthly PDF from stored data. No provider spend.", drivers: "—" },
   "/api/cron/geo": {
     key: "geo",
-    does: "AI-visibility probes: every enabled prompt across 4 engines, with web search.",
-    drivers: "opt-in workspaces × prompts × 4, max 3 workspaces/run",
+    does: "AI-visibility sweeps: every enabled prompt on the ChatGPT app, Gemini app and Google AI Mode, sampled, queued and collected daily over the week.",
+    drivers: "opt-in workspaces × prompts × 3 surfaces × samples (default 5), weekly",
   },
   "/api/cron/refresh": {
     key: "refresh",
