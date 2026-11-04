@@ -12,7 +12,7 @@ vi.mock("@/app/actions/auth", () => ({ signOut: async () => undefined }));
 vi.mock("@/app/actions/first-look-exits", () => ({ emailWhenReady: async () => ({ ok: true, email: "x" }), emailFirstArticle: async () => ({ ok: true, email: "x" }) }));
 vi.mock("@/app/actions/onboarding-wizard", () => {
   const never = () => new Promise(() => undefined);
-  return { proposeProfile: never, resolveCompetitor: never, suggestCompetitors: never, saveProfile: never, saveProfileDraft: never, discoverSiteDetails: never, saveSiteDetails: never, completeWizard: never };
+  return { proposeProfile: never, resolveCompetitor: never, suggestCompetitors: never, saveProfile: never, saveProfileDraft: never, discoverSiteDetails: never, checkSiteReach: never, saveSiteDetails: never, completeWizard: never };
 });
 
 import { OnboardingWizard } from "../wizard";

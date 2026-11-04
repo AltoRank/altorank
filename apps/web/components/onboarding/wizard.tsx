@@ -39,6 +39,7 @@ import {
   saveProfile,
   saveProfileDraft,
   discoverSiteDetails,
+  checkSiteReach,
   saveSiteDetails,
   completeWizard,
 } from "@/app/actions/onboarding-wizard";
@@ -49,6 +50,7 @@ import type { OnboardingHeld } from "@/lib/onboarding/events";
 import { EMPTY_PROFILE, type BusinessProfile } from "@/lib/onboarding/profile-shape";
 import type { InferenceReason } from "@/lib/onboarding/business-profile";
 import type { SiteDiscovery } from "@/lib/onboarding/site-discovery";
+import type { SiteReach } from "@/lib/audit/site-reach";
 // The forms themselves live in components/settings: every wizard screen is
 // also a permanent Settings tab, and one copy of each form keeps them in step.
 import { BusinessFields, LANGUAGE_SELECT_ID } from "@/components/settings/business-fields";
@@ -222,6 +224,11 @@ export function OnboardingWizard({
   // Language and market were guessed from the page's `lang` and its country
   // domain because the read failed: said beside them.
   const [localeGuessed, setLocaleGuessed] = useState(false);
+  // Whether the run's crawler gets any answer from the homepage, asked
+  // beside the read: a site that gives none is told so here, and no run is
+  // started that can only end with nothing (lib/audit/site-reach.ts).
+  const [reach, setReach] = useState<SiteReach | "pending">("pending");
+  const [rechecking, setRechecking] = useState(false);
   const [discovery, setDiscovery] = useState<SiteDiscovery | null | "pending">(initialSite.sitemapUrl || initialSite.blogRootUrl ? null : "pending");
   // A run found on load is resumed; otherwise Finish starts one.
   const [resumed] = useState(() => (initialRun && shouldResumeRun(initialRun, Date.now()) ? initialRun : null));
@@ -386,6 +393,32 @@ export function OnboardingWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- lookUpRivals is a plain function; the read runs once per press
   }, [reading, running, workspaceId, alreadyOnboarded]);
 
+  // Ask whether the run can reach the site, once per visit. Our own failure
+  // to ask is not the site's: it lets the run go ahead, as before this check.
+  useEffect(() => {
+    if (reach !== "pending" || running || alreadyOnboarded) return;
+    let cancelled = false;
+    checkSiteReach(workspaceId)
+      .then((r) => {
+        if (cancelled) return;
+        if (!r.ok) trackStep("site_unreachable", { workspaceId });
+        setReach(r);
+      })
+      .catch(() => !cancelled && setReach({ ok: true }));
+    return () => {
+      cancelled = true;
+    };
+  }, [reach, running, workspaceId, alreadyOnboarded]);
+  function recheckReach() {
+    setRechecking(true);
+    checkSiteReach(workspaceId)
+      .then(setReach)
+      .catch(() => setReach({ ok: true }))
+      .finally(() => setRechecking(false));
+  }
+  const unreachable = !alreadyOnboarded && reach !== "pending" && !reach.ok ? reach : null;
+  const reachKnown = alreadyOnboarded || reach !== "pending";
+
   // Look for the sitemap and blog in the background while step 1 is on screen,
   // so step 3 opens with an answer rather than a spinner.
   useEffect(() => {
@@ -503,7 +536,7 @@ export function OnboardingWizard({
   // save that failed) leaves the form on screen with its reason.
   const [autoTried, setAutoTried] = useState(false);
   const autoEligible = autoStart && !alreadyOnboarded && !editing && !running;
-  const autoReady = autoEligible && !autoTried && !reading && profile !== null && readFailure === null && !rivalsLoading && discovery !== "pending";
+  const autoReady = autoEligible && !autoTried && !reading && profile !== null && readFailure === null && !rivalsLoading && discovery !== "pending" && reachKnown && !unreachable;
   useEffect(() => {
     if (!autoReady || !profile) return;
     const blocked = finishBlocker(withPendingCompetitor(profile, competitorDraft.current)) !== null;
@@ -523,7 +556,7 @@ export function OnboardingWizard({
   }, [autoReady]);
   // Until then the reading screen stays up, so the form never flashes on
   // the way to the run.
-  const autoWaiting = autoEligible && readFailure === null && (!autoTried || pending);
+  const autoWaiting = autoEligible && readFailure === null && !unreachable && (!autoTried || pending);
 
   // Sent here by the dashboard gate, with no run recent enough to resume.
   // There is nothing to show the progress of and nothing to set up again -
@@ -579,6 +612,8 @@ export function OnboardingWizard({
       />
     );
   }
+
+  if (unreachable && !editing) return <SiteUnreachable domain={domain} line={unreachable.line} checking={rechecking} onRetry={recheckReach} />;
 
   if (reading || !profile || autoWaiting) return <ReadingSite domain={domain} autoStart={autoEligible} />;
 
@@ -890,6 +925,25 @@ export function SectionBadge({ state }: { state: SectionState }) {
   }
   if (state === "optional") return <span className="rounded-full border border-line px-2 py-0.5 text-ink-3">Optional</span>;
   return <span className="rounded-full bg-warn-soft px-2 py-0.5 text-warn-ink">Needs a look</span>;
+}
+
+/**
+ * The homepage gave the run nothing, so no run was started: the reason, what
+ * the owner can do about it, and one button that asks again. No form, since
+ * nothing typed into one gets a run past a site it cannot reach.
+ */
+export function SiteUnreachable({ domain, line, checking, onRetry }: { domain: string; line: string; checking: boolean; onRetry: () => void }) {
+  return (
+    <div className="grid min-h-screen place-items-center bg-bg px-4 sm:px-6">
+      <div className="w-full max-w-[560px] text-center">
+        <h1 className="mb-2 text-[22px] font-semibold">We can’t reach {domain}</h1>
+        <p className="mx-auto mb-5 max-w-[460px] text-[13.5px] leading-[1.6] text-ink-2">{line}</p>
+        <Button variant="accent" onClick={onRetry} disabled={checking}>
+          {checking ? "Checking…" : "Try again"}
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 /** The wait, with the work named. */

@@ -18,6 +18,9 @@ export const ONBOARDING_STEPS = [
   "site_read_started",
   "site_read_finished",
   "site_read_failed",
+  // The homepage gave the run's crawler no answer at all, so the run was not
+  // started and the wizard said why (lib/audit/site-reach.ts).
+  "site_unreachable",
   "profile_shown",
   "competitor_step_done",
   "plan_clicked",

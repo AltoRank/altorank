@@ -67,3 +67,53 @@ describe("readiness fetchResource behind the same rule", () => {
     expect(server.calls.map((c) => c.ua)).toEqual([expect.stringContaining("AgentReadiness"), FALLBACK_UA]);
   });
 });
+
+/**
+ * A SiteGround-hosted signup, 2026-11-04: no 403 to retry on. The socket was
+ * closed under every "Mozilla/5.0 (compatible; ...)" request, and the reader's
+ * agent got 200 in the same minute.
+ */
+function dropped(code = "UND_ERR_SOCKET") {
+  return Object.assign(new TypeError("fetch failed"), { cause: { code, message: "other side closed" } });
+}
+
+function serverThatDropsCompatibleAgents() {
+  const calls: string[] = [];
+  const impl = async (_input: string | URL | Request, init?: RequestInit) => {
+    const ua = String((init?.headers as Record<string, string>)?.["User-Agent"] ?? "");
+    calls.push(ua);
+    if (ua.startsWith("Mozilla/5.0 (compatible;")) throw dropped();
+    return new Response(HTML, { status: 200, headers: { "content-type": "text/html" } });
+  };
+  return { calls, impl };
+}
+
+describe("crawlSite when the host drops the connection", () => {
+  it("reads the page on the second try, the way the wizard's reader asks", async () => {
+    const server = serverThatDropsCompatibleAgents(); globalThis.fetch = server.impl as typeof fetch;
+    const pages = await crawlSite("https://paint.example", 1, 0, 0);
+    expect(usablePages(pages)).toHaveLength(1);
+    expect(server.calls).toEqual([expect.stringContaining("AltoRank-Auditor"), FALLBACK_UA]);
+  });
+
+  it("keeps the reason when the second try is dropped too", async () => {
+    globalThis.fetch = (async () => { throw dropped(); }) as typeof fetch;
+    const pages = await crawlSite("https://paint.example", 1, 0, 0);
+    expect(pages[0]).toMatchObject({ status: 0, error: "UND_ERR_SOCKET" });
+  });
+
+  it("does not retry a host that does not exist", async () => {
+    let calls = 0;
+    globalThis.fetch = (async () => { calls++; throw dropped("ENOTFOUND"); }) as typeof fetch;
+    const pages = await crawlSite("https://nowhere.example", 1, 0, 0);
+    expect(calls).toBe(1);
+    expect(pages[0].error).toBe("host not found");
+  });
+
+  it("the readiness check reads the resource on the second try too", async () => {
+    const server = serverThatDropsCompatibleAgents(); globalThis.fetch = server.impl as typeof fetch;
+    const r = await fetchResource("https://paint.example/", 5_000);
+    expect(r.status).toBe(200);
+    expect(server.calls).toEqual([expect.stringContaining("AgentReadiness"), FALLBACK_UA]);
+  });
+});
