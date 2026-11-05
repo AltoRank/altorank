@@ -9,6 +9,7 @@ import {
 import { periodTotals } from "@/lib/gsc/analysis";
 import { readGsc } from "@/lib/gsc/read";
 import { readAllPages } from "@/lib/supabase/read-all";
+import { geoReportSummary, latestGeoRun } from "@/lib/geo/read";
 import { assertReportPeriod, dayAfter } from "./period";
 
 export interface ReportData {
@@ -68,7 +69,7 @@ export interface ReportData {
     mentionRate: number;
     /** Share of answers linking the brand's own domain, 0-1. */
     citationRate: number;
-    /** Rival domains cited most often on the same questions. */
+    /** Domains the answers cited most often on the same questions (sources, not only rivals). */
     topCompetitors: Array<{ domain: string; citations: number }>;
     checkedAt: string;
   } | null;
@@ -254,52 +255,12 @@ export async function aggregateReportData(
   }
 
   // --- AI visibility -------------------------------------------------------
-  // Scoped to the latest sweep rather than the report period: a GEO run is a
-  // snapshot of what the engines answer today, so averaging several sweeps
-  // across a month would blur the number the client is being shown. The window
-  // matches getLatestGeoResults, which the dashboard already uses, so the report
-  // and the screen agree.
-  const { data: geoRows } = await supabase
-    .from("geo_results")
-    .select("prompt, engine, mentioned, cited, competitor_domains, checked_at, error")
-    .eq("workspace_id", workspaceId)
-    .order("checked_at", { ascending: false })
-    .limit(200);
-
-  let geoSummary: ReportData["geoSummary"] = null;
-  if (geoRows?.length) {
-    const newest = new Date(geoRows[0].checked_at as string).getTime();
-    const SWEEP_WINDOW_MS = 60 * 60 * 1000;
-    const run = geoRows.filter(
-      (r) =>
-        !r.error &&
-        newest - new Date(r.checked_at as string).getTime() < SWEEP_WINDOW_MS,
-    );
-
-    // Every probe in the run errored: measured, but nothing to report. Left null
-    // so the report says "not measured" instead of "cited in 0% of answers",
-    // which would read as a finding rather than an absence.
-    if (run.length) {
-      const counts = new Map<string, number>();
-      for (const r of run) {
-        for (const domain of (r.competitor_domains as string[] | null) ?? []) {
-          counts.set(domain, (counts.get(domain) ?? 0) + 1);
-        }
-      }
-
-      geoSummary = {
-        promptsTracked: new Set(run.map((r) => r.prompt as string)).size,
-        engines: [...new Set(run.map((r) => r.engine as string))].sort(),
-        mentionRate: run.filter((r) => r.mentioned).length / run.length,
-        citationRate: run.filter((r) => r.cited).length / run.length,
-        topCompetitors: [...counts.entries()]
-          .map(([domain, citations]) => ({ domain, citations }))
-          .sort((a, b) => b.citations - a.citations)
-          .slice(0, 5),
-        checkedAt: geoRows[0].checked_at as string,
-      };
-    }
-  }
+  // The latest finished sweep rather than the report period: a GEO run is a
+  // snapshot of what the engines answer that week, so averaging several
+  // sweeps across a month would blur the number the client is being shown.
+  // Read through the same run reader as the dashboard, so the report and the
+  // screen agree.
+  const geoSummary = geoReportSummary(await latestGeoRun(supabase, workspaceId));
 
   return {
     period: `${startDate} to ${endDate}`,

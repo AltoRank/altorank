@@ -214,7 +214,7 @@ nowhere else.
 | `/api/cron/reports` | `0 6 1 * *` | monthly PDF reports |
 | `/api/cron/generate` | `0 7 * * *` | autonomous drafts (bounded, see above) |
 | `/api/cron/refresh` | `30 7 * * *` | content refresh for workspaces that turned it on in Settings |
-| `/api/cron/geo` | `0 8 * * 1` | AI-visibility measurement, weekly; measures only workspaces with `geo_tracking` on and prompts in `geo_prompts`, which nothing in the app sets yet |
+| `/api/cron/geo` | `0 8 * * *` | AI-visibility measurement: daily, collecting and posting each weekly sweep in slices; measures only workspaces with `geo_tracking` on and prompts in `geo_prompts`, which nothing in the app sets yet |
 | `/api/cron/publish` | `0 9 * * *` | scheduled publishing |
 | `/api/cron/site-pages` | `0 10 * * *` | re-reads one site's sitemap pages per run, stalest first, and checks whether a draft already went live on the site |
 | `/api/cron/ops-digest` | `0 11 * * *` | daily operations digest to `ADMIN_EMAILS` |

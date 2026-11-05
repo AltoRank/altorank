@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { getWorkspaces } from "@/lib/queries/workspaces";
-import { getGeoPrompts, getLatestGeoResults, summariseRows } from "@/lib/queries/geo";
+import { getGeoPrompts, getLatestGeoRun, summariseRows } from "@/lib/queries/geo";
 import { deriveGeoActions } from "@/lib/geo/actions";
 import { HowItWorks } from "@/components/dashboard/how-it-works";
 import { geoExplainer } from "@/lib/explainers";
@@ -15,6 +15,7 @@ const ENGINE_LABEL: Record<AiEngine, string> = {
   claude: "Claude",
   gemini: "Gemini",
   perplexity: "Perplexity",
+  google_ai_mode: "Google AI Mode",
 };
 
 /**
@@ -25,13 +26,7 @@ const ENGINE_LABEL: Record<AiEngine, string> = {
 export default async function GeoPage() {
   // Every section is about one site unless the switcher says otherwise.
   const scopeId = await getScopedWorkspaceId();
-  const [workspaces, prompts, rows] = await Promise.all([
-    getWorkspaces(),
-    getGeoPrompts(scopeId ?? undefined),
-    getLatestGeoResults(scopeId ?? undefined),
-  ]);
-
-  const summary = summariseRows(rows);
+  const workspaces = await getWorkspaces();
   // The badge, the brand the actions are derived for, and the count all
   // follow the scope like the results do. Until 2026-09-07 they read the
   // whole account: on site B the header said "1 tracked" because site A
@@ -39,12 +34,20 @@ export default async function GeoPage() {
   // B's answers.
   const inScope = scopeId ? workspaces.filter((w) => w.id === scopeId) : workspaces;
   const tracked = inScope.filter((w) => (w as { geo_tracking?: boolean }).geo_tracking);
-  const trackedDomain = tracked[0]?.domain;
-  const actions = rows.length
-    ? deriveGeoActions({ rows, brandDomain: trackedDomain ?? "" })
-    : [];
-  const lastChecked = rows[0]?.checked_at
-    ? new Date(rows[0].checked_at).toLocaleDateString("en-GB", {
+  // One site's sweep and prompt set, always: unscoped, the first tracked
+  // site's. A mention rate blended across sites is measured against no brand
+  // in particular.
+  const measuredId = scopeId ?? tracked[0]?.id ?? null;
+  const measuredDomain = workspaces.find((w) => w.id === measuredId)?.domain ?? "";
+  const [prompts, latest] = measuredId
+    ? await Promise.all([getGeoPrompts(measuredId), getLatestGeoRun(measuredId)])
+    : [[], null];
+  const run = latest?.run ?? null;
+  const rows = latest?.rows ?? [];
+  const summary = summariseRows(rows);
+  const actions = rows.length ? deriveGeoActions({ rows, brandDomain: measuredDomain }) : [];
+  const lastChecked = run
+    ? new Date(run.finished_at ?? run.started_at).toLocaleDateString("en-GB", {
         day: "numeric",
         month: "short",
         year: "numeric",
@@ -55,7 +58,7 @@ export default async function GeoPage() {
   // problem from one you are merely low in, and the fix differs too.
   const byEngine = new Map<AiEngine, { total: number; mentioned: number; cited: number }>();
   for (const r of rows) {
-    if (r.error) continue;
+    if (r.status !== "ok") continue;
     const e = byEngine.get(r.engine) ?? { total: 0, mentioned: 0, cited: 0 };
     e.total += 1;
     if (r.mentioned) e.mentioned += 1;
@@ -74,13 +77,15 @@ export default async function GeoPage() {
               label={tracked.length ? (scopeId ? "Tracked" : `${tracked.length} tracked`) : "Not enabled"}
             />
             <span className="truncate">
-              Whether ChatGPT, Claude, Gemini and Perplexity name this brand,
-              and which domains they name instead.
+              Whether the ChatGPT app, Gemini and Google AI Mode name this
+              brand, and who they name instead.
             </span>
             {lastChecked && (
               <>
                 <DotSep />
-                <span className="whitespace-nowrap">Last measured {lastChecked}</span>
+                <span className="whitespace-nowrap">
+                  {run?.status === "running" ? `Collecting since ${lastChecked}` : `Last measured ${lastChecked}`}
+                </span>
               </>
             )}
           </>
@@ -96,7 +101,11 @@ export default async function GeoPage() {
             // means "never ran" reads as "you are invisible", which is a
             // different and much worse claim.
             value: summary.probesRun ? `${summary.mentionRate}%` : "—",
-            delta: summary.probesRun ? `${summary.probesRun} answers` : "not measured",
+            // The interval, not just the rate: thirty answers that never name
+            // the brand still allow a true rate near 10%.
+            delta: summary.probesRun
+              ? `95% range ${summary.mentionInterval.low}–${summary.mentionInterval.high}% · ${summary.probesRun} answers`
+              : "not measured",
           },
           {
             label: "Citation rate",
@@ -109,9 +118,13 @@ export default async function GeoPage() {
             delta: prompts.length ? "buyer questions" : "none defined",
           },
           {
-            label: "Cost last run",
-            value: summary.probesRun ? `$${summary.totalCostUsd.toFixed(2)}` : "—",
-            delta: summary.probesFailed ? `${summary.probesFailed} probes failed` : "all probes ok",
+            label: run?.status === "running" ? "Sweep so far" : "Last sweep",
+            value: run ? `${run.captured}/${run.planned}` : "—",
+            // Partial is said, not hidden: a sweep that captured 60% of its
+            // plan is a smaller measurement, not the same one.
+            delta: run
+              ? `${run.status === "running" ? "collecting" : run.status} · ${summary.probesFailed} failed · $${summary.totalCostUsd.toFixed(2)}`
+              : "not measured",
           },
         ]}
       />
@@ -203,14 +216,52 @@ export default async function GeoPage() {
           </Card>
         )}
 
+        {summary.topBrands.length > 0 && (
+          <Card flush>
+            <div className="px-5 pt-4 pb-1 font-semibold text-sm">Who gets named instead</div>
+            <div className="px-5 pb-3 text-[12.5px] text-ink-3">
+              Brands the answers named, by the share of answers that named them.
+              These are the rivals; the sources below are what the engines read.
+            </div>
+            <table className="w-full border-collapse text-[13px]">
+              <thead>
+                <tr>
+                  {["Brand", "Answers", "Named in"].map((h) => (
+                    <th
+                      key={h}
+                      className={`font-medium text-[11px] text-ink-3 uppercase tracking-[0.06em] px-3.5 py-2.5 border-b border-line bg-panel ${
+                        h === "Brand" ? "text-left" : "text-right"
+                      }`}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {summary.topBrands.map((b) => (
+                  <tr key={b.brand} className="hover:[&>td]:bg-panel">
+                    <td className="px-3.5 py-3 border-b border-line-soft font-medium">{b.brand}</td>
+                    <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs text-ink-2">
+                      {b.answers}
+                    </td>
+                    <td className="px-3.5 py-3 border-b border-line-soft text-right font-mono text-xs">{b.rate}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        )}
+
         {summary.topCompetitors.length > 0 && (
           <Card flush>
             <div className="px-5 pt-4 pb-1 font-semibold text-sm">
-              Who gets cited instead
+              What the engines cite
             </div>
             <div className="px-5 pb-3 text-[12.5px] text-ink-3">
-              Domains the answer engines cited across these prompts. This is the
-              target list: these pages are what an AI reads before answering.
+              Domains the answers cited across these prompts. This is the
+              outreach list: being named on these pages is how an answer comes
+              to name you.
             </div>
             <table className="w-full border-collapse text-[13px]">
               <thead>
@@ -265,7 +316,7 @@ export default async function GeoPage() {
             </div>
             <div className="px-5 pb-5 flex flex-col gap-2">
               {prompts.map((p) => {
-                const forPrompt = rows.filter((r) => r.prompt === p.prompt && !r.error);
+                const forPrompt = rows.filter((r) => r.prompt === p.prompt && r.status === "ok");
                 const hits = forPrompt.filter((r) => r.mentioned).length;
                 return (
                   <div

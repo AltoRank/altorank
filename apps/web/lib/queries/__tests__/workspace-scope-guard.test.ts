@@ -65,6 +65,9 @@ const ALLOWED: Record<string, string> = {
   "lib/shopify/link.ts:articles":
     "counts shipped articles across the whole account a Shopify install created (scoped by " +
     "workspaces.account_id), to decide whether that account can be retired when the store is linked elsewhere",
+  "lib/geo/runs.ts:geo_results":
+    "cron/geo's collector walks every pending sample in every workspace (service role); " +
+    "the per-run reads there also filter on the run's workspace_id",
   "lib/content/generate.ts:articles":
     "generation resolves its article by id first (and checks workspace_id when " +
     "it does); the later writes address that same row",
@@ -201,7 +204,7 @@ const SCOPED_HELPERS: Record<string, number> = {
   getBacklinks: 0,
   getReports: 0,
   getGeoPrompts: 0,
-  getLatestGeoResults: 0,
+  getLatestGeoRun: 0,
   loadGscRows: 0,
   syncHealthFor: 0,
   knownPagesFor: 0,

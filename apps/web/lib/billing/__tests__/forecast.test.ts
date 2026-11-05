@@ -35,10 +35,12 @@ describe("forecastWorkspace", () => {
     expect(forecastWorkspace({ ...base, autoGenerate: false, weeklyLimit: 20 }).monthly.generate).toBe(0);
   });
 
-  it("charges GEO only when opted in AND prompts exist, four engines per prompt", () => {
+  it("charges GEO only when opted in AND prompts exist, three surfaces x samples per prompt", () => {
     expect(forecastWorkspace({ ...base, geoTracking: true, enabledPrompts: 0 }).monthly.geo).toBe(0);
     const f = forecastWorkspace({ ...base, geoTracking: true, enabledPrompts: 10 });
-    expect(f.monthly.geo).toBeCloseTo(10 * 4 * 0.066 * 4.35, 6);
+    expect(f.monthly.geo).toBeCloseTo(10 * 3 * 5 * 0.0012 * 4.35, 6);
+    const more = forecastWorkspace({ ...base, geoTracking: true, enabledPrompts: 10, geoSamples: 20 });
+    expect(more.monthly.geo).toBeCloseTo(10 * 3 * 20 * 0.0012 * 4.35, 6);
   });
 
   it("reports the first look as a one-off, outside the monthly total", () => {
@@ -89,6 +91,8 @@ describe("jobForSpend", () => {
       expect(op("dataforseo", "/serp/google/organic/live/advanced")).toBe("generate");
       expect(jobForSpend({ provider: "anthropic", operation: "claude-sonnet-5", hasArticle: true })).toBe("generate");
       expect(op("dataforseo", "/ai_optimization/chat_gpt/llm_responses/live")).toBe("geo");
+      expect(op("dataforseo", "/ai_optimization/chat_gpt/llm_scraper/task_post")).toBe("geo");
+      expect(op("dataforseo", "/serp/google/ai_mode/task_get/advanced/{id}")).toBe("geo");
     });
     it("leaves a model call bought for no article unassigned: it was not the writer's", () => {
       expect(op("anthropic", "claude-sonnet-5")).toBeNull();

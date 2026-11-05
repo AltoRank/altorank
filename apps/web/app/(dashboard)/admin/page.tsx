@@ -54,6 +54,7 @@ export default async function AdminPage() {
     auto_generate: boolean | null;
     auto_generate_weekly_limit: number | null;
     geo_tracking: boolean | null;
+    geo_samples: number | null;
   };
   // The builder narrowed to what these reads use: the select strings are
   // built here, and supabase-js cannot type a string it does not see.
@@ -76,7 +77,7 @@ export default async function AdminPage() {
       .select("provider, operation, cost_usd, workspace_id, created_at")
       .order("created_at", { ascending: false })
       .limit(40),
-    all<WorkspaceRow>("workspaces", "domain, status, detected_platform, first_analysed_at, auto_generate, auto_generate_weekly_limit, geo_tracking"),
+    all<WorkspaceRow>("workspaces", "domain, status, detected_platform, first_analysed_at, auto_generate, auto_generate_weekly_limit, geo_tracking, geo_samples"),
     all<{ workspace_id: string; status: string; keyword: string | null }>("articles", "workspace_id, status, keyword"),
     // What cron/serp will track: the same status filter it uses.
     all<{ workspace_id: string; term: string }>("keywords", "workspace_id, term", (q) => q.in("status", ["planned", "shipped"])),
@@ -132,6 +133,7 @@ export default async function AdminPage() {
     weeklyLimit: (w.auto_generate_weekly_limit as number | null) ?? null,
     geoTracking: Boolean(w.geo_tracking),
     enabledPrompts: promptsByWs.get(w.id) ?? 0,
+    geoSamples: w.geo_samples,
     needsFirstLook: !w.first_analysed_at,
   }));
 

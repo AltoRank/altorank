@@ -39,7 +39,7 @@ the table below has the detail. What is not finished yet:
   offering Connect. Every draft can be copied as Markdown or HTML today.
   Details under [What works today](#what-works-today).
 - **AI visibility tracking is built but not switched on.** The probe, the
-  weekly cron and the `/geo` page exist, but nothing in the app turns tracking
+  daily cron and the `/geo` page exist, but nothing in the app turns tracking
   on for a workspace or adds the prompts it measures, so the sidebar marks it
   "soon" (`apps/web/lib/constants.ts`).
 - **The CLI is publishable, not yet on npm.** `packages/altorank-cli` bundles
@@ -101,7 +101,7 @@ rule) or one found already published on the customer's own site.
 | Locales | **35** (`apps/web/lib/seo/locales.ts`) |
 | Rank tracking | scheduled SERP checks |
 | Search analytics | Google Search Console; Bing Webmaster Tools (clicks and impressions per day) |
-| AI visibility | **not switched on yet**: built (`lib/geo/`, the weekly `/api/cron/geo`, the `/geo` page) to record whether AI answers name you and who they name instead, but nothing in the app turns it on for a workspace yet |
+| AI visibility | **not switched on yet**: built (`lib/geo/`, the `/api/cron/geo` sweeps, the `/geo` page) to sample whether AI answers name you and who they name instead, but nothing in the app turns it on for a workspace yet |
 
 **Publishing destinations** (`apps/web/lib/cms/adapter.ts`) — thirteen adapters
 covering **ten CMS platforms**; WordPress is reachable two ways, and `git` and

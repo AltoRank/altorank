@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// AI visibility: is this brand cited when an AI answers the buying question?
+// AI visibility: is this brand named when an AI answers the buying question?
 // ---------------------------------------------------------------------------
 //
 // The product could measure whether a site is *readable* by agents and could
@@ -7,22 +7,14 @@
 // readiness is an input; being named in the answer is the outcome. Without this
 // half, the GEO claim rests on a proxy.
 //
-// Runs through DataForSEO's AI Optimization endpoints rather than the model
-// vendors directly. Three reasons: the credentials are already paid for, one
-// account covers ChatGPT, Claude, Gemini and Perplexity behind one contract,
-// and the responses come back with citation annotations already extracted,
-// which is the expensive part to do reliably from raw model output.
-//
-// COST. A web-search answer costs roughly 60x a plain completion ($0.066 versus
-// $0.001 measured). Ten prompts across four engines is a couple of dollars per
-// run, so every entry point here is bounded and explicitly opted into. This is
-// the most expensive thing the product can do on a schedule.
+// The answers come from the consumer products themselves (lib/geo/surfaces.ts)
+// and are sampled: the same prompt rarely returns the same brands twice
+// (SparkToro/Gumshoe, Jan 2026), so a mention rate is a proportion estimated
+// from many answers, and it is reported with the interval that says how much
+// those answers can tell. Thirty answers that never name the brand still allow
+// a true rate near 10%.
 
-import { post } from "@/lib/seo/client";
-
-export type AiEngine = "chat_gpt" | "claude" | "gemini" | "perplexity";
-
-export const AI_ENGINES: AiEngine[] = ["chat_gpt", "claude", "gemini", "perplexity"];
+export type AiEngine = "chat_gpt" | "claude" | "gemini" | "perplexity" | "google_ai_mode";
 
 export interface AiCitation {
   title: string;
@@ -30,41 +22,25 @@ export interface AiCitation {
   domain: string;
 }
 
-export interface VisibilityProbe {
-  prompt: string;
-  engine: AiEngine;
-  model: string;
-}
-
 export interface VisibilityResult {
   prompt: string;
   engine: AiEngine;
   model: string;
+  /** The answer text. Empty on legacy rows, which did not keep it. */
   answer: string;
   /** The brand name appears in the answer text. */
   mentioned: boolean;
   /** The brand's own domain appears in the citations. */
   cited: boolean;
   citations: AiCitation[];
-  /** Cited domains that are not the brand's own. */
+  /** Cited domains that are not the brand's own: sources, not rivals. */
   competitorDomains: string[];
+  /** Brands the surface reported the answer as naming, the brand's own left out. */
+  brands: string[];
   /** The searches the model ran to ground its answer. */
   fanOutQueries: string[];
   costUsd: number;
   error?: string;
-}
-
-interface RawSection {
-  text?: string;
-  annotations?: Array<{ title?: string; url?: string }>;
-}
-
-interface RawLlmResult {
-  model_name?: string;
-  web_search?: boolean;
-  money_spent?: number;
-  fan_out_queries?: string[];
-  items?: Array<{ sections?: RawSection[] }>;
 }
 
 /** Strip to a registrable-ish host so "www.x.com" and "x.com/a" compare equal. */
@@ -90,112 +66,97 @@ export function mentionsBrand(text: string, brand: string): boolean {
   return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}([^\\p{L}\\p{N}]|$)`, "iu").test(text);
 }
 
+const bareDomain = (d: string) => d.replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/.*$/, "").toLowerCase();
+
+function isOwn(domain: string, own: string): boolean {
+  return Boolean(own) && (domain === own || domain.endsWith(`.${own}`));
+}
+
 /**
- * Ask one engine one question and record whether the brand shows up.
- *
- * Never throws: a visibility sweep across several engines should not lose the
- * engines that answered because one refused. A failed probe returns with
- * `error` set and counts as "not visible" nowhere, it is simply excluded.
+ * The yes/no facts about one answer. The answer, its citations and the brands
+ * the surface reported are what was collected; this decides what they mean for
+ * one brand, so a stored answer can be re-read if the rule changes.
  */
-export async function probeVisibility(options: {
-  probe: VisibilityProbe;
+export function classifyAnswer(options: {
+  answer: string;
+  citations: AiCitation[];
+  brands: string[];
   brandName: string;
   brandDomain: string;
-  maxOutputTokens?: number;
-}): Promise<VisibilityResult> {
-  const { probe, brandName, brandDomain, maxOutputTokens = 700 } = options;
-  const ownDomain = brandDomain.replace(/^https?:\/\//, "").replace(/^www\./, "").toLowerCase();
-
-  const base: VisibilityResult = {
-    prompt: probe.prompt,
-    engine: probe.engine,
-    model: probe.model,
-    answer: "",
-    mentioned: false,
-    cited: false,
-    citations: [],
-    competitorDomains: [],
-    fanOutQueries: [],
-    costUsd: 0,
+}): Pick<VisibilityResult, "mentioned" | "cited" | "competitorDomains" | "brands"> {
+  const own = bareDomain(options.brandDomain);
+  const ownName = options.brandName.trim().toLowerCase();
+  // The domain is a name too: an answer that says "altorank.co" named it.
+  const mentioned =
+    mentionsBrand(options.answer, options.brandName) || (own.length > 3 && options.answer.toLowerCase().includes(own));
+  return {
+    mentioned,
+    cited: options.citations.some((c) => isOwn(c.domain, own)),
+    competitorDomains: [...new Set(options.citations.map((c) => c.domain).filter((d) => !isOwn(d, own)))],
+    brands: options.brands.filter((b) => b.trim().toLowerCase() !== ownName),
   };
+}
 
-  try {
-    const response = await post<RawLlmResult>(
-      `/ai_optimization/${probe.engine}/llm_responses/live`,
-      [
-        {
-          user_prompt: probe.prompt,
-          model_name: probe.model,
-          max_output_tokens: maxOutputTokens,
-          // Without web search the model answers from training data and cites
-          // nothing, which measures its memory rather than the live answer a
-          // buyer would see.
-          web_search: true,
-        },
-      ],
-    );
-
-    const result = response.tasks?.[0]?.result?.[0];
-    if (!result) return { ...base, error: "no result returned" };
-
-    const answerParts: string[] = [];
-    const citations: AiCitation[] = [];
-
-    for (const item of result.items ?? []) {
-      for (const section of item.sections ?? []) {
-        if (section.text) answerParts.push(section.text);
-        for (const a of section.annotations ?? []) {
-          if (!a.url) continue;
-          const domain = toDomain(a.url);
-          if (!domain) continue;
-          citations.push({ title: a.title ?? "", url: a.url, domain });
-        }
-      }
-    }
-
-    const answer = answerParts.join("\n\n");
-    const cited = citations.some((c) => c.domain === ownDomain || c.domain.endsWith(`.${ownDomain}`));
-
-    const competitorDomains = [
-      ...new Set(
-        citations
-          .map((c) => c.domain)
-          .filter((d) => d !== ownDomain && !d.endsWith(`.${ownDomain}`)),
-      ),
-    ];
-
-    return {
-      ...base,
-      answer,
-      mentioned: mentionsBrand(answer, brandName),
-      cited,
-      citations,
-      competitorDomains,
-      fanOutQueries: result.fan_out_queries ?? [],
-      costUsd: result.money_spent ?? response.cost ?? 0,
-    };
-  } catch (err) {
-    return { ...base, error: err instanceof Error ? err.message : "probe failed" };
-  }
+/**
+ * Wilson score interval for k successes in n trials, as percentages.
+ *
+ * Not the normal approximation: at the rates this measures (near zero) that
+ * interval runs below 0% and says nothing at k = 0, which is the case that
+ * matters most. z = 1.96 is 95%.
+ */
+export function wilsonInterval(k: number, n: number, z = 1.96): { low: number; high: number } {
+  if (n <= 0) return { low: 0, high: 100 };
+  const p = k / n;
+  const z2 = z * z;
+  const centre = (p + z2 / (2 * n)) / (1 + z2 / n);
+  const half = (z * Math.sqrt((p * (1 - p)) / n + z2 / (4 * n * n))) / (1 + z2 / n);
+  const pct = (x: number) => Math.round(Math.min(1, Math.max(0, x)) * 1000) / 10;
+  return { low: pct(centre - half), high: pct(centre + half) };
 }
 
 export interface VisibilitySummary {
   probesRun: number;
   probesFailed: number;
-  /** Share of successful probes whose answer named the brand. */
+  /** Share of successful answers that named the brand. */
   mentionRate: number;
-  /** Share of successful probes that cited the brand's own domain. */
+  /** 95% interval around the mention rate: how much this many answers can tell. */
+  mentionInterval: { low: number; high: number };
+  /** Share of successful answers that cited the brand's own domain. */
   citationRate: number;
-  /** Cited domains ranked by how often they appear, brand excluded. */
+  /** Cited domains ranked by how often they appear, brand excluded. Sources, not rivals. */
   topCompetitors: Array<{ domain: string; citations: number; shareOfVoice: number }>;
+  /** Brands named in the answers, ranked by how many answers named them. */
+  topBrands: Array<{ brand: string; answers: number; rate: number }>;
   totalCostUsd: number;
 }
 
 /**
- * Roll probes up into the numbers a client actually asks about.
+ * The brands each answer named.
  *
- * Rates are computed over probes that succeeded, not over probes attempted. An
- * engine timing out is missing data, and counting it as "not mentioned" would
+ * The ChatGPT app reports them as entities; Gemini and AI Mode do not, so a
+ * brand any answer in the set was reported naming counts for the others when
+ * their text names it too. The answer is what decides, never the domain list:
+ * Wikipedia and Reddit are cited constantly and compete with nobody.
+ */
+function brandsPerAnswer(results: VisibilityResult[]): string[][] {
+  const known = new Map<string, string>();
+  for (const r of results) for (const b of r.brands) if (!known.has(b.toLowerCase())) known.set(b.toLowerCase(), b);
+  return results.map((r) => {
+    // One spelling per brand across the set, so "HubSpot" and "Hubspot" from
+    // two answers are counted as one rival.
+    const named = new Map(r.brands.map((b) => [b.toLowerCase(), known.get(b.toLowerCase())!]));
+    if (r.answer) {
+      for (const [key, brand] of known) if (!named.has(key) && mentionsBrand(r.answer, brand)) named.set(key, brand);
+    }
+    return [...named.values()];
+  });
+}
+
+/**
+ * Roll answers up into the numbers a client actually asks about.
+ *
+ * Rates are computed over answers that came back, not over samples planned. A
+ * surface timing out is missing data, and counting it as "not mentioned" would
  * quietly report a worse position than the evidence supports, which is the
  * class of mistake this codebase keeps having to undo.
  */
@@ -225,27 +186,23 @@ export function summariseVisibility(results: VisibilityResult[]): VisibilitySumm
 
   const rate = (n: number) => (ok.length ? Math.round((n / ok.length) * 1000) / 10 : 0);
 
+  const brandCounts = new Map<string, number>();
+  for (const named of brandsPerAnswer(ok)) for (const b of named) brandCounts.set(b, (brandCounts.get(b) ?? 0) + 1);
+  const topBrands = [...brandCounts.entries()]
+    .map(([brand, answers]) => ({ brand, answers, rate: rate(answers) }))
+    .sort((a, b) => b.answers - a.answers)
+    .slice(0, 15);
+
+  const mentioned = ok.filter((r) => r.mentioned).length;
+
   return {
     probesRun: ok.length,
     probesFailed: failed,
-    mentionRate: rate(ok.filter((r) => r.mentioned).length),
+    mentionRate: rate(mentioned),
+    mentionInterval: wilsonInterval(mentioned, ok.length),
     citationRate: rate(ok.filter((r) => r.cited).length),
     topCompetitors,
+    topBrands,
     totalCostUsd: Math.round(results.reduce((s, r) => s + r.costUsd, 0) * 10000) / 10000,
   };
 }
-
-/**
- * Models that support web search, per engine.
- *
- * Pinned rather than fetched per run: the model list is a paid call, changes
- * rarely, and a sweep should not silently switch models between runs because
- * that makes the trend line meaningless. Verified against the live
- * `/llm_responses/models` endpoint.
- */
-export const DEFAULT_MODELS: Record<AiEngine, string> = {
-  chat_gpt: "gpt-4.1",
-  claude: "claude-sonnet-4-5",
-  gemini: "gemini-2.5-flash",
-  perplexity: "sonar",
-};
