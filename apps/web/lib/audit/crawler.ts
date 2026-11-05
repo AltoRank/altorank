@@ -29,21 +29,42 @@ import { extractFetchedPage, type SitePageExtract } from "./site-extract";
 /** Statuses a bot rule returns; anything else is the site's real answer. */
 const REFUSED = new Set([403, 406, 429]);
 
+/**
+ * The connection was closed under the request instead of answered: the other
+ * way a bot rule turns an agent away.
+ *
+ * A SiteGround-hosted signup, 2026-11-04: every "Mozilla/5.0 (compatible; ...)"
+ * agent, and a spoofed Chrome one, had the socket closed before any status
+ * (undici's UND_ERR_SOCKET, "other side closed"); the reader's agent got 200
+ * in the same minute. The 403 retry below never ran, because nothing came
+ * back to have a status, and two onboarding runs read no page at all.
+ */
+export function isDroppedConnection(err: unknown): boolean {
+  const code = (err as { cause?: { code?: string } } | null)?.cause?.code;
+  return code === "UND_ERR_SOCKET" || code === "UND_ERR_CLOSED" || code === "ECONNRESET" || code === "EPIPE";
+}
+
+const FALLBACK_HEADERS = { "User-Agent": FALLBACK_UA, Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8" };
+
 async function fetchPage(url: string, signal: AbortSignal): Promise<Response> {
   // A host that has refused this run is not asked again until the one place
   // that waits the window out says so (lib/audit/host-circuit.ts). Knocking
   // keeps a sliding-window ban alive.
   if (refusing(url)) return new Response("", { status: 403, headers: { "content-type": "text/html" } });
-  const res = await fetch(url, { signal, headers: { "User-Agent": CRAWLER_UA }, redirect: "follow" });
+  let res: Response;
+  try {
+    res = await fetch(url, { signal, headers: { "User-Agent": CRAWLER_UA }, redirect: "follow" });
+  } catch (err) {
+    // Dropped rather than refused: the same one more try, the way the
+    // wizard's reader asks. Dropped again, the crawl reports the reason.
+    if (!isDroppedConnection(err)) throw err;
+    return fetch(url, { signal, headers: FALLBACK_HEADERS, redirect: "follow" });
+  }
   if (!REFUSED.has(res.status)) return res;
   // One more try the way the wizard's reader asks - once. If that is refused
   // too, it is the host's rule and not the agent string, and the run goes
   // quiet on this host.
-  const again = await fetch(url, {
-    signal,
-    headers: { "User-Agent": FALLBACK_UA, Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8" },
-    redirect: "follow",
-  });
+  const again = await fetch(url, { signal, headers: FALLBACK_HEADERS, redirect: "follow" });
   if (again.ok) return again;
   noteRefusal(url, Date.now(), refusalOf(res) === "challenge" ? "challenge" : refusalOf(again));
   return res;

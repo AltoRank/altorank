@@ -19,12 +19,13 @@ vi.mock("@/app/actions/onboarding-wizard", () => {
     saveProfile: never,
     saveProfileDraft: never,
     discoverSiteDetails: never,
+    checkSiteReach: never,
     saveSiteDetails: never,
     completeWizard: never,
   };
 });
 
-import { OnboardingWizard, Section } from "../wizard";
+import { OnboardingWizard, Section, SiteUnreachable } from "../wizard";
 import { CompetitorStep } from "../competitor-step";
 import { ChipList } from "@/components/settings/fields";
 import { EMPTY_PROFILE, type BusinessProfile } from "@/lib/onboarding/profile-shape";
@@ -161,5 +162,24 @@ describe("mobile inputs", () => {
     expect(html).toMatch(/<input[^>]*class="[^"]*text-base sm:text-\[13px\][^"]*focus-visible:ring-2/);
     expect(html).toContain('aria-label="Add a thing"');
     expect(html).toContain("grid h-8 w-8 shrink-0");
+  });
+});
+
+describe("a site the run cannot reach", () => {
+  // A signup on 2026-11-04: the reader read it, the crawl got nothing, and
+  // two runs ended on a gate with no article. Now no run starts.
+  it("says why and what to do, with one button that asks again and no form", () => {
+    const line = "We can’t reach paint.example from our servers, so we can’t write anything for it yet. Nothing was written and nothing is charged.";
+    const html = text(renderToStaticMarkup(<SiteUnreachable domain="paint.example" line={line} checking={false} onRetry={() => undefined} />));
+    expect(html).toContain("We can’t reach paint.example");
+    expect(html).toContain("nothing is charged");
+    expect(html).toContain("Try again");
+    expect(html).not.toContain("Write my first article");
+  });
+
+  it("holds the button while it asks", () => {
+    const html = renderToStaticMarkup(<SiteUnreachable domain="paint.example" line="x" checking onRetry={() => undefined} />);
+    expect(html).toContain("Checking…");
+    expect(html).toMatch(/<button[^>]*disabled/);
   });
 });

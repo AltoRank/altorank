@@ -43,6 +43,7 @@ import { e2eStubsEnabled, stubSuggestCompetitors } from "@/lib/e2e/stubs";
 import { resolveLocale } from "@/lib/onboarding/locale";
 import { guessLocale } from "@/lib/onboarding/locale-guess";
 import { discoverSite, type SiteDiscovery } from "@/lib/onboarding/site-discovery";
+import { siteReach, type SiteReach } from "@/lib/audit/site-reach";
 import {
   outputToRow,
   parseBrandColor,
@@ -357,6 +358,18 @@ export async function discoverSiteDetails(workspaceId: string): Promise<SiteDisc
   const { workspace } = await assertWorkspace(workspaceId);
   if (!workspace.domain) return { sitemapUrl: null, blogRootUrl: null, exampleArticleUrls: [], found: false };
   return discoverSite(workspace.domain);
+}
+
+/**
+ * Whether the run could read the site at all, asked before auto-start
+ * begins it (lib/audit/site-reach.ts). Free, so not a spend door; "Try again"
+ * asks again.
+ */
+export async function checkSiteReach(workspaceId: string): Promise<SiteReach> {
+  const { workspace } = await assertWorkspace(workspaceId);
+  // E2E_STUBS: fixture sites have no server behind them (lib/e2e/stubs.ts).
+  if (!workspace.domain || e2eStubsEnabled()) return { ok: true };
+  return siteReach(workspace.domain);
 }
 
 const HTTP = /^https?:\/\/\S+$/i;

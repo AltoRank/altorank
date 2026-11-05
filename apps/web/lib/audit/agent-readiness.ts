@@ -28,7 +28,7 @@
  */
 
 import { fetchLenient, isTlsChainError } from "./lenient-fetch";
-import { FALLBACK_UA } from "./crawler";
+import { FALLBACK_UA, isDroppedConnection } from "./crawler";
 import { noteRefusal, refusalOf, refusing, REFUSED_STATUSES } from "./host-circuit";
 import { evaluateRobots, parseRobotsTxt } from "../robots/rfc9309";
 
@@ -205,19 +205,21 @@ export async function fetchResource(
     // the readiness check has four resources to fetch and every one of them
     // would keep a sliding-window ban alive.
     if (refusing(url)) return { status: 403, headers: {}, body: "" };
+    const asReader = () => fetch(url, { signal: controller.signal, headers: { "User-Agent": FALLBACK_UA, Accept: "*/*" }, redirect: "follow" });
+    // A connection dropped instead of answered is the same bot rule as a 403
+    // (isDroppedConnection): the one more try below, made here.
     let res = await fetch(url, {
       signal: controller.signal,
       headers: { "User-Agent": USER_AGENT, Accept: "*/*" },
       redirect: "follow",
+    }).catch((err: unknown) => {
+      if (isDroppedConnection(err)) return asReader();
+      throw err;
     });
     // One more try the way the wizard's reader asks - once. Refused again: the
     // host's rule, and the run goes quiet on it.
     if (REFUSED_STATUSES.has(res.status)) {
-      const again = await fetch(url, {
-        signal: controller.signal,
-        headers: { "User-Agent": FALLBACK_UA, Accept: "*/*" },
-        redirect: "follow",
-      });
+      const again = await asReader();
       if (again.ok) res = again;
       else noteRefusal(url, Date.now(), refusalOf(res) === "challenge" ? "challenge" : refusalOf(again));
     }
