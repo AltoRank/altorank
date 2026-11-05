@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { geoReportSummary, type GeoResultRow, type GeoRun } from "@/lib/geo/read";
+import { geoReportSummary, pickLatestRun, type GeoResultRow, type GeoRun } from "@/lib/geo/read";
 
 /**
  * The GEO block of the client report (lib/geo/read.ts, geoReportSummary),
@@ -121,5 +121,25 @@ describe("geoReportSummary", () => {
   it("tolerates a null competitor_domains column", () => {
     const s = summarise([row({ competitor_domains: null as unknown as string[] })])!;
     expect(s.topCompetitors).toEqual([]);
+  });
+});
+
+describe("pickLatestRun", () => {
+  it("skips a newer sweep that came back empty for the last one that captured answers", () => {
+    const empty = run({ id: "empty", status: "partial", captured: 0 });
+    const good = run({ id: "good", status: "complete", captured: 4 });
+    expect(pickLatestRun([empty, good])?.id).toBe("good");
+  });
+
+  it("prefers a finished sweep over one still collecting", () => {
+    const collecting = run({ id: "now", status: "running", captured: 2 });
+    const good = run({ id: "good", status: "partial", captured: 3 });
+    expect(pickLatestRun([collecting, good])?.id).toBe("good");
+  });
+
+  it("falls back to the newest sweep when none has captured anything", () => {
+    const collecting = run({ id: "now", status: "running", captured: 0 });
+    expect(pickLatestRun([collecting, run({ id: "old", status: "partial", captured: 0 })])?.id).toBe("now");
+    expect(pickLatestRun([])).toBeUndefined();
   });
 });

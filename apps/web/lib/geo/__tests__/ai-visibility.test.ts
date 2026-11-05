@@ -177,6 +177,11 @@ describe("summariseVisibility brands", () => {
     expect(s.topBrands.find((b) => b.brand === "Frase")?.answers).toBe(2);
   });
 
+  it("counts one brand once whatever casing each answer reported it in", () => {
+    const s = summariseVisibility([result({ brands: ["HubSpot"] }), result({ brands: ["Hubspot"] })]);
+    expect(s.topBrands).toEqual([{ brand: "HubSpot", answers: 2, rate: 100 }]);
+  });
+
   it("reports the mention interval with the rate", () => {
     const s = summariseVisibility([result({ mentioned: true }), result(), result(), result()]);
     expect(s.mentionRate).toBe(25);

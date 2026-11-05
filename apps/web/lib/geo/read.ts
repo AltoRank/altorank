@@ -59,8 +59,12 @@ export async function readRunRows(db: SupabaseClient, workspaceId: string, runId
 }
 
 /**
- * The newest finished sweep of one site, or the one still collecting when none
- * has finished.
+ * The newest finished sweep of one site that captured anything, or else the
+ * newest sweep at all (one still collecting, or one that came back empty).
+ *
+ * A sweep that captured nothing - a DataForSEO outage, a plan that lapsed
+ * mid-week - is not a reading, and taking it as the latest would replace last
+ * week's number with "not measured" on the page and in the client report.
  *
  * One site, always. The earlier version took an optional workspace and, given
  * none, blended every site in the account into one mention rate measured
@@ -78,9 +82,14 @@ export async function latestGeoRun(
     .order("started_at", { ascending: false })
     .limit(5);
   const list = (runs ?? []) as GeoRun[];
-  const run = list.find((r) => r.status !== "running") ?? list[0];
+  const run = pickLatestRun(list);
   if (!run) return null;
   return { run, rows: await readRunRows(supabase, workspaceId, run.id) };
+}
+
+/** Which of a site's recent runs (newest first) to show. */
+export function pickLatestRun(runs: GeoRun[]): GeoRun | undefined {
+  return runs.find((r) => r.status !== "running" && r.captured > 0) ?? runs[0];
 }
 
 /** Rolls the stored rows back through the same summariser the cron reports with. Pending rows are not answers yet. */

@@ -36,6 +36,8 @@ export const maxDuration = 300;
 const MIN_INTERVAL_DAYS = 7;
 /** New sweeps started per invocation. */
 const MAX_NEW_RUNS = 3;
+/** Due workspaces read per invocation, to find MAX_NEW_RUNS that can start. */
+const DUE_WINDOW = 100;
 /** Ceilings per invocation, across every workspace. */
 const MAX_POSTS = 150;
 const MAX_GETS = 400;
@@ -116,7 +118,10 @@ async function run(request: Request) {
     .neq("status", "paused")
     .or(`geo_last_checked_at.is.null,geo_last_checked_at.lt.${cutoff}`)
     .order("geo_last_checked_at", { ascending: true, nullsFirst: true })
-    .limit(MAX_NEW_RUNS + busy.size);
+    // Wide, not MAX_NEW_RUNS: a site skipped below (no plan, no prompts) is
+    // never stamped, so it stays at the head of this order every day, and a
+    // window of three such sites would starve every site behind them.
+    .limit(DUE_WINDOW);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 

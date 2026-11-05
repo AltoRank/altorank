@@ -142,7 +142,9 @@ function brandsPerAnswer(results: VisibilityResult[]): string[][] {
   const known = new Map<string, string>();
   for (const r of results) for (const b of r.brands) if (!known.has(b.toLowerCase())) known.set(b.toLowerCase(), b);
   return results.map((r) => {
-    const named = new Map(r.brands.map((b) => [b.toLowerCase(), b]));
+    // One spelling per brand across the set, so "HubSpot" and "Hubspot" from
+    // two answers are counted as one rival.
+    const named = new Map(r.brands.map((b) => [b.toLowerCase(), known.get(b.toLowerCase())!]));
     if (r.answer) {
       for (const [key, brand] of known) if (!named.has(key) && mentionsBrand(r.answer, brand)) named.set(key, brand);
     }
