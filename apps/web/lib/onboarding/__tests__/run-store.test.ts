@@ -10,9 +10,21 @@ const notifyOperatorsNothingPlanned = vi.fn(async (..._args: unknown[]) => ({ se
 vi.mock("@/lib/email/lifecycle", () => ({
   notifySetupFailed: (...a: unknown[]) => notifySetupFailed(...a),
   notifyOperatorsNothingPlanned: (...a: unknown[]) => notifyOperatorsNothingPlanned(...a),
+  setupFailedSubjectId: (ws: string, at: Date) => `${ws}:${at.toISOString().slice(0, 10)}`,
 }));
 
-import { RunRecorder, failRun, latestRun, reapStaleRuns, setupFailedFacts, stampRun, startRun, stopRunToChange } from "../run-store";
+import {
+  RunRecorder,
+  SETUP_FAILED_HOLD_MS,
+  failRun,
+  latestRun,
+  reapStaleRuns,
+  sendHeldSetupFailures,
+  setupFailedFacts,
+  stampRun,
+  startRun,
+  stopRunToChange,
+} from "../run-store";
 import { STOPPED_TO_CHANGE } from "../stop-to-change";
 import { asksForCard, runStateOf, setupEnding } from "../setup-retry";
 import {
@@ -32,6 +44,12 @@ import {
 } from "../events";
 
 const WS = { id: "ws1", account_id: "ag1" };
+
+/**
+ * The hourly sweep that sends the setup-failed email, `ms` after now: since
+ * 2026-11-05 a run that closes failed is emailed from there, not on close.
+ */
+const sweep = (db: { client: SupabaseClient }, ms = SETUP_FAILED_HOLD_MS + 60_000) => sendHeldSetupFailures(db.client, Date.now() + ms);
 
 /** The event sequence a full run emits under the worker (pipeline.test.ts, "dispatch"). */
 const WORKER_EVENTS: OnboardingEvent[] = [
@@ -337,6 +355,9 @@ describe("a run that made nothing emails the account; a run that made something 
     const rec = new RunRecorder(db.client, "r1");
     for (const p of partialNothing) rec.record({ phase: p.phase, status: p.status, detail: p.detail } as never);
     await rec.finish();
+    // Not from the finaliser: the owner may still be on the screen, rerunning.
+    expect(notifySetupFailed).not.toHaveBeenCalled();
+    expect(await sweep(db)).toEqual({ emailed: 1, answered: 0 });
     expect(notifySetupFailed).toHaveBeenCalledTimes(1);
     const [, scope, data] = notifySetupFailed.mock.calls[0] as unknown as [unknown, { accountId: string; workspaceId: string }, { domain: string | null; line: string; transient: boolean }];
     expect(scope).toEqual({ accountId: "ag1", workspaceId: "ws1" });
@@ -350,6 +371,7 @@ describe("a run that made nothing emails the account; a run that made something 
     const rec = new RunRecorder(db.client, "r1");
     for (const e of WORKER_EVENTS) rec.record(e);
     await rec.finish();
+    await sweep(db);
     expect(notifySetupFailed).not.toHaveBeenCalled();
   });
 
@@ -359,10 +381,77 @@ describe("a run that made nothing emails the account; a run that made something 
       workspaces: [{ id: "ws1", domain: "acme.com" }],
     });
     await failRun(db.client, "r1", "The run could not be started (500).");
+    await sweep(db);
     expect(notifySetupFailed).toHaveBeenCalledTimes(1);
     const data = (notifySetupFailed.mock.calls[0] as unknown[])[2] as { line: string; transient: boolean };
     expect(data.line).toBe("The run could not be started (500).");
     expect(data.transient).toBe(false);
+  });
+
+  /** A run that ended `minutesAgo` ago, made nothing, and failed. */
+  const failedRun = (id: string, minutesAgo: number, over: Record<string, unknown> = {}) => {
+    const at = new Date(Date.now() - minutesAgo * 60_000).toISOString();
+    return {
+      id, workspace_id: "ws1", account_id: "ag1", status: "partial", phases: partialNothing, planned: [], keywords_found: null,
+      article_id: null, error: null, empty_pool: null, started_at: at, updated_at: at, finished_at: at, ...over,
+    };
+  };
+
+  // A real signup, 2026-11-05: run 1 ended partial at 09:58 and was
+  // emailed at once; the rerun pressed at 10:00 wrote the article at 10:03.
+  it("holds the email while a rerun can still answer it, and drops it when one ended done", async () => {
+    const db = fakeDb({
+      onboarding_runs: [
+        failedRun("r1", 6),
+        { ...failedRun("r2", 1), status: "done", started_at: new Date(Date.now() - 4 * 60_000).toISOString(), planned: [{ term: "seo", date: "2026-11-06" }], article_id: "a1" },
+      ],
+      workspaces: [{ id: "ws1", domain: "agency.example.com.pk" }],
+    });
+    // Inside the hold: nothing goes, whatever the rerun is doing.
+    expect(await sweep(db, 0)).toEqual({ emailed: 0, answered: 0 });
+    // After it: the rerun that ended done is the answer.
+    expect(await sweep(db)).toEqual({ emailed: 0, answered: 1 });
+    expect(notifySetupFailed).not.toHaveBeenCalled();
+  });
+
+  it("sends a failure nobody reran once the hold is over, once", async () => {
+    const db = fakeDb({ onboarding_runs: [failedRun("r1", 0)], workspaces: [{ id: "ws1", domain: "acme.com" }] });
+    expect(await sweep(db, SETUP_FAILED_HOLD_MS - 60_000)).toEqual({ emailed: 0, answered: 0 });
+    expect(await sweep(db)).toEqual({ emailed: 1, answered: 0 });
+    // Dated by the run, so the ledger key does not move with the sweep.
+    const [, , , at] = notifySetupFailed.mock.calls[0] as unknown as [unknown, unknown, unknown, Date];
+    expect(at.toISOString()).toBe(db.tables.onboarding_runs[0].finished_at);
+    // The ledger has it now (notifySetupFailed is mocked, so written here).
+    db.tables.sent_emails = [{ email_type: "setup_failed", subject_id: `ws1:${String(db.tables.onboarding_runs[0].finished_at).slice(0, 10)}` }];
+    expect(await sweep(db, 2 * 60 * 60_000)).toEqual({ emailed: 0, answered: 0 });
+    expect(notifySetupFailed).toHaveBeenCalledTimes(1);
+  });
+
+  it("emails the rerun that failed too, not the run it replaced; waits on one still going", async () => {
+    const db = fakeDb({
+      onboarding_runs: [failedRun("r1", 30), { ...failedRun("r2", 20), status: "running", finished_at: null }],
+      workspaces: [{ id: "ws1", domain: "acme.com" }],
+    });
+    expect(await sweep(db)).toEqual({ emailed: 0, answered: 1 });
+    Object.assign(db.tables.onboarding_runs[1], { status: "error", error: "boom", finished_at: new Date(Date.now() - 20 * 60_000).toISOString() });
+    expect(await sweep(db)).toEqual({ emailed: 1, answered: 1 });
+    expect((notifySetupFailed.mock.calls[0][2] as { line: string }).line).toBe("boom");
+  });
+
+  it("never emails a run that made something, one the owner stopped, or one past the lookback", async () => {
+    const db = fakeDb({
+      onboarding_runs: [
+        failedRun("planned", 30, { workspace_id: "ws2", planned: [{ term: "seo", date: "2026-11-06" }] }),
+        failedRun("stopped", 30, { workspace_id: "ws3", status: "error", error: STOPPED_TO_CHANGE }),
+        failedRun("old", 3 * 24 * 60, { workspace_id: "ws4" }),
+        failedRun("drafted", 30, { workspace_id: "ws5" }),
+        failedRun("nothing", 30, { workspace_id: "ws6", status: "nothing_planned" }),
+      ],
+      // A readable draft that landed on the site after the run closed.
+      articles: [{ id: "late", workspace_id: "ws5", status: "review", word_count: 900, created_at: new Date().toISOString() }],
+    });
+    expect(await sweep(db)).toEqual({ emailed: 0, answered: 1 });
+    expect(notifySetupFailed).not.toHaveBeenCalled();
   });
 
   it("setupFailedFacts: the earliest reason, and transient only when the pipeline said the next look is scheduled", () => {
@@ -397,6 +486,7 @@ describe("reapStaleRuns", () => {
     expect(await reapStaleRuns(db.client, NOW)).toEqual({ reaped: 1, runIds: ["r1"] });
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "error", error: STALE_RUN_ERROR });
     expect(db.tables.onboarding_runs[0].finished_at).not.toBeNull();
+    await sweep(db);
     expect(notifySetupFailed).toHaveBeenCalledTimes(1);
   });
 
@@ -416,6 +506,7 @@ describe("reapStaleRuns", () => {
     // A draft and no plan: partial, and no error the screen would print.
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "partial", error: null });
     expect(db.tables.onboarding_runs[0].finished_at).not.toBeNull();
+    await sweep(db);
     expect(notifySetupFailed).not.toHaveBeenCalled();
     // The operator still hears that it was cut off.
     expect(db.tables.system_events?.[0]).toMatchObject({ level: "warn", source: "onboarding.run" });
@@ -464,6 +555,7 @@ describe("failRun derives what the run produced from its rows", () => {
     // Settled on that draft, and the row now points at it: a row that says
     // partial with no article_id read back as a run with nothing to show.
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "partial", error: null, article_id: "a9" });
+    await sweep(db);
     expect(notifySetupFailed).not.toHaveBeenCalled();
   });
 
@@ -474,6 +566,7 @@ describe("failRun derives what the run produced from its rows", () => {
     });
     await failRun(db.client, "r1", "cut off");
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "done", error: null, article_id: "a1" });
+    await sweep(db);
     expect(notifySetupFailed).not.toHaveBeenCalled();
   });
 
@@ -489,6 +582,7 @@ describe("failRun derives what the run produced from its rows", () => {
     });
     await failRun(db.client, "r1", "boom");
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "error", error: "boom" });
+    await sweep(db);
     expect(notifySetupFailed).toHaveBeenCalledTimes(1);
   });
 
@@ -496,6 +590,7 @@ describe("failRun derives what the run produced from its rows", () => {
     const db = fakeDb({ onboarding_runs: [running({ phases: [{ phase: "scanning", status: "pending" }] })] });
     expect(await failRun(db.client, "r1", "fetch failed", { unclaimedOnly: true })).toBe(false);
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "running", error: null });
+    await sweep(db);
     expect(notifySetupFailed).not.toHaveBeenCalled();
   });
 
@@ -503,6 +598,7 @@ describe("failRun derives what the run produced from its rows", () => {
     const db = fakeDb({ onboarding_runs: [running({ phases: [] })], workspaces: [{ id: "ws1", domain: "acme-clinic.example" }] });
     expect(await failRun(db.client, "r1", "The run could not be started (500).", { unclaimedOnly: true })).toBe(true);
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "error", error: "The run could not be started (500)." });
+    await sweep(db);
     expect(notifySetupFailed).toHaveBeenCalledTimes(1);
   });
 });
@@ -544,6 +640,7 @@ describe("a run that planned nothing without failing", () => {
     await rec.finish();
 
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "nothing_planned", error: null, empty_pool: POOL });
+    await sweep(db);
     expect(notifySetupFailed).not.toHaveBeenCalled();
     expect(notifyOperatorsNothingPlanned).toHaveBeenCalledTimes(1);
     expect(notifyOperatorsNothingPlanned.mock.calls[0][1]).toEqual({ accountId: "ag1", workspaceId: "ws1" });
@@ -628,6 +725,7 @@ describe("a nothing-planned run cut off after planning", () => {
     const db = fakeDb({ onboarding_runs: [cutOff()], workspaces: [{ id: "ws1", domain: "acme-clinic.example" }] });
     expect(await reapStaleRuns(db.client, NOW)).toEqual({ reaped: 1, runIds: ["r1"] });
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "nothing_planned", error: null });
+    await sweep(db);
     expect(notifySetupFailed).not.toHaveBeenCalled();
     expect(notifyOperatorsNothingPlanned).toHaveBeenCalledTimes(1);
     expect(db.tables.system_events).toEqual([
@@ -639,6 +737,7 @@ describe("a nothing-planned run cut off after planning", () => {
     const db = fakeDb({ onboarding_runs: [cutOff()], workspaces: [{ id: "ws1", domain: "acme-clinic.example" }] });
     expect(await failRun(db.client, "r1", "boom")).toBe(true);
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "nothing_planned", error: null });
+    await sweep(db);
     expect(notifySetupFailed).not.toHaveBeenCalled();
     expect(notifyOperatorsNothingPlanned).toHaveBeenCalledTimes(1);
   });
@@ -669,6 +768,7 @@ describe("a nothing-planned run cut off after planning", () => {
     });
     await failRun(db.client, "r1", "boom");
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "error", error: "boom" });
+    await sweep(db);
     expect(notifySetupFailed).toHaveBeenCalledTimes(1);
     expect(notifyOperatorsNothingPlanned).not.toHaveBeenCalled();
   });
@@ -691,6 +791,7 @@ describe("what a closed run counts as its own draft", () => {
     });
     expect(await failRun(db.client, "r1", "boom")).toBe(false);
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "running" });
+    await sweep(db);
     expect(notifySetupFailed).not.toHaveBeenCalled();
   });
 
@@ -702,6 +803,7 @@ describe("what a closed run counts as its own draft", () => {
     });
     expect((await reapStaleRuns(db.client, Date.parse("2026-09-28T11:00:00Z"))).reaped).toBe(1);
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "error", error: STALE_RUN_ERROR });
+    await sweep(db);
     expect(notifySetupFailed).toHaveBeenCalledTimes(1);
   });
 
@@ -716,6 +818,7 @@ describe("what a closed run counts as its own draft", () => {
     });
     await failRun(db.client, "r1", "boom");
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "error", error: "boom" });
+    await sweep(db);
     expect(notifySetupFailed).toHaveBeenCalledTimes(1);
   });
 });
@@ -736,6 +839,7 @@ describe("RunRecorder.finish after somebody else closed the run", () => {
     await rec.finish();
     expect(db.tables.onboarding_runs[0].status).toBe("error");
     expect(db.tables.system_events ?? []).toEqual([]);
+    await sweep(db);
     expect(notifySetupFailed).not.toHaveBeenCalled();
   });
 });
@@ -797,6 +901,7 @@ describe("stopRunToChange: the owner stops a run to change what it was started o
     const row = db.tables.onboarding_runs[0];
     expect(row).toMatchObject({ status: "error", error: STOPPED_TO_CHANGE });
     expect(row.finished_at).not.toBeNull();
+    await sweep(db);
     expect(notifySetupFailed).not.toHaveBeenCalled();
     // Recorded for the operator as what it is: a choice, not a failure.
     expect(db.tables.system_events).toEqual([expect.objectContaining({ level: "info", source: "onboarding.stopped_to_change" })]);

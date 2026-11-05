@@ -12,6 +12,7 @@ import { submitForIndexing, type IndexingResult } from "@/lib/seo/indexing";
 import { announceArticlePublished, announcePublishFailed } from "@/lib/email/article-events";
 import { runAutoApprovals, type AutoApproveResult } from "@/lib/publishing/auto-approve";
 import { sendHeldDigests } from "@/lib/email/held-digest";
+import { sendHeldSetupFailures } from "@/lib/onboarding/run-store";
 import { observedCron } from "@/lib/observability/cron";
 
 export const maxDuration = 60;
@@ -215,6 +216,13 @@ async function run(request: Request) {
   // stake is whether we can point at it.
   const verified = await verifyPendingPublishes(supabase, now);
 
+  // First looks that failed and stayed failed: emailed here, once a rerun
+  // from the screen has had its chance (lib/onboarding/run-store.ts). This is
+  // the hourly cron, so the email goes within the hour after the hold.
+  const setupFailed = await sendHeldSetupFailures(supabase, now.getTime()).catch((err) => ({
+    error: err instanceof Error ? err.message : "unknown error",
+  }));
+
   const published = results.filter((r) => r.status === "success").length;
   const errors = results.filter((r) => r.status === "error").length;
 
@@ -225,6 +233,7 @@ async function run(request: Request) {
     verified,
     autoApprovals,
     heldDigests,
+    setupFailed,
     results,
   });
 }

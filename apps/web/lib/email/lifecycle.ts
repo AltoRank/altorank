@@ -1625,6 +1625,15 @@ export async function notifyOperatorsNothingPlanned(
   );
 }
 
+/**
+ * The ledger key for a site's setup-failed email: one per site per day. Each
+ * failed run is a distinct fact, but a person retrying from the screen sees
+ * each result there; the email is for the one who left.
+ */
+export function setupFailedSubjectId(workspaceId: string, at: Date): string {
+  return `${workspaceId}:${utcDay(at)}`;
+}
+
 export async function notifySetupFailed(
   supabase: SupabaseClient,
   scope: { accountId: string; workspaceId: string },
@@ -1637,10 +1646,7 @@ export async function notifySetupFailed(
     to,
     {
       type: "setup_failed",
-      // One per site per day. Each failed run is a distinct fact, but a
-      // person retrying from the screen sees each result there; the email
-      // is for the one who left.
-      subjectId: `${scope.workspaceId}:${utcDay(now)}`,
+      subjectId: setupFailedSubjectId(scope.workspaceId, now),
       category: "product",
       accountId: scope.accountId,
       workspaceId: scope.workspaceId,
