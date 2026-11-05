@@ -1277,32 +1277,33 @@ function TrialGateScreen({
         nextArticles={nextArticles(planned, held?.topics, firstArticle?.keyword)}
         welcome={welcome}
         startedAt={run?.run && Number.isFinite(Date.parse(run.run.started_at)) ? Date.parse(run.run.started_at) : null}
-      />
-
-      <div className={`mt-6 flex flex-col gap-2 ${gateColumn}`}>
-        {planned.length > 0 && (
-          <Fold
-            title="Your plan"
-            line={`${planned.length} ${planned.length === 1 ? "article" : "articles"} scheduled${held && held.count > 0 ? `, ${held.count} more ready for your trial` : ""}`}
-          >
-            <PlanRows planned={planned} firstArticle={firstArticle} written={written} />
-            {planned.length > (firstArticle ? 1 : 0) && (
-              <p className="m-0 text-[12px] text-ink-2">
-                {firstArticle ? `The other ${planned.length - 1} start writing when your trial does.` : "These start writing when your trial does."}
-              </p>
+        railExtra={
+          <>
+            {planned.length > 0 && (
+              <Fold
+                title="Your plan"
+                line={`${planned.length} ${planned.length === 1 ? "article" : "articles"} scheduled${held && held.count > 0 ? `, ${held.count} more ready for your trial` : ""}`}
+              >
+                <PlanRows planned={planned} firstArticle={firstArticle} written={written} />
+                {planned.length > (firstArticle ? 1 : 0) && (
+                  <p className="m-0 text-[12px] text-ink-2">
+                    {firstArticle ? `The other ${planned.length - 1} start writing when your trial does.` : "These start writing when your trial does."}
+                  </p>
+                )}
+              </Fold>
             )}
-          </Fold>
-        )}
-        {report && (
-          <Fold
-            title="Your site report"
-            line={reportLine(report, domain)}
-          >
-            <FirstLookReportView report={report} domain={domain} live={false} />
-          </Fold>
-        )}
-      </div>
-      <div className={gateColumn}>
+            {report && (
+              <Fold
+                title="Your site report"
+                line={reportLine(report, domain)}
+              >
+                <FirstLookReportView report={report} domain={domain} live={false} />
+              </Fold>
+            )}
+          </>
+        }
+      />
+      <div className={`mt-6 ${gateColumn}`}>
         <SignOutLine email={userEmail} otherSites={otherSites} />
       </div>
     </GateShell>
@@ -1375,6 +1376,8 @@ function RunScreen({
   // Bumped when the first article's body lands after the gate, so the run's
   // log is read again and says what was written.
   const [bodyLanded, setBodyLanded] = useState(0);
+  // The gate rail's slot for the finished run's folds, once the gate is up.
+  const [railNode, setRailNode] = useState<HTMLDivElement | null>(null);
   // When the run started, on this browser's clock: the one clock from the
   // click to the written article runs on into the gate's article card.
   const [runStartedAt, setRunStartedAt] = useState<number | null>(() => {
@@ -1539,6 +1542,7 @@ function RunScreen({
             held={held?.count ?? 0}
             nextArticles={nextArticles(planned, held?.topics, firstArticle?.keyword ?? runDraft?.keyword)}
             startedAt={runStartedAt}
+            railSlot={setRailNode}
           />
         ) : null}
         <div className={trialStep ? `mt-6 ${gateColumn}` : undefined}>
@@ -1558,6 +1562,7 @@ function RunScreen({
             onRun={onRun}
             understood={understood}
             articleExists={firstArticle?.state === "written"}
+            foldsInto={trialStep ? railNode : null}
           />
         </div>
         {trialStep ? (
