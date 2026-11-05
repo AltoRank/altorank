@@ -10,7 +10,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { recordEvent } from "@/lib/observability/record";
-import { notifyOperatorsNothingPlanned, notifySetupFailed } from "@/lib/email/lifecycle";
+import { notifyOperatorsNothingPlanned, notifySetupFailed, setupFailedSubjectId } from "@/lib/email/lifecycle";
+import type { SendOnceOutcome } from "@/lib/email/send-once";
 import { loadFirstLookReport } from "./first-look-report";
 import { heldTopics } from "./plan";
 import { FREE_TIER_PACE } from "@/lib/content/pace";
@@ -244,7 +245,6 @@ export class RunRecorder {
     // says error). closeRun has always checked this; finish did not.
     if (!(data ?? []).length) return;
     await announceOutcome(this.supabase, this.runId, status, scopeOf(data), this.state.steps, {
-      produced: this.state.planned.length > 0 || this.state.article !== null,
       emptyPool: this.state.emptyPool,
     });
   }
@@ -504,7 +504,7 @@ async function closeRun(
     return false;
   }
   if (!(data ?? []).length) return false;
-  await announceOutcome(supabase, runId, status, scopeOf(data), row.phases ?? null, { reason, produced, emptyPool });
+  await announceOutcome(supabase, runId, status, scopeOf(data), row.phases ?? null, { reason, emptyPool });
   return true;
 }
 
@@ -525,7 +525,7 @@ async function closeRun(
  * A run that produced a draft or a plan is settled on what it made rather
  * than closed as an error (`closeRun`) - the work is on its own tables and the
  * screen shows it - and the person is not emailed about a setup that in fact
- * delivered something (`announceOutcome`).
+ * delivered something (`sendHeldSetupFailures`).
  */
 export async function reapStaleRuns(
   supabase: SupabaseClient,
@@ -572,7 +572,7 @@ async function announceOutcome(
   status: string,
   scope: { workspaceId: string | null; accountId: string | null },
   steps: readonly { phase: string; status: string; detail?: string | null }[] | null,
-  opts: { reason?: string; produced: boolean; emptyPool?: EmptyPool | null },
+  opts: { reason?: string; emptyPool?: EmptyPool | null },
 ): Promise<void> {
   if (status === "running") return;
   // A `done` run is announced only when it was closed from outside the worker
@@ -600,33 +600,118 @@ async function announceOutcome(
     supabase,
   );
 
-  // The person, not just the operator. A run that made something the person
-  // can open - a calendar, a draft - is not a failure to email about; the
-  // run screen and the dashboard say what is missing. A run that made
-  // nothing is, and until 2026-09-10 the only place it was ever said was the
-  // screen the person had closed.
-  if (opts.produced || !scope.workspaceId || !scope.accountId) return;
-  try {
-    const { data: ws } = await supabase.from("workspaces").select("domain").eq("id", scope.workspaceId).maybeSingle();
-    const facts = setupFailedFacts(status, steps, reason, opts.emptyPool ?? null);
-    // Promised only when the overnight retry will actually be allowed to run.
-    const retryTonight = facts.provider ? await providerRetryAllowed(supabase, scope.accountId, scope.workspaceId).catch(() => false) : false;
-    // Before the trial only /connect opens (lib/billing/gate-paths.ts), so
-    // the email must not send the person to Keywords. Asked as nobody, the
-    // way the other account mails ask; unreadable means the ordinary copy.
-    const beforeTrial = await accountTrialGate(supabase, scope.accountId, null)
-      .then((g) => g === "gated")
-      .catch(() => false);
-    await notifySetupFailed(
-      supabase,
-      { accountId: scope.accountId, workspaceId: scope.workspaceId },
-      { domain: (ws?.domain as string | null) ?? null, ...facts, retryTonight, beforeTrial },
-    );
-  } catch (err) {
-    // Never let the email take the run down with it: the row is already
-    // final and the event above is already recorded.
-    console.error(`[onboarding] run ${runId}: setup-failed email: ${err instanceof Error ? err.message : err}`);
+  // The person is told by `sendHeldSetupFailures`, not here: the email waits
+  // until a rerun from the screen has had its chance to answer it.
+}
+
+/** How long a failed first look waits before the person is emailed about it. */
+export const SETUP_FAILED_HOLD_MS = 15 * 60_000;
+/** How far back the sweep looks: two days outlasts a missed hourly run, and a deployment whose only cron is daily. */
+const SETUP_FAILED_LOOKBACK_MS = 48 * 60 * 60_000;
+
+/**
+ * Email the person about first looks that failed and stayed failed.
+ *
+ * Sent from the finaliser until 2026-11-05, which emailed at once:
+ * a Pakistani agency's first look ended at 09:58 and "setup didn't finish"
+ * went out; the owner pressed rerun at 10:00, the rerun wrote the article at
+ * 10:03, and "here's your article" followed at 10:04. Now the hourly cron
+ * sends it, for a run that has been over for SETUP_FAILED_HOLD_MS, and only
+ * when it is still the site's latest run: a later run that ended `done`
+ * answers it, one still going will speak for itself, and one that failed
+ * too is the one emailed. Nothing is dropped: a failed latest run is
+ * emailed on the first sweep after the hold, and a sweep that cannot read
+ * leaves it for the next.
+ *
+ * The rule is the one the finaliser used. A run that made something the
+ * person can open - a calendar, a draft - is not a failure to email about;
+ * the run screen and the dashboard say what is missing. A run that made
+ * nothing is, and until 2026-09-10 the only place it was ever said was the
+ * screen the person had closed. `nothing_planned` is the operators' email,
+ * and a run the owner stopped to change what we found is nobody's.
+ */
+export async function sendHeldSetupFailures(
+  supabase: SupabaseClient,
+  now = Date.now(),
+): Promise<{ emailed: number; answered: number }> {
+  const out = { emailed: 0, answered: 0 };
+  const { data, error } = await supabase
+    .from("onboarding_runs")
+    .select(RUN_COLUMNS_WITH_AGENCY)
+    .in("status", ["error", "partial"])
+    .gte("finished_at", new Date(now - SETUP_FAILED_LOOKBACK_MS).toISOString())
+    .lt("finished_at", new Date(now - SETUP_FAILED_HOLD_MS).toISOString())
+    // Newest first: an older one was newest in an earlier sweep.
+    .order("finished_at", { ascending: false })
+    .limit(50);
+  if (error) {
+    console.error(`[onboarding] held setup-failed emails could not be read: ${error.message}`);
+    return out;
   }
+  for (const run of (data ?? []) as Array<OnboardingRunRow & { account_id: string | null }>) {
+    if (!run.workspace_id || !run.account_id || !run.finished_at) continue;
+    if ((run.planned ?? []).length > 0 || run.error === STOPPED_TO_CHANGE) continue;
+    // `partial` with a draft was settled on that draft. An `error` row can
+    // still carry one that failed, which writtenByRun reads below.
+    if (run.status === "partial" && run.article_id) continue;
+    const finishedAt = new Date(run.finished_at);
+    try {
+      // Already told today, by an earlier sweep.
+      const { data: told, error: toldError } = await supabase
+        .from("sent_emails")
+        .select("subject_id")
+        .eq("email_type", "setup_failed")
+        .eq("subject_id", setupFailedSubjectId(run.workspace_id, finishedAt))
+        .limit(1);
+      if (toldError) throw new Error(`could not read the ledger: ${toldError.message}`);
+      if ((told ?? []).length) continue;
+
+      const { data: latest, error: latestError } = await supabase
+        .from("onboarding_runs")
+        .select("id")
+        .eq("workspace_id", run.workspace_id)
+        .order("started_at", { ascending: false })
+        .limit(1);
+      if (latestError) throw new Error(`could not read the site's runs: ${latestError.message}`);
+      // A draft that landed after the run closed is something to open too.
+      if ((latest ?? [])[0]?.id !== run.id || (await writtenByRun(supabase, run)).articleId) {
+        out.answered += 1;
+        continue;
+      }
+      // A send that failed released its claim (send-once.ts): the next sweep tries again.
+      const sent = await emailSetupFailed(supabase, run, { workspaceId: run.workspace_id, accountId: run.account_id }, finishedAt);
+      if (sent.sent > 0) out.emailed += 1;
+    } catch (err) {
+      // Left for the next sweep, which reads it again.
+      console.error(`[onboarding] run ${run.id}: setup-failed email: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  return out;
+}
+
+async function emailSetupFailed(
+  supabase: SupabaseClient,
+  run: OnboardingRunRow,
+  scope: { workspaceId: string; accountId: string },
+  finishedAt: Date,
+): Promise<SendOnceOutcome> {
+  const { data: ws } = await supabase.from("workspaces").select("domain").eq("id", scope.workspaceId).maybeSingle();
+  const facts = setupFailedFacts(run.status, run.phases, run.error ?? undefined, run.empty_pool ?? null);
+  // Promised only when the overnight retry will actually be allowed to run.
+  const retryTonight = facts.provider ? await providerRetryAllowed(supabase, scope.accountId, scope.workspaceId).catch(() => false) : false;
+  // Before the trial only /connect opens (lib/billing/gate-paths.ts), so
+  // the email must not send the person to Keywords. Asked as nobody, the
+  // way the other account mails ask; unreadable means the ordinary copy.
+  const beforeTrial = await accountTrialGate(supabase, scope.accountId, null)
+    .then((g) => g === "gated")
+    .catch(() => false);
+  // Dated by the run, so every sweep that reaches it asks the ledger the same question.
+  return notifySetupFailed(
+    supabase,
+    { accountId: scope.accountId, workspaceId: scope.workspaceId },
+    { domain: (ws?.domain as string | null) ?? null, ...facts, retryTonight, beforeTrial },
+    finishedAt,
+  );
 }
 
 /**
@@ -808,7 +893,7 @@ export async function stampRun(
       String(patch.status),
       { workspaceId: run.workspace_id, accountId: (run as { account_id?: string }).account_id ?? null },
       state.steps,
-      { produced: state.planned.length > 0 || Boolean(opts.article ?? run.article_id), emptyPool: state.emptyPool },
+      { emptyPool: state.emptyPool },
     );
   }
   return true;

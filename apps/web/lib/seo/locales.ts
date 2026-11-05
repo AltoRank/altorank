@@ -14,6 +14,11 @@ export const LOCALES: Record<string, LocaleEntry> = {
   "en-gb": { label: "English (UK)", languageCode: "en", locationCode: 2826, country: "United Kingdom" },
   "en-au": { label: "English (AU)", languageCode: "en", locationCode: 2036, country: "Australia" },
   "en-ca": { label: "English (CA)", languageCode: "en", locationCode: 2124, country: "Canada" },
+  // English-language markets our signups come from. Without them a .pk site
+  // was researched against US results (two real signups, 2026-11), and an
+  // English .in site could only be called Hindi to land on India.
+  "en-in": { label: "English (IN)", languageCode: "en", locationCode: 2356, country: "India" },
+  "en-pk": { label: "English (PK)", languageCode: "en", locationCode: 2586, country: "Pakistan" },
   es: { label: "Spanish", languageCode: "es", locationCode: 2724, country: "Spain" },
   "es-mx": { label: "Spanish (MX)", languageCode: "es", locationCode: 2484, country: "Mexico" },
   fr: { label: "French", languageCode: "fr", locationCode: 2250, country: "France" },

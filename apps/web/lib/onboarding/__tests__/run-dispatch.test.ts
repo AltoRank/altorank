@@ -30,6 +30,7 @@ const notifyOperatorsNothingPlanned = vi.fn(async (..._a: unknown[]) => ({ sent:
 vi.mock("@/lib/email/lifecycle", () => ({
   notifySetupFailed: (...a: unknown[]) => notifySetupFailed(...a),
   notifyOperatorsNothingPlanned: (...a: unknown[]) => notifyOperatorsNothingPlanned(...a),
+  setupFailedSubjectId: (ws: string, at: Date) => `${ws}:${at.toISOString().slice(0, 10)}`,
 }));
 vi.mock("@/lib/email/draft-batch", () => ({ announceDraftBatch: vi.fn(async () => "nothing to announce") }));
 
@@ -47,6 +48,7 @@ vi.mock("../pipeline", () => ({
 }));
 
 import { dispatchWorker } from "../run-dispatch";
+import { sendHeldSetupFailures, SETUP_FAILED_HOLD_MS } from "../run-store";
 import { POST as runRoute } from "@/app/api/onboard/run/route";
 
 const FULL: OnboardingEvent[] = [
@@ -58,6 +60,9 @@ const FULL: OnboardingEvent[] = [
 ];
 
 const HOW = { baseUrl: "http://127.0.0.1:3999", secret: "s3cret" };
+
+/** The hourly sweep that sends the setup-failed email, once the hold is over. */
+const afterHold = () => sendHeldSetupFailures(db.client, Date.now() + SETUP_FAILED_HOLD_MS + 60_000);
 
 /** A fetch that is the worker route itself. */
 const toRoute = async (url: string | URL | Request, init?: RequestInit) =>
@@ -102,6 +107,7 @@ describe("dispatchWorker with a slow worker", () => {
     await vi.advanceTimersByTimeAsync(1_000);
     await Promise.all(deferred);
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "done", error: null });
+    await afterHold();
     expect(notifySetupFailed).not.toHaveBeenCalled();
   });
 
@@ -120,6 +126,7 @@ describe("dispatchWorker with a slow worker", () => {
     await vi.advanceTimersByTimeAsync(301_000);
     await Promise.all(deferred);
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "done", error: null });
+    await afterHold();
     expect(notifySetupFailed).not.toHaveBeenCalled();
   });
 
@@ -142,6 +149,7 @@ describe("dispatchWorker with a slow worker", () => {
     await vi.advanceTimersByTimeAsync(320_000);
     await Promise.all(deferred);
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "nothing_planned", error: null });
+    await afterHold();
     expect(notifySetupFailed).not.toHaveBeenCalled();
     expect(notifyOperatorsNothingPlanned).toHaveBeenCalledTimes(1);
   });
@@ -150,6 +158,8 @@ describe("dispatchWorker with a slow worker", () => {
     const fetchImpl = (async () => { throw new TypeError("fetch failed"); }) as unknown as typeof fetch;
     await dispatchWorker("r1", { ...HOW, fetchImpl });
     expect(db.tables.onboarding_runs[0]).toMatchObject({ status: "error", error: "The run could not be started: fetch failed" });
+    expect(notifySetupFailed).not.toHaveBeenCalled();
+    await afterHold();
     expect(notifySetupFailed).toHaveBeenCalledTimes(1);
   });
 

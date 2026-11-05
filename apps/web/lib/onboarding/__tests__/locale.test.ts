@@ -26,5 +26,17 @@ describe("resolveLocale", () => {
   it("offers Global first and every language once", () => {
     expect(MARKET_OPTIONS[0].label).toBe(GLOBAL_MARKET);
     expect(new Set(LANGUAGE_OPTIONS.map((o) => o.code)).size).toBe(LANGUAGE_OPTIONS.length);
+    // India has two languages (Hindi, English) and is one market.
+    const labels = MARKET_OPTIONS.map((m) => m.label);
+    expect(new Set(labels).size).toBe(labels.length);
+    expect(MARKET_OPTIONS.find((m) => m.label === "India")?.locationCode).toBe(2356);
+    expect(MARKET_OPTIONS.find((m) => m.label === "Pakistan")?.locationCode).toBe(2586);
+  });
+  it("reopens a Pakistan or India workspace on its market, not Global", () => {
+    expect(localeLabels("en", 2586)).toEqual({ language: "English", country: "Pakistan" });
+    expect(localeLabels("en-in", 2356)).toEqual({ language: "English (IN)", country: "India" });
+  });
+  it("keeps every locale key inside the workspaces.language constraint (migration 049)", () => {
+    for (const o of LANGUAGE_OPTIONS) expect(o.code).toMatch(/^[a-z]{2}(-[a-z]{2})?$/);
   });
 });

@@ -41,8 +41,27 @@ describe("guessing language and market when the site read fails", () => {
     expect(guessLocale({ htmlLang: "xx", domain: "acme.example" })).toBeNull();
   });
 
+  // Two real .pk signups (2026-11) were saved on US
+  // search data: .pk had no market, so the guess fell to English / Global.
+  it("puts an English site on a .pk or .in domain in Pakistan or India, in English", () => {
+    expect(guessLocale({ htmlLang: "en", domain: "agency.com.pk" })).toEqual({ language: "English", country: "Pakistan" });
+    expect(guessLocale({ htmlLang: "en-US", domain: "acme.com.pk" })).toEqual({ language: "English", country: "Pakistan" });
+    expect(guessLocale({ domain: "acme.pk" })).toEqual({ language: "English (PK)", country: "Pakistan" });
+    expect(guessLocale({ htmlLang: "en-PK", domain: "acme.com" })).toEqual({ language: "English (PK)", country: "Pakistan" });
+    // India: English unless the page says Hindi, never Hindi by default.
+    expect(guessLocale({ htmlLang: "en", domain: "acme.co.in" })).toEqual({ language: "English", country: "India" });
+    expect(guessLocale({ domain: "acme.in" })).toEqual({ language: "English (IN)", country: "India" });
+    expect(guessLocale({ htmlLang: "en-IN", domain: "acme.com" })).toEqual({ language: "English (IN)", country: "India" });
+    expect(guessLocale({ htmlLang: "hi", domain: "acme.in" })).toEqual({ language: "Hindi", country: "India" });
+
+    expect(resolveLocale("English", "Pakistan")).toEqual({ language: "en", locationCode: 2586 });
+    expect(resolveLocale("English (PK)", "Pakistan")).toEqual({ language: "en-pk", locationCode: 2586 });
+    expect(resolveLocale("English", "India")).toEqual({ language: "en", locationCode: 2356 });
+    expect(resolveLocale("English (IN)", "India")).toEqual({ language: "en-in", locationCode: 2356 });
+  });
+
   it("only ever returns labels the wizard's selects hold, which save to the right codes", () => {
-    for (const domain of ["a.it", "a.tr", "a.de", "a.fr", "a.es", "a.nl", "a.pl", "a.se", "a.pt", "a.br", "a.mx", "a.jp", "a.ua", "a.il"]) {
+    for (const domain of ["a.it", "a.tr", "a.de", "a.fr", "a.es", "a.nl", "a.pl", "a.se", "a.pt", "a.br", "a.mx", "a.jp", "a.ua", "a.il", "a.com.pk", "a.co.in"]) {
       const g = guessLocale({ domain });
       expect(g, domain).not.toBeNull();
       expect(LANGUAGE_OPTIONS.map((o) => o.label), domain).toContain(g!.language);

@@ -20,6 +20,7 @@ vi.mock("@/lib/cron-auth", () => ({ isAuthorizedCron: () => true }));
 vi.mock("@/lib/observability/cron", () => ({ observedCron: (_name: string, fn: unknown) => fn }));
 vi.mock("@/lib/publishing/auto-approve", () => ({ runAutoApprovals: async () => [] }));
 vi.mock("@/lib/email/held-digest", () => ({ sendHeldDigests: async () => [] }));
+vi.mock("@/lib/onboarding/run-store", () => ({ sendHeldSetupFailures: async () => ({ emailed: 0, answered: 0 }) }));
 vi.mock("@/lib/email/article-events", () => ({
   announceArticlePublished: vi.fn(async () => "emailed"),
   announcePublishFailed: vi.fn(async () => "emailed"),
