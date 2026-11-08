@@ -77,7 +77,7 @@ export function indexNowKeyLocation(host: string, key: string, reported?: string
   }
 }
 
-async function submitIndexNow(host: string, key: string, urls: string[], keyLocation: string): Promise<boolean> {
+export async function submitIndexNow(host: string, key: string, urls: string[], keyLocation: string): Promise<boolean> {
   const res = await fetch("https://api.indexnow.org/indexnow", {
     method: "POST",
     headers: { "content-type": "application/json; charset=utf-8" },

@@ -30,6 +30,9 @@ const ENDPOINTS: [string, string, string][] = [
   ["GET", "/api/agent/v1/gsc/coverage?workspace_id=", "Index coverage per page, bucketed."],
   ["GET", "/api/agent/v1/gsc/cannibalization?workspace_id=", "Queries where two or more of the site's pages compete."],
   ["GET", "/api/agent/v1/gsc/url-inspection?workspace_id=&url=", "What Google last said about one URL."],
+  ["GET", "/api/agent/v1/gsc/queries?workspace_id=", "Every query this window against the one before: gainers, losers, new, lost."],
+  ["GET", "/api/agent/v1/geo/visibility?workspace_id=", "The latest AI visibility sweep: mention rate with its range, who is named instead, what is cited."],
+  ["GET", "/api/agent/v1/geo/prompts?workspace_id=", "The questions AI visibility is measured on, and whether tracking is on."],
 ];
 
 /** The writes, gated on a key created with "Allow edits". */
@@ -41,6 +44,10 @@ const WRITE_ENDPOINTS: [string, string, string][] = [
   ["POST", "/api/agent/v1/keywords/bulk-reschedule", "Move planned keywords to other days."],
   ["POST", "/api/agent/v1/workspaces/{id}/pause", "Stop writing and publishing for one workspace."],
   ["POST", "/api/agent/v1/workspaces/{id}/resume", "Put a paused workspace back and re-plan its calendar."],
+  ["POST", "/api/agent/v1/workspaces", "Add a site, with the dashboard's checks. Uses a plan slot."],
+  ["POST", "/api/agent/v1/geo/tracking", "Switch weekly AI visibility tracking on or off for a site."],
+  ["POST", "/api/agent/v1/geo/prompts", "Add or remove the questions AI visibility is measured on."],
+  ["POST", "/api/agent/v1/indexnow", "Tell Bing and other IndexNow engines that pages changed."],
 ];
 
 const CODE = "font-mono text-[11.5px] bg-panel border border-line rounded-md px-3 py-2 overflow-x-auto whitespace-pre";

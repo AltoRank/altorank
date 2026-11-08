@@ -210,6 +210,13 @@ running instance of the app, so treat it as a floor, not a contract.
 | GET | `/gsc/cannibalization?workspace_id=&days=&min_impressions=&limit=` | read |
 | GET | `/gsc/coverage?workspace_id=&days=&bucket=` | read |
 | GET | `/gsc/url-inspection?workspace_id=&url=` | read |
+| GET | `/gsc/queries?workspace_id=&days=&limit=` | read |
+| GET | `/geo/visibility?workspace_id=` | read |
+| GET | `/geo/prompts?workspace_id=` | read |
+| POST | `/geo/prompts` | write |
+| POST | `/geo/tracking` | write |
+| POST | `/workspaces` | write |
+| POST | `/indexnow` | write |
 | POST | `/workspaces/{id}/pause` | write |
 | POST | `/workspaces/{id}/resume` | write |
 | GET | `/readiness?workspace_id=` (or `?domain=`) | read |

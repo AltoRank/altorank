@@ -519,6 +519,58 @@ export function queryOpportunities(gsc: GscShapes<GscRow, "query">, today: Date,
     .slice(0, limit);
 }
 
+export type QueryMove = {
+  query: string;
+  current: QueryStat;
+  previous: QueryStat | null;
+  clicksChange: number;
+  impressionsChange: number;
+  /** Positive is better (moved up). Null when either window has no position. */
+  positionChange: number | null;
+};
+
+/**
+ * Every query seen in either window, current against previous: what a weekly
+ * SEO check asks first ("what moved?"). Sorted by the size of the move in
+ * impressions, then clicks. Google's numbers only; nothing is filtered as bot
+ * traffic here, so a sudden spike on one query is reported, not explained.
+ */
+export function queryMovers(gsc: GscShapes<GscRow, "query">, today: Date, days = WINDOW_DAYS): QueryMove[] {
+  const w = windows(today, days);
+  const cur = new Map<string, Agg & { query: string }>();
+  const prev = new Map<string, Agg & { query: string }>();
+  for (const r of gsc.query) {
+    const into = inWindow(r.metric_date, w.current) ? cur : inWindow(r.metric_date, w.previous) ? prev : null;
+    if (!into) continue;
+    const key = (r.query as string).trim().toLowerCase();
+    const a = into.get(key) ?? { ...newAgg(), query: r.query as string };
+    addTo(a, r);
+    into.set(key, a);
+  }
+  const stat = (a: Agg & { query: string }): QueryStat => ({ query: a.query, clicks: a.clicks, impressions: a.impressions, ctr: ctr(a), position: position(a) });
+  const zero = (query: string): QueryStat => ({ query, clicks: 0, impressions: 0, ctr: null, position: null });
+
+  const out: QueryMove[] = [];
+  for (const key of new Set([...cur.keys(), ...prev.keys()])) {
+    const c = cur.get(key);
+    const p = prev.get(key);
+    const current = c ? stat(c) : zero(p!.query);
+    const previous = p ? stat(p) : null;
+    out.push({
+      query: current.query,
+      current,
+      previous,
+      clicksChange: current.clicks - (previous?.clicks ?? 0),
+      impressionsChange: current.impressions - (previous?.impressions ?? 0),
+      positionChange:
+        current.position !== null && previous?.position != null ? Math.round((previous.position - current.position) * 10) / 10 : null,
+    });
+  }
+  return out.sort(
+    (x, y) => Math.abs(y.impressionsChange) - Math.abs(x.impressionsChange) || Math.abs(y.clicksChange) - Math.abs(x.clicksChange),
+  );
+}
+
 export type CannibalPage = {
   url: string;
   articleId: string | null;
