@@ -58,6 +58,8 @@ const CC_TLD: Record<string, string> = {
   uk: "en-gb",
   au: "en-au",
   ca: "en-ca",
+  in: "en-in",
+  pk: "en-pk",
   jp: "ja",
   kr: "ko",
   cn: "zh",
