@@ -1,5 +1,6 @@
 import { Icons } from "@/components/ui";
 import type { OnboardingPlanned } from "@/lib/onboarding/events";
+import { Fold } from "./fold";
 
 /**
  * Why the plan chose its topics, folded. Under the first article (`only`) it
@@ -11,12 +12,28 @@ import type { OnboardingPlanned } from "@/lib/onboarding/events";
  * reader … not yet shopping", "Lower confidence" and "Unmeasured" argued
  * against buying (UX audit 2026-10-12, #8). Who the article is for is said
  * as what it brings: the reader and what they are working on.
+ *
+ * `folded`: one fold among the gate rail's, under the trial offer and quieter
+ * than it, headed like its neighbours (./fold.tsx) rather than by an h2.
  */
-export function TopicBriefs({ planned, title, only }: { planned: OnboardingPlanned[]; title?: string; only?: string }) {
+export function TopicBriefs({ planned, title, only, folded = false }: { planned: OnboardingPlanned[]; title?: string; only?: string; folded?: boolean }) {
   const topics = planned
     .filter((p) => p.brief?.status === "qualified" && (!only || p.term.trim().toLowerCase() === only.trim().toLowerCase()))
     .slice(0, 5);
   if (!topics.length) return null;
+  if (folded) {
+    return <>{topics.map(({ term, brief }) => (
+      <Fold key={term} title={title ?? "Why this article"} line={`Why we chose “${term}”`}>
+        <dl className="m-0 grid gap-2 text-sm text-ink-2">
+          <div><dt className="font-medium">The angle</dt><dd className="m-0">{brief!.angle}</dd></div>
+          <div><dt className="font-medium">Who it brings to your site</dt><dd className="m-0">{brief!.audience} · {brief!.buyingJob}</dd></div>
+          <div><dt className="font-medium">Your offering</dt><dd className="m-0">{brief!.offering}</dd></div>
+          <div><dt className="font-medium">Why it fits</dt><dd className="m-0">{brief!.reason}</dd></div>
+          <div><dt className="font-medium">Search evidence</dt><dd className="m-0">{brief!.evidenceUrls?.map((url) => <a key={url} className="mr-3 inline-block max-w-full truncate align-bottom text-accent underline" href={url} target="_blank" rel="noopener noreferrer">{new URL(url).hostname}</a>)}</dd></div>
+        </dl>
+      </Fold>
+    ))}</>;
+  }
   return <section>
     <h2 className="mb-2 text-[15px] font-semibold">{title ?? (topics.length === 1 ? "Why this article" : "Why these articles")}</h2>
     <div className="flex flex-col gap-3">{topics.map(({ term, brief }) => {
