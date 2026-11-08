@@ -51,6 +51,7 @@ export function GeoSetup({
 
   function add(e: React.FormEvent) {
     e.preventDefault();
+    if (pending) return;
     const text = draft;
     startTransition(async () => {
       const res = await addGeoPrompt(workspaceId, text);
@@ -58,7 +59,8 @@ export function GeoSetup({
         toast.error(res.error);
         return;
       }
-      setDraft("");
+      // Only if nothing new was typed while it saved.
+      setDraft((d) => (d === text ? "" : d));
     });
   }
 
@@ -114,7 +116,9 @@ export function GeoSetup({
             onChange={(e) => setDraft(e.target.value)}
             placeholder="e.g. free backlink checker for my website"
             aria-label="Add a question"
-            disabled={pending || prompts.length >= GEO_PROMPT_LIMIT}
+            // Typeable while the last one saves: a disabled field dropped
+            // whatever was typed into it in the meantime.
+            disabled={prompts.length >= GEO_PROMPT_LIMIT}
           />
           <Button type="submit" variant="primary" disabled={pending || !draft.trim() || prompts.length >= GEO_PROMPT_LIMIT}>
             Add

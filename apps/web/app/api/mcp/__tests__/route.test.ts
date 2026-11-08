@@ -89,7 +89,9 @@ describe("POST /api/mcp", () => {
     expect(list.status).toBe(200);
     const body = (await list.json()) as { result: { tools: { name: string; title?: string; annotations?: Record<string, boolean> }[] } };
     const names = body.result.tools.map((t) => t.name).sort();
-    expect(names).toHaveLength(26);
+    expect(names).toHaveLength(33);
+    expect(names).toContain("altorank_geo_visibility");
+    expect(names).toContain("altorank_gsc_queries");
     expect(names).toContain("altorank_whoami");
     expect(names).toContain("altorank_check_readiness");
     // The gate, checkable: no publish, approve or delete tool exists.

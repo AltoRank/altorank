@@ -468,6 +468,43 @@ server.registerTool(
   async ({ workspace_id, url, days }) => asEnvelope(await call("/gsc/url-inspection", { query: { workspace_id, url, days } })),
 );
 
+server.registerTool(
+  "altorank_gsc_queries",
+  {
+    title: "Search Console: what moved",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    description:
+      "Every query this window against the one before: gainers, losers, new and lost, with clicks, impressions and position in both. " +
+      "The weekly SEO check's first question. Not filtered for bot or rank-tracker traffic.",
+    inputSchema: { ...workspaceArg, ...daysArg, limit: z.number().int().min(1).max(100).optional().describe("Rows per list, default 25.") },
+  },
+  async ({ workspace_id, days, limit }) => asEnvelope(await call("/gsc/queries", { query: { workspace_id, days, limit } })),
+);
+
+server.registerTool(
+  "altorank_geo_visibility",
+  {
+    title: "AI visibility (latest sweep)",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    description:
+      "How often the ChatGPT app, Gemini and Google AI Mode named this site in the latest weekly sweep, with the 95% range, " +
+      "who they named instead, which domains they cited, and the same per engine and per question. Stored answers; asks no engine.",
+    inputSchema: workspaceArg,
+  },
+  async ({ workspace_id }) => asEnvelope(await call("/geo/visibility", { query: { workspace_id } })),
+);
+
+server.registerTool(
+  "altorank_geo_prompts",
+  {
+    title: "AI visibility questions",
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    description: "The buyer questions a site's AI visibility is measured on, and whether tracking is switched on.",
+    inputSchema: workspaceArg,
+  },
+  async ({ workspace_id }) => asEnvelope(await call("/geo/prompts", { query: { workspace_id } })),
+);
+
 // ---------------------------------------------------------------------------
 // Mutations: need the "write" scope. Each mirrors one POST route.
 // ---------------------------------------------------------------------------
@@ -581,6 +618,68 @@ server.registerTool(
     inputSchema: workspaceArg,
   },
   async ({ workspace_id }) => asEnvelope(await call(`/workspaces/${workspace_id}/resume`, { method: "POST" })),
+);
+
+server.registerTool(
+  "altorank_create_workspace",
+  {
+    title: "Add a site",
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    description:
+      "Add a site to the account, with the dashboard's checks: the domain resolves, the plan has a site left, it is not already there, " +
+      "and the key's creator is an owner or admin. Uses a plan slot: only when the human asked. Needs write scope.",
+    inputSchema: {
+      domain: z.string().describe("Bare domain, e.g. acme.com."),
+      name: z.string().optional().describe("Display name; defaults to the domain."),
+    },
+  },
+  async (input) => asEnvelope(await call("/workspaces", { method: "POST", body: input })),
+);
+
+server.registerTool(
+  "altorank_geo_set_tracking",
+  {
+    title: "Switch AI visibility tracking",
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    description:
+      "Turn weekly AI visibility tracking on or off for one site. On spends DataForSEO credit every week and needs a paid plan. Needs write scope.",
+    inputSchema: { ...workspaceArg, enabled: z.boolean() },
+  },
+  async (input) => asEnvelope(await call("/geo/tracking", { method: "POST", body: input })),
+);
+
+server.registerTool(
+  "altorank_geo_update_prompts",
+  {
+    title: "Change AI visibility questions",
+    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+    description:
+      "Add questions, and remove them by id or exact text (removals first). The set is the measurement: change it only when the human asked, " +
+      "and say the trend restarts. Up to 25 per site. Needs write scope.",
+    inputSchema: {
+      ...workspaceArg,
+      add: z.array(z.string()).max(25).optional().describe("Questions as a buyer types them into ChatGPT."),
+      remove: z.array(z.string()).max(25).optional().describe("Question ids or exact question texts."),
+    },
+  },
+  async (input) => asEnvelope(await call("/geo/prompts", { method: "POST", body: input })),
+);
+
+server.registerTool(
+  "altorank_indexnow_submit",
+  {
+    title: "Submit changed pages (IndexNow)",
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    description:
+      "Tell Bing and the other IndexNow engines that pages on the site changed. Uses the workspace's IndexNow key, which the site must serve; " +
+      "pass key_location when it is not at the host root. Accepted means queued for recrawl, not indexed. Needs write scope.",
+    inputSchema: {
+      ...workspaceArg,
+      urls: z.array(z.string().url()).min(1).max(100),
+      key_location: z.string().url().optional(),
+    },
+  },
+  async (input) => asEnvelope(await call("/indexnow", { method: "POST", body: input })),
 );
 
   return server;

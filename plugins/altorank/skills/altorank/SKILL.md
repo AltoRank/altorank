@@ -93,6 +93,16 @@ asked Google and the page was not seen in search, not "not indexed".
 `inspection_superseded: true` means Google served the page after an old
 "not indexed" verdict, so it is indexed now.
 
+## AI visibility and site setup
+
+`altorank_geo_visibility` reads the latest weekly sweep of the ChatGPT app,
+Gemini and Google AI Mode: always give the 95% range with the mention rate.
+`altorank_geo_prompts` lists the questions; `altorank_geo_update_prompts` and
+`altorank_geo_set_tracking` change them (write access, only when asked: the
+question set is the measurement). `altorank_gsc_queries` shows what moved in
+Search Console. `altorank_create_workspace` adds a site (uses a plan slot) and
+`altorank_indexnow_submit` tells Bing that pages changed.
+
 ## Rules
 
 - Never try to publish, approve, schedule or delete, and never change a
