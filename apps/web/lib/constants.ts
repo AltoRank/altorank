@@ -95,15 +95,10 @@ export const DASHBOARD_NAV: NavGroup[] = [
       // generates one. Labelling a working page "soon" is the same failure as
       // labelling an unknown zero, pointed the other way.
       //
-      // /geo keeps `soon`, and the reason is the opposite one: the page
-      // renders, but `workspaces.geo_tracking` has no writer anywhere in the
-      // app (`git grep geo_tracking`: the cron reads it, /admin displays it,
-      // migration 020 declares it) and `geo_prompts` is never inserted, so a
-      // customer who followed the link found an empty state whose only
-      // instruction could not be carried out. Linking it from the sidebar
-      // would sell a measurement nobody can switch on. Remove `soon` in the
-      // same change that adds the switch.
-      { id: "geo", label: "AI visibility", href: "/geo", icon: "trend", soon: true },
+      // /geo was `soon` until 2026-11-08 because nothing in the app could
+      // switch tracking on or add a question; its setup card does both now
+      // (components/dashboard/geo-setup.tsx).
+      { id: "geo", label: "AI visibility", href: "/geo", icon: "trend" },
       { id: "reports", label: "Reports", href: "/reports", icon: "reports" },
     ],
   },

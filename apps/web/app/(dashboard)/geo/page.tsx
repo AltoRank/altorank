@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { getWorkspaces } from "@/lib/queries/workspaces";
 import { getGeoPrompts, getLatestGeoRun, summariseRows } from "@/lib/queries/geo";
 import { deriveGeoActions } from "@/lib/geo/actions";
+import { GeoSetup } from "@/components/dashboard/geo-setup";
 import { HowItWorks } from "@/components/dashboard/how-it-works";
 import { geoExplainer } from "@/lib/explainers";
 import { PageHead, StatusPill, Card, StatStrip, Chip, DotSep } from "@/components/ui";
@@ -37,8 +38,11 @@ export default async function GeoPage() {
   // One site's sweep and prompt set, always: unscoped, the first tracked
   // site's. A mention rate blended across sites is measured against no brand
   // in particular.
-  const measuredId = scopeId ?? tracked[0]?.id ?? null;
-  const measuredDomain = workspaces.find((w) => w.id === measuredId)?.domain ?? "";
+  // With nothing tracked yet, the first site in scope: it is the one the setup
+  // card switches on.
+  const measuredId = scopeId ?? tracked[0]?.id ?? inScope[0]?.id ?? null;
+  const measured = workspaces.find((w) => w.id === measuredId);
+  const measuredDomain = measured?.domain ?? "";
   const [prompts, latest] = measuredId
     ? await Promise.all([getGeoPrompts(measuredId), getLatestGeoRun(measuredId)])
     : [[], null];
@@ -160,20 +164,13 @@ export default async function GeoPage() {
           </Card>
         )}
 
-        {!prompts.length && (
-          <Card flush>
-            <div className="p-5">
-              <div className="font-semibold text-sm mb-1.5">No prompts defined yet</div>
-              <p className="text-[13px] text-ink-2 leading-[1.6] max-w-[62ch]">
-                AI visibility is measured against a fixed set of questions a buyer
-                would actually ask. The prompt set is the measurement, so it is
-                chosen deliberately rather than generated: changing it changes the
-                number and breaks the trend line. Choosing the prompts and switching
-                tracking on for a workspace is not in the app yet; nothing here is being
-                measured until it is.
-              </p>
-            </div>
-          </Card>
+        {measured && (
+          <GeoSetup
+            workspaceId={measured.id}
+            domain={measuredDomain || measured.name}
+            tracking={Boolean((measured as { geo_tracking?: boolean }).geo_tracking)}
+            prompts={prompts.map((p) => ({ id: p.id, prompt: p.prompt }))}
+          />
         )}
 
         {byEngine.size > 0 && (
