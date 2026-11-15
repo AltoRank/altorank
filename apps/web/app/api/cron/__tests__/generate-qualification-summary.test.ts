@@ -69,6 +69,7 @@ vi.mock("@/lib/email/account-recipients", () => ({
   userEmail: async () => null,
 }));
 vi.mock("@/lib/email/article-emails", () => ({ sendArticleDraftedEmails: async () => ({ sent: 1, skipped: 0, failed: 0 }) }));
+vi.mock("@/lib/email/gate-followups", () => ({ sweepGateFollowups: async () => [] }));
 vi.mock("@/lib/email/schedule-events", () => ({
   announceNothingWritten: (...a: unknown[]) => announceNothingWritten(...a),
   announcePausedSites: async () => [],

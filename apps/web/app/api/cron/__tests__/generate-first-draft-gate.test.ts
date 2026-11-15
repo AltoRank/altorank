@@ -36,6 +36,7 @@ vi.mock("@/lib/plan/pace-budget", () => ({ readPaceBudget: async () => ({ articl
 vi.mock("@/lib/plan/frozen", () => ({ readFrozenEntries: async () => ({ ids: new Set(), reason: null }) }));
 vi.mock("@/lib/email/agency-recipients", () => ({ agencyRecipients: async () => ["o@x.test"], agencyBillingRecipients: async () => [], userEmail: async () => null }));
 vi.mock("@/lib/email/article-emails", () => ({ sendArticleDraftedEmails: async () => ({ sent: 1, skipped: 0, failed: 0 }) }));
+vi.mock("@/lib/email/gate-followups", () => ({ sweepGateFollowups: async () => [] }));
 vi.mock("@/lib/email/schedule-events", () => ({ announceNothingWritten: async () => "", announcePausedSites: async () => [], announceSetupUnfinished: async () => "", nothingWrittenReason: () => null, remindEndingPauses: async () => [], sweepUnfinishedSetups: async () => [] }));
 
 import { GET } from "../generate/route";

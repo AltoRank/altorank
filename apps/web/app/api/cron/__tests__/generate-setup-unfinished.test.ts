@@ -74,6 +74,7 @@ vi.mock("@/lib/email/draft-batch", () => ({
   announceDraftBatch: (...a: unknown[]) => announceDraftBatch(...a),
   sweepUnannouncedDrafts: async () => [],
 }));
+vi.mock("@/lib/email/gate-followups", () => ({ sweepGateFollowups: async () => [] }));
 vi.mock("@/lib/email/schedule-events", () => ({
   announceNothingWritten: (...a: unknown[]) => announceNothingWritten(...a),
   announcePausedSites: async () => [],

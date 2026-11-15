@@ -9,6 +9,9 @@ describe("stepProps", () => {
   it("keeps a step's own props with a value on its list", () => {
     expect(stepProps("setup_ending_shown", { ending: "nothing-planned" })).toEqual({ ending: "nothing-planned" });
     expect(stepProps("offer_seen", { viewport: "mobile" })).toEqual({ viewport: "mobile" });
+    expect(stepProps("gate_answer", { reason: "price", via: "email" })).toEqual({ reason: "price", via: "email" });
+    // A reason off the list is dropped; where it was said is still kept.
+    expect(stepProps("gate_answer", { reason: "because", via: "gate" })).toEqual({ via: "gate" });
     expect(stepProps("article_opened", { from: "setup", viewport: "desktop" })).toEqual({ from: "setup", viewport: "desktop" });
     expect(stepProps("article_copied", { format: "markdown", surface: "export_menu" })).toEqual({ format: "markdown", surface: "export_menu" });
     expect(stepProps("article_approved", { status: "scheduled" })).toEqual({ status: "scheduled" });
@@ -41,6 +44,8 @@ describe("stepKey: what tells two events of one step apart", () => {
   it("is empty for the steps kept once per site, as before", () => {
     expect(stepKey("gate_shown", {})).toBe("");
     expect(stepKey("offer_seen", { props: { viewport: "mobile" } })).toBe("");
+    // One answer per site: a second pick, or the same one by email, is not a second row.
+    expect(stepKey("gate_answer", { props: { reason: "price", via: "gate" } })).toBe("");
     expect(stepKey("trial_started", { props: { plan: "starter" } })).toBe("");
   });
 
