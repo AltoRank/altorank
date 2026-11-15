@@ -2,6 +2,8 @@ import { test, expect } from "./fixtures/test";
 import { admin, signIn } from "./fixtures/account";
 import { fakeStripe, liveCheckouts } from "./fixtures/fake-stripe";
 import type { Page } from "@playwright/test";
+import { createHmac } from "node:crypto";
+import { SERVICE_ROLE_KEY } from "./fixtures/env";
 
 /**
  * The first look's second half, in a real browser (UX audit 2026-10-12,
@@ -77,12 +79,44 @@ test("one clock to the gate, a price box that sells, a bar on the same plan, and
   await page.getByRole("button", { name: "Not ready yet? Email me a link to this article" }).click();
   await expect(page.getByRole("status").filter({ hasText: /Sent to|could not be sent|turned off/ })).toBeVisible();
 
+  // "What stopped you?", folded under the offer: one line until opened,
+  // then one pick, kept once for the site.
+  await expect(page.getByRole("group", { name: "What stopped you" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Not starting the trial? Tell us what stopped you" }).click();
+  await page.getByRole("group", { name: "What stopped you" }).getByRole("button", { name: "It costs too much" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Thank you. That is what we needed to know." })).toBeVisible();
+  const { data: answers } = await admin().from("system_events").select("context").eq("account_id", signedIn.accountId).eq("source", "onboarding.step").eq("context->>step", "gate_answer");
+  expect((answers ?? []).map((a) => a.context)).toEqual([expect.objectContaining({ reason: "price", via: "gate" })]);
+
   // The setup log points nowhere a person before the trial cannot go.
   await expect(page.getByText(/from Keywords|see Keywords/)).toHaveCount(0);
 
   // The ledger holds one claim for this article and owner, no more.
   const { data: sent } = await admin().from("sent_emails").select("email_type, recipient").eq("email_type", "first_article_link").eq("recipient", signedIn.email.toLowerCase());
   expect((sent ?? []).length).toBeLessThanOrEqual(1);
+});
+
+test("the follow-up email's link asks what stopped you, signed out, and only a button answers", async ({ page, account }) => {
+  // The link a follow-up email carries (lib/email/why-link.ts): the site and
+  // the address it was sent to, signed with the secret the server signs with.
+  const site = account.workspaces[0].id;
+  const sig = createHmac("sha256", process.env.EMAIL_UNSUBSCRIBE_SECRET || SERVICE_ROLE_KEY).update(`why|${site}|${account.email.toLowerCase()}`).digest("hex").slice(0, 32);
+  const answers = async () =>
+    ((await admin().from("system_events").select("context").eq("account_id", account.accountId).eq("source", "onboarding.step").eq("context->>step", "gate_answer")).data ?? []).map((a) => a.context);
+
+  // Nobody is signed in, and opening the link records nothing: a mail scanner opens it too.
+  await page.goto(`/why?w=${site}&e=${encodeURIComponent(account.email.toLowerCase())}&s=${sig}&r=card`);
+  await expect(page.getByRole("heading", { name: "What stopped you?" })).toBeVisible();
+  expect(await answers()).toEqual([]);
+  await shot(page, "why-1280");
+
+  await page.getByRole("button", { name: "I don’t want to enter a card" }).click();
+  await expect(page.getByRole("heading", { name: "Thank you" })).toBeVisible();
+  expect(await answers()).toEqual([expect.objectContaining({ reason: "card", via: "email" })]);
+
+  // A link that was altered answers for nobody.
+  await page.goto(`/why?w=${site}&e=${encodeURIComponent("someone@else.example")}&s=${sig}`);
+  await expect(page.getByRole("heading", { name: "That link did not work" })).toBeVisible();
 });
 
 test("with auto-start on, the run starts by itself and shows what it read beside it", async ({ page, signedIn }) => {

@@ -2,9 +2,9 @@
 // "What stopped you?": the one question asked of someone who did not start the trial
 // ---------------------------------------------------------------------------
 //
-// By 2026-11-15 sixteen real signups had reached the trial offer or left
-// before it, none had started a trial, and every reason on record was one we
-// had inferred from the event log. This is the question, asked in two
+// Until 2026-11-15 every reason on record for a trial that was not started
+// was one we had inferred from the event log: nobody who left had been
+// asked. This is the question, asked in two
 // places: quietly under the offer on the gate, and in a follow-up email
 // whose link opens /why. One pick; "Something else" takes a few words.
 //

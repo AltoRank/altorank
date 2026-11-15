@@ -3,9 +3,9 @@
 // ---------------------------------------------------------------------------
 //
 // Until 2026-11-15 a person who reached the trial offer got one email, "your
-// article is ready", and then nothing, ever. Sixteen real signups, six who
-// read the offer, none who started a trial, and none who heard from us
-// again; the two who came back on their own found the same screen.
+// article is ready", and then nothing, ever. Whoever read the offer and left
+// never heard from us again, and a person who came back on their own found
+// the same screen.
 //
 //   a day later     the next articles the trial would write, by name, with
 //                   how often each is searched. Sent only when there is one
