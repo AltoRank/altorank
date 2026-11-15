@@ -41,6 +41,9 @@ export const ONBOARDING_STEPS = [
   // out - opened, copied, approved. Props per step: ./step-props.ts.
   "setup_ending_shown",
   "offer_seen",
+  // Why the trial was not started, in the person's own pick: from the gate,
+  // or from the follow-up email's link (lib/onboarding/gate-answer.ts).
+  "gate_answer",
   "trial_started",
   "article_opened",
   "article_copied",
