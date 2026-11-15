@@ -14,9 +14,16 @@
 // PROVIDER_RETRY_WITHIN_MS; it has no article; its account is still before
 // its trial; and the spend gate would start setup for it - the same
 // question /api/onboard/start asks, which counts the account's pre-trial
-// runs (PRE_TRIAL_SETUP_RUNS) and so bounds this to one retry. No spend
-// loop: a retry that meets the same outage is the account's last pre-trial
-// run, and the next night's gate refuses it.
+// runs (PRE_TRIAL_SETUP_RUNS). A run an outage cut short is not counted, up
+// to PROVIDER_DOWN_RUNS_EXCUSED of them (lib/billing/trial-hold.ts), so the
+// outage does not use up the person's free runs and there is still no spend
+// loop: past that many, a retry that meets the same outage counts, and the
+// next night's gate refuses it.
+//
+// Nothing is retried while the search-data balance is empty
+// (lib/seo/balance.ts): the retry would meet the outage it is retrying. The
+// balance is read here every night, which is also what tells the operators
+// it is low.
 //
 // The person is told by the email every first article sends when it is
 // written (lib/email/draft-batch.ts), or by the setup-failed email if the
@@ -30,6 +37,7 @@ import { dispatchWorker } from "./run-dispatch";
 import { providerRetryAllowed } from "./provider-retry-gate";
 import { recordRunStarted } from "./step-events";
 import { PROVIDER_RETRY_AFTER_MS, PROVIDER_RETRY_WITHIN_MS } from "./provider-retry-window";
+import { checkProviderBalance, type ProviderBalance } from "@/lib/seo/balance";
 
 export { providerRetryAllowed, PROVIDER_RETRY_AFTER_MS, PROVIDER_RETRY_WITHIN_MS };
 
@@ -50,6 +58,8 @@ export interface ProviderRetryDeps {
   allowed?: typeof providerRetryAllowed;
   start?: typeof startRun;
   dispatch?: (runId: string) => Promise<void>;
+  /** The search-data balance, read (and reported when low) once per sweep. */
+  balance?: () => Promise<ProviderBalance | null>;
 }
 
 export type ProviderRetryOutcome = { workspaceId: string; runId?: string; skipped?: string };
@@ -62,6 +72,10 @@ export async function retryProviderDownRuns(
   const allowed = deps.allowed ?? providerRetryAllowed;
   const start = deps.start ?? startRun;
   const dispatch = deps.dispatch ?? ((runId: string) => dispatchWorker(runId));
+  // Still out: leave every run for the night the balance is back. Unknown
+  // (no answer, no credentials) is not empty, and the sweep goes on.
+  const balance = await (deps.balance ?? (() => checkProviderBalance(supabase)))().catch(() => null);
+  if (balance?.empty) return [];
   type Row = OnboardingRunRow & { account_id: string };
   const candidates: Row[] = [];
   for (let page = 0; page < MAX_PAGES; page += 1) {

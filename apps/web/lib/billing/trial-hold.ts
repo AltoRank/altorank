@@ -79,6 +79,7 @@ import { firstDraftAwaitsReview } from "@/lib/billing/first-draft-gate";
 import { accountCountingClient } from "@/lib/billing/account-client";
 import { billingEnabled } from "@/lib/stripe";
 import { TRIAL_HOLD_MESSAGE, trialCancelledMessage } from "@/lib/billing/trial-refusal";
+import { providerDown, stateFromRun, type OnboardingRunRow } from "@/lib/onboarding/events";
 
 /**
  * Drafts a trial-gated account gets before its trial starts: the article the
@@ -300,19 +301,32 @@ export async function releasePreTrialDraft(supabase: SupabaseClient, accountId: 
 export const PRE_TRIAL_SETUP_RUNS = 2;
 
 /**
- * How many setup runs this account has started, ever. `onboarding_runs` is
+ * Runs that a provider outage cut short and that are not counted against
+ * PRE_TRIAL_SETUP_RUNS: the outage is ours, and it should not cost the person
+ * their free runs. A signup on 2026-11-13: the search-data balance was
+ * empty, the first look and the overnight retry both planned nothing, and
+ * that was the account's two runs. Capped, so an outage that never ends buys
+ * at most this many more site reads (about $0.22 each).
+ */
+export const PROVIDER_DOWN_RUNS_EXCUSED = 2;
+
+/**
+ * How many setup runs this account has started, ever, less the ones a
+ * provider outage cut short (up to PROVIDER_DOWN_RUNS_EXCUSED). `onboarding_runs` is
  * written by the server only (076: a client token may read it, nothing else),
  * and since migration 100 a run outlives the site it was for, so deleting a
  * site and adding it again does not give the runs back. Read account-wide; a
  * failed read throws, because the caller is deciding whether to buy a run.
  */
 export async function setupRunsStarted(supabase: SupabaseClient, accountId: string): Promise<number> {
-  const { count, error } = await accountCountingClient(supabase)
+  const { data, error } = await accountCountingClient(supabase)
     .from("onboarding_runs")
-    .select("id", { count: "exact", head: true })
+    .select("id, workspace_id, status, phases, planned, keywords_found, article_id, error, empty_pool, started_at, updated_at, finished_at")
     .eq("account_id", accountId);
   if (error) throw new Error(`setup: could not count this account's setup runs (${error.message})`);
-  return count ?? 0;
+  const runs = (data ?? []) as OnboardingRunRow[];
+  const outages = runs.filter((run) => run.status === "partial" && providerDown(stateFromRun(run, null))).length;
+  return runs.length - Math.min(outages, PROVIDER_DOWN_RUNS_EXCUSED);
 }
 
 /**

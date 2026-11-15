@@ -1249,6 +1249,42 @@ export function renderNothingPlannedOps(a: NothingPlannedOpsEmail): RenderedEmai
   };
 }
 
+export interface ProviderBalanceOpsEmail {
+  /** US dollars left on the DataForSEO account. */
+  balance: number;
+  empty: boolean;
+  /** The warning line the balance fell under. */
+  threshold: number;
+}
+
+/**
+ * To the operators, while the search-data balance is low. From 2026-11-10 it
+ * sat at zero for five days: every first look planned nothing, and the only
+ * trace was a sentence on a screen the person had closed.
+ */
+export function renderProviderBalanceOps(a: ProviderBalanceOpsEmail): RenderedEmail {
+  const left = `$${a.balance.toFixed(2)}`;
+  return {
+    subject: a.empty ? "DataForSEO balance is empty: first looks cannot plan" : `DataForSEO balance is low: ${left} left`,
+    preheader: a.empty ? "Top it up; new signups get no article until then." : `Under the $${a.threshold} warning line.`,
+    footerNote: `Sent because this address is in ADMIN_EMAILS.`,
+    html:
+      eyebrow("Search data") +
+      heading(a.empty ? "The DataForSEO balance is empty" : "The DataForSEO balance is low") +
+      emailParagraph(
+        a.empty
+          ? `The balance is ${esc(left)}. Until it is topped up, keyword research answers nothing: a first look plans no article, and the person who just signed up is told the problem is on our side.`
+          : `${esc(left)} is left, under the $${a.threshold} warning line. A first look spends about half a dollar of it.`,
+      ) +
+      emailParagraph(
+        a.empty
+          ? "First looks cut short by this are tried again overnight once the balance is back, and they do not use up the account's free runs."
+          : "This is sent once a day while the balance stays under the line.",
+      ) +
+      emailButton("https://app.dataforseo.com/api-dashboard", "Open DataForSEO"),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Senders
 // ---------------------------------------------------------------------------
@@ -1622,6 +1658,27 @@ export async function notifyOperatorsNothingPlanned(
       workspaceId: scope.workspaceId,
     },
     () => renderNothingPlannedOps({ ...data, contacts }),
+  );
+}
+
+/**
+ * Tell the operators the search-data balance is low, once a UTC day. Nothing
+ * when ADMIN_EMAILS is unset; the `system_events` row the caller records is
+ * then the only trace (lib/seo/balance.ts).
+ */
+export async function notifyOperatorsProviderBalance(
+  supabase: SupabaseClient,
+  data: ProviderBalanceOpsEmail,
+  at: Date = new Date(),
+): Promise<SendOnceOutcome> {
+  const to = operatorRecipients();
+  if (to.length === 0) return { sent: 0, skipped: 0, failed: 0 };
+  return sendOnce(
+    supabase,
+    to,
+    // Required, as the digest is: "account" carries no unsubscribe link.
+    { type: "ops_provider_balance", subjectId: `dataforseo:${utcDay(at)}`, category: "account" },
+    () => renderProviderBalanceOps(data),
   );
 }
 
