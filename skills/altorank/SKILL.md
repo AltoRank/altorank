@@ -1,6 +1,6 @@
 ---
 name: altorank
-description: Drive AltoRank from a coding agent - audit a site's agent readiness, read Search Console, find keywords, write SEO drafts into a human's review queue, move the content plan, edit drafts by find-and-replace. Never publishes or approves.
+description: Drive AltoRank (open-source SEO and AI-search tool) from a coding agent - track how often ChatGPT, Gemini and Google AI Mode name a brand, audit a site's AI readiness, read Search Console, find keywords, write SEO drafts into a human's review queue, move the content plan, submit changed pages to IndexNow. Never publishes or approves.
 ---
 
 # AltoRank for coding agents
@@ -107,6 +107,26 @@ describe what happened to a person.
 
 Mutations share a second limit of 30 a minute per key on top of the 120/min.
 `X-RateLimit-Mutations-*` headers say where you stand.
+
+## AI visibility (how often AI answers name the site)
+
+Each week AltoRank asks the ChatGPT app, Gemini and Google AI Mode a fixed set
+of buyer questions several times each and records whether the answers name the
+site. `GET /geo/visibility?workspace_id=` returns the latest sweep:
+`mention_rate_pct` with `mention_range_95_pct`, `named_instead` (rival brands),
+`cited_domains` (sources the answers read, not necessarily rivals), and the
+same per engine and per question.
+
+- **Always give the range with the rate.** With 90 answers, "4%" can be
+  anywhere from about 2% to 11%; with few answers a small rate cannot be told
+  from zero.
+- `run: null` means not tracked yet: no data, not zero visibility.
+- `run.status: "running"` means still collecting; `"partial"` means fewer
+  answers than planned. Say which.
+- The question set is the measurement. Change it (`POST /geo/prompts`
+  `{ workspace_id, add?, remove? }`) or switch tracking (`POST /geo/tracking`
+  `{ workspace_id, enabled }`) only when the human asked, and say the trend
+  restarts. Both need the write scope; tracking needs a paid plan.
 
 ## Search Console (read-only, stored data)
 
