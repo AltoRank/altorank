@@ -18,6 +18,8 @@ import {
   renderTrialStarted,
   renderNothingPlannedOps,
   notifyOperatorsNothingPlanned,
+  renderProviderBalanceOps,
+  notifyOperatorsProviderBalance,
   isoWeek,
 } from "../lifecycle";
 import { graceEndsAt } from "@/lib/billing/dunning";
@@ -611,6 +613,30 @@ describe("a first look planned nothing: the operators' email", () => {
     try {
       const unreachable = { from: () => { throw new Error("must not read"); } } as never;
       expect(await notifyOperatorsNothingPlanned(unreachable, { accountId: "a", workspaceId: "w" }, { runId: "r", domain: null, pool, preTrial: true })).toEqual({ sent: 0, skipped: 0, failed: 0 });
+    } finally {
+      if (saved !== undefined) process.env.ADMIN_EMAILS = saved;
+    }
+  });
+});
+
+describe("search-data balance, to the operators", () => {
+  it("says what is left and what it stops", () => {
+    const low = renderProviderBalanceOps({ balance: 6.5, empty: false, threshold: 10 });
+    expect(low.subject).toBe("DataForSEO balance is low: $6.50 left");
+    expect(low.html).toContain("under the $10 warning line");
+    expect(low.footerNote).toContain("ADMIN_EMAILS");
+    const empty = renderProviderBalanceOps({ balance: -0.04, empty: true, threshold: 10 });
+    expect(empty.subject).toBe("DataForSEO balance is empty: first looks cannot plan");
+    expect(empty.html).toContain("$-0.04");
+    expect(empty.html).toContain("do not use up the account's free runs");
+  });
+
+  it("is one email a UTC day, and nothing when no operator is configured", async () => {
+    const saved = process.env.ADMIN_EMAILS;
+    delete process.env.ADMIN_EMAILS;
+    try {
+      const unreachable = { from: () => { throw new Error("must not read"); } } as never;
+      expect(await notifyOperatorsProviderBalance(unreachable, { balance: 1, empty: false, threshold: 10 })).toEqual({ sent: 0, skipped: 0, failed: 0 });
     } finally {
       if (saved !== undefined) process.env.ADMIN_EMAILS = saved;
     }

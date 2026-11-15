@@ -132,6 +132,16 @@ describe("the overnight retry", () => {
     expect(recordRunStarted).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ workspaceId: "ws1", runId: "r2", userId: null, trigger: "provider_retry" }));
   });
 
+  it("starts nothing while the search-data balance is empty, and goes on when it is not or is unknown", async () => {
+    // 2026-11-14: the retry ran into the empty balance it was retrying.
+    const start = vi.fn(async () => ({ runId: "r2", created: true }));
+    const deps = { allowed: async () => true, start: start as never, dispatch: vi.fn(async () => undefined) };
+    expect(await retryProviderDownRuns(client([row()]), NOW, { ...deps, balance: async () => ({ balance: -0.04, low: true, empty: true }) })).toEqual([]);
+    expect(start).not.toHaveBeenCalled();
+    expect(await retryProviderDownRuns(client([row()]), NOW, { ...deps, balance: async () => ({ balance: 4, low: true, empty: false }) })).toHaveLength(1);
+    expect(await retryProviderDownRuns(client([row()]), NOW, { ...deps, balance: async () => null })).toHaveLength(1);
+  });
+
   it("starts nothing the spend gate refuses, for a site with an article, or for a run that is not the site's latest", async () => {
     const start = vi.fn(async () => ({ runId: "r2", created: true }));
     expect(await retryProviderDownRuns(client([row()]), NOW, { allowed: async () => false, start: start as never, dispatch: vi.fn() })).toEqual([{ workspaceId: "ws1", skipped: "not allowed" }]);

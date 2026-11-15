@@ -89,9 +89,10 @@ async function run(request: Request) {
     return { reaped: 0, runIds: [] as string[] };
   });
 
-  // Then: the first looks a provider outage cut short, tried again once, as
-  // the setup screen promised (lib/onboarding/provider-retry.ts). Bounded by
-  // the spend gate's count of pre-trial runs, so never more than once a site.
+  // Then: the first looks a provider outage cut short, tried again, as the
+  // setup screen promised (lib/onboarding/provider-retry.ts). Bounded by the
+  // spend gate's count of pre-trial runs, and held while the search-data
+  // balance is empty; reading that balance is also the nightly low-balance check.
   const providerRetries = await retryProviderDownRuns(supabase, startedAt.getTime()).catch((err) => {
     console.error(`[cron.analyze] provider retries: ${err instanceof Error ? err.message : err}`);
     return [];

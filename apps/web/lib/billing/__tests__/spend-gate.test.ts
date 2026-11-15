@@ -47,15 +47,16 @@ const freeTier = (used: number, over: Partial<Quota> = {}): Quota =>
  */
 function client(
   paused: { status: string; paused_until: string | null } | null = null,
-  setupRuns = 0,
+  setupRuns: number | Record<string, unknown>[] = 0,
   siteAccount = "a",
 ): SupabaseClient {
+  const runs = typeof setupRuns === "number" ? Array.from({ length: setupRuns }, () => ({ status: "partial", phases: [] })) : setupRuns;
   return {
     from: (table: string) => ({
       select: () => ({
         eq: () =>
           table === "onboarding_runs"
-            ? Promise.resolve({ count: setupRuns, error: null })
+            ? Promise.resolve({ data: runs, error: null })
             : {
                 maybeSingle: async () => ({
                   data: { account_id: siteAccount, status: "active", paused_until: null, ...(paused ?? {}) },
@@ -303,6 +304,24 @@ describe("a trial-gated account spends on setup and nothing after it", () => {
     // The bound is on setup only: the draft inside the second run still asks
     // the draft counter.
     expect(await canSpend(client(null, 2), "a", { action: "draft" })).toMatchObject({ allowed: true });
+  });
+
+  it("does not count a run a provider outage cut short, up to two of them", async () => {
+    // A signup on 2026-11-13: the search-data balance was empty, the first
+    // look and the overnight retry both planned nothing, and that was the
+    // account's two free runs.
+    getQuota.mockResolvedValue(gated(0));
+    const outage = { status: "partial", phases: [{ phase: "planning", status: "skipped", cause: "provider" }] };
+    const failed = { status: "partial", phases: [{ phase: "keywords", status: "skipped", detail: "Your site could not be read." }] };
+    expect(await canSpend(client(null, [outage, outage]), "a", { action: "setup" })).toMatchObject({ allowed: true });
+    expect(await canSpend(client(null, [outage, outage, failed]), "a", { action: "setup" })).toMatchObject({ allowed: true });
+    // The third outage counts, and with a run of the person's own that is two.
+    expect(await canSpend(client(null, [outage, outage, outage, failed]), "a", { action: "setup" })).toMatchObject({
+      allowed: false,
+      message: TRIAL_SETUP_MESSAGE,
+    });
+    // Four outages and nothing else: two excused, two counted.
+    expect(await canSpend(client(null, [outage, outage, outage, outage]), "a", { action: "setup" })).toMatchObject({ allowed: false });
   });
 
   it("does not bound setup runs for an account that is not trial-gated", async () => {

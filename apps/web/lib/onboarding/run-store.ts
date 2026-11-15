@@ -18,6 +18,7 @@ import { FREE_TIER_PACE } from "@/lib/content/pace";
 import { planHoldApplies } from "@/lib/billing/trial-hold";
 import { accountTrialGate } from "@/lib/billing/body-lock";
 import { providerRetryAllowed } from "./provider-retry-gate";
+import { checkProviderBalance } from "@/lib/seo/balance";
 import type { EmptyPool, OnboardingHeld } from "./events";
 import { STOPPED_TO_CHANGE, stoppableToChange } from "./stop-to-change";
 import {
@@ -571,7 +572,7 @@ async function announceOutcome(
   runId: string,
   status: string,
   scope: { workspaceId: string | null; accountId: string | null },
-  steps: readonly { phase: string; status: string; detail?: string | null }[] | null,
+  steps: readonly { phase: string; status: string; detail?: string | null; cause?: string | null }[] | null,
   opts: { reason?: string; emptyPool?: EmptyPool | null },
 ): Promise<void> {
   if (status === "running") return;
@@ -599,6 +600,10 @@ async function announceOutcome(
     },
     supabase,
   );
+
+  // A provider that did not answer may be a balance that ran out: look now,
+  // which tells the operators the same minute (lib/seo/balance.ts).
+  if (setupFailedFacts(status, steps, reason, opts.emptyPool ?? null).provider) await checkProviderBalance(supabase);
 
   // The person is told by `sendHeldSetupFailures`, not here: the email waits
   // until a rerun from the screen has had its chance to answer it.
