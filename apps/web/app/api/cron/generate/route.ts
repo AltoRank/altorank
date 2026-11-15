@@ -29,6 +29,7 @@ import {
   remindEndingPauses,
   sweepUnfinishedSetups,
 } from "@/lib/email/schedule-events";
+import { sweepGateFollowups } from "@/lib/email/gate-followups";
 import {
   orderByStaleness,
   latestPerWorkspace,
@@ -601,6 +602,10 @@ async function run(request: Request) {
   // setup stopped. A site that did get a draft was told at that moment.
   const setupNotices = await sweepUnfinishedSetups(supabase);
 
+  // The people who read the trial offer and left: the next articles a day
+  // later, the one question four days later (lib/email/gate-followups.ts).
+  const gateFollowups = await sweepGateFollowups(supabase);
+
   // Drafts sitting in review that nobody has been told about. The signup
   // fan-out announces its own batch from `after()` on the onboarding worker,
   // and `after()` is work a serverless platform may cut short; this is what
@@ -620,6 +625,7 @@ async function run(request: Request) {
     pauseReminders,
     pausedNotices,
     setupNotices,
+    gateFollowups,
     unannounced,
     owedBodies: { dispatched: owed.dispatched.length, gaveUp: owed.gaveUp.length },
     generated: results.filter((r) => r.status === "generated").length,
