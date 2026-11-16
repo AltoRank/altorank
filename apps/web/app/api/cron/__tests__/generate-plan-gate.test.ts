@@ -91,6 +91,7 @@ vi.mock("@/lib/plan/draft-claim", () => ({
   recordEntryFailure: async () => undefined,
   releaseClaim: async () => undefined,
 }));
+vi.mock("@/lib/email/gate-followups", () => ({ sweepGateFollowups: async () => [] }));
 vi.mock("@/lib/email/schedule-events", () => ({
   announceNothingWritten: async () => "",
   announcePausedSites: async () => [],

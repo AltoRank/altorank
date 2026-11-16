@@ -71,10 +71,22 @@ export type CheckoutFailure = (typeof CHECKOUT_FAILURES)[number];
 export const CHECKOUT_UIS = ["hosted", "embedded"] as const;
 export type CheckoutUi = (typeof CHECKOUT_UIS)[number];
 
+/**
+ * What stopped a trial, as the person picked it (labels:
+ * lib/onboarding/gate-answer.ts). One pick per site: the first answer is
+ * the one kept.
+ */
+export const GATE_REASONS = ["price", "card", "quality", "diy", "tool", "later", "other"] as const;
+export type GateReason = (typeof GATE_REASONS)[number];
+/** Where the answer was given: the gate itself, or the link in a follow-up email. */
+export const GATE_ANSWER_VIAS = ["gate", "email"] as const;
+export type GateAnswerVia = (typeof GATE_ANSWER_VIAS)[number];
+
 /** The props each step may carry, and the list each value must be on. */
 const ALLOWED: Partial<Record<OnboardingStepName, Record<string, readonly string[]>>> = {
   setup_ending_shown: { ending: SETUP_ENDINGS },
   offer_seen: { viewport: VIEWPORTS },
+  gate_answer: { reason: GATE_REASONS, via: GATE_ANSWER_VIAS },
   article_opened: { from: OPENED_FROM, viewport: VIEWPORTS },
   article_copied: { format: COPY_FORMATS, surface: COPY_SURFACES },
   article_approved: { status: APPROVED_AS },
@@ -101,6 +113,8 @@ export type StepProps = Partial<{
   how: CheckoutClose;
   stage: CheckoutFailure;
   checkout: CheckoutUi;
+  reason: GateReason;
+  via: GateAnswerVia;
 }>;
 
 /**

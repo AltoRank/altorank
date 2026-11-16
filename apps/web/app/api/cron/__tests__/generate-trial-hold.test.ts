@@ -73,6 +73,7 @@ vi.mock("next/server", async () => {
   return { ...real, after: (fn: () => unknown) => { deferred.push(fn); } };
 });
 vi.mock("@/lib/email/draft-batch", () => ({ announceDraftBatch: async () => "emailed", sweepUnannouncedDrafts: async () => [] }));
+vi.mock("@/lib/email/gate-followups", () => ({ sweepGateFollowups: async () => [] }));
 vi.mock("@/lib/email/schedule-events", () => ({
   announceNothingWritten: async () => "",
   announcePausedSites: async () => [],

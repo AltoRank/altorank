@@ -44,6 +44,7 @@ import { priceLine, type TrialOfferFacts } from "@/lib/billing/trial-offer";
 import { EDITOR_FITS_QUERY, firstArticleReturn } from "@/lib/billing/checkout-return";
 import { FirstArticleCardView, type PendingFirstArticle } from "./first-article-card";
 import { EmailMeArticle } from "./first-look-exits";
+import { GateQuestion } from "./gate-question";
 import { SetupAsk } from "./setup-ask";
 import { TopicBriefs } from "./topic-briefs";
 import { useFirstArticleLive } from "./use-first-article-live";
@@ -277,6 +278,9 @@ export function GateTop({
           below={canBuy && hasArticle && written ? <EmailMeArticle workspaceId={workspaceId} className="mt-3 block w-full text-center" /> : null}
         />
       </div>
+      {/* Why not, asked once the article is there to judge: one folded line,
+          under the offer and quieter than everything in it. */}
+      {canBuy && hasArticle && written && <GateQuestion workspaceId={workspaceId} className="self-center" />}
       {/* Under the offer, folded and quieter than it: as an h2 beside the
           offer, why this article outranked it (UX clarity audit 2026-10-18,
           #4); as a fold under it, it does not. */}

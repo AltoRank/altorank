@@ -49,6 +49,9 @@ export const PUBLIC_PREFIXES = [
   // the reader looked at a password field - and the signed token rode into the
   // sign-in URL, into history and into any referrer that page emits.
   "/hold",
+  // "What stopped you?" from a follow-up email, on the same terms as /hold:
+  // the HMAC in the URL authorises it (lib/email/why-link.ts).
+  "/why",
   // OAuth discovery for the hosted MCP endpoint (RFC 8414 / 9728). An MCP
   // client reads these before anyone has signed in; that is their purpose.
   "/.well-known",
