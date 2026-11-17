@@ -20,7 +20,11 @@
 //      the site's authority) and page type (articles win the results page).
 //   3. Pick. The best survivor is planned. Only four things remove a topic:
 //      a business's name, a navigational search, an off-topic search, and a
-//      results page won by product or service pages.
+//      results page won by product or service pages. The last one spares a
+//      search whose words ask a question (`asksQuestion`), and it never
+//      removes everything: when every page read is a providers' page, the
+//      best of them with an article to cite is planned at lower confidence
+//      (lib/onboarding/first-look-plan.ts, the floor).
 //
 // The article keeps every check it had: the brief written here passes the
 // same `readOpportunity` the writer reads before an automatic draft, and the
@@ -34,6 +38,7 @@ import { describeBusiness } from "./buyer-model";
 import { isBrandTerm } from "./seeds";
 import { rivalNamed, type ResultsPageReading } from "./results-page";
 import { relativeDifficulty } from "@/lib/seo/difficulty";
+import { classifyIntent } from "@/lib/seo/intent";
 
 /** How many searches the suggestion asks for. */
 export const SUGGESTED_TOPICS = 20;
@@ -386,10 +391,32 @@ export function rejectBeforeResults(
   return null;
 }
 
-/** Once the results page is read: who it belongs to and what wins it. */
-export function rejectOnResults(reading: Pick<ResultsPageReading, "type" | "why">): HardReject | null {
+/**
+ * The words alone ask a question: "how to", "what is", "ideas", "tips", "vs",
+ * by the intent lexicon (lib/seo/intent.ts), with no results page consulted.
+ * False for a language the lexicon does not cover: there the words say
+ * nothing either way, and the results page decides as before.
+ *
+ * Providers' pages crowding the results do not make "garden office ideas" a
+ * landing-page search: whoever types it wants an answer, and an article
+ * gives one. Its page type still scores 0, so a search articles win ranks
+ * above it.
+ */
+export function asksQuestion(query: string, languageCode: string): boolean {
+  const read = classifyIntent(query, languageCode);
+  return read.lexicon && read.intent === "info" && read.signals.some((s) => s.intent === "info" && s.weight > 0);
+}
+
+/** A results page that providers' own pages win: a service or a local page. */
+export const crowdedByProviders = (reading: Pick<ResultsPageReading, "type">): boolean => reading.type === "service" || reading.type === "local";
+
+/**
+ * Once the results page is read: who it belongs to and what wins it. A
+ * providers' page does not remove a search whose words ask a question.
+ */
+export function rejectOnResults(reading: Pick<ResultsPageReading, "type" | "why">, opts: { question?: boolean } = {}): HardReject | null {
   if (reading.type === "navigational") return "navigational";
-  if (reading.type === "service" || reading.type === "local") return "needs_page";
+  if (crowdedByProviders(reading) && !opts.question) return "needs_page";
   if (reading.type === "other" && reading.why === "offtopic") return "offtopic";
   return null;
 }
@@ -432,7 +459,9 @@ export function selectionReasons(chosen: Pick<ChosenTopic, "topic" | "score" | "
       : "No search volume is reported for it in your market yet, so demand is unmeasured: it was chosen for how well it fits your readers.",
     chosen.page.reading.type === "editorial" || chosen.page.reading.type === "mixed"
       ? "Articles are what rank for it today."
-      : "Few articles rank for it yet, so a good one has room.",
+      : crowdedByProviders(chosen.page.reading)
+        ? "Providers' own pages win most of this search today; an article answers the question its readers ask around it."
+        : "Few articles rank for it yet, so a good one has room.",
   ];
 }
 
@@ -452,7 +481,9 @@ export function topicBrief(chosen: ChosenTopic, ctx: { fingerprint: string; doma
   if (evidence.length === 0) return null;
   const angle = validArticleAngle(chosen.topic.angle, chosen.topic.query) ? chosen.topic.angle : "";
   if (!angle) return null;
-  const lower = evidence.length < 2;
+  // One article to cite, or a page providers' own pages win: planned, and
+  // said to be lower confidence (the planning line and the card say so).
+  const lower = evidence.length < 2 || crowdedByProviders(chosen.page.reading);
   const home = `https://${ctx.domain.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
   const demandLine = chosen.score.demandMeasured
     ? `About ${chosen.volume!.toLocaleString("en-US")} searches a month.`

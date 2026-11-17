@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  asksQuestion,
   bestCase,
   demandScore,
   describeScore,
@@ -159,6 +160,21 @@ describe("what removes a topic", () => {
     expect(rejectOnResults(providers)).toBe("needs_page");
     expect(rejectOnResults(readResultsPage([article(1), article(2)], { term: "housing grant" }))).toBeNull();
   });
+  it("keeps a search whose words ask a question, whoever wins its results page", () => {
+    const providers = readResultsPage([1, 2, 3, 4, 5, 6, 7].map(provider), { term: "housing grant" });
+    expect(rejectOnResults(providers, { question: true })).toBeNull();
+    expect(rejectOnResults({ type: "navigational" }, { question: true })).toBe("navigational");
+  });
+  it("reads a question from the words alone, and only in a language it has words for", () => {
+    for (const q of ["how to soundproof a room", "garden office ideas", "roof repair tips", "what is a party wall", "come scegliere un materasso"]) {
+      expect(asksQuestion(q, q.startsWith("come") ? "it" : "en"), q).toBe(true);
+    }
+    for (const q of ["roofing contractor", "buy garden office", "best roofing company", "party wall surveyor"]) {
+      expect(asksQuestion(q, "en"), q).toBe(false);
+    }
+    // No lexicon: the words say nothing either way, and the results page decides.
+    expect(asksQuestion("πώς να διαλέξετε στρώμα", "el")).toBe(false);
+  });
 });
 
 describe("the brief", () => {
@@ -189,6 +205,17 @@ describe("the brief", () => {
     expect(brief.demand).toBeUndefined();
     expect(brief.reason).toContain("About 480 searches a month.");
     expect(readOpportunity(brief, fingerprint)).not.toBeNull();
+  });
+
+  it("is lower confidence on a page providers' own pages win, however many articles it cites", () => {
+    const organic = [article(1, "housing grant"), article(2, "housing grant"), ...[3, 4, 5, 6, 7, 8, 9].map(provider)];
+    const c = chosen(organic);
+    expect(c.page.reading.type).toBe("service");
+    const brief = topicBrief(c, { fingerprint, domain: "relief.example" })!;
+    expect(brief.evidenceUrls).toHaveLength(2);
+    expect(brief.confidence).toBe("lower");
+    expect(readOpportunity(brief, fingerprint)).not.toBeNull();
+    expect(selectionReasons(c)[2]).toMatch(/Providers' own pages win most of this search/);
   });
 
   it("is not written with nothing in the results to cite, a dated headline, or a destination off the site", () => {
