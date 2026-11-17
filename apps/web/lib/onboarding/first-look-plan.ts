@@ -18,6 +18,14 @@
 // the results provider not answering (`provider`), and a trial hold that is
 // already spent or a calendar already full. A topic is never refused for
 // having unmeasured demand or for its readers not being shoppers.
+//
+// Nor is a service business left with nothing because providers' own pages
+// win its searches. Every first look of one such site read its twelve
+// results pages, removed all twelve as "needs a landing page", and planned
+// nothing, so the person never saw an article. Now a search whose words ask a
+// question survives a providers' page (`asksQuestion`), and when every page
+// read was a providers' page, the best one with an article to cite is planned
+// at lower confidence: the floor.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PRE_TRIAL_DRAFTS, planHold } from "@/lib/billing/trial-hold";
@@ -26,6 +34,7 @@ import { e2eStubsEnabled, isReservedTestDomain } from "@/lib/e2e/stubs";
 import { askStructured, extractJson, modelAvailable, type AskModel } from "@/lib/keyword-research/buyer-model";
 import type { FitProfile } from "@/lib/keyword-research/buyer-fit";
 import {
+  asksQuestion,
   bestCase,
   describeScore,
   HARD_REJECT_WORDS,
@@ -86,6 +95,8 @@ export interface FirstLookSummary {
   planned: number;
   /** Kept with a brief and not planned: the topics a trial opens. */
   ready: number;
+  /** Planned on the floor: every page read was won by providers' own pages. */
+  floor?: boolean;
   modelCalls: number;
   chosen?: { term: string; score: TopicScore; volume: number | null; line: string };
 }
@@ -298,7 +309,13 @@ export async function planFirstLook(
   // --- 3. Read the results pages of the best, while reading can change the pick
   const named = namedBusinesses(business);
   const serpOf = opts.serp ?? ((term: string, at: typeof locale) => fetchAdvancedSerp(term, at, { rich: true }));
+  const briefFor = (c: Candidate): Opportunity | null => {
+    const chosen: ChosenTopic = { topic: c.topic, score: c.score, volume: c.volume, difficulty: c.difficulty, page: c.page!, organicUrls: c.organicUrls ?? [] };
+    return topicBrief(chosen, { fingerprint, domain, conversionUrl: business?.conversionUrl ?? null, now: opts.now });
+  };
   const accepted: Candidate[] = [];
+  // Removed as providers' pages, read and scored all the same: the floor's choice.
+  const crowded: Candidate[] = [];
   const unread = () => candidates.filter((c) => !c.page).sort((a, b) => bestCase(b.score) - bestCase(a.score) || b.score.total - a.score.total || a.order - b.order);
   const settledEnough = () => {
     if (accepted.length < room) return false;
@@ -329,24 +346,44 @@ export async function planFirstLook(
       summary.resultsRead++;
       const organic = judgedResults(serp.organic);
       const reading = readResultsPage(organic, { term: key, named, domain });
-      const why = rejectOnResults(reading);
-      if (why) { reject(why); candidates = candidates.filter((x) => x !== c); return; }
+      const why = rejectOnResults(reading, { question: asksQuestion(key, languageCode) });
       c.page = { reading, ...(existingPageIn(organic, c.row?.source_url, domain) ? { ownUrl: existingPageIn(organic, c.row?.source_url, domain) } : {}) };
       c.organicUrls = organic.map((r) => r.url);
       c.score = scoreTopic(c.topic, { volume: c.volume, difficulty: c.difficulty, authority: workspace.dr, page: c.page });
-      const chosen: ChosenTopic = { topic: c.topic, score: c.score, volume: c.volume, difficulty: c.difficulty, page: c.page, organicUrls: c.organicUrls };
-      const brief = topicBrief(chosen, { fingerprint, domain, conversionUrl: business?.conversionUrl ?? null, now: opts.now });
+      if (why) {
+        reject(why);
+        if (why === "needs_page") crowded.push(c);
+        candidates = candidates.filter((x) => x !== c);
+        return;
+      }
+      const brief = briefFor(c);
       if (!brief) { summary.noEvidence++; candidates = candidates.filter((x) => x !== c); return; }
       c.brief = brief;
       accepted.push(c);
     }));
   }
 
+  // The floor: every page read was a providers' page. The best of them with
+  // an article or a discussion in its results to cite is planned, at lower
+  // confidence (`topicBrief`), so the person still sees a first article.
+  if (!accepted.length && crowded.length) {
+    crowded.sort((a, b) => b.score.total - a.score.total || a.order - b.order);
+    for (const c of crowded) {
+      if (accepted.length >= room) break;
+      const brief = briefFor(c);
+      if (!brief) continue;
+      c.brief = brief;
+      accepted.push(c);
+    }
+    if (accepted.length) summary.floor = true;
+  }
+
   accepted.sort((a, b) => b.score.total - a.score.total || a.order - b.order);
   if (!accepted.length) {
     // Nothing read could be cited. When the provider answered none of the
     // pages, that is ours; otherwise every candidate read was one of the
-    // four things an article is never planned for.
+    // four things an article is never planned for, and no providers' page
+    // among them had an article to cite.
     return nothing(summary.resultsRead === 0 && (summary.resultsFailed > 0 || opts.firstLook.timedOut) ? "provider" : "none");
   }
 

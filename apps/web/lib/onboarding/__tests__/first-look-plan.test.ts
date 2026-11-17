@@ -80,6 +80,13 @@ const providers = (term: string): SerpData => ({
   aiOverview: null,
 });
 
+/** Providers' pages win it, and one article in the results is there to cite. */
+const crowded = (term: string): SerpData => ({
+  ...providers(term),
+  organic: [...providers(term).organic, { rank: 8, title: `${term}: a guide`, url: `https://news-8.example/blog/${term.replace(/ /g, "-")}`, description: `A guide to ${term}.`, domain: "news-8.example", wordCount: 900 }],
+});
+const FINGERPRINT = contextKey({ business: BUSINESS, domain: "relief.example", languageCode: "en", locationCode: 2586 });
+
 const reply = (topics: unknown[]) => vi.fn(async (..._a: unknown[]) => JSON.stringify({ topics }));
 
 function setup(over: { keywords?: Row[]; calendar?: Row[] } = {}) {
@@ -153,6 +160,43 @@ describe("planFirstLook", () => {
     const out = await planFirstLook(db, "ws1", { ...base(), ask, serp: async (t) => (t === "housing grant consultant" ? providers(t) : articles(t)) });
     expect(out.plan.map((p) => p.term)).toEqual(["housing grant documents"]);
     expect(out.summary.rejected).toEqual({ needs_page: 1 });
+  });
+
+  it("keeps a search whose words ask a question on a providers' page, at lower confidence", async () => {
+    const { db, tables } = setup();
+    const ask = reply([topic("housing grant consultant", { fit: 5 }), topic("how to appeal a housing grant decision", { fit: 3 })]);
+    const out = await planFirstLook(db, "ws1", { ...base(), ask, serp: async (t) => (t === "housing grant consultant" ? providers(t) : crowded(t)) });
+    expect(out.plan.map((p) => p.term)).toEqual(["how to appeal a housing grant decision"]);
+    expect(out.summary.rejected).toEqual({ needs_page: 1 });
+    expect(out.summary.floor).toBeUndefined();
+    const row = tables.keywords.find((r) => r.term === "how to appeal a housing grant decision")!;
+    expect(readOpportunity(row.opportunity, FINGERPRINT)).toMatchObject({ status: "qualified", confidence: "lower" });
+    expect(out.selection.get("how to appeal a housing grant decision")?.reasons.join(" ")).toMatch(/Providers' own pages win most of this search/);
+  });
+
+  it("plans the best providers' page with an article to cite when every page read was providers' pages: the floor", async () => {
+    const { db, tables } = setup();
+    const ask = reply([topic("housing grant consultant", { fit: 5 }), topic("housing grant agency", { fit: 4 }), topic("housing grant lawyer", { fit: 5 })]);
+    // The lawyer search outscores the rest but its page has nothing to cite.
+    const serp = async (t: string) => (t === "housing grant lawyer" ? providers(t) : crowded(t));
+    const out = await planFirstLook(db, "ws1", { ...base(), ask, serp });
+    expect(out.outcome).toBe("planned");
+    expect(out.plan.map((p) => p.term)).toEqual(["housing grant consultant"]);
+    expect(out.summary).toMatchObject({ floor: true, planned: 1, ready: 0, rejected: { needs_page: 3 } });
+    const row = tables.keywords.find((r) => r.term === "housing grant consultant")!;
+    expect(row.status).toBe("planned");
+    expect(readOpportunity(row.opportunity, FINGERPRINT)).toMatchObject({ status: "qualified", confidence: "lower" });
+    // The floor plans the first article only, not a list of weak ones.
+    expect(tables.keywords.filter((r) => r.term === "housing grant agency")).toHaveLength(0);
+    expect(tables.calendar_entries).toHaveLength(1);
+  });
+
+  it("still plans nothing when no providers' page read has an article to cite", async () => {
+    const ask = reply([topic("housing grant consultant"), topic("housing grant agency")]);
+    const out = await planFirstLook(setup().db, "ws1", { ...base(), ask, serp: async (t) => providers(t) });
+    expect(out.outcome).toBe("none");
+    expect(out.summary.floor).toBeUndefined();
+    expect(out.summary.rejected).toEqual({ needs_page: 2 });
   });
 
   it("stops reading results pages once no unread topic could beat the picks", async () => {

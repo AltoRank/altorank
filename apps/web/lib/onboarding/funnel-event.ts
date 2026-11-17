@@ -112,7 +112,7 @@ function funnelEventOf(input: PlanFunnelEventInput): SystemEvent {
     return {
       ...base,
       level: look.planned > 0 ? "info" : "warn",
-      message: `First look: ${look.suggested} suggested${removed ? `, removed ${removed}` : ""} -> ${look.resultsRead} results page${look.resultsRead === 1 ? "" : "s"} read -> ${look.planned} planned${look.chosen ? `, chosen at ${describeScore(look.chosen.score, look.chosen.volume)}` : input.planningDetail ? `: ${input.planningDetail}` : ""}${spendSentence(spend, input.draftIncluded === true)}`,
+      message: `First look: ${look.suggested} suggested${removed ? `, removed ${removed}` : ""} -> ${look.resultsRead} results page${look.resultsRead === 1 ? "" : "s"} read -> ${look.planned} planned${look.floor ? " on the floor (every page read was providers' pages)" : ""}${look.chosen ? `, chosen at ${describeScore(look.chosen.score, look.chosen.volume)}` : input.planningDetail ? `: ${input.planningDetail}` : ""}${spendSentence(spend, input.draftIncluded === true)}`,
       context: {
         runId: input.runId ?? null,
         suggested: look.suggested,
@@ -121,6 +121,7 @@ function funnelEventOf(input: PlanFunnelEventInput): SystemEvent {
         ...(look.resultsFailed ? { resultsFailed: look.resultsFailed } : {}),
         ...(look.noEvidence ? { noEvidence: look.noEvidence } : {}),
         planned: look.planned,
+        ...(look.floor ? { floor: true } : {}),
         ready: look.ready,
         modelCalls: look.modelCalls,
         ...(look.chosen ? { chosenScore: look.chosen.score, chosenVolume: look.chosen.volume } : {}),
