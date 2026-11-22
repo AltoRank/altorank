@@ -9,11 +9,15 @@
  *   npm run evals -- --fixtures=DIR --capture-serp  buy results pages for terms that have none (live)
  *   npm run evals -- --fixtures=DIR --capture-pages store copies of cited pages for claim cases
  *
- * Options: --only=buyer-fit,qualification,pipeline,fact-check,page-type  --case=ID[,ID]
+ * Options: --only=buyer-fit,qualification,pipeline,fact-check,page-type,first-look-yield  --case=ID[,ID]
  *          (page-type: the page-type rule on the stored results pages, the judge's
  *          stored answers replayed; free and deterministic in every mode; a term
  *          with no stored answer is read by the word lists, counted, and fails
- *          --require-complete)
+ *          --require-complete; first-look-yield: whole first looks replayed from
+ *          DIR/first-look on their stored answers and results pages, free in every
+ *          mode; --require-complete fails when a usable-profile case plans no
+ *          article, or a pick made below the bar is labelled not worth publishing
+ *          or has no label)
  *          --out=DIR (writes report.md + report.json)  --worst=N  --require-complete
  * DIR may also come from ALTORANK_EVAL_FIXTURES. Live mode reads ANTHROPIC_API_KEY
  * (and DATAFORSEO_* for --capture-serp) from the environment and nothing else.
@@ -29,6 +33,7 @@ import { defaultPageFetcher } from "@/lib/seo/citation-check";
 import { Budget, type ModelClient } from "@/lib/evals/recorder";
 import { capturePages, captureSerps, planEvals, runEvals } from "@/lib/evals/run";
 import { renderMarkdown } from "@/lib/evals/score";
+import { firstLookShortfalls } from "@/lib/evals/first-look";
 import type { DecisionName } from "@/lib/evals/types";
 
 function arg(name: string): string | undefined {
@@ -99,13 +104,13 @@ async function main() {
     "spent this run": `$${result.recorder.budget.spentUsd.toFixed(4)}`,
   };
   if (result.stoppedAt) meta["stopped"] = result.stoppedAt;
-  const markdown = renderMarkdown({ title: "Decision evals", scores: result.scores, items: result.items, meta, worst: Number(arg("worst") ?? 25), funnels: result.funnels, pageType: result.pageType });
+  const markdown = renderMarkdown({ title: "Decision evals", scores: result.scores, items: result.items, meta, worst: Number(arg("worst") ?? 25), funnels: result.funnels, pageType: result.pageType, firstLook: result.firstLook });
   const out = arg("out");
   if (out) {
     const target = path.resolve(out);
     mkdirSync(target, { recursive: true });
     writeFileSync(path.join(target, "report.md"), markdown);
-    writeFileSync(path.join(target, "report.json"), `${JSON.stringify({ meta, scores: result.scores, funnels: result.funnels, pageType: result.pageType ?? null, items: result.items }, null, 2)}\n`);
+    writeFileSync(path.join(target, "report.json"), `${JSON.stringify({ meta, scores: result.scores, funnels: result.funnels, pageType: result.pageType ?? null, firstLook: result.firstLook ?? null, items: result.items }, null, 2)}\n`);
     log(`Wrote ${path.join(target, "report.md")}`);
   }
   console.log(markdown);
@@ -114,6 +119,11 @@ async function main() {
     console.error(`${missing} prompts have no stored answer${result.pageTypeMisses ? ` (${result.pageTypeMisses} of them page type's judge, read by the word lists instead)` : ""}: the prompts changed since the last live run, or the case was never run live. Re-record with --live.`);
     process.exitCode = 1;
   }
+  // The first-look guarantee: every usable-profile case planned an article,
+  // and none of the picks made below the bar is junk or unlabelled.
+  const shortfalls = arg("require-complete") && result.firstLook ? firstLookShortfalls(result.firstLook) : [];
+  for (const line of shortfalls) console.error(line);
+  if (shortfalls.length) process.exitCode = 1;
   if (result.stoppedAt) process.exitCode = 2;
 }
 

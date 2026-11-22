@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import { memoryDb, type MemoryRow } from "@/lib/evals/memory-db";
 
 const hold = vi.fn(async (): Promise<"open" | "held" | "spent"> => "held");
 vi.mock("@/lib/billing/trial-hold", async () => {
@@ -14,46 +14,8 @@ import { BudgetRefusedError } from "@/lib/billing/spend-scope";
 import { contextKey, readOpportunity } from "@/lib/keyword-research/opportunity";
 import type { SerpData } from "@/lib/seo/brief-data";
 
-// --- A small in-memory database: the tables and filters the planner uses ----
-
-type Row = Record<string, unknown>;
-function memoryDb(seed: Record<string, Row[]>) {
-  const tables: Record<string, Row[]> = { keywords: [], calendar_entries: [], site_pages: [], keyword_rankings: [], workspaces: [], ...seed };
-  let ids = 0;
-  const client = {
-    from(table: string) {
-      const rows = () => (tables[table] ??= []);
-      const filters: Array<(r: Row) => boolean> = [];
-      let op: "select" | "insert" | "update" | "delete" = "select";
-      let payload: Row | Row[] | null = null;
-      const q: Record<string, unknown> = {};
-      const matching = () => rows().filter((r) => filters.every((f) => f(r)));
-      const run = () => {
-        if (op === "insert") {
-          const added = (Array.isArray(payload) ? payload : [payload!]).map((r) => ({ id: `${table}-${++ids}`, ...r }));
-          rows().push(...added);
-          return { data: added, error: null };
-        }
-        if (op === "update") { for (const r of matching()) Object.assign(r, payload); return { data: null, error: null }; }
-        if (op === "delete") { tables[table] = rows().filter((r) => !filters.every((f) => f(r))); return { data: null, error: null }; }
-        return { data: matching(), error: null };
-      };
-      q.select = () => q;
-      q.insert = (p: Row | Row[]) => { op = "insert"; payload = p; return q; };
-      q.update = (p: Row) => { op = "update"; payload = p; return q; };
-      q.delete = () => { op = "delete"; return q; };
-      q.eq = (k: string, v: unknown) => { filters.push((r) => r[k] === v); return q; };
-      q.in = (k: string, v: unknown[]) => { filters.push((r) => v.includes(r[k])); return q; };
-      q.is = (k: string, v: unknown) => { filters.push((r) => (r[k] ?? null) === v); return q; };
-      q.limit = () => q;
-      q.single = async () => { const { data } = run(); return { data: Array.isArray(data) ? data[0] ?? null : data, error: null }; };
-      q.maybeSingle = q.single;
-      q.then = (resolve: (v: unknown) => unknown) => resolve(run());
-      return q;
-    },
-  };
-  return { db: client as unknown as SupabaseClient, tables };
-}
+// The in-memory database the yield eval runs the planner on (lib/evals/memory-db.ts).
+type Row = MemoryRow;
 
 // --- The site ------------------------------------------------------------------
 

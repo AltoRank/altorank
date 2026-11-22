@@ -347,6 +347,11 @@ async function runPhases(
   // failure. False for every reason the research could not look (no domain,
   // no provider, a crawl that failed, a keyword layer that was unavailable).
   let researchFoundNothing = false;
+  // The research could not look for a reason that is not the site's text: the
+  // crawl itself failed (a firewall, a timeout), a provider did not answer,
+  // or the phase threw. Those keep their own endings and retries; a plan from
+  // the profile alone is for a site that was reached and had little to read.
+  let researchBlocked = false;
   // What discovery's hygiene dropped before storing anything, for the funnel.
   let screened: { generalRival: number; offProfile: number } | undefined;
   // The deferred speed test, kept alive with the rest of the run's tail.
@@ -449,6 +454,7 @@ async function runPhases(
       // run against the same budget overnight (review, 2026-10-12).
       const providerFailedHere = keywordsFound === 0 && crawlFailed === null && keywordLayerFailed && !budgetStopped;
       researchFoundNothing = keywordsFound === 0 && crawlFailed === null && !why && !budgetStopped && !providerFailedHere;
+      researchBlocked = crawlFailed !== null || providerFailedHere;
       if (providerFailedHere) {
         emit({
           phase: "keywords",
@@ -481,6 +487,7 @@ async function runPhases(
         keywordsFound,
       });
     } catch (err) {
+      researchBlocked = true;
       emit({ phase: "keywords", status: "failed", detail: message(err) });
     }
   }
@@ -529,12 +536,12 @@ async function runPhases(
   // list of searches when there is none. A site with too little text to read
   // used to skip the plan and the article here, profile or not.
   const knownBusiness = profileUsable(await profileReady.catch(() => storedProfile));
-  const planFromProfile = knownBusiness && Boolean(domain) && hasDataForSEOCredentials();
+  const planFromProfile = knownBusiness && Boolean(domain) && hasDataForSEOCredentials() && !researchBlocked;
   if (keywordsFound === 0 && !researchFoundNothing && !planFromProfile) {
     // With no domain or no search data the keyword phase has said why. With
     // neither a readable site nor a profile, the one thing missing is the
     // owner's answer, and the screen asks for it.
-    const ask = Boolean(domain) && hasDataForSEOCredentials() && !knownBusiness;
+    const ask = Boolean(domain) && hasDataForSEOCredentials() && !knownBusiness && !researchBlocked;
     planningDetail = ask
       ? "We could not read enough of your site to know what you sell. Tell us what you sell and who buys it, and we plan your first article from that."
       : "Nothing to schedule until there are keywords.";

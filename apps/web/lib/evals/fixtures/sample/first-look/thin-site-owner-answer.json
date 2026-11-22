@@ -1,0 +1,134 @@
+{
+  "id": "thin-site-owner-answer",
+  "note": "A one-page site with a logo and a phone number. Nothing could be read, so the owner was asked what they sell and to whom, and research stored no searches.",
+  "url": "sugarloft-cakes.example",
+  "languageCode": "en",
+  "locationCode": 2826,
+  "today": "2026-11-20",
+  "authority": null,
+  "business": null,
+  "ownerAnswer": {
+    "description": "",
+    "offerings": [
+      "wedding cakes",
+      "celebration cakes"
+    ],
+    "audiences": [
+      "couples planning a wedding"
+    ]
+  },
+  "pages": [],
+  "pool": [],
+  "answers": {
+    "suggest": "{\"topics\": [{\"query\": \"how far in advance to order a wedding cake\", \"fromList\": false, \"reader\": \"Couples planning a wedding\", \"job\": \"Choose and order a wedding cake\", \"offering\": \"Wedding cake tasting\", \"angle\": \"How far in advance to order a wedding cake: what to know first\", \"shape\": \"explainer\", \"fit\": 5, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"how much wedding cake do you need\", \"fromList\": false, \"reader\": \"Couples planning a wedding\", \"job\": \"Choose and order a wedding cake\", \"offering\": \"Wedding cake tasting\", \"angle\": \"How much wedding cake do you need: what to know first\", \"shape\": \"explainer\", \"fit\": 5, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"wedding cake flavours guide\", \"fromList\": false, \"reader\": \"Couples planning a wedding\", \"job\": \"Choose and order a wedding cake\", \"offering\": \"Wedding cake tasting\", \"angle\": \"Wedding cake flavours guide: what to know first\", \"shape\": \"explainer\", \"fit\": 5, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}]}",
+    "secondAsk": null
+  },
+  "serps": {
+    "how far in advance to order a wedding cake": [
+      {
+        "rank": 1,
+        "title": "How far in advance to order a wedding cake: a guide (1)",
+        "url": "https://journal-1.example/blog/how-far-in-advance-to-order-a-wedding-cake",
+        "description": "A plain guide to how far in advance to order a wedding cake.",
+        "domain": "journal-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "How far in advance to order a wedding cake: a guide (2)",
+        "url": "https://journal-2.example/blog/how-far-in-advance-to-order-a-wedding-cake",
+        "description": "A plain guide to how far in advance to order a wedding cake.",
+        "domain": "journal-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "How far in advance to order a wedding cake: a guide (3)",
+        "url": "https://journal-3.example/blog/how-far-in-advance-to-order-a-wedding-cake",
+        "description": "A plain guide to how far in advance to order a wedding cake.",
+        "domain": "journal-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "How far in advance to order a wedding cake: a guide (4)",
+        "url": "https://journal-4.example/blog/how-far-in-advance-to-order-a-wedding-cake",
+        "description": "A plain guide to how far in advance to order a wedding cake.",
+        "domain": "journal-4.example",
+        "wordCount": null
+      }
+    ],
+    "how much wedding cake do you need": [
+      {
+        "rank": 1,
+        "title": "How much wedding cake do you need: a guide (1)",
+        "url": "https://journal-1.example/blog/how-much-wedding-cake-do-you-need",
+        "description": "A plain guide to how much wedding cake do you need.",
+        "domain": "journal-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "How much wedding cake do you need: a guide (2)",
+        "url": "https://journal-2.example/blog/how-much-wedding-cake-do-you-need",
+        "description": "A plain guide to how much wedding cake do you need.",
+        "domain": "journal-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "How much wedding cake do you need: a guide (3)",
+        "url": "https://journal-3.example/blog/how-much-wedding-cake-do-you-need",
+        "description": "A plain guide to how much wedding cake do you need.",
+        "domain": "journal-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "How much wedding cake do you need: a guide (4)",
+        "url": "https://journal-4.example/blog/how-much-wedding-cake-do-you-need",
+        "description": "A plain guide to how much wedding cake do you need.",
+        "domain": "journal-4.example",
+        "wordCount": null
+      }
+    ],
+    "wedding cake flavours guide": [
+      {
+        "rank": 1,
+        "title": "Wedding cake flavours guide: a guide (1)",
+        "url": "https://journal-1.example/blog/wedding-cake-flavours-guide",
+        "description": "A plain guide to wedding cake flavours guide.",
+        "domain": "journal-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Wedding cake flavours guide: a guide (2)",
+        "url": "https://journal-2.example/blog/wedding-cake-flavours-guide",
+        "description": "A plain guide to wedding cake flavours guide.",
+        "domain": "journal-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Wedding cake flavours guide: a guide (3)",
+        "url": "https://journal-3.example/blog/wedding-cake-flavours-guide",
+        "description": "A plain guide to wedding cake flavours guide.",
+        "domain": "journal-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Wedding cake flavours guide: a guide (4)",
+        "url": "https://journal-4.example/blog/wedding-cake-flavours-guide",
+        "description": "A plain guide to wedding cake flavours guide.",
+        "domain": "journal-4.example",
+        "wordCount": null
+      }
+    ]
+  },
+  "usableProfile": true,
+  "expect": {
+    "rung": "ranked"
+  }
+}

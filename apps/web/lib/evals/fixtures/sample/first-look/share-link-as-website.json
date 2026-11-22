@@ -1,0 +1,18 @@
+{
+  "id": "share-link-as-website",
+  "note": "A share link pasted into the website field. It leads nowhere we can follow, so it is refused at the field with a sentence asking for the business's own site; no first look runs.",
+  "url": "https://share.google/EXAMPLEabc123",
+  "redirects": {},
+  "languageCode": "en",
+  "locationCode": 2840,
+  "today": "2026-11-20",
+  "business": null,
+  "answers": {
+    "suggest": null
+  },
+  "serps": {},
+  "usableProfile": false,
+  "expect": {
+    "refused": true
+  }
+}

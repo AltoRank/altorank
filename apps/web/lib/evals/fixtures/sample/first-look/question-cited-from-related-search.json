@@ -1,0 +1,161 @@
+{
+  "id": "question-cited-from-related-search",
+  "note": "Both results pages are studios' own pages. Only the non-question search has an article in it; the question is the better article, and cites that article.",
+  "url": "claycorner.example",
+  "languageCode": "en",
+  "locationCode": 2840,
+  "today": "2026-11-20",
+  "authority": 2,
+  "business": {
+    "name": "Clay Corner",
+    "description": "Clay Corner runs pottery classes and wheel-throwing courses for adult beginners in a shared studio.",
+    "offerings": [
+      "beginner pottery classes",
+      "six-week wheel throwing course"
+    ],
+    "audiences": [
+      "adult beginners"
+    ],
+    "buyingJobs": [
+      "learn to throw a pot from scratch"
+    ],
+    "country": "United States",
+    "language": "English"
+  },
+  "pages": [],
+  "pool": [],
+  "answers": {
+    "suggest": "{\"topics\": [{\"query\": \"pottery class prices\", \"fromList\": false, \"reader\": \"Adults thinking about a first pottery class\", \"job\": \"Decide whether a course is worth it\", \"offering\": \"The six-week wheel throwing course\", \"angle\": \"Pottery class prices: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"transactional\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"how much are pottery class prices\", \"fromList\": false, \"reader\": \"Adults thinking about a first pottery class\", \"job\": \"Decide whether a course is worth it\", \"offering\": \"The six-week wheel throwing course\", \"angle\": \"How much are pottery class prices: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}]}",
+    "secondAsk": "{\"topics\": []}"
+  },
+  "serps": {
+    "pottery class prices": [
+      {
+        "rank": 1,
+        "title": "Pottery Class Prices | Pottery Studio 1 | Book now",
+        "url": "https://pottery-studio-1.example/",
+        "description": "pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Pottery Class Prices | Pottery Studio 2 | Book now",
+        "url": "https://pottery-studio-2.example/",
+        "description": "pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Pottery Class Prices | Pottery Studio 3 | Book now",
+        "url": "https://pottery-studio-3.example/",
+        "description": "pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Pottery Class Prices | Pottery Studio 4 | Book now",
+        "url": "https://pottery-studio-4.example/",
+        "description": "pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Pottery Class Prices | Pottery Studio 5 | Book now",
+        "url": "https://pottery-studio-5.example/",
+        "description": "pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Pottery Class Prices | Pottery Studio 6 | Book now",
+        "url": "https://pottery-studio-6.example/",
+        "description": "pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Pottery Class Prices | Pottery Studio 7 | Book now",
+        "url": "https://pottery-studio-7.example/",
+        "description": "pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-7.example",
+        "wordCount": null
+      },
+      {
+        "rank": 8,
+        "title": "Pottery class prices: a guide",
+        "url": "https://journal-8.example/blog/pottery-class-prices",
+        "description": "A plain guide to pottery class prices.",
+        "domain": "journal-8.example",
+        "wordCount": null
+      }
+    ],
+    "how much are pottery class prices": [
+      {
+        "rank": 1,
+        "title": "How Much Are Pottery Class Prices | Pottery Studio 1 | Book now",
+        "url": "https://pottery-studio-1.example/",
+        "description": "how much are pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "How Much Are Pottery Class Prices | Pottery Studio 2 | Book now",
+        "url": "https://pottery-studio-2.example/",
+        "description": "how much are pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "How Much Are Pottery Class Prices | Pottery Studio 3 | Book now",
+        "url": "https://pottery-studio-3.example/",
+        "description": "how much are pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "How Much Are Pottery Class Prices | Pottery Studio 4 | Book now",
+        "url": "https://pottery-studio-4.example/",
+        "description": "how much are pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "How Much Are Pottery Class Prices | Pottery Studio 5 | Book now",
+        "url": "https://pottery-studio-5.example/",
+        "description": "how much are pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "How Much Are Pottery Class Prices | Pottery Studio 6 | Book now",
+        "url": "https://pottery-studio-6.example/",
+        "description": "how much are pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "How Much Are Pottery Class Prices | Pottery Studio 7 | Book now",
+        "url": "https://pottery-studio-7.example/",
+        "description": "how much are pottery class prices done for you. Call us today for a quote.",
+        "domain": "pottery-studio-7.example",
+        "wordCount": null
+      }
+    ]
+  },
+  "usableProfile": true,
+  "expect": {
+    "rung": "related_evidence"
+  }
+}

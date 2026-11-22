@@ -276,8 +276,7 @@ describe("the brief", () => {
     expect(brief.reason).toMatch(/confirmed by the site's owner/);
     expect(readOpportunity(brief, fingerprint)).not.toBeNull();
     // Without the confirmation the same brief is refused: a planner cannot write it.
-    const { ownerConfirmed: _confirmed, ...unconfirmed } = brief;
-    expect(readOpportunity(unconfirmed, fingerprint)).toBeNull();
+    expect(readOpportunity({ ...brief, ownerConfirmed: undefined }, fingerprint)).toBeNull();
     // And the confirmation excuses nothing at full confidence.
     expect(readOpportunity({ ...brief, confidence: undefined }, fingerprint)).toBeNull();
   });
