@@ -15,7 +15,7 @@ import type { SetupEnding } from "./setup-retry";
 import type { OnboardingStepName } from "./step-names";
 
 /** Every ending of setup (lib/onboarding/setup-retry.ts `setupEnding`). */
-export const SETUP_ENDINGS = ["article", "writing", "provider-down", "retry", "first-failed", "nothing-planned", "no-article"] as const satisfies readonly SetupEnding[];
+export const SETUP_ENDINGS = ["article", "writing", "provider-down", "retry", "first-failed", "nothing-planned", "no-article", "proposal", "owner-question"] as const satisfies readonly SetupEnding[];
 // The list cannot fall behind the type: an ending added there and not here
 // fails the build on this line.
 const _everyEnding: Exclude<SetupEnding, (typeof SETUP_ENDINGS)[number]> extends never ? true : never = true;

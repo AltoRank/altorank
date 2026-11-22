@@ -28,7 +28,8 @@
 import { promises as dns } from "node:dns";
 
 export type DomainReachability =
-  | { ok: true; verdict: "live"; url: string }
+  /** `landed`: where the site's redirects ended, when that is another host (lib/domain/own-site.ts reads it). */
+  | { ok: true; verdict: "live"; url: string; landed?: string }
   | { ok: true; verdict: "no-http"; reason: string }
   | { ok: false; verdict: "no-dns"; reason: string }
   | { ok: false; verdict: "invalid"; reason: string };
@@ -60,6 +61,16 @@ export function normaliseDomain(input: string): string {
  * /etc/hosts while nobody else on the internet can.
  */
 const RESERVED_TLDS = new Set(["test", "example", "invalid", "localhost", "local"]);
+
+/** The host a followed fetch ended on, when it is not the domain asked for (or its www). */
+function landedHost(finalUrl: string | undefined, domain: string): string | null {
+  try {
+    const host = new URL(finalUrl ?? "").hostname.toLowerCase().replace(/^www\./, "");
+    return host && host !== domain ? host : null;
+  } catch {
+    return null;
+  }
+}
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
   return Promise.race([
@@ -123,7 +134,10 @@ export async function checkDomainReachable(input: string): Promise<DomainReachab
         HTTP_TIMEOUT_MS,
         method,
       );
-      if (res.ok) return { ok: true, verdict: "live", url: `https://${domain}` };
+      if (res.ok) {
+        const landed = landedHost(res.url, domain);
+        return { ok: true, verdict: "live", url: `https://${domain}`, ...(landed ? { landed } : {}) };
+      }
     } catch {
       // Try the next method, then fall through to the soft verdict.
     }

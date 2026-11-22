@@ -31,7 +31,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { readSiteText } from "./site-text";
 import { installedStoreContent } from "@/lib/shopify/store-content";
 import { looksLikeShopify } from "@/lib/shopify/bot-wall";
-import { ensureBusinessProfile, profileUsable, type BusinessFields } from "@/lib/keyword-research/business-context";
+import { ensureBusinessProfile, profileFromAnswer, profileUsable, type BusinessFields } from "@/lib/keyword-research/business-context";
+import { languageCodeOf } from "@/lib/keyword-research/locale";
+import { replayRow, saveFirstLookReplay } from "./first-look-replay";
 import { withSiteReads } from "@/lib/seo/site-urls";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { trainVoiceProfile } from "@/lib/voice/train";
@@ -246,7 +248,20 @@ async function runPhases(
   // 2026-10-16). Inferred from the store's own catalogue instead, the one
   // call the wizard would have made, saved unconfirmed. Awaited by the
   // keyword phase only; the voice does not need it.
-  const storedProfile = (workspace.business_profile as BusinessFields | null) ?? null;
+  //
+  // And a profile its owner gave only as lists - the wizard asks what they
+  // sell and who buys it when the site could not be read, and a description
+  // is optional there - is made usable from their own words
+  // (`profileFromAnswer`). It used to count as no profile: no keywords, no
+  // plan, no article, with the answer sitting on the row.
+  const savedProfile = (workspace.business_profile as BusinessFields | null) ?? null;
+  const answered = profileUsable(savedProfile) ? null : profileFromAnswer(savedProfile, domain);
+  if (answered) {
+    // The planner and the writer read the row. A failed write is not a
+    // failed run: this run still plans from the profile in hand.
+    await Promise.resolve(supabase.from("workspaces").update({ business_profile: answered }).eq("id", workspace.id)).catch(() => undefined);
+  }
+  const storedProfile = answered ?? savedProfile;
   const profileReady: Promise<BusinessFields | null> =
     store && domain && !profileUsable(storedProfile)
       ? timed("store_profile", () =>
@@ -507,9 +522,23 @@ async function runPhases(
   let chosen: FirstLookSummary | null = null;
   let selectionByTerm: FirstLookPlanResult["selection"] = new Map();
   let planningDetail: string | null = null;
-  if (keywordsFound === 0 && !researchFoundNothing) {
-    planningDetail = "Nothing to schedule until there are keywords.";
-    emit({ phase: "planning", status: "skipped", detail: planningDetail });
+  // A topic proposed and waiting for its owner: nothing is drafted by itself.
+  let proposed = false;
+  // A site we know the business of is planned for whatever the research
+  // stored: the planner's one model call reads the profile, with an empty
+  // list of searches when there is none. A site with too little text to read
+  // used to skip the plan and the article here, profile or not.
+  const knownBusiness = profileUsable(await profileReady.catch(() => storedProfile));
+  const planFromProfile = knownBusiness && Boolean(domain) && hasDataForSEOCredentials();
+  if (keywordsFound === 0 && !researchFoundNothing && !planFromProfile) {
+    // With no domain or no search data the keyword phase has said why. With
+    // neither a readable site nor a profile, the one thing missing is the
+    // owner's answer, and the screen asks for it.
+    const ask = Boolean(domain) && hasDataForSEOCredentials() && !knownBusiness;
+    planningDetail = ask
+      ? "We could not read enough of your site to know what you sell. Tell us what you sell and who buys it, and we plan your first article from that."
+      : "Nothing to schedule until there are keywords.";
+    emit({ phase: "planning", status: "skipped", detail: planningDetail, ...(ask ? { cause: "needs_business" as const } : {}) });
   } else {
     try {
       // An account that will be asked for a card gets one article on the
@@ -535,6 +564,14 @@ async function runPhases(
       plan = result.plan;
       chosen = result.summary;
       selectionByTerm = result.selection;
+      proposed = result.outcome === "needs_owner_input" && Boolean(result.proposal);
+      // What it read, kept with the run so it can be replayed without
+      // buying the pages again (./first-look-replay.ts). Best effort.
+      if (runId) {
+        await saveFirstLookReplay(spendClient() ?? supabase, replayRow({
+          runId, workspaceId: workspace.id, languageCode: languageCodeOf(workspace.language), locationCode: workspace.location_code ?? 2840, result,
+        }));
+      }
       const held = gated && plan.length
         ? await heldTopics(supabase, workspace.id, weeklyLimit, plan.map((p) => p.date)).catch(() => ({ count: 0, dates: [], topics: [] }))
         : { count: 0, dates: [], topics: [] };
@@ -546,8 +583,12 @@ async function runPhases(
       // fit with no volume reported is not dressed up as a measured one.
       const lower = plan.filter((p) => p.brief?.confidence === "lower").length;
       const unmeasured = plan.filter((p) => p.brief?.demand === "unmeasured").length;
+      // The rung that planned it, said with the label: a pick cited from a
+      // related search is not passed off as one checked on its own results.
+      const related = plan.filter((p) => p.brief?.evidenceFrom).length;
       const labelNote = [
         lower ? ` ${lower === plan.length ? (plan.length === 1 ? "It is" : "They are") : `${lower} of them ${lower === 1 ? "is" : "are"}`} lower confidence: fewer articles rank for ${lower === 1 ? "that search" : "those searches"} than we usually ask for.` : "",
+        related ? ` ${related === 1 && plan.length === 1 ? "The article it was checked against ranks" : "Some were checked against articles that rank"} for a closely related search, not this exact one.` : "",
         unmeasured && unmeasured === plan.length
           ? ` No search volume is reported for ${plan.length === 1 ? "it" : "them"} in your market yet (unmeasured), so ${plan.length === 1 ? "it was" : "they were"} chosen for how well ${plan.length === 1 ? "it fits" : "they fit"} your readers.`
           : unmeasured
@@ -572,13 +613,17 @@ async function runPhases(
                     : "Our search data or our model did not answer, so nothing was planned yet: a problem on our side, not your site."
                   : result.outcome === "unreadable"
                     ? "Our model's list of topics came back cut short, before it named one we could use, so nothing was planned yet: a problem on our side, not your site."
-                    : "Every search we checked is won by shops' or providers' own pages, not by articles, so no article was planned yet.";
+                    : proposed
+                      // Lower confidence, and said so: no article was found to check it against.
+                      ? `We have a first article to propose: "${result.proposal!.term}". ${result.proposal!.checked ? "No published article ranks for that search to check it against" : "We could not check its search results"}, so it is lower confidence and we did not start it without you. Say the word and we write it.`
+                      : "Every topic we found names a business, looks for one site or is outside what your site covers, so no article was planned yet.";
       emit({
         phase: "planning",
         status: plan.length > 0 ? "done" : "skipped",
         detail: planningDetail,
         planned: plan.map((p) => ({ term: p.term, date: p.date, brief: p.brief })),
         ...(result.outcome === "provider" ? { cause: "provider" as const } : {}),
+        ...(proposed ? { cause: "needs_owner_input" as const, proposal: { ...result.proposal! } } : {}),
       });
     } catch (err) {
       planningDetail = message(err);
@@ -675,7 +720,7 @@ async function runPhases(
         const relatedFor = (term: string): RelatedKeyword[] | undefined => relatedByTerm.get(term) ?? (budget ? [] : undefined);
 
         if (!next) {
-          settle("skipped", "No keyword clear enough to write to yet.");
+          settle("skipped", proposed ? "Waiting for your go-ahead on the proposed topic." : "No keyword clear enough to write to yet.");
         } else if (budgetShort !== null) {
           // Before the lookup, and in both modes: nothing is bought, and
           // nothing is dispatched, for a draft that cannot be written.

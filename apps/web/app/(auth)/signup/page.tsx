@@ -9,6 +9,7 @@ import { firstSiteRow } from "@/lib/workspaces/first-site";
 import { accountNameFromDomain } from "@/lib/domain/account-name";
 import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/growth-plan/build";
 import { checkDomainReachable } from "@/lib/domain/reachable";
+import { landedAway, resolveOwnSite } from "@/lib/domain/own-site";
 import { SignupSteps } from "@/components/auth/signup-steps";
 import { PENDING_SIGNUP_COOKIE, PENDING_SIGNUP_MAX_AGE, TAKEN_SIGNUP_COOKIE, TAKEN_SIGNUP_MAX_AGE } from "@/lib/auth/pending-signup";
 import { isAddressTaken } from "@/lib/auth/address-taken";
@@ -48,7 +49,17 @@ async function signUp(formData: FormData) {
   // Set when signup was reached from the homepage growth plan: the visitor has
   // already typed their domain once and seen a plan for it, so the first
   // workspace is created for that domain here rather than asked for again.
-  const domain = normalizeDomain((formData.get("domain") as string | null) ?? "");
+  //
+  // Whatever was pasted is read as a link first: a share link is followed to
+  // the site it points at, and a social profile, a link page or a marketplace
+  // listing is refused with a sentence asking for the business's own site
+  // (lib/domain/own-site.ts). A share link's host used to become the
+  // "website", and the first look read the shortener's own page.
+  const own = await resolveOwnSite((formData.get("domain") as string | null) ?? "");
+  if (!own.ok) {
+    redirect("/signup?error=" + encodeURIComponent(own.reason) + carry);
+  }
+  const domain = own.domain;
   // Without a workspace there is nothing to onboard, and the wizard would
   // bounce the new account to an empty "Your sites" page. Refuse up front.
   if (!DOMAIN_PATTERN.test(domain)) {
@@ -63,6 +74,11 @@ async function signUp(formData: FormData) {
   const reach = await checkDomainReachable(domain);
   if (!reach.ok) {
     redirect("/signup?error=" + encodeURIComponent(reach.reason) + "&domain=" + encodeURIComponent(domain) + carry);
+  }
+  // A domain of their own that only forwards to a profile or a listing.
+  const away = reach.verdict === "live" ? landedAway(reach.landed) : null;
+  if (away) {
+    redirect("/signup?error=" + encodeURIComponent(away.reason) + carry);
   }
 
   // The domain step on its own: the form asks one question at a time, and

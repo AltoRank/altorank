@@ -17,7 +17,8 @@ import { redirect } from "next/navigation";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { fallbackAccountName, workingAccountId } from "@/lib/queries/account";
 import { getScopedWorkspaceId, SCOPE_COOKIE } from "@/lib/workspace-scope";
-import { normalizeDomain, DOMAIN_PATTERN } from "@/lib/domain/shape";
+import { DOMAIN_PATTERN } from "@/lib/domain/shape";
+import { landedAway, resolveOwnSite } from "@/lib/domain/own-site";
 import { checkDomainReachable } from "@/lib/domain/reachable";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
 import { insertWorkspaceAsServer } from "@/lib/workspaces/insert";
@@ -41,13 +42,19 @@ export async function addFirstSite(formData: FormData): Promise<void> {
   // so the wizard is where this person is going.
   if (await getScopedWorkspaceId()) redirect("/onboarding");
 
-  const domain = normalizeDomain(String(formData.get("domain") ?? ""));
+  // A share link is followed to the site it points at; a profile or a
+  // listing on someone else's site is refused (lib/domain/own-site.ts).
+  const own = await resolveOwnSite(String(formData.get("domain") ?? ""));
+  if (!own.ok) back(own.reason, "");
+  const domain = own.domain;
   if (!DOMAIN_PATTERN.test(domain)) back("Enter your website as a domain, like acme.com.", domain);
 
   // Only a name with no DNS at all is refused, as at signup: a real site
   // behind a WAF that turns us away must still get in (lib/domain/reachable.ts).
   const reach = await checkDomainReachable(domain);
   if (!reach.ok) back(reach.reason, domain);
+  const away = reach.verdict === "live" ? landedAway(reach.landed) : null;
+  if (away) back(away.reason, "");
 
   const accountId = await workingAccountId(user);
 

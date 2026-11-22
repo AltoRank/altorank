@@ -164,7 +164,7 @@ export interface EmptyPool {
  * one - keywords its count, drafting its article.
  */
 export type OnboardingEvent =
-  | { phase: OnboardingPhase; status: Exclude<PhaseStatus, "pending">; detail?: string; keywordsFound?: number; planned?: OnboardingPlanned[]; article?: OnboardingArticle; emptyPool?: EmptyPool; checking?: PlanningCheck; cause?: StepCause }
+  | { phase: OnboardingPhase; status: Exclude<PhaseStatus, "pending">; detail?: string; keywordsFound?: number; planned?: OnboardingPlanned[]; article?: OnboardingArticle; emptyPool?: EmptyPool; checking?: PlanningCheck; cause?: StepCause; proposal?: StepProposal }
   | { phase: "ready" }
   | { phase: "error"; detail: string };
 
@@ -174,10 +174,41 @@ export type OnboardingEvent =
  * problem on our side, which running setup again right away buys again
  * (UX audit 2026-10-12, #16). `shopify_wall`, a Shopify store whose own bot
  * wall refused every page: connecting the store gets past it, so the run
- * screen offers that (lib/shopify/bot-wall.ts). Stored on the row's phases (jsonb), so no
+ * screen offers that (lib/shopify/bot-wall.ts). `needs_business`, nothing
+ * says what the site sells, so the screen asks its owner. `needs_owner_input`,
+ * a topic is proposed and waits for the owner's "write this". Stored on the row's phases (jsonb), so no
  * migration; absent on every older row.
  */
-export type StepCause = "provider" | "shopify_wall";
+export type StepCause = "provider" | "shopify_wall" | "needs_business" | "needs_owner_input";
+
+/**
+ * The one topic a first look proposes when it could plan nothing with
+ * evidence the writer accepts (lib/onboarding/first-look-plan.ts,
+ * `needs_owner_input`): what the screen shows beside "Write this". Kept on
+ * the planning step. The server reads the whole proposal back from the row
+ * (lib/keyword-research/first-look-topics.ts `readProposal`); the screen
+ * needs only these.
+ */
+export interface StepProposal {
+  term: string;
+  angle: string;
+  why: string;
+  /** Whether the search's results page was read before it was proposed. */
+  checked?: boolean;
+  /** What that page showed, in a sentence. */
+  results?: string;
+  [key: string]: unknown;
+}
+
+/** A proposal off a row or an event: the fields the screen shows, or null. */
+export function stepProposal(raw: unknown): StepProposal | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.term !== "string" || !o.term.trim() || typeof o.angle !== "string" || typeof o.why !== "string") return null;
+  return o as StepProposal;
+}
+
+const STEP_CAUSES: readonly StepCause[] = ["provider", "shopify_wall", "needs_business", "needs_owner_input"];
 
 export interface OnboardingStep {
   phase: OnboardingPhase;
@@ -187,6 +218,8 @@ export interface OnboardingStep {
   cause?: StepCause;
   /** Planning only, and only while it is active: the topics being checked right now. */
   checking?: PlanningCheck;
+  /** Planning only, with cause `needs_owner_input`: the topic proposed to the owner. */
+  proposal?: StepProposal;
 }
 
 /**
@@ -268,6 +301,10 @@ export function reduceOnboarding(state: OnboardingState, event: OnboardingEvent)
     // same phase that does not repeat it clears it.
     if (event.cause) next.cause = event.cause;
     else delete next.cause;
+    // A proposal belongs to the event that made it, as the cause does.
+    const proposal = event.cause === "needs_owner_input" ? stepProposal(event.proposal) : null;
+    if (proposal) next.proposal = proposal;
+    else delete next.proposal;
     // Only while the phase is live (see PlanningCheck): a settled step
     // carries no terms, whatever it carried before.
     const checking = event.status === "active" ? event.checking ?? s.checking : undefined;
@@ -430,7 +467,9 @@ export function stateFromRun(
     const p = known.get(phase);
     if (!p) return { phase, status: "pending" };
     const step: OnboardingStep = p.detail === undefined ? { phase, status: p.status } : { phase, status: p.status, detail: p.detail };
-    if (p.cause === "provider" || p.cause === "shopify_wall") step.cause = p.cause;
+    if (STEP_CAUSES.includes(p.cause as StepCause)) step.cause = p.cause as StepCause;
+    const proposal = step.cause === "needs_owner_input" ? stepProposal(p.proposal) : null;
+    if (proposal) step.proposal = proposal;
     // The live check, only on a step that is still active in a run that is
     // still running (see PlanningCheck): a run cut off mid-planning keeps
     // its step "active" on the row, and a closed run names no searches.

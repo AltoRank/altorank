@@ -105,12 +105,19 @@ export function firstArticleFailed(fact: { hasArticle: boolean; writing: boolean
  *                    cleared the bar (runStatusFrom). No card ask: there is
  *                    nothing behind it, and a person follows up by email
  *   no-article       anything else that ended without an article
+ *   proposal         the run found a topic it could not check against a
+ *                    published article, so it started nothing by itself: the
+ *                    topic is shown with why, and "Write this" writes it
+ *                    (lib/onboarding/first-look-plan.ts `needs_owner_input`)
+ *   owner-question   nothing says what the site sells (too little text, no
+ *                    profile): the owner is asked, and the run goes again
+ *                    from their answer
  *
  * `nothing-planned` exists because both real signups ended there on
  * 2026-09-28 and were shown "Setup finished without writing an article. The
  * trial opens the calendar" beside a card form, over an empty calendar.
  */
-export type SetupEnding = "article" | "writing" | "provider-down" | "retry" | "first-failed" | "nothing-planned" | "no-article";
+export type SetupEnding = "article" | "writing" | "provider-down" | "retry" | "first-failed" | "nothing-planned" | "no-article" | "proposal" | "owner-question";
 
 export function setupEnding(
   run: OnboardingState | null,
@@ -129,6 +136,11 @@ export function setupEnding(
 ): SetupEnding {
   if (fact.hasArticle) return "article";
   if (fact.writing) return "writing";
+  // What the run asked of its owner comes before any retry: a retry buys the
+  // same question again, and the answer is one click or one sentence.
+  const planning = run && isTerminal(run) && !run.error ? run.steps.find((s) => s.phase === "planning") : undefined;
+  if (planning?.cause === "needs_owner_input" && planning.proposal && !fact.firstAttempted) return "proposal";
+  if (planning?.cause === "needs_business" && fact.setupAllowed) return "owner-question";
   // Only when the promise behind it is kept: the spend gate would let the
   // sweep start the run, and the run is not too old for the sweep. Outside
   // that, the ordinary endings below, with a retry button where the gate
@@ -149,7 +161,7 @@ export function setupEnding(
  * the full card ask directly under the retry button.
  */
 export function asksForCard(ending: SetupEnding): boolean {
-  return ending !== "nothing-planned" && ending !== "retry" && ending !== "provider-down";
+  return ending !== "nothing-planned" && ending !== "retry" && ending !== "provider-down" && ending !== "proposal" && ending !== "owner-question";
 }
 
 /**

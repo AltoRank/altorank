@@ -76,6 +76,7 @@ import type { FirstLookReport } from "@/lib/onboarding/first-look-report";
 import type { FirstArticleCard } from "@/lib/onboarding/first-article";
 import { OPEN_SETUP, runStateOf, setupEnding, type PreTrialSetup, type SetupEnding } from "@/lib/onboarding/setup-retry";
 import { NOTHING_PLANNED_HEADING, nothingPlannedLede } from "@/components/onboarding/setup-ask";
+import { OwnerQuestionBox, ProposedTopicBox } from "@/components/onboarding/owner-asks";
 import { providerRetryWindowOpen } from "@/lib/onboarding/provider-retry-window";
 import { GateTop, type GateWelcome } from "@/components/onboarding/first-look-gate";
 import { nextArticles } from "@/lib/onboarding/next-articles";
@@ -701,6 +702,24 @@ export function OnboardingWizard({
         {unread ? (
           <div className="flex flex-col gap-3">
             {failureBox}
+            {/* The one question. Its answer is the description, which is what
+                makes the profile usable to everything after this screen: the
+                lists below sharpen it, and either alone starts the run. */}
+            <div className="rounded-[10px] border border-accent/40 bg-panel p-4 sm:p-5">
+              <label htmlFor="owner-answer" className="mb-1.5 block text-[13.5px] font-medium text-ink">
+                What do you sell, and to whom?
+              </label>
+              <textarea
+                id="owner-answer"
+                rows={2}
+                maxLength={600}
+                className="w-full resize-none rounded-[7px] border border-line bg-bg px-3 py-2 text-[14px] leading-[1.6] focus:border-accent focus:outline-0 focus:ring-[3px] focus:ring-accent-soft"
+                value={profile.description}
+                onChange={(e) => patch({ description: e.target.value })}
+                placeholder="We fit garden offices for homeowners in the Midlands."
+              />
+              <p className="m-0 mt-1.5 text-[12px] text-ink-3">One sentence is enough. We choose your first article from it.</p>
+            </div>
             <div className="rounded-[10px] border border-accent/40 bg-panel p-4 sm:p-5">
               <OfferingList profile={profile} patch={patch} inputId={OFFERINGS_INPUT_ID} />
             </div>
@@ -1088,6 +1107,16 @@ function endingWords(
       return { heading: FIRST_ARTICLE_FAILED_HEADING, lede: FIRST_ARTICLE_FAILED_LEDE };
     case "nothing-planned":
       return { heading: NOTHING_PLANNED_HEADING, lede: nothingPlannedLede(ctx.domain, ctx.runState?.emptyPool ?? null) };
+    case "proposal":
+      return {
+        heading: "One topic to confirm",
+        lede: `We read ${ctx.domain || "your site"} and chose a first article, but found no published article to check it against. It is yours to start. Nothing has been charged.`,
+      };
+    case "owner-question":
+      return {
+        heading: "One question before your first article",
+        lede: `We could not read enough of ${ctx.domain || "your site"} to know what you sell. Nothing has been charged.`,
+      };
     case "no-article":
       return {
         heading: "No article was written in setup",
@@ -1247,6 +1276,7 @@ function TrialGateScreen({
   });
   const words = endingWords(ending, { domain, runState, setupAllowed: setup.setupAllowed });
   const written = firstArticle?.state === "written";
+  const proposal = runState?.steps.find((s) => s.phase === "planning")?.proposal ?? null;
 
   return (
     <GateShell wide>
@@ -1266,6 +1296,10 @@ function TrialGateScreen({
             />
           ) : ending === "nothing-planned" && canBuy && onEdit ? (
             <ChangeBox onEdit={onEdit} />
+          ) : ending === "proposal" && proposal ? (
+            <ProposedTopicBox workspaceId={workspaceId} proposal={proposal} canStart={canBuy} onStarted={() => window.location.reload()} />
+          ) : ending === "owner-question" && onEdit ? (
+            <OwnerQuestionBox onAnswer={onEdit} />
           ) : null
         }
         firstArticle={firstArticle}
@@ -1397,6 +1431,7 @@ function RunScreen({
   // the workspace (lib/onboarding/first-article.ts); this only fills the gap.
   const runDraft = draft ?? drafts[0] ?? null;
   const hasArticle = firstArticle !== null || runDraft !== null;
+  const runProposal = state?.steps.find((step) => step.phase === "planning")?.proposal ?? null;
   // The last step of onboarding, for an account before its trial: the card,
   // whatever the run produced. With an article it shows the article; without
   // one it offers a retry only when the run fell short and nothing exists
@@ -1530,6 +1565,10 @@ function RunScreen({
                 <RetryBox line="Setup stopped before it wrote your first article." label="Run setup again" onRetry={retryRun} onEdit={canBuy ? onEdit : undefined} />
               ) : ending === "nothing-planned" && canBuy && onEdit ? (
                 <ChangeBox onEdit={onEdit} />
+              ) : ending === "proposal" && runProposal ? (
+                <ProposedTopicBox workspaceId={workspaceId} proposal={runProposal} canStart={canBuy} onStarted={() => window.location.reload()} />
+              ) : ending === "owner-question" && onEdit ? (
+                <OwnerQuestionBox onAnswer={onEdit} />
               ) : null
             }
             firstArticle={firstArticle}
