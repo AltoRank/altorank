@@ -57,6 +57,9 @@ const SCOPED_TABLES = new Set([
  * scope (operator views) still sees the account.
  */
 const ALLOWED: Record<string, string> = {
+  "app/(dashboard)/admin/users/[id]/page.tsx:gate_visits":
+    "the operator's page for one user lists every day any of that account's sites showed " +
+    "the gate (service role, filtered on the account id)",
   "app/api/cron/analytics/route.ts:workspace_integrations":
     "the sync walks every connected workspace; that walk is the job",
   "lib/shopify/installations.ts:workspace_integrations":
