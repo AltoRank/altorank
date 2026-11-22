@@ -4,9 +4,16 @@ import {
   bestCase,
   demandScore,
   describeScore,
+  fallbackAngle,
+  ownerConfirmedBrief,
   pageScore,
   parseSuggestions,
+  proposalOf,
   reachScore,
+  readProposal,
+  relatedEvidence,
+  relatedness,
+  secondAskPrompt,
   rejectBeforeResults,
   rejectOnResults,
   salvageTopics,
@@ -218,11 +225,79 @@ describe("the brief", () => {
     expect(selectionReasons(c)[2]).toMatch(/Providers' own pages win most of this search/);
   });
 
-  it("is not written with nothing in the results to cite, a dated headline, or a destination off the site", () => {
+  it("is not written with nothing in the results to cite or a destination off the site, and replaces a dated headline", () => {
     expect(topicBrief(chosen([provider(1), provider(2)]), { fingerprint, domain: "relief.example" })).toBeNull();
+    // A headline the model dated used to cost the topic; the search stands in.
     const dated = { ...chosen([article(1), article(2)]), topic: { ...TOPIC, angle: "Housing grants in 2019" } };
-    expect(topicBrief(dated, { fingerprint, domain: "relief.example" })).toBeNull();
+    const redated = topicBrief(dated, { fingerprint, domain: "relief.example" })!;
+    expect(redated.angle).toBe(fallbackAngle(TOPIC.query));
+    expect(redated.angle).not.toMatch(/2019/);
+    expect(readOpportunity(redated, fingerprint)).not.toBeNull();
     const elsewhere = topicBrief(chosen([article(1), article(2)]), { fingerprint, domain: "relief.example", conversionUrl: "https://other.example/buy" })!;
     expect(elsewhere.conversionPath).toBe("https://relief.example");
+  });
+  it("cites a related search's articles when its own results have none, and says so", () => {
+    const c = chosen([provider(1), provider(2)]);
+    const borrowed = { from: "housing grant application steps", urls: ["https://news-1.example/blog/housing-grant-guide"] };
+    const brief = topicBrief(c, { fingerprint, domain: "relief.example", borrowed, rung: "related_evidence" })!;
+    expect(brief).toMatchObject({ confidence: "lower", evidenceFrom: "housing grant application steps", rung: "related_evidence", evidenceUrls: borrowed.urls });
+    // The borrowed page is listed after the search's own results, never in their place.
+    expect(brief.organicUrls).toEqual([...c.organicUrls, ...borrowed.urls]);
+    expect(brief.reason).toMatch(/related search "housing grant application steps"/);
+    expect(readOpportunity(brief, fingerprint)).not.toBeNull();
+    // Its own evidence wins when it has any: nothing is borrowed then.
+    const own = topicBrief(chosen([article(1), article(2)]), { fingerprint, domain: "relief.example", borrowed })!;
+    expect(own.evidenceFrom).toBeUndefined();
+  });
+
+  it("borrows only from a closely related search that had something to cite", () => {
+    expect(relatedness("garden office cost", "how much does a garden office cost")).toBe(1);
+    expect(relatedness("garden office cost", "office chair reviews")).toBeLessThan(0.6);
+    const read = [
+      { query: "office chair reviews", evidence: ["https://a.example/blog/chairs"] },
+      { query: "garden office installers", evidence: [] },
+      { query: "garden office prices", evidence: ["https://b.example/blog/prices", "https://c.example/blog/prices"] },
+    ];
+    expect(relatedEvidence("how much does a garden office cost", read)).toEqual({ from: "garden office prices", urls: ["https://b.example/blog/prices", "https://c.example/blog/prices"] });
+    expect(relatedEvidence("party wall surveyor fees", read)).toBeNull();
+    // Never from itself.
+    expect(relatedEvidence("garden office prices", read)).toBeNull();
+  });
+
+  it("turns a proposal into a brief only with the owner's confirmation, citing nothing", () => {
+    const c = chosen([provider(1), provider(2)]);
+    const proposal = proposalOf(c);
+    expect(proposal).toMatchObject({ term: TOPIC.query, checked: true, why: TOPIC.why });
+    // Off a run's row and back.
+    expect(readProposal(JSON.parse(JSON.stringify(proposal)))).toEqual(proposal);
+    expect(readProposal({ term: "x" })).toBeNull();
+    const brief = ownerConfirmedBrief(proposal, { fingerprint, domain: "relief.example", now: new Date() });
+    expect(brief).toMatchObject({ status: "qualified", confidence: "lower", rung: "owner_confirmed", evidenceUrls: [] });
+    expect(brief.reason).toMatch(/confirmed by the site's owner/);
+    expect(readOpportunity(brief, fingerprint)).not.toBeNull();
+    // Without the confirmation the same brief is refused: a planner cannot write it.
+    const { ownerConfirmed: _confirmed, ...unconfirmed } = brief;
+    expect(readOpportunity(unconfirmed, fingerprint)).toBeNull();
+    // And the confirmation excuses nothing at full confidence.
+    expect(readOpportunity({ ...brief, confidence: undefined }, fingerprint)).toBeNull();
+  });
+});
+
+describe("the second ask", () => {
+  it("asks for question searches built from the profile, and names what was tried", () => {
+    const prompt = secondAskPrompt({
+      business: { name: "Example Relief", description: "Guides to public support.", buyingJobs: ["work out which scheme they qualify for"], offerings: ["scheme finder"], audiences: ["residents on low incomes"] },
+      domain: "https://relief.example",
+      language: "English",
+      tried: ["housing grant consultant", "housing grant agency"],
+    });
+    expect(prompt).toContain("- work out which scheme they qualify for");
+    expect(prompt).toContain("- scheme finder");
+    expect(prompt).toContain("- residents on low incomes");
+    expect(prompt).toContain("Searches already tried:\n- housing grant consultant\n- housing grant agency");
+    expect(prompt).toMatch(/how to choose/);
+    // The instructions are the cached part, as in the first ask.
+    expect(suggestCachePrefix(prompt)).toBeGreaterThan(0);
+    expect(fallbackAngle("how to choose a garden office")).toBe("How to choose a garden office");
   });
 });

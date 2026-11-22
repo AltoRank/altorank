@@ -9,7 +9,8 @@ vi.mock("@/lib/billing/trial-hold", async () => {
 const decorate = vi.fn(async (..._a: unknown[]) => ({ classified: 0, questioned: 0 }));
 vi.mock("../plan", () => ({ decoratePlannedKeywords: (...a: unknown[]) => decorate(...a) }));
 
-import { MAX_RESULTS_READS, planFirstLook } from "../first-look-plan";
+import { HARD_MAX_READS, MAX_RESULTS_READS, planFirstLook } from "../first-look-plan";
+import { BudgetRefusedError } from "@/lib/billing/spend-scope";
 import { contextKey, readOpportunity } from "@/lib/keyword-research/opportunity";
 import type { SerpData } from "@/lib/seo/brief-data";
 
@@ -88,6 +89,12 @@ const crowded = (term: string): SerpData => ({
 const FINGERPRINT = contextKey({ business: BUSINESS, domain: "relief.example", languageCode: "en", locationCode: 2586 });
 
 const reply = (topics: unknown[]) => vi.fn(async (..._a: unknown[]) => JSON.stringify({ topics }));
+/** The first ask's topics, then the second ask's: told apart by the operation, as production's are. */
+const replies = (first: unknown[] | string | null, second: unknown[] | null) => vi.fn(async (operation: string, ..._a: unknown[]) => {
+  const answer = operation.endsWith("second-ask") ? second : first;
+  return answer === null || typeof answer === "string" ? answer : JSON.stringify({ topics: answer });
+});
+const lettered = (n: number, over: Record<string, unknown> = {}) => Array.from({ length: n }, (_, i) => topic(`housing grant office ${String.fromCharCode(97 + i)}`, over));
 
 function setup(over: { keywords?: Row[]; calendar?: Row[] } = {}) {
   return memoryDb({
@@ -191,12 +198,117 @@ describe("planFirstLook", () => {
     expect(tables.calendar_entries).toHaveLength(1);
   });
 
-  it("still plans nothing when no providers' page read has an article to cite", async () => {
-    const ask = reply([topic("housing grant consultant"), topic("housing grant agency")]);
-    const out = await planFirstLook(setup().db, "ws1", { ...base(), ask, serp: async (t) => providers(t) });
-    expect(out.outcome).toBe("none");
+  it("proposes its best topic to the owner when nothing read has anything to cite, after one second ask", async () => {
+    const { db, tables } = setup();
+    const ask = replies([topic("housing grant consultant", { fit: 5 }), topic("housing grant agency")], []);
+    const out = await planFirstLook(db, "ws1", { ...base(), ask, serp: async (t) => providers(t) });
+    expect(out.outcome).toBe("needs_owner_input");
+    expect(out.plan).toEqual([]);
+    expect(out.summary).toMatchObject({ planned: 0, proposed: true, modelCalls: 2, secondAsk: { suggested: 0, read: 0 }, rejected: { needs_page: 2 } });
     expect(out.summary.floor).toBeUndefined();
-    expect(out.summary.rejected).toEqual({ needs_page: 2 });
+    expect(out.summary.rung).toBeUndefined();
+    // The best-scored candidate, with what its results page showed and no source named.
+    expect(out.proposal).toMatchObject({ term: "housing grant consultant", checked: true, why: "Its readers ask this before they apply." });
+    // Nothing is written until the owner says so.
+    expect(tables.keywords).toHaveLength(0);
+    expect(tables.calendar_entries).toHaveLength(0);
+  });
+
+  it("reads on past the usual twelve while every page is rejected, and plans a later one", async () => {
+    const { db } = setup();
+    const many = lettered(18);
+    // The fifteenth is the first whose results articles win.
+    const serp = vi.fn(async (t: string) => (t === "housing grant office o" ? articles(t) : providers(t)));
+    const out = await planFirstLook(db, "ws1", { ...base(), ask: reply(many), serp });
+    expect(out.outcome).toBe("planned");
+    expect(out.plan.map((p) => p.term)).toEqual(["housing grant office o"]);
+    expect(serp.mock.calls.length).toBeGreaterThan(MAX_RESULTS_READS);
+    expect(out.summary.rung).toBe("extended");
+    expect(out.summary.extendedReads).toBeGreaterThan(0);
+    // It stops at the round that accepted one: the last two are never bought.
+    expect(serp.mock.calls.length).toBe(16);
+    expect(out.reads).toHaveLength(16);
+    expect(out.reads.find((r) => r.query === "housing grant office o")).toMatchObject({ verdict: "accepted", source: "suggested", type: "editorial" });
+    expect(out.reads[0]).toMatchObject({ verdict: "needs_page" });
+    expect(out.reads[0].results[0]).toMatchObject({ rank: 1, page: "service_or_local" });
+  });
+
+  it("keeps the cap of twelve once something is accepted", async () => {
+    hold.mockResolvedValue("open");
+    const { db } = setup();
+    const serp = vi.fn(async (t: string) => (t === "housing grant office a" ? articles(t) : providers(t)));
+    const out = await planFirstLook(db, "ws1", { ...base(), maxEntries: 5, ask: reply(lettered(20)), serp });
+    expect(out.plan.map((p) => p.term)).toEqual(["housing grant office a"]);
+    expect(serp.mock.calls.length).toBe(MAX_RESULTS_READS);
+    expect(out.summary.rung).toBe("ranked");
+    expect(out.summary.extendedReads).toBeUndefined();
+  });
+
+  it("makes a second ask for question searches when every suggestion was read and rejected, and plans from it", async () => {
+    const { db, tables } = setup();
+    const second = [topic("how to choose a housing grant consultant", { fit: 4 }), topic("housing grant consultant", { fit: 5 })];
+    const ask = replies([topic("housing grant consultant", { fit: 5 }), topic("housing grant agency")], second);
+    const serp = vi.fn(async (t: string) => (t.startsWith("how to") ? articles(t) : providers(t)));
+    const out = await planFirstLook(db, "ws1", { ...base(), ask, serp });
+    expect(out.outcome).toBe("planned");
+    expect(out.plan.map((p) => p.term)).toEqual(["how to choose a housing grant consultant"]);
+    expect(out.summary).toMatchObject({ rung: "second_ask", modelCalls: 2, secondAsk: { suggested: 2, read: 1 } });
+    // A search already tried is not read again.
+    expect(serp.mock.calls.filter(([t]) => t === "housing grant consultant")).toHaveLength(1);
+    // The second prompt is built from the profile and names what was tried.
+    const [operation, prompt] = ask.mock.calls[1] as [string, string];
+    expect(operation).toBe("keyword-research/first-look-second-ask");
+    expect(prompt).toContain("- scheme guides");
+    expect(prompt).toContain("- housing grant consultant");
+    const row = tables.keywords.find((r) => r.term === "how to choose a housing grant consultant")!;
+    expect(readOpportunity(row.opportunity, FINGERPRINT)).toMatchObject({ status: "qualified", rung: "second_ask" });
+    expect(out.asked.secondAsk.map((t) => t.query)).toEqual(second.map((t) => t.query));
+    expect(out.reads.at(-1)).toMatchObject({ source: "second_ask", verdict: "accepted" });
+  });
+
+  it("does not make the second ask with the deadline close, the budget refusing pages, or the results provider down", async () => {
+    const first = [topic("housing grant consultant"), topic("housing grant agency")];
+    // Too little time left for a model call: straight to what it has.
+    const late = replies(first, [topic("how to choose a housing grant consultant")]);
+    const soon = await planFirstLook(setup().db, "ws1", { ...base(), firstLook: { serps: new Map(), deadline: Date.now() + 5_000 }, ask: late, serp: async (t) => providers(t) });
+    expect(late).toHaveBeenCalledTimes(1);
+    expect(soon.outcome).toBe("needs_owner_input");
+    // The budget refused a page: nothing more is bought, and the unread topic is still proposed.
+    const refused = replies(first, [topic("how to choose a housing grant consultant")]);
+    const broke = await planFirstLook(setup().db, "ws1", { ...base(), ask: refused, serp: async () => { throw new BudgetRefusedError("a results page", "results_pages", 0.004); } });
+    expect(refused).toHaveBeenCalledTimes(1);
+    expect(broke.outcome).toBe("needs_owner_input");
+    expect(broke.summary).toMatchObject({ stopped: "budget", resultsRead: 0, resultsFailed: 0 });
+    expect(broke.proposal).toMatchObject({ checked: false });
+    // The results provider answered nothing: ours, and the overnight retry's.
+    const down = replies(first, [topic("how to choose a housing grant consultant")]);
+    const outage = await planFirstLook(setup().db, "ws1", { ...base(), ask: down, serp: async () => { throw new Error("DataForSEO 402"); } });
+    expect(down).toHaveBeenCalledTimes(1);
+    expect(outage.outcome).toBe("provider");
+  });
+
+  it("plans a question search with nothing of its own to cite on a related search's article: the last floor", async () => {
+    const { db, tables } = setup();
+    // Both pages are providers' pages; only the non-question one has an article in it.
+    const ask = replies([topic("housing grant consultant fees", { fit: 4 }), topic("how much are housing grant consultant fees", { fit: 4 })], []);
+    const serp = async (t: string) => (t === "housing grant consultant fees" ? crowded(t) : providers(t));
+    const out = await planFirstLook(db, "ws1", { ...base(), ask, serp });
+    expect(out.outcome).toBe("planned");
+    // The question leads the floor, though it has nothing of its own to cite.
+    expect(out.plan.map((p) => p.term)).toEqual(["how much are housing grant consultant fees"]);
+    expect(out.summary).toMatchObject({ floor: true, rung: "related_evidence", planned: 1 });
+    const brief = readOpportunity(tables.keywords[0].opportunity, FINGERPRINT)!;
+    expect(brief).toMatchObject({ confidence: "lower", evidenceFrom: "housing grant consultant fees", rung: "related_evidence" });
+    expect(brief.evidenceUrls).toEqual(["https://news-8.example/blog/housing-grant-consultant-fees"]);
+    expect(brief.reason).toMatch(/related search/);
+  });
+
+  it("never reads more than every suggestion and the second ask's", async () => {
+    const serp = vi.fn(async (t: string) => providers(t));
+    const out = await planFirstLook(setup().db, "ws1", { ...base(), ask: replies(lettered(20), lettered(12, { kind: "question" }).map((t, i) => ({ ...t, query: `how to pick housing grant office ${i}` }))), serp });
+    expect(serp.mock.calls.length).toBeLessThanOrEqual(HARD_MAX_READS);
+    expect(serp.mock.calls.length).toBe(28);
+    expect(out.outcome).toBe("needs_owner_input");
   });
 
   it("stops reading results pages once no unread topic could beat the picks", async () => {
@@ -237,6 +349,10 @@ describe("planFirstLook", () => {
     expect(out.plan.map((p) => p.term)).toEqual(["housing grant documents"]);
     const none = await planFirstLook(setup().db, "ws1", { ...base(), ask: vi.fn(async () => '{"topics": [{"query": "housing') });
     expect(none.outcome).toBe("unreadable");
+    // A first reply with no whole topic falls to the second ask before it is called unreadable.
+    const rescued = await planFirstLook(setup().db, "ws1", { ...base(), ask: replies('{"topics": [{"query": "housing', [topic("how to apply for the housing grant")]), serp: async (t) => articles(t) });
+    expect(rescued.outcome).toBe("planned");
+    expect(rescued.summary).toMatchObject({ suggested: 0, rung: "second_ask", modelCalls: 2 });
   });
 
   it("plans nothing new once the trial's one article is spent or the calendar is full", async () => {
