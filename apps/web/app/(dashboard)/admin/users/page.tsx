@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
+import { listAllUsers } from "@/lib/admin/funnel-data";
 import { PageHead, Card, StatStrip, Chip } from "@/components/ui";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getOperator, isAdminEmail } from "@/lib/auth/admin";
@@ -29,18 +30,6 @@ export const metadata: Metadata = { title: "Users" };
  * "last seen", not a date; an account with no subscription shows "No plan",
  * not the `starter` default the row was created with.
  */
-
-async function listAllUsers(admin: SupabaseClient): Promise<User[]> {
-  const users: User[] = [];
-  const perPage = 1000;
-  for (let page = 1; ; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
-    if (error) throw new Error(`Could not list users: ${error.message}`);
-    users.push(...data.users);
-    if (data.users.length < perPage) break;
-  }
-  return users;
-}
 
 type AccountRow = { id: string; name: string; plan: PlanTier | null; plan_status: string | null };
 type MemberRow = { user_id: string; account_id: string; role: string };
@@ -251,7 +240,9 @@ export default async function AdminUsersPage({
             rows={rows.map((r) => [
               <span key="who" className="flex flex-col gap-0.5">
                 <span className="flex items-center gap-2">
-                  <span className="font-medium text-ink">{r.user.email ?? "—"}</span>
+                  <Link href={`/admin/users/${r.user.id}`} className="font-medium text-ink underline-offset-2 hover:underline">
+                    {r.user.email ?? "—"}
+                  </Link>
                   {r.operator && <Chip label="operator" soft />}
                   {!r.user.email_confirmed_at && <Chip label="unconfirmed" soft />}
                 </span>
