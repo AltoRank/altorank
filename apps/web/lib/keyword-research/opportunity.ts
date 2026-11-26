@@ -132,7 +132,7 @@ export interface Opportunity {
    * Which rung of a first look planned it (lib/onboarding/first-look-plan.ts):
    * kept on the row so a floor pick can be told from a pick the bar approved.
    */
-  rung?: "ranked" | "extended" | "second_ask" | "floor" | "related_evidence" | "owner_confirmed";
+  rung?: "ranked" | "extended" | "second_ask" | "floor" | "related_evidence" | "uncited" | "owner_confirmed";
   /**
    * The related search whose results the evidence was read from, when this
    * search's own results held no article or discussion to cite. Those URLs
@@ -146,6 +146,15 @@ export interface Opportunity {
    * confidence brief otherwise needs. Never set by a model or a planner.
    */
   ownerConfirmed?: string;
+  /**
+   * The last rung of a first look: this search's results page was read, no
+   * hard rule removed it for good, and neither it nor a related search held
+   * an article to cite. Planned all the same, at lower confidence and said
+   * so, because a first look that knows the business ends with an article
+   * (lib/onboarding/first-look-plan.ts). Nothing is cited that was not
+   * observed: `evidenceUrls` is empty. Set by that planner only.
+   */
+  uncited?: true;
 }
 /**
  * A first look's qualification (lib/onboarding/pipeline.ts): approvals are
@@ -201,8 +210,9 @@ export function contextKey(context: OpportunityContext): string {
   return createHash("sha256").update(JSON.stringify(stable({ ...context, business }))).digest("hex").slice(0, 24);
 }
 /** How many observed articles a qualified brief must cite. */
-function minEvidence(o: Pick<Opportunity, "confidence" | "ownerConfirmed">): number {
+function minEvidence(o: Pick<Opportunity, "confidence" | "ownerConfirmed" | "uncited">): number {
   if (o.confidence !== "lower") return 2;
+  if (o.uncited === true) return 0;
   return typeof o.ownerConfirmed === "string" && Number.isFinite(Date.parse(o.ownerConfirmed)) ? 0 : 1;
 }
 export function readOpportunity(raw: unknown, context: string): Opportunity | null {
@@ -214,7 +224,8 @@ export function readOpportunity(raw: unknown, context: string): Opportunity | nu
     !["article", "mixed"].includes(o.format ?? "") ||
     // A floor pick (lower confidence) is planned on one observed article;
     // anything the bar approved cites two. A topic its owner asked for by
-    // name needs none: nothing is cited that was not observed.
+    // name, or a first look's last rung (`uncited`), needs none: nothing is
+    // cited that was not observed.
     !Array.isArray(o.evidenceUrls) || o.evidenceUrls.length < minEvidence(o) ||
     !o.evidenceUrls.every((url) => typeof url === "string" && canonicalPage(url)) ||
     !Array.isArray(o.organicUrls) || !o.evidenceUrls.every((url) => o.organicUrls!.includes(url))

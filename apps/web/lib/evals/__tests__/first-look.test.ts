@@ -66,23 +66,29 @@ describe("first-look yield on the sample", () => {
 });
 
 describe("what --require-complete holds a case set to", () => {
-  it("fails when a usable-profile case plans no article, and says which and why", async () => {
-    // Nothing anywhere to cite: the second ask's pages are providers' pages too.
+  it("still plans when nothing anywhere can be cited: the last rung, held to the same label", async () => {
+    // The second ask's pages are providers' pages too, none with an article in it.
     edit("providers-win-every-search", (c) => {
       for (const term of Object.keys(c.serps)) c.serps[term] = c.serps["garden room installers"];
       c.expect = undefined;
     });
     const { report } = await runFirstLook(dir);
-    expect(report).toMatchObject({ usable: 5, planned: 4, proposed: 1 });
-    expect(report.yield).toBe(0.8);
-    expect(report.nothing).toEqual([expect.objectContaining({ caseId: "providers-win-every-search", ending: "proposed", reason: expect.stringMatching(/one was proposed to the owner/) })]);
-    const shortfalls = firstLookShortfalls(report);
-    expect(shortfalls[0]).toBe("First-look yield is 4/5: providers-win-every-search (proposed) planned no article.");
-    // The proposed topic is a pick made below the bar too: its label still applies.
-    expect(report.nothing[0]).toBeDefined();
-    expect(report.runs.find((r) => r.caseId === "providers-win-every-search")).toMatchObject({ term: "how much does a garden room cost" });
+    expect(report).toMatchObject({ usable: 5, planned: 5, yield: 1, proposed: 0 });
+    expect(report.runs.find((r) => r.caseId === "providers-win-every-search")).toMatchObject({ ending: "planned", rung: "uncited", lower: true, term: "how much does a garden room cost" });
+    // A pick made below the bar: its "would the owner publish this" label applies.
     expect(report.floor).toMatchObject({ picks: 2, yes: 2 });
-    expect(shortfalls).toHaveLength(1);
+    expect(firstLookShortfalls(report)).toEqual([]);
+  });
+
+  it("fails when a usable-profile case plans no article, and says which and why", async () => {
+    // The results provider answered none of the pages.
+    edit("providers-win-every-search", (c) => { c.serps = {}; c.expect = undefined; });
+    const { report } = await runFirstLook(dir);
+    expect(report).toMatchObject({ usable: 5, planned: 4, proposed: 0 });
+    expect(report.yield).toBe(0.8);
+    expect(report.nothing).toEqual([expect.objectContaining({ caseId: "providers-win-every-search", ending: "nothing", reason: expect.stringMatching(/^provider:/) })]);
+    const shortfalls = firstLookShortfalls(report);
+    expect(shortfalls[0]).toBe("First-look yield is 4/5: providers-win-every-search (nothing) planned no article.");
   });
 
   it("fails when the model did not answer either ask: that is a first look with nothing", async () => {

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { memoryDb, type MemoryRow } from "@/lib/evals/memory-db";
 
 const hold = vi.fn(async (): Promise<"open" | "held" | "spent"> => "held");
@@ -66,7 +66,14 @@ function setup(over: { keywords?: Row[]; calendar?: Row[] } = {}) {
     site_pages: [{ workspace_id: "ws1", url: "https://relief.example/find-schemes/", path: "/find-schemes/", title: "Find schemes", h1: null }],
   });
 }
-const base = () => ({ firstLook: { serps: new Map<string, SerpData>() }, weeklyLimit: 2, rivalPages: async () => [], metrics: async () => new Map(), now: new Date("2026-10-25T12:00:00Z") });
+const NOW = new Date("2026-10-25T12:00:00Z");
+const base = () => ({ firstLook: { serps: new Map<string, SerpData>() }, weeklyLimit: 2, rivalPages: async () => [], metrics: async () => new Map(), now: NOW });
+// The clock is the plan's date: a brief is read back only while it is under
+// thirty days old (`readOpportunity`), so on the real clock every assertion
+// on a stored brief began failing thirty days after NOW (2026-11-24). Only
+// Date is faked; the planner's own timeouts run on real timers.
+beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(NOW); });
+afterEach(() => { vi.useRealTimers(); });
 
 beforeEach(() => {
   hold.mockReset().mockResolvedValue("held");
@@ -160,20 +167,23 @@ describe("planFirstLook", () => {
     expect(tables.calendar_entries).toHaveLength(1);
   });
 
-  it("proposes its best topic to the owner when nothing read has anything to cite, after one second ask", async () => {
+  it("plans its best read topic, citing nothing, when nothing read has anything to cite: the last rung", async () => {
     const { db, tables } = setup();
     const ask = replies([topic("housing grant consultant", { fit: 5 }), topic("housing grant agency")], []);
     const out = await planFirstLook(db, "ws1", { ...base(), ask, serp: async (t) => providers(t) });
-    expect(out.outcome).toBe("needs_owner_input");
-    expect(out.plan).toEqual([]);
-    expect(out.summary).toMatchObject({ planned: 0, proposed: true, modelCalls: 2, secondAsk: { suggested: 0, read: 0 }, rejected: { needs_page: 2 } });
-    expect(out.summary.floor).toBeUndefined();
-    expect(out.summary.rung).toBeUndefined();
-    // The best-scored candidate, with what its results page showed and no source named.
-    expect(out.proposal).toMatchObject({ term: "housing grant consultant", checked: true, why: "Its readers ask this before they apply." });
-    // Nothing is written until the owner says so.
-    expect(tables.keywords).toHaveLength(0);
-    expect(tables.calendar_entries).toHaveLength(0);
+    // Every page read is providers' pages with no article in it, and the
+    // second ask added nothing: the site still ends with one article.
+    expect(out.outcome).toBe("planned");
+    expect(out.plan.map((p) => p.term)).toEqual(["housing grant consultant"]);
+    expect(out.summary).toMatchObject({ planned: 1, ready: 0, floor: true, rung: "uncited", modelCalls: 2, secondAsk: { suggested: 0, read: 0 }, rejected: { needs_page: 2 } });
+    expect(out.summary.proposed).toBeUndefined();
+    expect(out.proposal).toBeUndefined();
+    // One article, not a list of weak ones; no source is named that was not observed.
+    expect(tables.keywords).toHaveLength(1);
+    expect(tables.calendar_entries).toHaveLength(1);
+    const brief = readOpportunity(tables.keywords[0].opportunity, FINGERPRINT)!;
+    expect(brief).toMatchObject({ status: "qualified", confidence: "lower", rung: "uncited", uncited: true, evidenceUrls: [] });
+    expect(brief.reason).toMatch(/No published article ranks for this search/);
   });
 
   it("reads on past the usual twelve while every page is rejected, and plans a later one", async () => {
@@ -234,7 +244,8 @@ describe("planFirstLook", () => {
     const late = replies(first, [topic("how to choose a housing grant consultant")]);
     const soon = await planFirstLook(setup().db, "ws1", { ...base(), firstLook: { serps: new Map(), deadline: Date.now() + 5_000 }, ask: late, serp: async (t) => providers(t) });
     expect(late).toHaveBeenCalledTimes(1);
-    expect(soon.outcome).toBe("needs_owner_input");
+    expect(soon.outcome).toBe("planned");
+    expect(soon.summary.rung).toBe("uncited");
     // The budget refused a page: nothing more is bought, and the unread topic is still proposed.
     const refused = replies(first, [topic("how to choose a housing grant consultant")]);
     const broke = await planFirstLook(setup().db, "ws1", { ...base(), ask: refused, serp: async () => { throw new BudgetRefusedError("a results page", "results_pages", 0.004); } });
@@ -270,7 +281,8 @@ describe("planFirstLook", () => {
     const out = await planFirstLook(setup().db, "ws1", { ...base(), ask: replies(lettered(20), lettered(12, { kind: "question" }).map((t, i) => ({ ...t, query: `how to pick housing grant office ${i}` }))), serp });
     expect(serp.mock.calls.length).toBeLessThanOrEqual(HARD_MAX_READS);
     expect(serp.mock.calls.length).toBe(28);
-    expect(out.outcome).toBe("needs_owner_input");
+    expect(out.outcome).toBe("planned");
+    expect(out.summary.rung).toBe("uncited");
   });
 
   it("stops reading results pages once no unread topic could beat the picks", async () => {

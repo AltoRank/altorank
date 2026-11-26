@@ -63,6 +63,9 @@ describe("a first look's reads, kept for replay", () => {
     expect(await saveFirstLookReplay(missing, row)).toBe(false);
     const broken = { from: () => { throw new Error("socket hang up"); } } as never;
     expect(await saveFirstLookReplay(broken, row)).toBe(false);
+    // One that never answers does not hold the run: the replay is given up.
+    const silent = { from: () => ({ upsert: () => new Promise(() => undefined) }) } as never;
+    expect(await saveFirstLookReplay(silent, row, 20)).toBe(false);
     // A run that asked nothing and read nothing has nothing to keep.
     expect(await saveFirstLookReplay(db, { ...row, run_id: "run2", asked: { suggested: [], secondAsk: [] } })).toBe(false);
     expect(tables.first_look_replays).toHaveLength(1);

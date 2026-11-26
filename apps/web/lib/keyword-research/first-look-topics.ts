@@ -585,6 +585,27 @@ function briefFields(chosen: ChosenTopic, ctx: { fingerprint: string; domain: st
   };
 }
 
+/**
+ * The last rung's brief: a search whose results page was read and that has
+ * nothing to cite, in its own results or a related search's. Lower
+ * confidence, citing nothing, and saying so; the writer researches the
+ * search itself and the draft's facts go through the fact check as any
+ * other's. What keeps a first look that knows the business from ending with
+ * no article.
+ */
+export function uncitedBrief(chosen: ChosenTopic, ctx: { fingerprint: string; domain: string; conversionUrl?: string | null; now?: Date }): Opportunity {
+  const brief = briefFields(chosen, ctx);
+  return {
+    ...brief,
+    // The sentence that says why it is lower confidence is never the part cut.
+    reason: `${brief.reason.slice(0, 320).trim()} No published article ranks for this search to check it against.`,
+    evidenceUrls: [],
+    confidence: "lower",
+    rung: "uncited",
+    uncited: true,
+  };
+}
+
 // --- The topic proposed to the owner -----------------------------------------
 
 /**

@@ -27,7 +27,8 @@ const RUNG_WORDS: Record<FirstLookRung, string> = {
   extended: "extended (read past the usual pages)",
   second_ask: "second-ask",
   floor: "floor (a providers' page with an article to cite)",
-  related_evidence: "last floor (cited from a related search)",
+  related_evidence: "floor (cited from a related search)",
+  uncited: "last (read, with no article to cite)",
   owner_confirmed: "owner-confirmed",
 };
 

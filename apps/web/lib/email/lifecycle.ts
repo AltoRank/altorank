@@ -1129,6 +1129,14 @@ export type SetupFailedEmail = {
    * "add a keyword from Keywords" sends it in a circle.
    */
   beforeTrial?: boolean;
+  /**
+   * The run did not fail: it stopped to ask its owner one thing
+   * (lib/onboarding/setup-retry.ts `proposal` and `owner-question`). A topic
+   * it could not check and did not start without them, or what the business
+   * sells when the site did not say. The email asks that, and never says
+   * "try again": a retry buys the same question.
+   */
+  ask?: { kind: "proposal"; term: string; angle: string } | { kind: "business" };
 };
 
 /**
@@ -1149,6 +1157,37 @@ export type SetupFailedEmail = {
 export function renderSetupFailed(a: SetupFailedEmail): RenderedEmail {
   const site = a.domain ?? "your site";
   const line = a.line.replace(/\s*[.!]+$/, "");
+  // The run asked its owner something: the email asks it too, with the one
+  // button that answers it. Both land on the run's screen, where the topic
+  // or the question is waiting (components/onboarding/owner-asks.tsx).
+  if (a.ask?.kind === "proposal") {
+    const title = a.ask.angle || a.ask.term;
+    return {
+      subject: `Your first article for ${site} is one click away`,
+      preheader: `We chose a topic and did not start it without you: ${title}`,
+      footerNote: `Sent because setup for ${site} on AltoRank is waiting for you. At most one of these a day.`,
+      html:
+        eyebrow(site) +
+        heading("One topic to confirm") +
+        emailParagraph(`We read ${esc(site)} and chose a first article: <strong>${esc(title)}</strong>, for the search &ldquo;${esc(a.ask.term)}&rdquo;.`) +
+        emailParagraph(`We could not check that search's results before setup ran out of room, so we did not start it without you. Say the word and we write it; the draft is fact-checked like any other.`) +
+        emailButton(appLink("/onboarding"), "Write this article") +
+        emailParagraph(`Nothing has been written or charged, and nothing publishes without your approval.`),
+    };
+  }
+  if (a.ask?.kind === "business") {
+    return {
+      subject: `One question before your first article for ${site}`,
+      preheader: "What do you sell, and to whom? One sentence is enough.",
+      footerNote: `Sent because setup for ${site} on AltoRank is waiting for you. At most one of these a day.`,
+      html:
+        eyebrow(site) +
+        heading("What do you sell, and to whom?") +
+        emailParagraph(`${esc(site)} did not give us enough text to tell what you sell. One sentence on what you sell and who buys it is enough: we choose your first article from it and write it.`) +
+        emailButton(appLink("/onboarding"), "Tell us and write my first article") +
+        emailParagraph(`Nothing has been written or charged, and nothing is wrong with your account.`),
+    };
+  }
   // Our provider's outage: no "try again" button, which would buy the same
   // outage (UX audit 2026-10-12, #16); the retry is ours to make.
   if (a.provider) {

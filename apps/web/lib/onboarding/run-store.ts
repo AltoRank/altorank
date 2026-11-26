@@ -31,6 +31,7 @@ import {
   reduceOnboarding,
   runStatusFrom,
   STALE_RUN_ERROR,
+  stepProposal,
   type OnboardingArticle,
   type OnboardingEvent,
   type OnboardingRunArticle,
@@ -710,11 +711,20 @@ async function emailSetupFailed(
   const beforeTrial = await accountTrialGate(supabase, scope.accountId, null)
     .then((g) => g === "gated")
     .catch(() => false);
+  // A run that stopped to ask its owner something is emailed the question,
+  // not "setup didn't finish, try again" (lib/email/lifecycle.ts `ask`).
+  const planning = (run.phases ?? []).find((p) => p.phase === "planning");
+  const proposal = planning?.cause === "needs_owner_input" ? stepProposal(planning.proposal) : null;
+  const ask = proposal
+    ? { ask: { kind: "proposal" as const, term: proposal.term, angle: proposal.angle } }
+    : planning?.cause === "needs_business"
+      ? { ask: { kind: "business" as const } }
+      : {};
   // Dated by the run, so every sweep that reaches it asks the ledger the same question.
   return notifySetupFailed(
     supabase,
     { accountId: scope.accountId, workspaceId: scope.workspaceId },
-    { domain: (ws?.domain as string | null) ?? null, ...facts, retryTonight, beforeTrial },
+    { domain: (ws?.domain as string | null) ?? null, ...facts, retryTonight, beforeTrial, ...ask },
     finishedAt,
   );
 }

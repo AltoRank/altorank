@@ -593,9 +593,11 @@ async function runPhases(
       // The rung that planned it, said with the label: a pick cited from a
       // related search is not passed off as one checked on its own results.
       const related = plan.filter((p) => p.brief?.evidenceFrom).length;
+      const uncited = plan.filter((p) => p.brief?.uncited).length;
       const labelNote = [
         lower ? ` ${lower === plan.length ? (plan.length === 1 ? "It is" : "They are") : `${lower} of them ${lower === 1 ? "is" : "are"}`} lower confidence: fewer articles rank for ${lower === 1 ? "that search" : "those searches"} than we usually ask for.` : "",
         related ? ` ${related === 1 && plan.length === 1 ? "The article it was checked against ranks" : "Some were checked against articles that rank"} for a closely related search, not this exact one.` : "",
+        uncited ? ` No published article ranks for ${uncited === 1 && plan.length === 1 ? "that search" : "one of those searches"} yet, so there was none to check it against; the draft is fact-checked like any other.` : "",
         unmeasured && unmeasured === plan.length
           ? ` No search volume is reported for ${plan.length === 1 ? "it" : "them"} in your market yet (unmeasured), so ${plan.length === 1 ? "it was" : "they were"} chosen for how well ${plan.length === 1 ? "it fits" : "they fit"} your readers.`
           : unmeasured

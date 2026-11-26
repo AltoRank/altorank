@@ -397,6 +397,27 @@ describe("a run that made nothing emails the account; a run that made something 
     };
   };
 
+  it("emails a run that stopped to ask its owner the question, not a failure", async () => {
+    const proposal = { term: "garden office cost", angle: "What a garden office costs", why: "Every enquiry starts here.", checked: false };
+    const asked = (cause: string, extra: Record<string, unknown> = {}) => [
+      ...partialNothing.filter((p: { phase: string }) => p.phase !== "planning"),
+      { phase: "planning", status: "skipped", detail: "Waiting on the owner.", cause, ...extra },
+    ];
+    const db = fakeDb({
+      onboarding_runs: [failedRun("r1", 30, { phases: asked("needs_owner_input", { proposal }) })],
+      workspaces: [{ id: "ws1", domain: "acme.com" }],
+    });
+    await sweep(db);
+    expect((notifySetupFailed.mock.calls[0] as unknown[])[2]).toMatchObject({ ask: { kind: "proposal", term: "garden office cost", angle: "What a garden office costs" } });
+    notifySetupFailed.mockClear();
+    const thin = fakeDb({
+      onboarding_runs: [failedRun("r2", 30, { phases: asked("needs_business") })],
+      workspaces: [{ id: "ws1", domain: "acme.com" }],
+    });
+    await sweep(thin);
+    expect((notifySetupFailed.mock.calls[0] as unknown[])[2]).toMatchObject({ ask: { kind: "business" } });
+  });
+
   // A real signup, 2026-11-05: run 1 ended partial at 09:58 and was
   // emailed at once; the rerun pressed at 10:00 wrote the article at 10:03.
   it("holds the email while a rerun can still answer it, and drops it when one ended done", async () => {

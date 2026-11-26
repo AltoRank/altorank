@@ -108,7 +108,7 @@ export interface FirstLookRun {
 }
 
 /** The rungs below the bar: the picks the second label set is about. */
-const FLOOR_RUNGS: readonly FirstLookRung[] = ["second_ask", "floor", "related_evidence"];
+const FLOOR_RUNGS: readonly FirstLookRung[] = ["second_ask", "floor", "related_evidence", "uncited"];
 export const isFloorPick = (run: Pick<FirstLookRun, "ending" | "rung">): boolean =>
   run.ending === "proposed" || (run.ending === "planned" && FLOOR_RUNGS.includes(run.rung ?? "ranked"));
 

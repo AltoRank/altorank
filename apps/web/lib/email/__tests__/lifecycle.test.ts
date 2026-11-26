@@ -492,6 +492,21 @@ describe("setup fell short", () => {
     expect(e.html).toContain("Nothing has been written or published");
     expect(e.html).not.toMatch(/draft|is coming|will be written/);
   });
+
+  /** A run that stopped to ask is not a failure, and a retry buys the same question. */
+  it("asks the run's own question instead of saying setup failed", () => {
+    const proposal = renderSetupFailed({ domain: "acme.com", line: "ignored", transient: false, ask: { kind: "proposal", term: "garden office cost", angle: "What a garden office costs" } });
+    expect(proposal.subject).toBe("Your first article for acme.com is one click away");
+    expect(proposal.html).toContain("What a garden office costs");
+    expect(proposal.html).toContain("Write this article");
+    const business = renderSetupFailed({ domain: "acme.com", line: "ignored", transient: false, ask: { kind: "business" } });
+    expect(business.subject).toBe("One question before your first article for acme.com");
+    expect(business.html).toContain("What do you sell, and to whom?");
+    for (const e of [proposal, business]) {
+      expect(e.html).not.toMatch(/Try again|didn't finish|Search Console/);
+      expect(e.html).toContain("/onboarding");
+    }
+  });
 });
 
 describe("setup was never finished", () => {

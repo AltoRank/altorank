@@ -128,7 +128,7 @@ describe("the first look's spend on the funnel event", () => {
       firstLook: { suggested: 20, rejected: { needs_page: 20 }, resultsRead: 23, resultsFailed: 0, noEvidence: 2, planned: 1, ready: 0, modelCalls: 2, floor: true, rung: "related_evidence", extendedReads: 8, secondAsk: { suggested: 6, read: 3 }, chosen: { term: "garden office cost", score, volume: null, line: "" } },
     });
     expect(e.level).toBe("info");
-    expect(e.message).toContain("-> 1 planned on the last floor (cited from a related search) rung, chosen at 49/100");
+    expect(e.message).toContain("-> 1 planned on the floor (cited from a related search) rung, chosen at 49/100");
     expect(e.context).toMatchObject({ rung: "related_evidence", floor: true, extendedReads: 8, secondAsk: { suggested: 6, read: 3 }, modelCalls: 2 });
     expect(JSON.stringify(buildEventRow(e))).not.toContain("garden office");
     // A topic proposed to the owner is a warning still: nothing was planned.

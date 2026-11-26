@@ -54,15 +54,24 @@ export function replayRow(input: {
   };
 }
 
+/** How long the write may take before the run goes on without it. */
+export const REPLAY_SAVE_MS = 5_000;
+
 /**
  * Keep the run's reads. Never throws and never holds the run: a database
- * without migration 123, or a write that fails, costs the replay and
- * nothing else.
+ * without migration 123, a write that fails, or one that does not answer
+ * within REPLAY_SAVE_MS costs the replay and nothing else. Bounded because
+ * a save that never answered held a production first look for 25 minutes
+ * (2026-10-15), and this one sits between the plan and the draft.
  */
-export async function saveFirstLookReplay(db: SupabaseClient, row: FirstLookReplayRow): Promise<boolean> {
+export async function saveFirstLookReplay(db: SupabaseClient, row: FirstLookReplayRow, timeoutMs = REPLAY_SAVE_MS): Promise<boolean> {
   if (!row.asked.suggested.length && !row.asked.secondAsk.length && !row.pages.length) return false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const { error } = await db.from("first_look_replays").upsert(row, { onConflict: "run_id" });
+    const { error } = await Promise.race([
+      Promise.resolve(db.from("first_look_replays").upsert(row, { onConflict: "run_id" })),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`no answer in ${timeoutMs} ms`)), timeoutMs); }),
+    ]).finally(() => clearTimeout(timer));
     if (error) {
       console.warn(`[first look] could not keep the run's results pages: ${error.message}`);
       return false;

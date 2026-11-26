@@ -37,10 +37,18 @@
 //   floor             a providers' page with its own article to cite
 //   related_evidence  a search with nothing to cite, citing the articles that
 //                     rank for a closely related search read in this run
+//   uncited           the best search whose results page was read, with
+//                     nothing to cite anywhere: planned at lower confidence,
+//                     citing nothing, and said so
 //
-// When none of them can plan with evidence the writer accepts, no source is
-// invented: the outcome is `needs_owner_input` and the best candidate is
-// proposed to the owner, whose "write this" is the missing confirmation.
+// So a first look that read at least one results page a hard rule did not
+// remove for good plans an article. No source is ever invented: the last
+// rung's brief cites nothing (`uncitedBrief`).
+//
+// Only when no page could be read at all (the budget refused them, or the
+// deadline came first) is the outcome `needs_owner_input`: a search nobody
+// looked at is proposed to the owner, whose "write this" is the confirmation,
+// rather than spending their one article on it blind.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { PRE_TRIAL_DRAFTS, planHold, type PlanHold } from "@/lib/billing/trial-hold";
@@ -75,6 +83,7 @@ import {
   suggestTopicsPrompt,
   topicBrief,
   topicKey,
+  uncitedBrief,
   type BorrowedEvidence,
   type ChosenTopic,
   type FirstLookProposal,
@@ -132,14 +141,15 @@ export interface FirstLookSummary {
    * usual reads), `extended` (the bar, reading past them), `second_ask` (a
    * question search from the second ask), `floor` (a providers' page with
    * its own article to cite), `related_evidence` (cited from a related
-   * search's results). Absent when nothing was planned.
+   * search's results), `uncited` (read, with nothing to cite anywhere).
+   * Absent when nothing was planned.
    */
   rung?: FirstLookRung;
   /** Suggested searches read past MAX_RESULTS_READS because nothing was accepted yet. */
   extendedReads?: number;
   /** The second ask, when it was made: the searches it added and how many of their pages were read. */
   secondAsk?: { suggested: number; read: number };
-  /** Nothing could be planned with evidence the writer accepts: one topic was proposed to the owner. */
+  /** No results page could be read: one unread topic was proposed to the owner. */
   proposed?: boolean;
   /** What ended the reading early, when something did. */
   stopped?: "budget" | "deadline";
@@ -159,8 +169,8 @@ export type FirstLookOutcome =
   /** The model answered, but cut off or unreadable before a whole topic: ours too, and not an outage. */
   | "unreadable"
   /**
-   * Topics were found and none can be planned with evidence the writer
-   * accepts: `proposal` is the one to show the owner, whose "write this"
+   * Topics were found and no results page could be read for any of them
+   * (the budget, the deadline): `proposal` is the one to show the owner, whose "write this"
    * supplies the confirmation (lib/keyword-research/first-look-topics.ts
    * `ownerConfirmedBrief`).
    */
@@ -564,6 +574,18 @@ export async function planFirstLook(
       c.rung = rung;
       accepted.push(c);
     }
+    // The last rung. Nothing read has anything to cite, here or on a related
+    // search: the best of what was read is planned all the same, citing
+    // nothing. Three signups whose every search was won by providers' own
+    // pages ended with no article twice (2026-11-16 and the rerun of
+    // 2026-11-25), on sites we knew the business of. One article, never a
+    // list of them.
+    if (!accepted.length && floorPool.length) {
+      const c = floorPool[0];
+      c.brief = uncitedBrief({ topic: c.topic, score: c.score, volume: c.volume, difficulty: c.difficulty, page: c.page!, organicUrls: c.organicUrls ?? [] }, { fingerprint, domain, conversionUrl: business?.conversionUrl ?? null, now: opts.now });
+      c.rung = "uncited";
+      accepted.push(c);
+    }
     if (accepted.length) summary.floor = true;
   }
 
@@ -573,10 +595,11 @@ export async function planFirstLook(
     // The results provider answered none of the pages, or the deadline came
     // before one was read: ours, and the overnight retry's to try again.
     if (summary.resultsRead === 0 && !budgetStopped && (summary.resultsFailed > 0 || opts.firstLook.timedOut)) return nothing("provider");
-    // Nothing can be cited honestly, so no source is invented: the best
-    // candidate is proposed to the owner, whose "write this" is the
-    // confirmation the writer's check is missing (`ownerConfirmedBrief`).
-    const best = floorPool[0] ?? unread()[0];
+    // No results page was read that a hard rule left standing (the budget
+    // refused them, or the deadline came first): the best unread search is
+    // proposed to the owner, whose "write this" is the confirmation the
+    // writer's check is missing (`ownerConfirmedBrief`).
+    const best = unread()[0];
     if (best) {
       summary.proposed = true;
       return { ...nothing("needs_owner_input"), proposal: proposalOf({ topic: best.topic, score: best.score, volume: best.volume, difficulty: best.difficulty, page: best.page, organicUrls: best.organicUrls ?? [] }) };
