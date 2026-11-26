@@ -97,6 +97,14 @@ export function SetupAsk({
         <p className="m-0 text-[12.5px] text-ink-2">Nothing has been charged, and running setup again costs nothing.</p>
       </>
     );
+  // The run asked something of its owner: the box above is the way on.
+  if (ending === "proposal" || ending === "owner-question")
+    return (
+      <>
+        {shown}
+        <p className="m-0 text-[12.5px] text-ink-2">Nothing has been charged, and nothing is written until you say so.</p>
+      </>
+    );
   // Our provider's outage: no card, no retry button, nobody promised beyond
   // what the heading says (the overnight retry and its email).
   if (ending === "provider-down")

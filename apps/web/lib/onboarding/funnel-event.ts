@@ -19,7 +19,18 @@ import { describeFunnel, funnelDiscrepancy, type TopicFunnel } from "@/lib/keywo
 import type { RunBudgetState } from "@/lib/billing/run-budget";
 import { timingSummary, type RunTimings } from "./timings";
 import type { FirstLookSummary } from "./first-look-plan";
-import { describeScore, HARD_REJECT_WORDS, type HardReject } from "@/lib/keyword-research/first-look-topics";
+import { describeScore, HARD_REJECT_WORDS, type FirstLookRung, type HardReject } from "@/lib/keyword-research/first-look-topics";
+
+/** A rung, as the event's sentence says it (./first-look-plan.ts has what each one is). */
+const RUNG_WORDS: Record<FirstLookRung, string> = {
+  ranked: "ranked",
+  extended: "extended (read past the usual pages)",
+  second_ask: "second-ask",
+  floor: "floor (a providers' page with an article to cite)",
+  related_evidence: "floor (cited from a related search)",
+  uncited: "last (read, with no article to cite)",
+  owner_confirmed: "owner-confirmed",
+};
 
 export const FUNNEL_EVENT_SOURCE = "onboarding.funnel";
 
@@ -112,7 +123,7 @@ function funnelEventOf(input: PlanFunnelEventInput): SystemEvent {
     return {
       ...base,
       level: look.planned > 0 ? "info" : "warn",
-      message: `First look: ${look.suggested} suggested${removed ? `, removed ${removed}` : ""} -> ${look.resultsRead} results page${look.resultsRead === 1 ? "" : "s"} read -> ${look.planned} planned${look.floor ? " on the floor (every page read was providers' pages)" : ""}${look.chosen ? `, chosen at ${describeScore(look.chosen.score, look.chosen.volume)}` : input.planningDetail ? `: ${input.planningDetail}` : ""}${spendSentence(spend, input.draftIncluded === true)}`,
+      message: `First look: ${look.suggested} suggested${removed ? `, removed ${removed}` : ""} -> ${look.resultsRead} results page${look.resultsRead === 1 ? "" : "s"} read -> ${look.planned} planned${look.rung ? ` on the ${RUNG_WORDS[look.rung]} rung` : ""}${look.proposed ? ", one topic proposed to the owner" : ""}${look.chosen ? `, chosen at ${describeScore(look.chosen.score, look.chosen.volume)}` : input.planningDetail ? `: ${input.planningDetail}` : ""}${spendSentence(spend, input.draftIncluded === true)}`,
       context: {
         runId: input.runId ?? null,
         suggested: look.suggested,
@@ -122,6 +133,12 @@ function funnelEventOf(input: PlanFunnelEventInput): SystemEvent {
         ...(look.noEvidence ? { noEvidence: look.noEvidence } : {}),
         planned: look.planned,
         ...(look.floor ? { floor: true } : {}),
+        // Which rung planned the article, and what each rung below the bar did.
+        ...(look.rung ? { rung: look.rung } : {}),
+        ...(look.extendedReads ? { extendedReads: look.extendedReads } : {}),
+        ...(look.secondAsk ? { secondAsk: look.secondAsk } : {}),
+        ...(look.proposed ? { proposed: true } : {}),
+        ...(look.stopped ? { stopped: look.stopped } : {}),
         ready: look.ready,
         modelCalls: look.modelCalls,
         ...(look.chosen ? { chosenScore: look.chosen.score, chosenVolume: look.chosen.volume } : {}),

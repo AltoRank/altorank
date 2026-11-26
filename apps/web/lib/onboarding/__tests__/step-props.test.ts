@@ -35,7 +35,7 @@ describe("stepProps", () => {
     // The type check in step-props.ts fails the build when SetupEnding grows
     // and this list does not; this is the list itself.
     expect(new Set(SETUP_ENDINGS).size).toBe(SETUP_ENDINGS.length);
-    expect([...SETUP_ENDINGS].sort()).toEqual(["article", "first-failed", "no-article", "nothing-planned", "provider-down", "retry", "writing"]);
+    expect([...SETUP_ENDINGS].sort()).toEqual(["article", "first-failed", "no-article", "nothing-planned", "owner-question", "proposal", "provider-down", "retry", "writing"]);
   });
 });
 

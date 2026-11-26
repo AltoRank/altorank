@@ -1,0 +1,942 @@
+{
+  "id": "first-twelve-rejected",
+  "note": "Thirteen suggestions in a row are providers' pages; the fourteenth is a search articles win. Stopping at twelve reads planned nothing.",
+  "url": "https://www.ledgerlane.example/",
+  "languageCode": "en",
+  "locationCode": 2826,
+  "today": "2026-11-20",
+  "authority": 6,
+  "business": {
+    "name": "Ledgerlane",
+    "description": "Ledgerlane is an accountancy practice that does bookkeeping and tax returns for freelancers and sole traders.",
+    "offerings": [
+      "self assessment tax returns",
+      "bookkeeping for sole traders"
+    ],
+    "audiences": [
+      "freelancers",
+      "sole traders"
+    ],
+    "buyingJobs": [
+      "file a tax return correctly without spending a weekend on it"
+    ],
+    "country": "United Kingdom",
+    "language": "English"
+  },
+  "pages": [],
+  "pool": [],
+  "answers": {
+    "suggest": "{\"topics\": [{\"query\": \"freelance accountant services\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Freelance accountant services: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"freelance accountant fees\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Freelance accountant fees: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"freelance accountant packages\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Freelance accountant packages: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"freelance accountant firm\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Freelance accountant firm: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"freelance accountant practice\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Freelance accountant practice: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"freelance accountant specialists\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Freelance accountant specialists: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"freelance accountant company\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Freelance accountant company: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"freelance accountant office\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Freelance accountant office: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"freelance accountant team\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Freelance accountant team: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"freelance accountant provider\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Freelance accountant provider: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"freelance accountant agency\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Freelance accountant agency: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"freelance accountant partners\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Freelance accountant partners: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"freelance accountant advisers\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Freelance accountant advisers: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"allowable expenses for freelancers\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Allowable expenses for freelancers: what to know first\", \"shape\": \"reference\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"sole trader accountant services\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Sole trader accountant services: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"tax return accountant firm\", \"fromList\": false, \"reader\": \"Freelancers doing their own books\", \"job\": \"Get their tax return filed correctly\", \"offering\": \"The fixed-fee tax return service\", \"angle\": \"Tax return accountant firm: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}]}",
+    "secondAsk": null
+  },
+  "serps": {
+    "freelance accountant services": [
+      {
+        "rank": 1,
+        "title": "Freelance Accountant Services | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "freelance accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Freelance Accountant Services | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "freelance accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Freelance Accountant Services | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "freelance accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Freelance Accountant Services | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "freelance accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Freelance Accountant Services | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "freelance accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Freelance Accountant Services | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "freelance accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Freelance Accountant Services | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "freelance accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "freelance accountant fees": [
+      {
+        "rank": 1,
+        "title": "Freelance Accountant Fees | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "freelance accountant fees done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Freelance Accountant Fees | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "freelance accountant fees done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Freelance Accountant Fees | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "freelance accountant fees done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Freelance Accountant Fees | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "freelance accountant fees done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Freelance Accountant Fees | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "freelance accountant fees done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Freelance Accountant Fees | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "freelance accountant fees done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Freelance Accountant Fees | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "freelance accountant fees done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "freelance accountant packages": [
+      {
+        "rank": 1,
+        "title": "Freelance Accountant Packages | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "freelance accountant packages done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Freelance Accountant Packages | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "freelance accountant packages done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Freelance Accountant Packages | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "freelance accountant packages done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Freelance Accountant Packages | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "freelance accountant packages done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Freelance Accountant Packages | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "freelance accountant packages done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Freelance Accountant Packages | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "freelance accountant packages done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Freelance Accountant Packages | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "freelance accountant packages done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "freelance accountant firm": [
+      {
+        "rank": 1,
+        "title": "Freelance Accountant Firm | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "freelance accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Freelance Accountant Firm | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "freelance accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Freelance Accountant Firm | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "freelance accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Freelance Accountant Firm | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "freelance accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Freelance Accountant Firm | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "freelance accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Freelance Accountant Firm | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "freelance accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Freelance Accountant Firm | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "freelance accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "freelance accountant practice": [
+      {
+        "rank": 1,
+        "title": "Freelance Accountant Practice | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "freelance accountant practice done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Freelance Accountant Practice | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "freelance accountant practice done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Freelance Accountant Practice | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "freelance accountant practice done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Freelance Accountant Practice | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "freelance accountant practice done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Freelance Accountant Practice | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "freelance accountant practice done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Freelance Accountant Practice | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "freelance accountant practice done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Freelance Accountant Practice | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "freelance accountant practice done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "freelance accountant specialists": [
+      {
+        "rank": 1,
+        "title": "Freelance Accountant Specialists | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "freelance accountant specialists done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Freelance Accountant Specialists | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "freelance accountant specialists done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Freelance Accountant Specialists | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "freelance accountant specialists done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Freelance Accountant Specialists | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "freelance accountant specialists done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Freelance Accountant Specialists | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "freelance accountant specialists done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Freelance Accountant Specialists | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "freelance accountant specialists done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Freelance Accountant Specialists | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "freelance accountant specialists done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "freelance accountant company": [
+      {
+        "rank": 1,
+        "title": "Freelance Accountant Company | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "freelance accountant company done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Freelance Accountant Company | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "freelance accountant company done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Freelance Accountant Company | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "freelance accountant company done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Freelance Accountant Company | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "freelance accountant company done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Freelance Accountant Company | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "freelance accountant company done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Freelance Accountant Company | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "freelance accountant company done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Freelance Accountant Company | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "freelance accountant company done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "freelance accountant office": [
+      {
+        "rank": 1,
+        "title": "Freelance Accountant Office | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "freelance accountant office done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Freelance Accountant Office | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "freelance accountant office done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Freelance Accountant Office | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "freelance accountant office done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Freelance Accountant Office | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "freelance accountant office done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Freelance Accountant Office | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "freelance accountant office done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Freelance Accountant Office | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "freelance accountant office done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Freelance Accountant Office | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "freelance accountant office done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "freelance accountant team": [
+      {
+        "rank": 1,
+        "title": "Freelance Accountant Team | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "freelance accountant team done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Freelance Accountant Team | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "freelance accountant team done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Freelance Accountant Team | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "freelance accountant team done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Freelance Accountant Team | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "freelance accountant team done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Freelance Accountant Team | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "freelance accountant team done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Freelance Accountant Team | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "freelance accountant team done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Freelance Accountant Team | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "freelance accountant team done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "freelance accountant provider": [
+      {
+        "rank": 1,
+        "title": "Freelance Accountant Provider | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "freelance accountant provider done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Freelance Accountant Provider | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "freelance accountant provider done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Freelance Accountant Provider | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "freelance accountant provider done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Freelance Accountant Provider | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "freelance accountant provider done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Freelance Accountant Provider | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "freelance accountant provider done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Freelance Accountant Provider | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "freelance accountant provider done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Freelance Accountant Provider | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "freelance accountant provider done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "freelance accountant agency": [
+      {
+        "rank": 1,
+        "title": "Freelance Accountant Agency | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "freelance accountant agency done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Freelance Accountant Agency | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "freelance accountant agency done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Freelance Accountant Agency | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "freelance accountant agency done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Freelance Accountant Agency | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "freelance accountant agency done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Freelance Accountant Agency | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "freelance accountant agency done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Freelance Accountant Agency | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "freelance accountant agency done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Freelance Accountant Agency | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "freelance accountant agency done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "freelance accountant partners": [
+      {
+        "rank": 1,
+        "title": "Freelance Accountant Partners | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "freelance accountant partners done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Freelance Accountant Partners | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "freelance accountant partners done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Freelance Accountant Partners | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "freelance accountant partners done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Freelance Accountant Partners | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "freelance accountant partners done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Freelance Accountant Partners | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "freelance accountant partners done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Freelance Accountant Partners | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "freelance accountant partners done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Freelance Accountant Partners | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "freelance accountant partners done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "freelance accountant advisers": [
+      {
+        "rank": 1,
+        "title": "Freelance Accountant Advisers | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "freelance accountant advisers done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Freelance Accountant Advisers | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "freelance accountant advisers done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Freelance Accountant Advisers | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "freelance accountant advisers done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Freelance Accountant Advisers | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "freelance accountant advisers done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Freelance Accountant Advisers | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "freelance accountant advisers done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Freelance Accountant Advisers | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "freelance accountant advisers done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Freelance Accountant Advisers | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "freelance accountant advisers done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "sole trader accountant services": [
+      {
+        "rank": 1,
+        "title": "Sole Trader Accountant Services | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "sole trader accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Sole Trader Accountant Services | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "sole trader accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Sole Trader Accountant Services | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "sole trader accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Sole Trader Accountant Services | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "sole trader accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Sole Trader Accountant Services | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "sole trader accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Sole Trader Accountant Services | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "sole trader accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Sole Trader Accountant Services | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "sole trader accountant services done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "tax return accountant firm": [
+      {
+        "rank": 1,
+        "title": "Tax Return Accountant Firm | Accountants 1 | Book now",
+        "url": "https://accountants-1.example/",
+        "description": "tax return accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Tax Return Accountant Firm | Accountants 2 | Book now",
+        "url": "https://accountants-2.example/",
+        "description": "tax return accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Tax Return Accountant Firm | Accountants 3 | Book now",
+        "url": "https://accountants-3.example/",
+        "description": "tax return accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Tax Return Accountant Firm | Accountants 4 | Book now",
+        "url": "https://accountants-4.example/",
+        "description": "tax return accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Tax Return Accountant Firm | Accountants 5 | Book now",
+        "url": "https://accountants-5.example/",
+        "description": "tax return accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Tax Return Accountant Firm | Accountants 6 | Book now",
+        "url": "https://accountants-6.example/",
+        "description": "tax return accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Tax Return Accountant Firm | Accountants 7 | Book now",
+        "url": "https://accountants-7.example/",
+        "description": "tax return accountant firm done for you. Call us today for a quote.",
+        "domain": "accountants-7.example",
+        "wordCount": null
+      }
+    ],
+    "allowable expenses for freelancers": [
+      {
+        "rank": 1,
+        "title": "Allowable expenses for freelancers: a guide (1)",
+        "url": "https://journal-1.example/blog/allowable-expenses-for-freelancers",
+        "description": "A plain guide to allowable expenses for freelancers.",
+        "domain": "journal-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Allowable expenses for freelancers: a guide (2)",
+        "url": "https://journal-2.example/blog/allowable-expenses-for-freelancers",
+        "description": "A plain guide to allowable expenses for freelancers.",
+        "domain": "journal-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Allowable expenses for freelancers: a guide (3)",
+        "url": "https://journal-3.example/blog/allowable-expenses-for-freelancers",
+        "description": "A plain guide to allowable expenses for freelancers.",
+        "domain": "journal-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Allowable expenses for freelancers: a guide (4)",
+        "url": "https://journal-4.example/blog/allowable-expenses-for-freelancers",
+        "description": "A plain guide to allowable expenses for freelancers.",
+        "domain": "journal-4.example",
+        "wordCount": null
+      }
+    ]
+  },
+  "usableProfile": true,
+  "expect": {
+    "rung": "extended"
+  }
+}

@@ -1,0 +1,14 @@
+[
+  {
+    "caseId": "providers-win-every-search",
+    "term": "how much does a garden room cost",
+    "publish": "yes",
+    "note": "The question every enquiry starts with; the business can answer it from its own price list."
+  },
+  {
+    "caseId": "question-cited-from-related-search",
+    "term": "how much are pottery class prices",
+    "publish": "yes",
+    "note": "What a beginner asks before booking; the studio answers it with its own prices."
+  }
+]

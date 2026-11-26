@@ -471,19 +471,94 @@ function onSite(url: string | null | undefined, home: string): boolean {
 }
 
 /**
+ * The search itself as a headline, when the model's own is unusable (dated,
+ * empty, too long): "how to choose a garden office" reads as one. A topic is
+ * not lost to its headline; the writer titles the article from its research.
+ */
+export function fallbackAngle(query: string): string {
+  const q = query.trim().replace(/\s+/g, " ").slice(0, 160);
+  return q ? q[0].toUpperCase() + q.slice(1) : "";
+}
+
+const RELATED_STOP = new Set(["a", "an", "the", "to", "of", "for", "in", "on", "and", "or", "is", "are", "do", "does", "how", "what", "which", "why", "when", "who", "vs", "versus", "best", "my", "your", "i", "you", "it", "with", "near", "me"]);
+const contentWords = (query: string) => [...new Set(topicKey(query).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 2 && !RELATED_STOP.has(w)))];
+
+/**
+ * 0-1: how much of the shorter search's content words the other shares.
+ * "garden office cost" and "how much does a garden office cost" are the same
+ * subject; "garden office cost" and "office chair reviews" are not.
+ */
+export function relatedness(a: string, b: string): number {
+  const x = contentWords(a);
+  const y = new Set(contentWords(b));
+  if (!x.length || !y.size) return 0;
+  const shared = x.filter((w) => y.has(w)).length;
+  return shared / Math.min(x.length, y.size);
+}
+
+/** Two searches close enough that an article ranking for one is evidence an article can answer the other. */
+export const RELATED_MIN = 0.6;
+
+/** Evidence read from a related search's results page (lib/onboarding/first-look-plan.ts, the last floor). */
+export interface BorrowedEvidence {
+  /** The related search. */
+  from: string;
+  /** Its articles and discussions, best first. */
+  urls: string[];
+}
+
+/**
+ * The best related search with something to cite, among the pages this run
+ * read. Null when none is close enough: evidence is never borrowed from an
+ * unrelated search to satisfy the writer's check.
+ */
+export function relatedEvidence(query: string, read: ReadonlyArray<{ query: string; evidence: readonly string[] }>): BorrowedEvidence | null {
+  let best: { from: string; urls: string[]; score: number } | null = null;
+  for (const page of read) {
+    if (topicKey(page.query) === topicKey(query) || !page.evidence.length) continue;
+    const score = relatedness(query, page.query);
+    if (score < RELATED_MIN) continue;
+    if (!best || score > best.score || (score === best.score && page.evidence.length > best.urls.length)) best = { from: page.query, urls: [...page.evidence].slice(0, 3), score };
+  }
+  return best ? { from: best.from, urls: best.urls } : null;
+}
+
+export type FirstLookRung = NonNullable<Opportunity["rung"]>;
+
+/**
  * The brief the writer reads, as a qualified verdict (lib/keyword-research/
  * opportunity.ts `Opportunity`). Null when it would not pass the writer's own
- * check (`readOpportunity`): no article or discussion in the results to cite,
- * or a headline the model dated.
+ * check (`readOpportunity`): no article or discussion to cite, in this
+ * search's results or, with `borrowed`, in a related search's.
  */
-export function topicBrief(chosen: ChosenTopic, ctx: { fingerprint: string; domain: string; conversionUrl?: string | null; now?: Date }): Opportunity | null {
-  const evidence = evidenceOf(chosen.page.reading).filter((url) => chosen.organicUrls.includes(url));
+export function topicBrief(
+  chosen: ChosenTopic,
+  ctx: { fingerprint: string; domain: string; conversionUrl?: string | null; now?: Date; borrowed?: BorrowedEvidence | null; rung?: FirstLookRung },
+): Opportunity | null {
+  const own = evidenceOf(chosen.page.reading).filter((url) => chosen.organicUrls.includes(url));
+  const borrowed = own.length === 0 && ctx.borrowed ? ctx.borrowed.urls.filter((url) => canonicalPage(url)).slice(0, 3) : [];
+  const evidence = own.length ? own : borrowed;
   if (evidence.length === 0) return null;
-  const angle = validArticleAngle(chosen.topic.angle, chosen.topic.query) ? chosen.topic.angle : "";
-  if (!angle) return null;
-  // One article to cite, or a page providers' own pages win: planned, and
-  // said to be lower confidence (the planning line and the card say so).
-  const lower = evidence.length < 2 || crowdedByProviders(chosen.page.reading);
+  const brief = briefFields(chosen, ctx);
+  // One article to cite, a page providers' own pages win, or evidence from
+  // a related search: planned, and said to be lower confidence (the
+  // planning line and the card say so).
+  const lower = evidence.length < 2 || crowdedByProviders(chosen.page.reading) || borrowed.length > 0;
+  return {
+    ...brief,
+    reason: `${brief.reason}${borrowed.length ? ` No article ranks for this exact search; the ${borrowed.length === 1 ? "article" : "articles"} cited rank${borrowed.length === 1 ? "s" : ""} for the related search "${ctx.borrowed!.from}".` : ""}`.slice(0, 400),
+    evidenceUrls: evidence,
+    organicUrls: borrowed.length ? [...chosen.organicUrls, ...borrowed.filter((url) => !chosen.organicUrls.includes(url))] : chosen.organicUrls,
+    ...(lower ? { confidence: "lower" as const } : {}),
+    ...(borrowed.length ? { evidenceFrom: ctx.borrowed!.from } : {}),
+    ...(ctx.rung ? { rung: ctx.rung } : {}),
+  };
+}
+
+/** Everything a brief says but what it cites. */
+function briefFields(chosen: ChosenTopic, ctx: { fingerprint: string; domain: string; conversionUrl?: string | null; now?: Date }): Opportunity {
+  // A headline the model dated is replaced, not a reason to plan nothing.
+  const angle = validArticleAngle(chosen.topic.angle, chosen.topic.query) ? chosen.topic.angle : fallbackAngle(chosen.topic.query);
   const home = `https://${ctx.domain.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
   const demandLine = chosen.score.demandMeasured
     ? `About ${chosen.volume!.toLocaleString("en-US")} searches a month.`
@@ -503,10 +578,178 @@ export function topicBrief(chosen: ChosenTopic, ctx: { fingerprint: string; doma
     // A model cannot invent or redirect the product's destination: the
     // profile's own page on this site, or the home page.
     conversionPath: onSite(ctx.conversionUrl, home) ? ctx.conversionUrl! : home,
-    evidenceUrls: evidence,
+    evidenceUrls: [],
     organicUrls: chosen.organicUrls,
-    ...(lower ? { confidence: "lower" as const } : {}),
     ...(chosen.score.demandMeasured ? {} : { demand: "unmeasured" as const }),
     firstLookScore: { ...chosen.score },
   };
+}
+
+/**
+ * The last rung's brief: a search whose results page was read and that has
+ * nothing to cite, in its own results or a related search's. Lower
+ * confidence, citing nothing, and saying so; the writer researches the
+ * search itself and the draft's facts go through the fact check as any
+ * other's. What keeps a first look that knows the business from ending with
+ * no article.
+ */
+export function uncitedBrief(chosen: ChosenTopic, ctx: { fingerprint: string; domain: string; conversionUrl?: string | null; now?: Date }): Opportunity {
+  const brief = briefFields(chosen, ctx);
+  return {
+    ...brief,
+    // The sentence that says why it is lower confidence is never the part cut.
+    reason: `${brief.reason.slice(0, 320).trim()} No published article ranks for this search to check it against.`,
+    evidenceUrls: [],
+    confidence: "lower",
+    rung: "uncited",
+    uncited: true,
+  };
+}
+
+// --- The topic proposed to the owner -----------------------------------------
+
+/**
+ * The one direction proposed when nothing could be planned with evidence the
+ * writer accepts: the topic, why, and what a "write this" needs to turn it
+ * into a brief. Shown to the owner on the run's screen and kept on the run's
+ * row; no source is named that was not observed.
+ */
+export interface FirstLookProposal {
+  term: string;
+  angle: string;
+  why: string;
+  reader: string;
+  job: string;
+  offering: string;
+  shape: ArticleShape;
+  volume: number | null;
+  difficulty: number | null;
+  score: TopicScore;
+  /** Whether this search's results page was read before it was proposed. */
+  checked: boolean;
+  /** What the results page showed, in a sentence, when it was read. */
+  results?: string;
+  organicUrls: string[];
+}
+
+export function proposalOf(chosen: Omit<ChosenTopic, "page"> & { page?: PageRead }): FirstLookProposal {
+  const { topic } = chosen;
+  return {
+    term: topic.query,
+    angle: validArticleAngle(topic.angle, topic.query) ? topic.angle : fallbackAngle(topic.query),
+    why: topic.why,
+    reader: topic.reader,
+    job: topic.job,
+    offering: topic.offering,
+    shape: topic.shape,
+    volume: chosen.volume,
+    difficulty: chosen.difficulty,
+    score: { ...chosen.score },
+    checked: Boolean(chosen.page),
+    ...(chosen.page ? { results: chosen.page.reading.summary } : {}),
+    organicUrls: chosen.organicUrls.slice(0, 10),
+  };
+}
+
+const proposalText = (v: unknown, max: number) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+
+/** A proposal read back off a run's row: complete, or null. */
+export function readProposal(raw: unknown): FirstLookProposal | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Partial<FirstLookProposal>;
+  const term = topicKey(proposalText(o.term, 120));
+  const fields = { angle: proposalText(o.angle, 160), why: proposalText(o.why, 300), reader: proposalText(o.reader, 200), job: proposalText(o.job, 300), offering: proposalText(o.offering, 300) };
+  const score = o.score as TopicScore | undefined;
+  if (!term || Object.values(fields).some((v) => !v) || !score || typeof score.total !== "number") return null;
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  return {
+    term,
+    ...fields,
+    shape: ARTICLE_SHAPES.includes(o.shape as ArticleShape) ? (o.shape as ArticleShape) : "explainer",
+    volume: num(o.volume),
+    difficulty: num(o.difficulty),
+    score: { total: score.total, fit: Number(score.fit) || 0, demand: Number(score.demand) || 0, reach: Number(score.reach) || 0, page: Number(score.page) || 0, demandMeasured: score.demandMeasured === true, pageRead: score.pageRead === true },
+    checked: o.checked === true,
+    ...(proposalText(o.results, 300) ? { results: proposalText(o.results, 300) } : {}),
+    organicUrls: Array.isArray(o.organicUrls) ? o.organicUrls.filter((u): u is string => typeof u === "string" && Boolean(canonicalPage(u))).slice(0, 10) : [],
+  };
+}
+
+/**
+ * The brief a proposal becomes once its owner says "write this": lower
+ * confidence, citing nothing, with their confirmation where an observed
+ * article would be (`readOpportunity`). The writer researches the search
+ * itself, and the draft's facts go through the fact check as any other's.
+ */
+export function ownerConfirmedBrief(proposal: FirstLookProposal, ctx: { fingerprint: string; domain: string; conversionUrl?: string | null; now?: Date }): Opportunity {
+  const now = ctx.now ?? new Date();
+  const home = `https://${ctx.domain.replace(/^https?:\/\//, "").replace(/\/+$/, "")}`;
+  return {
+    version: OPPORTUNITY_VERSION,
+    context: ctx.fingerprint,
+    checkedAt: now.toISOString(),
+    status: "qualified",
+    reason: `${proposal.why} Proposed with no article found to cite for this search, and confirmed by the site's owner.`.replace(/\s+/g, " ").trim().slice(0, 400),
+    audience: proposal.reader,
+    buyingJob: proposal.job,
+    offering: proposal.offering,
+    angle: validArticleAngle(proposal.angle, proposal.term) ? proposal.angle : fallbackAngle(proposal.term),
+    format: "article",
+    shape: proposal.shape,
+    conversionPath: onSite(ctx.conversionUrl, home) ? ctx.conversionUrl! : home,
+    evidenceUrls: [],
+    organicUrls: proposal.organicUrls,
+    confidence: "lower",
+    ...(proposal.score.demandMeasured ? {} : { demand: "unmeasured" as const }),
+    firstLookScore: { ...proposal.score },
+    rung: "owner_confirmed",
+    ownerConfirmed: now.toISOString(),
+  };
+}
+
+// --- The second ask ------------------------------------------------------------
+
+/** How many question searches the second ask asks for, and reads at most. */
+export const SECOND_ASK_TOPICS = 8;
+export const SECOND_ASK_MAX_TOKENS = 3_200;
+export const SECOND_ASK_MIN_TOKENS = 1_000;
+
+/**
+ * The second ask: when every suggested search was read and none could be
+ * planned, the profile's own jobs, offerings and readers turned into
+ * searches that are questions by their words ("how to choose...", "what
+ * does ... cost", "... checklist", "... vs ..."). A providers' page does not
+ * remove such a search (`asksQuestion`), so these are the searches most
+ * likely to end in an article. Same reply shape as the first ask.
+ */
+export function secondAskPrompt(input: { business: FitProfile; domain: string; language: string; tried: readonly string[] }): string {
+  const list = (v: string[] | null | undefined) => (v ?? []).map((x) => x.trim()).filter(Boolean).slice(0, 8);
+  const jobs = list(input.business.buyingJobs);
+  const offerings = list(input.business.offerings);
+  const audiences = list(input.business.audiences);
+  return [
+    `You choose the first article for a website. The searches tried so far are won by providers' own pages or have no article to cite. Propose ${SECOND_ASK_TOPICS} different searches, each a question by its own words, that one article on this site answers.`,
+    "",
+    "Rules:",
+    "- Build each search from what the site's readers are trying to get done, what the site offers and who it serves (listed below): one search per job or offering where you can.",
+    `- Every search must start with or contain a question form in the market's language: "how to choose ...", "how much does ... cost", "what is ...", "... checklist", "... vs ..." (two approaches or options, never two named businesses), "questions to ask before ...", "... mistakes to avoid", "is ... worth it".`,
+    "- 3 to 9 words, lower case, in the market's language, no site, business or brand names, no place names unless the site serves only that place.",
+    "- Do not repeat or rephrase a search already tried.",
+    "- kind is \"question\" for every one. fit, 1 to 5: how squarely the site's readers ask it. shape: comparison, listicle, howTo, explainer or reference.",
+    "- reader: who types it. job: what they are trying to get done. offering: what on this site helps them next. angle: the article's headline, at most 90 characters, no year. why: one sentence on why this site should write it.",
+    "- Health, money, legal and public-benefit topics: only what this site can answer responsibly from what it does.",
+    "- Best first.",
+    "",
+    "Reply with JSON only, no prose: {\"topics\": [{\"query\", \"fromList\", \"reader\", \"job\", \"offering\", \"angle\", \"shape\", \"fit\", \"kind\", \"why\"}]} with fromList false.",
+    "",
+    "The site:",
+    describeBusiness({ ...input.business, language: input.language }),
+    `Domain: ${input.domain.replace(/^https?:\/\//, "")}`,
+    "",
+    jobs.length ? `What its readers are trying to get done:\n${jobs.map((j) => `- ${j}`).join("\n")}` : "What its readers are trying to get done: not listed; infer it from what the site does.",
+    offerings.length ? `What it offers:\n${offerings.map((o) => `- ${o}`).join("\n")}` : "What it offers: not listed; infer it from what the site does.",
+    audiences.length ? `Who it serves:\n${audiences.map((a) => `- ${a}`).join("\n")}` : "Who it serves: not listed; infer it from what the site does.",
+    "",
+    input.tried.length ? `Searches already tried:\n${input.tried.slice(0, 40).map((t) => `- ${t}`).join("\n")}` : "Searches already tried: none.",
+  ].join("\n");
 }

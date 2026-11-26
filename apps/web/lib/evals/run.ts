@@ -7,6 +7,8 @@
 //   <dir>/cases/*.json      one DecisionCase per business
 //   <dir>/claims/*.json     ClaimCases; their `pages` are paths relative to the file
 //   <dir>/recordings/       stored model answers, one file per prompt hash
+//   <dir>/first-look/*.json one FirstLookCase per signup (./first-look.ts)
+//   <dir>/first-look-labels/*.json  "would the owner publish this" labels
 //   <dir>/reports/          what `--out` writes, if pointed here
 //
 // Nothing is read from a database and nothing is written outside `<dir>`.
@@ -19,6 +21,7 @@ import { pageTypeSummary, pipelineOf, runBuyerFit, runFactCheck, runPageType, ru
 import { Budget, BudgetExceededError, Recorder, type ModelClient, type RecorderMode } from "./recorder";
 import { scoreDecision, type DecisionScore } from "./score";
 import { caseFunnels, type CaseFunnel } from "./funnel";
+import { runFirstLook, type FirstLookReport } from "./first-look";
 import type { ClaimCase, DecisionCase, DecisionName, Scored } from "./types";
 
 function jsonFiles(dir: string): string[] {
@@ -69,6 +72,8 @@ export interface EvalResult {
    * its own recorder, never buying.
    */
   pageTypeMisses?: number;
+  /** First-look yield (./first-look.ts), when the case set has first-look cases and the decision ran. */
+  firstLook?: FirstLookReport;
 }
 
 export async function runEvals(options: EvalOptions): Promise<EvalResult> {
@@ -109,6 +114,9 @@ export async function runEvals(options: EvalOptions): Promise<EvalResult> {
       }));
     }
   }
+  // Free whatever the mode: the model's answers and the results pages are in
+  // the case, and the planner runs on an in-memory database.
+  const firstLook = wanted("first-look-yield") ? await runFirstLook(options.dir, options.caseIds) : null;
   const items: Scored[] = [];
   const scores: DecisionScore[] = [];
   const add = (d: DecisionName, list: Scored[]) => {
@@ -121,17 +129,19 @@ export async function runEvals(options: EvalOptions): Promise<EvalResult> {
   add("pipeline", pipelineOf(fit, qualification, cases));
   add("fact-check", facts);
   add("page-type", pageTypes);
+  if (firstLook) add("first-look-yield", firstLook.items);
   return {
     items, scores, recorder, stoppedAt, funnels: caseFunnels(items),
     ...(wanted("page-type") && pageTypes.length ? { pageType: pageTypeSummary(pageTypes) } : {}),
     ...(pageTypeMisses !== undefined ? { pageTypeMisses } : {}),
+    ...(firstLook?.cases.length ? { firstLook: firstLook.report } : {}),
   };
 }
 
 /** What a live run would buy, priced before anything is spent. */
 export async function planEvals(options: Omit<EvalOptions, "mode" | "client">): Promise<{ calls: number; upperUsd: number; typicalUsd: number }> {
   // Only the decisions that buy answers: the fact check and the page type are free.
-  const paid = (options.only?.length ? options.only : ["buyer-fit", "qualification", "pipeline"] as DecisionName[]).filter((d) => d !== "fact-check" && d !== "page-type");
+  const paid = (options.only?.length ? options.only : ["buyer-fit", "qualification", "pipeline"] as DecisionName[]).filter((d) => d !== "fact-check" && d !== "page-type" && d !== "first-look-yield");
   if (!paid.length) return { calls: 0, upperUsd: 0, typicalUsd: 0 };
   const { recorder } = await runEvals({ ...options, mode: "plan", only: paid });
   const planned = [...recorder.planned.values()];

@@ -15,7 +15,7 @@ vi.mock("@/lib/onboarding/business-profile", async (importOriginal) => ({
   inferBusinessProfileDetailed: (...a: unknown[]) => infer(...a),
 }));
 
-import { ensureBusinessProfile, profileUsable } from "../business-context";
+import { ensureBusinessProfile, profileFromAnswer, profileUsable } from "../business-context";
 
 const updates: Array<{ table: string; patch: unknown; id: string }> = [];
 const db = {
@@ -85,5 +85,26 @@ describe("ensureBusinessProfile", () => {
     expect(infer).toHaveBeenCalledWith("altorank-dev.myshopify.com", { read });
     expect(out.inferred).toBe(true);
     expect(updates).toHaveLength(1);
+  });
+});
+
+describe("profileFromAnswer", () => {
+  it("makes the owner's lists a usable profile, in their own words", () => {
+    const built = profileFromAnswer({ name: "Sugarloft", description: "", offerings: ["wedding cakes", " celebration cakes "], audiences: ["couples planning a wedding"], confirmedAt: "2026-11-20T10:00:00Z" }, "sugarloft.example")!;
+    expect(built.description).toBe("Sugarloft offers wedding cakes, celebration cakes to couples planning a wedding.");
+    expect(profileUsable(built)).toBe(true);
+    // Everything else they saved is kept as it was.
+    expect(built).toMatchObject({ name: "Sugarloft", offerings: ["wedding cakes", " celebration cakes "], confirmedAt: "2026-11-20T10:00:00Z" });
+  });
+
+  it("keeps a short answer and adds what they sell to it; names the site by its domain when it has no name", () => {
+    expect(profileFromAnswer({ description: "Cakes to order", offerings: ["wedding cakes"] }, "https://sugarloft.example/")!.description).toBe("Cakes to order. sugarloft.example offers wedding cakes.");
+  });
+
+  it("leaves a usable profile alone and builds nothing from nothing", () => {
+    const usable = { description: "Sugarloft bakes wedding cakes to order for couples." };
+    expect(profileFromAnswer(usable, "sugarloft.example")).toBe(usable);
+    expect(profileFromAnswer({ name: "Sugarloft", description: "", offerings: [], audiences: ["couples"] }, "sugarloft.example")).toBeNull();
+    expect(profileFromAnswer(null, "sugarloft.example")).toBeNull();
   });
 });

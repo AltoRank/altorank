@@ -795,9 +795,76 @@ describe("nothing planned", () => {
     plan.mockResolvedValue(planned([], "none"));
     const events = await collect();
     expect(planningEvent(events)).toMatchObject({ status: "skipped" });
-    expect(planningEvent(events).detail).toContain("won by shops' or providers' own pages");
+    expect(planningEvent(events).detail).toContain("names a business, looks for one site or is outside what your site covers");
     expect(planningEvent(events)).not.toHaveProperty("emptyPool");
     expect(JSON.stringify(events)).not.toMatch(/24 hours|follows? up/);
+  });
+
+  // Thin or unread sites (2026-11-16): a site we know the business of is
+  // planned for whatever the research stored, and one we know nothing of
+  // asks its owner instead of ending on "nothing to schedule".
+  const THIN = { keywordsFound: 0, layers: [{ id: "keywords", status: "unavailable", detail: "too little readable text on the site to research" }] };
+  const run = async (workspace: Record<string, unknown>) => {
+    const events: OnboardingEvent[] = [];
+    await runOnboarding(richClient(0), workspace as never, (e) => events.push(e));
+    return events;
+  };
+
+  it("plans from the profile when the site had too little text and research stored nothing", async () => {
+    analyse.mockResolvedValue(THIN);
+    const events = await run({ ...WS, business_profile: { name: "Example", description: "Example fits garden offices for homeowners who work from home." } });
+    expect(plan).toHaveBeenCalledTimes(1);
+    expect(planningEvent(events)).toMatchObject({ status: "done" });
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("makes a profile its owner gave only as lists usable, from their own words", async () => {
+    analyse.mockResolvedValue(THIN);
+    const events = await run({ ...WS, business_profile: { name: "", description: "", offerings: ["wedding cakes"], audiences: ["couples planning a wedding"] } });
+    // The research and the planner both get a description built from the lists.
+    const profile = (analyse.mock.calls[0][0] as { profile: { description: string } }).profile;
+    expect(profile.description).toBe("example.com offers wedding cakes to couples planning a wedding.");
+    expect(plan).toHaveBeenCalledTimes(1);
+    expect(planningEvent(events)).toMatchObject({ status: "done" });
+  });
+
+  it("asks the owner what they sell when neither the site nor a profile says, and plans nothing", async () => {
+    analyse.mockResolvedValue(THIN);
+    const events = await run({ ...WS, business_profile: null });
+    expect(plan).not.toHaveBeenCalled();
+    expect(planningEvent(events)).toMatchObject({ status: "skipped", cause: "needs_business" });
+    expect(planningEvent(events).detail).toMatch(/Tell us what you sell and who buys it/);
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("does not plan from the profile when the crawl failed or a provider did not answer: those keep their own endings", async () => {
+    analyse.mockResolvedValue({ keywordsFound: 0, layers: [{ id: "crawl", status: "failed", detail: "HTTP 403" }] });
+    const blocked = await run({ ...WS, business_profile: { description: "Example fits garden offices for homeowners who work from home." } });
+    expect(plan).not.toHaveBeenCalled();
+    expect(planningEvent(blocked)).toMatchObject({ status: "skipped", detail: "Nothing to schedule until there are keywords." });
+    expect(planningEvent(blocked).cause).toBeUndefined();
+  });
+
+  it("shows the proposed topic and starts no draft when nothing could be planned with evidence", async () => {
+    const proposal = { term: "garden office cost", angle: "What a garden office costs", why: "Its readers ask this first.", reader: "Homeowners", job: "Budget for one", offering: "Design visit", shape: "explainer", volume: null, difficulty: null, score: { total: 49, fit: 0.75, demand: 0.5, reach: 0.6, page: 0, demandMeasured: false, pageRead: true }, checked: true, organicUrls: [] };
+    plan.mockResolvedValue({ ...planned([], "needs_owner_input", { proposed: true }), proposal });
+    const events = await collect();
+    const planning = planningEvent(events) as { status: string; detail?: string; cause?: string; proposal?: { term: string } };
+    expect(planning).toMatchObject({ status: "skipped", cause: "needs_owner_input" });
+    expect(planning.proposal).toMatchObject({ term: "garden office cost", why: "Its readers ask this first." });
+    // Said as lower confidence, and as waiting for the owner, not as a failure.
+    expect(planning.detail).toMatch(/"garden office cost".*lower confidence.*did not start it without you/);
+    const drafting = events.filter((e) => e.phase === "drafting").at(-1) as { status: string; detail?: string };
+    expect(drafting).toMatchObject({ status: "skipped", detail: "Waiting for your go-ahead on the proposed topic." });
+    expect(generate).not.toHaveBeenCalled();
+    expect(recordFunnel).toHaveBeenCalledWith(expect.objectContaining({ firstLook: expect.objectContaining({ proposed: true }) }));
+  });
+
+  it("says when the article it was checked against ranks for a related search", async () => {
+    plan.mockResolvedValue({ ...planned([FIRST], "planned", { rung: "related_evidence", floor: true }), plan: [{ ...FIRST, brief: { status: "qualified", confidence: "lower", evidenceFrom: "seo agents" } }] });
+    const events = await collect();
+    expect(planningEvent(events).detail).toMatch(/lower confidence/);
+    expect(planningEvent(events).detail).toMatch(/ranks for a closely related search, not this exact one/);
   });
 
   it("says a provider that did not answer is ours, with its cause", async () => {

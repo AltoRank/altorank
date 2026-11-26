@@ -1,0 +1,102 @@
+{
+  "id": "suggest-reply-cut-off",
+  "note": "The model's reply stops inside its third topic, so it is not JSON. The two topics it finished are still topics.",
+  "url": "pawsandcomb.example",
+  "languageCode": "en",
+  "locationCode": 2372,
+  "today": "2026-11-20",
+  "authority": null,
+  "business": {
+    "name": "Paws and Comb",
+    "description": "Paws and Comb is a dog grooming salon offering full grooms, puppy introductions and nail trims.",
+    "offerings": [
+      "full dog groom",
+      "puppy first groom"
+    ],
+    "audiences": [
+      "dog owners"
+    ],
+    "country": "Ireland",
+    "language": "English"
+  },
+  "pages": [],
+  "pool": [],
+  "answers": {
+    "suggest": "{\"topics\": [{\"query\": \"how often should you groom a dog\", \"fromList\": false, \"reader\": \"Dog owners between grooms\", \"job\": \"Keep their dog's coat healthy at home\", \"offering\": \"The puppy first groom\", \"angle\": \"How often should you groom a dog: what to know first\", \"shape\": \"howTo\", \"fit\": 5, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"how to brush a double coated dog\", \"fromList\": false, \"reader\": \"Dog owners between grooms\", \"job\": \"Keep their dog's coat healthy at home\", \"offering\": \"The puppy first groom\", \"angle\": \"How to brush a double coated dog: what to know first\", \"shape\": \"howTo\", \"fit\": 5, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"how to get a",
+    "secondAsk": null
+  },
+  "serps": {
+    "how often should you groom a dog": [
+      {
+        "rank": 1,
+        "title": "How often should you groom a dog: a guide (1)",
+        "url": "https://journal-1.example/blog/how-often-should-you-groom-a-dog",
+        "description": "A plain guide to how often should you groom a dog.",
+        "domain": "journal-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "How often should you groom a dog: a guide (2)",
+        "url": "https://journal-2.example/blog/how-often-should-you-groom-a-dog",
+        "description": "A plain guide to how often should you groom a dog.",
+        "domain": "journal-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "How often should you groom a dog: a guide (3)",
+        "url": "https://journal-3.example/blog/how-often-should-you-groom-a-dog",
+        "description": "A plain guide to how often should you groom a dog.",
+        "domain": "journal-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "How often should you groom a dog: a guide (4)",
+        "url": "https://journal-4.example/blog/how-often-should-you-groom-a-dog",
+        "description": "A plain guide to how often should you groom a dog.",
+        "domain": "journal-4.example",
+        "wordCount": null
+      }
+    ],
+    "how to brush a double coated dog": [
+      {
+        "rank": 1,
+        "title": "How to brush a double coated dog: a guide (1)",
+        "url": "https://journal-1.example/blog/how-to-brush-a-double-coated-dog",
+        "description": "A plain guide to how to brush a double coated dog.",
+        "domain": "journal-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "How to brush a double coated dog: a guide (2)",
+        "url": "https://journal-2.example/blog/how-to-brush-a-double-coated-dog",
+        "description": "A plain guide to how to brush a double coated dog.",
+        "domain": "journal-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "How to brush a double coated dog: a guide (3)",
+        "url": "https://journal-3.example/blog/how-to-brush-a-double-coated-dog",
+        "description": "A plain guide to how to brush a double coated dog.",
+        "domain": "journal-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "How to brush a double coated dog: a guide (4)",
+        "url": "https://journal-4.example/blog/how-to-brush-a-double-coated-dog",
+        "description": "A plain guide to how to brush a double coated dog.",
+        "domain": "journal-4.example",
+        "wordCount": null
+      }
+    ]
+  },
+  "usableProfile": true,
+  "expect": {
+    "rung": "ranked"
+  }
+}

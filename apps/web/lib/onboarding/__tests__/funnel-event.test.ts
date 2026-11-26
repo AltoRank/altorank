@@ -121,6 +121,27 @@ describe("the first look's spend on the funnel event", () => {
     expect(JSON.stringify(buildEventRow(e))).not.toContain("housing grant");
   });
 
+  it("names the rung that planned the article, and what the rungs below the bar did", () => {
+    const score = { total: 49, fit: 0.75, demand: 0.5, reach: 0.6, page: 0, demandMeasured: false, pageRead: true };
+    const e = planFunnelEvent({
+      runId: "run-4", workspaceId: WS, funnel: null,
+      firstLook: { suggested: 20, rejected: { needs_page: 20 }, resultsRead: 23, resultsFailed: 0, noEvidence: 2, planned: 1, ready: 0, modelCalls: 2, floor: true, rung: "related_evidence", extendedReads: 8, secondAsk: { suggested: 6, read: 3 }, chosen: { term: "garden office cost", score, volume: null, line: "" } },
+    });
+    expect(e.level).toBe("info");
+    expect(e.message).toContain("-> 1 planned on the floor (cited from a related search) rung, chosen at 49/100");
+    expect(e.context).toMatchObject({ rung: "related_evidence", floor: true, extendedReads: 8, secondAsk: { suggested: 6, read: 3 }, modelCalls: 2 });
+    expect(JSON.stringify(buildEventRow(e))).not.toContain("garden office");
+    // A topic proposed to the owner is a warning still: nothing was planned.
+    const proposed = planFunnelEvent({
+      runId: "run-5", workspaceId: WS, funnel: null, planningDetail: "We have a first article to propose.",
+      firstLook: { suggested: 6, rejected: { needs_page: 6 }, resultsRead: 6, resultsFailed: 0, noEvidence: 0, planned: 0, ready: 0, modelCalls: 2, proposed: true, stopped: "budget" },
+    });
+    expect(proposed.level).toBe("warn");
+    expect(proposed.message).toContain("0 planned, one topic proposed to the owner");
+    expect(proposed.context).toMatchObject({ proposed: true, stopped: "budget" });
+    expect(proposed.context).not.toHaveProperty("rung");
+  });
+
   it("warns when a first look planned nothing, with the planning line", () => {
     const e = planFunnelEvent({
       runId: "run-3", workspaceId: WS, funnel: null, planningDetail: "Our search data or our model did not answer.",

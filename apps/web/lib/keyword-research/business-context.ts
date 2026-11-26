@@ -48,6 +48,33 @@ export function profileUsable(business: BusinessFields | null | undefined): bool
   return Boolean(business?.description && business.description.trim().length > 20);
 }
 
+/**
+ * A profile the owner gave only as lists (the wizard's "we couldn't read
+ * your website" screen asks what they sell and who buys it, and a
+ * description is optional there), made usable: the description is their own
+ * answer, said as a sentence. Null when there is nothing of theirs to build
+ * from. Nothing here is inferred: every word is one they typed.
+ *
+ * Without it such a profile was "no profile" to everything downstream, so a
+ * site with too little text to read stored no keywords, planned nothing and
+ * wrote nothing, with the owner's answer sitting on the row.
+ */
+export function profileFromAnswer<T extends BusinessFields>(business: T | null | undefined, domain: string | null | undefined): T | null {
+  if (!business || profileUsable(business)) return business ?? null;
+  const list = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim()) : []);
+  const offerings = list(business.offerings);
+  const audiences = list(business.audiences);
+  const said = (business.description ?? "").trim();
+  if (!offerings.length && !said) return null;
+  const name = (business.name ?? "").trim() || (domain ?? "").replace(/^https?:\/\//, "").replace(/\/+$/, "") || "This business";
+  const description = [
+    said ? (/[.!?]$/.test(said) ? said : `${said}.`) : "",
+    offerings.length ? `${name} offers ${offerings.slice(0, 6).join(", ")}${audiences.length ? ` to ${audiences.slice(0, 4).join(", ")}` : ""}.` : "",
+  ].filter(Boolean).join(" ");
+  const built = { ...business, description };
+  return profileUsable(built) ? built : null;
+}
+
 const MISSING: Record<Exclude<InferenceReason, "ok">, string> = {
   no_model: "no business profile, and no model is configured to read the site for one",
   unreadable: "no business profile, and the site could not be read to build one",

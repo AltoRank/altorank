@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { DOMAIN_PATTERN, normalizeDomain } from "@/lib/domain/shape";
+import { hostKind, notOwnSiteMessage } from "@/lib/domain/own-site";
 import { SubmitButton } from "./submit-button";
 
 const INPUT =
@@ -29,7 +30,16 @@ export function SignupSteps({ prefilledDomain, startOnDomain = false }: { prefil
       domainRef.current?.focus();
       return;
     }
-    setDomain(d);
+    // A profile or a listing on someone else's site is said here, before the
+    // email is asked. A share link is kept whole, path and all: the server
+    // follows it to the site it points at (lib/domain/own-site.ts).
+    const kind = hostKind(d);
+    if (kind && kind !== "shortener") {
+      setError(notOwnSiteMessage(kind));
+      domainRef.current?.focus();
+      return;
+    }
+    setDomain(kind === "shortener" ? domain.trim() : d);
     setError(null);
     setStep("email");
     requestAnimationFrame(() => emailRef.current?.focus());

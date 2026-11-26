@@ -6,6 +6,7 @@ import type { DecisionName, Scored } from "./types";
 import { funnelTable } from "@/lib/keyword-research/topic-funnel";
 import type { CaseFunnel } from "./funnel";
 import type { PageTypeSummary } from "./decisions";
+import type { FirstLookReport } from "./first-look";
 
 export interface LabelScore {
   label: string;
@@ -74,6 +75,28 @@ export function worstDisagreements(items: Scored[], limit: number): Scored[] {
   return items.filter((s) => !s.agrees).sort((a, b) => severity(b) - severity(a)).slice(0, limit);
 }
 
+/** The yield, the rungs, what planned nothing and why, and the floor picks' second label. */
+export function firstLookLines(r: FirstLookReport): string[] {
+  const rungs = Object.entries(r.byRung).map(([rung, n]) => `${rung} ${n}`).join(", ") || "none";
+  const lines = [
+    `First-look yield (usable-profile cases that planned an article): **${r.planned}/${r.usable} (${pct(r.yield)})**`,
+    `Planned by rung: ${rungs}.${r.proposed ? ` Proposed to the owner and not planned: ${r.proposed}.` : ""}`,
+    `Picks made below the bar (second ask, floors, proposals), by "would the owner publish this topic": ${r.floor.yes} yes, ${r.floor.no} no, ${r.floor.unlabelled} unlabelled, of ${r.floor.picks}.`,
+    "",
+    "| case | usable profile | ending | rung | topic | pages read | model calls |",
+    "|---|---|---|---|---|---:|---:|",
+    ...r.runs.map((x) => `| ${cell(x.caseId)} | ${x.usableProfile ? "yes" : "no"} | ${x.ending} | ${x.rung ?? "–"}${x.lower ? " (lower confidence)" : ""} | ${cell(x.term) || "–"} | ${x.resultsRead} | ${x.modelCalls} |`),
+  ];
+  const short = [...r.nothing, ...r.notUsable];
+  if (short.length) {
+    lines.push("", "Planned nothing:", "", "| case | ending | reason |", "|---|---|---|");
+    for (const n of short) lines.push(`| ${cell(n.caseId)} | ${n.ending} | ${cell(n.reason)} |`);
+  }
+  if (r.floor.rejected.length) lines.push("", `Floor picks labelled not worth publishing: ${r.floor.rejected.map((x) => `${x.caseId} "${x.term}"${x.note ? ` (${x.note})` : ""}`).join("; ")}.`);
+  if (r.unexpected.length) lines.push("", `Not as the case expects: ${r.unexpected.map((u) => `${u.caseId} (expected ${u.expected}, got ${u.got})`).join("; ")}.`);
+  return lines;
+}
+
 const pct = (v: number | null) => (v === null ? "–" : `${Math.round(v * 100)}%`);
 const cell = (text: string | null | undefined) => (text ?? "").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
 
@@ -87,6 +110,8 @@ export function renderMarkdown(input: {
   funnels?: readonly CaseFunnel[];
   /** The page-type rule's proof numbers (./decisions.ts `pageTypeSummary`). */
   pageType?: PageTypeSummary;
+  /** First-look yield (./first-look.ts). */
+  firstLook?: FirstLookReport;
 }): string {
   const lines: string[] = [`# ${input.title}`, ""];
   for (const [k, v] of Object.entries(input.meta)) lines.push(`- ${k}: ${v}`);
@@ -110,6 +135,8 @@ export function renderMarkdown(input: {
         `Qualified labels one page short of the needs-page threshold (${p.qualifiedAtEdge.threshold}) because of the page's own reading: ${p.qualifiedAtEdge.terms.length}${p.qualifiedAtEdge.terms.length ? ` (${p.qualifiedAtEdge.terms.join("; ")})` : ""}.`,
       );
     }
+    const fl = s.decision === "first-look-yield" ? input.firstLook : undefined;
+    if (fl) lines.push("", ...firstLookLines(fl));
     lines.push("");
     const predictedCols = [...new Set(Object.values(s.matrix).flatMap((row) => Object.keys(row)))].sort();
     lines.push(`| label \\ product | ${predictedCols.join(" | ")} |`, `|---|${predictedCols.map(() => "---:").join("|")}|`);

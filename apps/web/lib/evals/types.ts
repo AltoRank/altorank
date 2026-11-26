@@ -97,7 +97,7 @@ export interface ClaimCase {
   sourceReview?: import("@/lib/seo/source-classes").SourceReview;
 }
 
-export type DecisionName = "buyer-fit" | "qualification" | "pipeline" | "fact-check" | "page-type";
+export type DecisionName = "buyer-fit" | "qualification" | "pipeline" | "fact-check" | "page-type" | "first-look-yield";
 
 /** One scored item: what the label says, what the product said, and why. */
 export interface Scored {

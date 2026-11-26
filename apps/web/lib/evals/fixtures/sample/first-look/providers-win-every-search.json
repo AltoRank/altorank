@@ -1,0 +1,493 @@
+{
+  "id": "providers-win-every-search",
+  "note": "A service business: every search the first ask proposes is won by installers' own pages, none with an article in it. The second ask's question searches are won by articles.",
+  "url": "oakframe-rooms.example",
+  "languageCode": "en",
+  "locationCode": 2826,
+  "today": "2026-11-20",
+  "authority": 4,
+  "business": {
+    "name": "Oakframe Garden Rooms",
+    "description": "Oakframe designs and installs insulated garden rooms and garden offices for homeowners.",
+    "offerings": [
+      "garden offices",
+      "insulated garden rooms",
+      "design and installation"
+    ],
+    "audiences": [
+      "homeowners who work from home"
+    ],
+    "buyingJobs": [
+      "add a place to work at home without moving house"
+    ],
+    "country": "United Kingdom",
+    "language": "English"
+  },
+  "pages": [
+    {
+      "title": "Garden offices",
+      "path": "/garden-offices/"
+    }
+  ],
+  "pool": [],
+  "answers": {
+    "suggest": "{\"topics\": [{\"query\": \"garden room installers\", \"fromList\": false, \"reader\": \"Homeowners planning a garden room\", \"job\": \"Decide whether and how to build one\", \"offering\": \"The garden room design visit\", \"angle\": \"Garden room installers: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"garden office company\", \"fromList\": false, \"reader\": \"Homeowners planning a garden room\", \"job\": \"Decide whether and how to build one\", \"offering\": \"The garden room design visit\", \"angle\": \"Garden office company: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"transactional\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"bespoke garden rooms\", \"fromList\": false, \"reader\": \"Homeowners planning a garden room\", \"job\": \"Decide whether and how to build one\", \"offering\": \"The garden room design visit\", \"angle\": \"Bespoke garden rooms: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"garden room builders\", \"fromList\": false, \"reader\": \"Homeowners planning a garden room\", \"job\": \"Decide whether and how to build one\", \"offering\": \"The garden room design visit\", \"angle\": \"Garden room builders: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"transactional\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"insulated garden room suppliers\", \"fromList\": false, \"reader\": \"Homeowners planning a garden room\", \"job\": \"Decide whether and how to build one\", \"offering\": \"The garden room design visit\", \"angle\": \"Insulated garden room suppliers: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"garden office installation service\", \"fromList\": false, \"reader\": \"Homeowners planning a garden room\", \"job\": \"Decide whether and how to build one\", \"offering\": \"The garden room design visit\", \"angle\": \"Garden office installation service: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"transactional\", \"why\": \"Its readers ask this before they get in touch.\"}]}",
+    "secondAsk": "{\"topics\": [{\"query\": \"how much does a garden room cost\", \"fromList\": false, \"reader\": \"Homeowners planning a garden room\", \"job\": \"Decide whether and how to build one\", \"offering\": \"The garden room design visit\", \"angle\": \"How much does a garden room cost: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"do you need planning permission for a garden room\", \"fromList\": false, \"reader\": \"Homeowners planning a garden room\", \"job\": \"Decide whether and how to build one\", \"offering\": \"The garden room design visit\", \"angle\": \"Do you need planning permission for a garden room: what to know first\", \"shape\": \"explainer\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}, {\"query\": \"garden room vs house extension\", \"fromList\": false, \"reader\": \"Homeowners planning a garden room\", \"job\": \"Decide whether and how to build one\", \"offering\": \"The garden room design visit\", \"angle\": \"Garden room vs house extension: what to know first\", \"shape\": \"comparison\", \"fit\": 4, \"kind\": \"question\", \"why\": \"Its readers ask this before they get in touch.\"}]}"
+  },
+  "serps": {
+    "garden room installers": [
+      {
+        "rank": 1,
+        "title": "Garden Room Installers | Garden Rooms 1 | Book now",
+        "url": "https://garden-rooms-1.example/",
+        "description": "garden room installers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Garden Room Installers | Garden Rooms 2 | Book now",
+        "url": "https://garden-rooms-2.example/",
+        "description": "garden room installers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Garden Room Installers | Garden Rooms 3 | Book now",
+        "url": "https://garden-rooms-3.example/",
+        "description": "garden room installers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Garden Room Installers | Garden Rooms 4 | Book now",
+        "url": "https://garden-rooms-4.example/",
+        "description": "garden room installers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Garden Room Installers | Garden Rooms 5 | Book now",
+        "url": "https://garden-rooms-5.example/",
+        "description": "garden room installers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Garden Room Installers | Garden Rooms 6 | Book now",
+        "url": "https://garden-rooms-6.example/",
+        "description": "garden room installers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Garden Room Installers | Garden Rooms 7 | Book now",
+        "url": "https://garden-rooms-7.example/",
+        "description": "garden room installers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-7.example",
+        "wordCount": null
+      }
+    ],
+    "garden office company": [
+      {
+        "rank": 1,
+        "title": "Garden Office Company | Garden Rooms 1 | Book now",
+        "url": "https://garden-rooms-1.example/",
+        "description": "garden office company done for you. Call us today for a quote.",
+        "domain": "garden-rooms-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Garden Office Company | Garden Rooms 2 | Book now",
+        "url": "https://garden-rooms-2.example/",
+        "description": "garden office company done for you. Call us today for a quote.",
+        "domain": "garden-rooms-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Garden Office Company | Garden Rooms 3 | Book now",
+        "url": "https://garden-rooms-3.example/",
+        "description": "garden office company done for you. Call us today for a quote.",
+        "domain": "garden-rooms-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Garden Office Company | Garden Rooms 4 | Book now",
+        "url": "https://garden-rooms-4.example/",
+        "description": "garden office company done for you. Call us today for a quote.",
+        "domain": "garden-rooms-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Garden Office Company | Garden Rooms 5 | Book now",
+        "url": "https://garden-rooms-5.example/",
+        "description": "garden office company done for you. Call us today for a quote.",
+        "domain": "garden-rooms-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Garden Office Company | Garden Rooms 6 | Book now",
+        "url": "https://garden-rooms-6.example/",
+        "description": "garden office company done for you. Call us today for a quote.",
+        "domain": "garden-rooms-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Garden Office Company | Garden Rooms 7 | Book now",
+        "url": "https://garden-rooms-7.example/",
+        "description": "garden office company done for you. Call us today for a quote.",
+        "domain": "garden-rooms-7.example",
+        "wordCount": null
+      }
+    ],
+    "bespoke garden rooms": [
+      {
+        "rank": 1,
+        "title": "Bespoke Garden Rooms | Garden Rooms 1 | Book now",
+        "url": "https://garden-rooms-1.example/",
+        "description": "bespoke garden rooms done for you. Call us today for a quote.",
+        "domain": "garden-rooms-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Bespoke Garden Rooms | Garden Rooms 2 | Book now",
+        "url": "https://garden-rooms-2.example/",
+        "description": "bespoke garden rooms done for you. Call us today for a quote.",
+        "domain": "garden-rooms-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Bespoke Garden Rooms | Garden Rooms 3 | Book now",
+        "url": "https://garden-rooms-3.example/",
+        "description": "bespoke garden rooms done for you. Call us today for a quote.",
+        "domain": "garden-rooms-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Bespoke Garden Rooms | Garden Rooms 4 | Book now",
+        "url": "https://garden-rooms-4.example/",
+        "description": "bespoke garden rooms done for you. Call us today for a quote.",
+        "domain": "garden-rooms-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Bespoke Garden Rooms | Garden Rooms 5 | Book now",
+        "url": "https://garden-rooms-5.example/",
+        "description": "bespoke garden rooms done for you. Call us today for a quote.",
+        "domain": "garden-rooms-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Bespoke Garden Rooms | Garden Rooms 6 | Book now",
+        "url": "https://garden-rooms-6.example/",
+        "description": "bespoke garden rooms done for you. Call us today for a quote.",
+        "domain": "garden-rooms-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Bespoke Garden Rooms | Garden Rooms 7 | Book now",
+        "url": "https://garden-rooms-7.example/",
+        "description": "bespoke garden rooms done for you. Call us today for a quote.",
+        "domain": "garden-rooms-7.example",
+        "wordCount": null
+      }
+    ],
+    "garden room builders": [
+      {
+        "rank": 1,
+        "title": "Garden Room Builders | Garden Rooms 1 | Book now",
+        "url": "https://garden-rooms-1.example/",
+        "description": "garden room builders done for you. Call us today for a quote.",
+        "domain": "garden-rooms-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Garden Room Builders | Garden Rooms 2 | Book now",
+        "url": "https://garden-rooms-2.example/",
+        "description": "garden room builders done for you. Call us today for a quote.",
+        "domain": "garden-rooms-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Garden Room Builders | Garden Rooms 3 | Book now",
+        "url": "https://garden-rooms-3.example/",
+        "description": "garden room builders done for you. Call us today for a quote.",
+        "domain": "garden-rooms-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Garden Room Builders | Garden Rooms 4 | Book now",
+        "url": "https://garden-rooms-4.example/",
+        "description": "garden room builders done for you. Call us today for a quote.",
+        "domain": "garden-rooms-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Garden Room Builders | Garden Rooms 5 | Book now",
+        "url": "https://garden-rooms-5.example/",
+        "description": "garden room builders done for you. Call us today for a quote.",
+        "domain": "garden-rooms-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Garden Room Builders | Garden Rooms 6 | Book now",
+        "url": "https://garden-rooms-6.example/",
+        "description": "garden room builders done for you. Call us today for a quote.",
+        "domain": "garden-rooms-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Garden Room Builders | Garden Rooms 7 | Book now",
+        "url": "https://garden-rooms-7.example/",
+        "description": "garden room builders done for you. Call us today for a quote.",
+        "domain": "garden-rooms-7.example",
+        "wordCount": null
+      }
+    ],
+    "insulated garden room suppliers": [
+      {
+        "rank": 1,
+        "title": "Insulated Garden Room Suppliers | Garden Rooms 1 | Book now",
+        "url": "https://garden-rooms-1.example/",
+        "description": "insulated garden room suppliers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Insulated Garden Room Suppliers | Garden Rooms 2 | Book now",
+        "url": "https://garden-rooms-2.example/",
+        "description": "insulated garden room suppliers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Insulated Garden Room Suppliers | Garden Rooms 3 | Book now",
+        "url": "https://garden-rooms-3.example/",
+        "description": "insulated garden room suppliers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Insulated Garden Room Suppliers | Garden Rooms 4 | Book now",
+        "url": "https://garden-rooms-4.example/",
+        "description": "insulated garden room suppliers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Insulated Garden Room Suppliers | Garden Rooms 5 | Book now",
+        "url": "https://garden-rooms-5.example/",
+        "description": "insulated garden room suppliers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Insulated Garden Room Suppliers | Garden Rooms 6 | Book now",
+        "url": "https://garden-rooms-6.example/",
+        "description": "insulated garden room suppliers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Insulated Garden Room Suppliers | Garden Rooms 7 | Book now",
+        "url": "https://garden-rooms-7.example/",
+        "description": "insulated garden room suppliers done for you. Call us today for a quote.",
+        "domain": "garden-rooms-7.example",
+        "wordCount": null
+      }
+    ],
+    "garden office installation service": [
+      {
+        "rank": 1,
+        "title": "Garden Office Installation Service | Garden Rooms 1 | Book now",
+        "url": "https://garden-rooms-1.example/",
+        "description": "garden office installation service done for you. Call us today for a quote.",
+        "domain": "garden-rooms-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Garden Office Installation Service | Garden Rooms 2 | Book now",
+        "url": "https://garden-rooms-2.example/",
+        "description": "garden office installation service done for you. Call us today for a quote.",
+        "domain": "garden-rooms-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Garden Office Installation Service | Garden Rooms 3 | Book now",
+        "url": "https://garden-rooms-3.example/",
+        "description": "garden office installation service done for you. Call us today for a quote.",
+        "domain": "garden-rooms-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Garden Office Installation Service | Garden Rooms 4 | Book now",
+        "url": "https://garden-rooms-4.example/",
+        "description": "garden office installation service done for you. Call us today for a quote.",
+        "domain": "garden-rooms-4.example",
+        "wordCount": null
+      },
+      {
+        "rank": 5,
+        "title": "Garden Office Installation Service | Garden Rooms 5 | Book now",
+        "url": "https://garden-rooms-5.example/",
+        "description": "garden office installation service done for you. Call us today for a quote.",
+        "domain": "garden-rooms-5.example",
+        "wordCount": null
+      },
+      {
+        "rank": 6,
+        "title": "Garden Office Installation Service | Garden Rooms 6 | Book now",
+        "url": "https://garden-rooms-6.example/",
+        "description": "garden office installation service done for you. Call us today for a quote.",
+        "domain": "garden-rooms-6.example",
+        "wordCount": null
+      },
+      {
+        "rank": 7,
+        "title": "Garden Office Installation Service | Garden Rooms 7 | Book now",
+        "url": "https://garden-rooms-7.example/",
+        "description": "garden office installation service done for you. Call us today for a quote.",
+        "domain": "garden-rooms-7.example",
+        "wordCount": null
+      }
+    ],
+    "how much does a garden room cost": [
+      {
+        "rank": 1,
+        "title": "How much does a garden room cost: a guide (1)",
+        "url": "https://journal-1.example/blog/how-much-does-a-garden-room-cost",
+        "description": "A plain guide to how much does a garden room cost.",
+        "domain": "journal-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "How much does a garden room cost: a guide (2)",
+        "url": "https://journal-2.example/blog/how-much-does-a-garden-room-cost",
+        "description": "A plain guide to how much does a garden room cost.",
+        "domain": "journal-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "How much does a garden room cost: a guide (3)",
+        "url": "https://journal-3.example/blog/how-much-does-a-garden-room-cost",
+        "description": "A plain guide to how much does a garden room cost.",
+        "domain": "journal-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "How much does a garden room cost: a guide (4)",
+        "url": "https://journal-4.example/blog/how-much-does-a-garden-room-cost",
+        "description": "A plain guide to how much does a garden room cost.",
+        "domain": "journal-4.example",
+        "wordCount": null
+      }
+    ],
+    "do you need planning permission for a garden room": [
+      {
+        "rank": 1,
+        "title": "Do you need planning permission for a garden room: a guide (1)",
+        "url": "https://journal-1.example/blog/do-you-need-planning-permission-for-a-garden-room",
+        "description": "A plain guide to do you need planning permission for a garden room.",
+        "domain": "journal-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Do you need planning permission for a garden room: a guide (2)",
+        "url": "https://journal-2.example/blog/do-you-need-planning-permission-for-a-garden-room",
+        "description": "A plain guide to do you need planning permission for a garden room.",
+        "domain": "journal-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Do you need planning permission for a garden room: a guide (3)",
+        "url": "https://journal-3.example/blog/do-you-need-planning-permission-for-a-garden-room",
+        "description": "A plain guide to do you need planning permission for a garden room.",
+        "domain": "journal-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Do you need planning permission for a garden room: a guide (4)",
+        "url": "https://journal-4.example/blog/do-you-need-planning-permission-for-a-garden-room",
+        "description": "A plain guide to do you need planning permission for a garden room.",
+        "domain": "journal-4.example",
+        "wordCount": null
+      }
+    ],
+    "garden room vs house extension": [
+      {
+        "rank": 1,
+        "title": "Garden room vs house extension: a guide (1)",
+        "url": "https://journal-1.example/blog/garden-room-vs-house-extension",
+        "description": "A plain guide to garden room vs house extension.",
+        "domain": "journal-1.example",
+        "wordCount": null
+      },
+      {
+        "rank": 2,
+        "title": "Garden room vs house extension: a guide (2)",
+        "url": "https://journal-2.example/blog/garden-room-vs-house-extension",
+        "description": "A plain guide to garden room vs house extension.",
+        "domain": "journal-2.example",
+        "wordCount": null
+      },
+      {
+        "rank": 3,
+        "title": "Garden room vs house extension: a guide (3)",
+        "url": "https://journal-3.example/blog/garden-room-vs-house-extension",
+        "description": "A plain guide to garden room vs house extension.",
+        "domain": "journal-3.example",
+        "wordCount": null
+      },
+      {
+        "rank": 4,
+        "title": "Garden room vs house extension: a guide (4)",
+        "url": "https://journal-4.example/blog/garden-room-vs-house-extension",
+        "description": "A plain guide to garden room vs house extension.",
+        "domain": "journal-4.example",
+        "wordCount": null
+      }
+    ]
+  },
+  "usableProfile": true,
+  "expect": {
+    "rung": "second_ask"
+  }
+}

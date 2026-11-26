@@ -9,6 +9,7 @@ import { ADD_SITE_ROLE_MESSAGE, insertWorkspaceAsServer } from "@/lib/workspaces
 import { z } from "zod";
 import { generateIndexNowKey } from "@/lib/seo/indexing";
 import { checkDomainReachable } from "@/lib/domain/reachable";
+import { hostKind, landedAway, notOwnSiteMessage } from "@/lib/domain/own-site";
 import { getWorkspaceAllowance, workspaceLimitMessage } from "@/lib/billing/workspaces";
 import { MAX_PACE, monthlyFromPace, normalisePace, PAID_DEFAULT_PACE } from "@/lib/content/pace";
 import { getQuota } from "@/lib/billing/quota";
@@ -84,8 +85,15 @@ export async function createWorkspace(formData: FormData): Promise<CreateWorkspa
   // workspace on a name that resolves to nothing goes on to produce a content
   // plan for a site nobody can read. Only `no-dns` blocks: a real site behind
   // a WAF that refuses us must still be able to sign up (lib/domain/reachable.ts).
+  // A profile, a listing or a share link is not a site to read
+  // (lib/domain/own-site.ts): said here, not discovered by an empty first look.
+  const notOwn = hostKind(parsed.data.domain);
+  if (notOwn) return { ok: false, error: notOwnSiteMessage(notOwn) };
+
   const reach = await checkDomainReachable(parsed.data.domain);
   if (!reach.ok) return { ok: false, error: reach.reason };
+  const away = reach.verdict === "live" ? landedAway(reach.landed) : null;
+  if (away) return { ok: false, error: away.reason };
 
   // Get or create user's account
   const { data: { user } } = await supabase.auth.getUser();
